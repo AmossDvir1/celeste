@@ -13,7 +13,7 @@ const H = 900
 
 const settings = (theme, wizardDone = true) => ({
   theme,
-  userName: 'Amoss',
+  userName: 'Alex',
   wizardDone,
   sidebarCollapsed: false,
   defaults: { model: 'copilot-auto', approval: 'auto', projectsFolder: 'D:\\Projects' }

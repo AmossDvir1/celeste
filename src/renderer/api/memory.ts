@@ -50,7 +50,7 @@ export function createMemoryTransport(): CelesteBridge['core'] {
     adapter: (ctx) => createMockSession({ ...ctx, devices: { call: (name, args, hooks) => tools.call(ctx.sessionId, name, args, hooks) } }),
     onSessionStopped: (id) => tools.cancel(id),
     push,
-    defaults: { ...DEFAULT_SETTINGS, userName: 'Amoss', defaults: { ...DEFAULT_SETTINGS.defaults, projectsFolder: 'D:\\Projects' } },
+    defaults: { ...DEFAULT_SETTINGS, userName: 'Alex', defaults: { ...DEFAULT_SETTINGS.defaults, projectsFolder: 'D:\\Projects' } },
     defaultVendors: DEFAULT_VENDORS,
     samples: sampleSessions
   })

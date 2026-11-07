@@ -6,11 +6,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   userName: 'there',
   wizardDone: false,
   sidebarCollapsed: false,
+  pinnedModels: [],
   defaults: { model: 'copilot-auto', approval: 'auto', projectsFolder: '' }
 }
 
 /** The preview starts with two vendors shown as connected so every screen has something to show. */
 export const DEFAULT_VENDORS: VendorRecords = {
-  copilot: { account: 'amoss on GitHub', method: 'browser' },
-  claude: { account: 'Console · Amoss Labs', method: 'browser' }
+  copilot: { account: 'alex on GitHub', method: 'browser' },
+  claude: { account: 'Console · Acme Labs', method: 'browser' }
 }

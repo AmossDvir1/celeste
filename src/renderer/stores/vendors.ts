@@ -69,8 +69,8 @@ export function openExternal(url: string): void {
 
 // What the mock browser sign-in reports. The real flow reads the account from the vendor.
 const ACCOUNT: Record<VendorId, string> = {
-  copilot: 'amoss on GitHub',
-  claude: 'Console · Amoss Labs',
+  copilot: 'alex on GitHub',
+  claude: 'Console · Acme Labs',
   openai: 'ChatGPT Plus',
   gemini: 'Google account'
 }

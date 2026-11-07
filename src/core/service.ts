@@ -58,7 +58,8 @@ const APPROVALS: ApprovalMode[] = ['auto', 'edits', 'ask', 'plan']
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const THEMES = ['dark', 'light', 'system']
 const VENDOR_IDS: VendorId[] = ['copilot', 'claude', 'openai', 'gemini']
-const SETTINGS_KEYS = ['theme', 'userName', 'wizardDone', 'sidebarCollapsed', 'defaults'] as const
+const SETTINGS_KEYS = ['theme', 'userName', 'wizardDone', 'sidebarCollapsed', 'pinnedModels', 'defaults'] as const
+const MAX_PINNED = 100
 const TRANSCRIPT_LIMIT = 24_000
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 const MAX_ATTACHMENTS = 10
@@ -184,6 +185,7 @@ export class SessionService {
       userName: (stored.userName as string) ?? d.userName,
       wizardDone: (stored.wizardDone as boolean) ?? d.wizardDone,
       sidebarCollapsed: (stored.sidebarCollapsed as boolean) ?? d.sidebarCollapsed,
+      pinnedModels: (stored.pinnedModels as string[] | undefined) ?? d.pinnedModels,
       defaults: { ...d.defaults, ...(stored.defaults as Partial<AppSettings['defaults']> | undefined) }
     }
   }
@@ -210,6 +212,10 @@ export class SessionService {
     if (patch.userName !== undefined) next.userName = text(patch.userName, 'name', 100)
     if (patch.wizardDone !== undefined) next.wizardDone = patch.wizardDone === true
     if (patch.sidebarCollapsed !== undefined) next.sidebarCollapsed = patch.sidebarCollapsed === true
+    if (patch.pinnedModels !== undefined) {
+      if (!Array.isArray(patch.pinnedModels) || patch.pinnedModels.length > MAX_PINNED) throw new Error('Invalid pinned models')
+      next.pinnedModels = [...new Set(patch.pinnedModels.map((id) => text(id, 'model', 100)))]
+    }
     if (patch.defaults !== undefined) {
       const d = patch.defaults
       const merged = { ...this.currentSettings().defaults }

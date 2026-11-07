@@ -42,7 +42,7 @@ try {
   await card.getByRole('button', { name: 'Connect', exact: true }).click()
   await card.getByText(/Connected · \S+/).waitFor({ timeout: 60_000 })
   const shown = await card.getByText(/Connected · \S+/).innerText()
-  check(`the card shows the real account, not a made-up one (${shown})`, shown.includes(status.account) && !shown.includes('amoss on GitHub'))
+  check(`the card shows the real account, not a made-up one (${shown})`, shown.includes(status.account) && !shown.includes('alex on GitHub'))
   await page.keyboard.press('Escape')
 
   console.log('\n# The real models')

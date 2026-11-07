@@ -310,6 +310,16 @@ describe('restarting', () => {
     expect(second.store.getSession(id)).toBeUndefined()
   })
 
+  it('keeps pinned models in order, once each, and refuses a list that is not text', () => {
+    const first = setup()
+    expect(first.api['app.bootstrap']().settings.pinnedModels).toEqual([])
+    first.api['settings.patch']({ pinnedModels: ['claude-opus', 'auto', 'claude-opus'] })
+    expect(() => first.api['settings.patch']({ pinnedModels: 'auto' as never })).toThrow()
+    expect(() => first.api['settings.patch']({ pinnedModels: [1] as never })).toThrow()
+    expect(() => first.api['settings.patch']({ pinnedModels: new Array(101).fill('m') })).toThrow()
+    expect(restart(first).api['app.bootstrap']().settings.pinnedModels).toEqual(['claude-opus', 'auto'])
+  })
+
   it('keeps settings, vendors and drafts', () => {
     const first = setup()
     first.api['settings.patch']({ theme: 'light', userName: 'Dana', defaults: { approval: 'ask' } })

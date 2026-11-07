@@ -10,6 +10,8 @@ interface SettingsState extends AppSettings {
   load: (settings: AppSettings) => void
   set: (patch: Partial<Omit<AppSettings, 'defaults'>>) => void
   setDefaults: (patch: Partial<AppSettings['defaults']>) => void
+  /** Pins a model to the top of the model menu, or unpins it. */
+  togglePin: (modelId: string) => void
 }
 
 // Set at start-up to show a message. Not imported from the UI store, which already imports this one.
@@ -21,7 +23,7 @@ export const setSaveErrorHandler = (handler: () => void): void => {
 /** The screen changes at once and Core saves it. If saving fails the person is told, since it would be lost. */
 const save = (patch: SettingsPatch): void => void core.call('settings.patch', patch).catch(() => onSaveError())
 
-export const useSettings = create<SettingsState>()((set) => ({
+export const useSettings = create<SettingsState>()((set, get) => ({
   ...DEFAULT_SETTINGS,
   load: (settings) => set(settings),
   set: (patch) => {
@@ -31,6 +33,12 @@ export const useSettings = create<SettingsState>()((set) => ({
   setDefaults: (patch) => {
     set((s) => ({ defaults: { ...s.defaults, ...patch } }))
     save({ defaults: patch })
+  },
+  togglePin: (modelId) => {
+    const pinned = get().pinnedModels
+    const next = pinned.includes(modelId) ? pinned.filter((id) => id !== modelId) : [...pinned, modelId]
+    set({ pinnedModels: next })
+    save({ pinnedModels: next })
   }
 }))
 

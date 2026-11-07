@@ -3,13 +3,15 @@ import {
   ChevronDown,
   ChevronRight,
   ListChecks,
+  Pin,
+  PinOff,
   Plug,
   ShieldQuestion,
   SlidersHorizontal,
   Zap,
   FilePen
 } from 'lucide-react'
-import type { ApprovalMode, Effort, SessionMode } from '@shared/agent'
+import type { ApprovalMode, Effort, ModelInfo, SessionMode } from '@shared/agent'
 import { cn } from '@/lib/cn'
 import { Menu, Popover } from '@/components/menu'
 import { IconButton, Tip } from '@/components/ui'
@@ -22,6 +24,7 @@ import {
   effortFor
 } from '@/mocks/models'
 import { lookupModel, useModels } from '@/stores/models'
+import { useSettings } from '@/stores/settings'
 import { useVendors } from '@/stores/vendors'
 import { useUi } from '@/stores/ui'
 
@@ -56,6 +59,16 @@ function ModelPicker({ prefs, onPrefs }: { prefs: Prefs; onPrefs: (p: Partial<Pr
   const byId = useModels((s) => s.byId)
   const current = lookupModel(byId, prefs.model)
   const connected = VENDOR_ORDER.filter((v) => vendors[v].status === 'connected')
+  const pinnedIds = useSettings((s) => s.pinnedModels)
+  const togglePin = useSettings((s) => s.togglePin)
+  // A pinned model whose vendor is disconnected, or that its vendor no longer offers, waits quietly until it is back.
+  const pinned = pinnedIds.flatMap((id) => {
+    const m = byId[id]
+    return m && connected.includes(m.vendor) ? [m] : []
+  })
+  const row = (m: ModelInfo, isPinned: boolean) => (
+    <ModelRow key={m.id} model={m} pinned={isPinned} onTogglePin={() => togglePin(m.id)} />
+  )
 
   return (
     <Menu.Root>
@@ -78,19 +91,30 @@ function ModelPicker({ prefs, onPrefs }: { prefs: Prefs; onPrefs: (p: Partial<Pr
             if (m) onPrefs({ model: id, effort: effortFor(m, prefs.effort) })
           }}
         >
-          {connected.map((v) => (
-            <div key={v}>
+          {pinned.length > 0 && (
+            <div>
               <Menu.Label className="flex items-center gap-1.5">
-                <VendorLogo id={v} className="h-3.5 w-3.5 text-ink-soft" />
-                {VENDORS[v].menuLabel}
+                <Pin className="h-3.5 w-3.5 text-ink-soft" />
+                Pinned
               </Menu.Label>
-              {models.filter((m) => m.vendor === v).map((m) => (
-                <Menu.RadioItem key={m.id} value={m.id}>
-                  {m.label}
-                </Menu.RadioItem>
-              ))}
+              {pinned.map((m) => row(m, true))}
             </div>
-          ))}
+          )}
+          {connected.map((v) => {
+            // Pinned models sit in the Pinned section only, so no model is listed twice.
+            const own = models.filter((m) => m.vendor === v && !pinned.includes(m))
+            return (
+              own.length > 0 && (
+                <div key={v}>
+                  <Menu.Label className="flex items-center gap-1.5">
+                    <VendorLogo id={v} className="h-3.5 w-3.5 text-ink-soft" />
+                    {VENDORS[v].menuLabel}
+                  </Menu.Label>
+                  {own.map((m) => row(m, false))}
+                </div>
+              )
+            )
+          })}
         </Menu.RadioGroup>
         <Menu.Separator />
         <Menu.Item onSelect={() => openSettings('vendors')} className="text-ink-muted">
@@ -99,6 +123,40 @@ function ModelPicker({ prefs, onPrefs }: { prefs: Prefs; onPrefs: (p: Partial<Pr
         </Menu.Item>
       </Menu.Content>
     </Menu.Root>
+  )
+}
+
+/**
+ * One model in the menu, with its pin. The pin is a sibling of the menu item, not inside it: it is its own control
+ * with its own name, and choosing it must neither pick the model nor close the menu.
+ */
+function ModelRow({ model, pinned, onTogglePin }: { model: ModelInfo; pinned: boolean; onTogglePin: () => void }) {
+  const Icon = pinned ? PinOff : Pin
+  return (
+    <div className="group relative">
+      <Menu.RadioItem value={model.id} className="pr-[58px]">
+        {pinned && <VendorLogo id={model.vendor} className="mr-1.5 inline h-3.5 w-3.5 align-[-2px] text-ink-soft" />}
+        {model.label}
+      </Menu.RadioItem>
+      <button
+        type="button"
+        aria-label={`${pinned ? 'Unpin' : 'Pin'} ${model.label}`}
+        aria-pressed={pinned}
+        title={pinned ? 'Unpin' : 'Pin to the top'}
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation()
+          onTogglePin()
+        }}
+        className={cn(
+          'absolute top-1/2 right-8 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md transition-opacity',
+          'hover:bg-raised text-ink-faint hover:text-ink focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-accent',
+          pinned ? 'text-accent-text opacity-100' : 'opacity-0 group-hover:opacity-100'
+        )}
+      >
+        <Icon className="h-3.5 w-3.5" />
+      </button>
+    </div>
   )
 }
 

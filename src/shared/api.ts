@@ -35,6 +35,8 @@ export interface AppSettings {
   userName: string
   wizardDone: boolean
   sidebarCollapsed: boolean
+  /** Models the person pinned to the top of the model menu, in the order they were pinned. */
+  pinnedModels: string[]
   defaults: { model: string; approval: ApprovalMode; projectsFolder: string }
 }
 export type SettingsPatch = Partial<Omit<AppSettings, 'defaults'>> & { defaults?: Partial<AppSettings['defaults']> }
