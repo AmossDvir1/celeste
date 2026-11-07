@@ -51,7 +51,8 @@ Celeste is in early development and not released yet. Here is what is real today
 | Area | State |
 |---|---|
 | GitHub Copilot | **Working.** Streaming, tools, approvals, `ask_user` questions, image attachments, model and effort switching, resuming a conversation after a restart |
-| Claude, OpenAI, Gemini | Design preview (a scripted assistant). Real adapters are the next phase |
+| Claude | **Built.** Same features as Copilot. Checked against the real Claude Code program with a stand-in for Anthropic's API, not yet against a real account |
+| OpenAI, Gemini | Design preview (a scripted assistant). Real adapters are next |
 | Sessions, settings, drafts, attachments | **Working.** Saved locally, and they survive a crash |
 | Devices (SSH, Hyper-V, Android) | **Working against test fixtures**, not yet tried on a wide range of real hardware. Read-only by default, with approvals |
 | Workflows and Tools & Integrations | Design preview |
@@ -126,6 +127,7 @@ scripts/       end-to-end checks that drive the built app, screenshot tools
 | `npm run verify:persistence` | Run the built app on one profile, restart and crash it, and check nothing is lost |
 | `npm run verify:package` | Run the built app from an `app.asar`, as an installer lays it out |
 | `npm run verify:devices` | Run the built app against an in-process SSH server that stands in for a VM |
+| `npm run verify:claude` | Drive the real app with the real Claude Code program against a stand-in for Anthropic's API on this computer (no account, no cost) |
 | `npm run verify:copilot` | Drive the real app with your real Copilot account (spends a few premium requests) |
 | `npm run shots` | Screenshots of the key screens in both themes |
 
@@ -135,7 +137,7 @@ The Copilot live tests are opt-in (`CELESTE_LIVE_COPILOT=1`) because they use a 
 ## Roadmap
 
 1. Design, foundation (storage, sessions), devices, **Copilot** (done)
-2. Claude, OpenAI and Gemini adapters
+2. Claude adapter (built), then OpenAI and Gemini adapters
 3. Modes and tools: Plan, tool catalog, MCP
 4. Workflows
 5. Public release: installers, signing, auto-update

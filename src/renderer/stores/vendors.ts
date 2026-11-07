@@ -7,9 +7,9 @@ import { useUi } from './ui'
 
 /*
  * Vendor connections. Which vendors are connected is saved, and a pasted API key goes to the secret store
- * (see src/main/secrets.ts). Copilot connects for real: Core downloads its program if needed, then walks GitHub's
- * sign-in and reports each step. The other vendors still play the steps their real flow will have (download,
- * wait for the browser, Connected) until their adapters arrive in Phase 5.
+ * (see src/main/secrets.ts). Copilot and Claude connect for real: Core downloads or finds the program, then walks the
+ * vendor's sign-in and reports each step. The other vendors still play the steps their real flow will have (download,
+ * wait for the browser, Connected) until their adapters arrive.
  */
 export type VendorStatus = 'not-installed' | 'ready' | 'downloading' | 'waiting' | 'connected'
 export type ConnectMethod = 'browser' | 'key'
@@ -115,13 +115,14 @@ export const useVendors = create<VendorsState>((set, get) => {
         next[id] = { status: 'connected', account: record.account, method: record.method }
       }
       set({ vendors: next })
-      // A saved Copilot connection is checked against the sign-in on this computer, which can have ended since.
-      if (next.copilot.status === 'connected' && next.copilot.method === 'browser') {
-        void core.call('vendor.status', 'copilot').then((c) => {
-          if (c.state === 'signed-in') patch('copilot', { account: c.account })
-          else if (c.state !== 'unsupported' && get().vendors.copilot.status === 'connected') {
-            patch('copilot', { status: c.state === 'runtime-missing' ? 'not-installed' : 'ready', account: undefined, method: undefined })
-            void store('copilot', null)
+      // A saved connection of a real vendor is checked against its own sign-in, which can have ended since.
+      for (const id of ['copilot', 'claude'] as const) {
+        if (next[id].status !== 'connected' || next[id].method !== 'browser') continue
+        void core.call('vendor.status', id).then((c) => {
+          if (c.state === 'signed-in') patch(id, { account: c.account })
+          else if (c.state !== 'unsupported' && get().vendors[id].status === 'connected') {
+            patch(id, { status: c.state === 'runtime-missing' ? 'not-installed' : 'ready', account: undefined, method: undefined })
+            void store(id, null)
           }
         }, () => undefined)
       }
@@ -140,7 +141,7 @@ export const useVendors = create<VendorsState>((set, get) => {
       } else if (p.state === 'done') {
         patch(id, { status: 'connected', account: p.account, method: 'browser', step: undefined, progress: undefined, error: undefined })
         void store(id, { account: p.account, method: 'browser' })
-        void useModels.getState().refresh()
+        void useModels.getState().refresh([id])
       } else patch(id, { status: 'ready', step: undefined, progress: undefined, error: p.message })
     },
 
@@ -191,9 +192,20 @@ export const useVendors = create<VendorsState>((set, get) => {
         useUi.getState().pushToast({ text: 'This computer cannot store the key securely, so Celeste did not keep it.' })
         return false
       }
+      // A vendor that can check a key says so at once. Anthropic's answer, when it refuses the key, is shown and the key is dropped.
+      if (id === 'claude') {
+        const c = await core.call('vendor.status', id).catch(() => undefined)
+        if (c?.state === 'unavailable') {
+          await secrets.remove(secretName(id)).catch(() => undefined)
+          patch(id, { status: 'ready', error: c.message })
+          return false
+        }
+      }
       const account = `API key ending ${value.slice(-4)}`
-      patch(id, { status: 'connected', account, method: 'key', progress: undefined })
+      patch(id, { status: 'connected', account, method: 'key', progress: undefined, error: undefined })
       await store(id, { account, method: 'key' })
+      // Claude reads the key itself, so its own model list and account can now be asked for.
+      if (id === 'claude') void useModels.getState().refresh(['claude'])
       return true
     },
 

@@ -272,17 +272,33 @@ describe('the vendor service', () => {
   const make = () => {
     const w = world({ begin: webStep, advances: [completed] })
     const pushes: unknown[] = []
-    return { w, pushes, service: new VendorService(w.host, (p) => pushes.push(p)) }
+    return { w, pushes, service: new VendorService({ copilot: w.host, claude: {} as never }, (p) => pushes.push(p)) }
   }
 
-  it('answers for Copilot and says the others are not built yet', async () => {
+  it('answers for Copilot and Claude, and says the others are not built yet', async () => {
     const { service } = make()
     expect(await service.api['vendor.status']('copilot')).toEqual({ state: 'signed-out' })
-    for (const id of ['claude', 'openai', 'gemini'] as const) {
+    for (const id of ['openai', 'gemini'] as const) {
       expect(await service.api['vendor.status'](id)).toEqual({ state: 'unsupported' })
       expect(await service.api['vendor.models'](id)).toEqual([])
       await expect(service.api['vendor.signIn'](id, 'web')).rejects.toThrow(/cannot connect/)
     }
+  })
+
+  it('hands Claude to its own host, and reports its sign-in the same way', async () => {
+    const w = world({ begin: webStep, advances: [completed] })
+    const pushes: unknown[] = []
+    const claude = {
+      status: async () => ({ state: 'signed-in' as const, account: 'Console · Acme' }),
+      models: async () => [],
+      signIn: async (on: (p: unknown) => void) => on({ state: 'done', account: 'Console · Acme' }),
+      cancelSignIn: async () => undefined
+    }
+    const service = new VendorService({ copilot: w.host, claude: claude as never }, (p) => pushes.push(p))
+    expect(await service.api['vendor.status']('claude')).toEqual({ state: 'signed-in', account: 'Console · Acme' })
+    await service.api['vendor.signIn']('claude', 'web')
+    expect(pushes).toEqual([{ type: 'vendor', vendor: 'claude', progress: { state: 'done', account: 'Console · Acme' } }])
+    await expect(service.api['vendor.signIn']('claude', 'code')).rejects.toThrow(/browser/)
   })
 
   it('answers at once and reports the sign-in as it happens', async () => {

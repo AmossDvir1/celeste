@@ -1,33 +1,45 @@
 import { create } from 'zustand'
-import type { ModelInfo } from '@shared/agent'
+import type { ModelInfo, VendorId } from '@shared/agent'
 import { core } from '@/api'
 import { MODELS as SCRIPTED } from '@/mocks/models'
 
 /*
- * The models a person can pick. Copilot's come from Copilot itself once it is connected: its own names, the
- * effort levels each takes, and whether it reads images. The other vendors still use the scripted catalog
- * until their adapters report theirs.
+ * The models a person can pick. A real vendor's come from the vendor itself once it is connected: its own names, the
+ * effort levels each takes, and whether it reads images. A vendor that has no adapter yet uses the scripted catalog.
  */
+
+/** The vendors Celeste can really talk to. Asking about one that is not connected gives an empty list. */
+const REAL: VendorId[] = ['copilot', 'claude']
 
 const index = (list: ModelInfo[]): Record<string, ModelInfo> => Object.fromEntries(list.map((m) => [m.id, m]))
 
 interface ModelsState {
   list: ModelInfo[]
   byId: Record<string, ModelInfo>
-  /** True once Copilot has reported its own list, so the scripted Copilot models are gone. */
-  copilotIsReal: boolean
-  refresh: () => Promise<void>
+  /** The vendors that have reported their own list, so their scripted models are gone. */
+  real: VendorId[]
+  /** Asks the given vendors for their own lists. Asking starts a vendor's program, so only ask the ones that are connected. */
+  refresh: (vendors?: VendorId[]) => Promise<void>
 }
+
+const reported: Partial<Record<VendorId, ModelInfo[]>> = {}
 
 export const useModels = create<ModelsState>((set) => ({
   list: SCRIPTED,
   byId: index(SCRIPTED),
-  copilotIsReal: false,
+  real: [],
 
-  refresh: async () => {
-    const copilot = await core.call('vendor.models', 'copilot').catch(() => [] as ModelInfo[])
-    const list = copilot.length ? [...copilot, ...SCRIPTED.filter((m) => m.vendor !== 'copilot')] : SCRIPTED
-    set({ list, byId: index(list), copilotIsReal: copilot.length > 0 })
+  refresh: async (vendors = REAL) => {
+    await Promise.all(
+      vendors.map(async (v) => {
+        const models = await core.call('vendor.models', v).catch(() => [] as ModelInfo[])
+        if (models.length) reported[v] = models
+        else delete reported[v]
+      })
+    )
+    const real = REAL.filter((v) => reported[v])
+    const list = [...real.flatMap((v) => reported[v] as ModelInfo[]), ...SCRIPTED.filter((m) => !real.includes(m.vendor))]
+    set({ list, byId: index(list), real })
   }
 }))
 

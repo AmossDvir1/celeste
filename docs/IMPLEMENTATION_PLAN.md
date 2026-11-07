@@ -807,6 +807,26 @@ A short test against each real CLI to settle the **Verify** items, starting with
 
 **Done when:** all four vendors pass the same contract suite, and any gaps appear clearly in the UI.
 
+**Status: Claude is built; OpenAI and Gemini are not started.**
+
+*Claude* (`src/core/adapters/claude`), on `@anthropic-ai/claude-agent-sdk` 0.3.319 (exact):
+
+- **What it does**, with the same shape as the Copilot adapter: streams the answer and the thinking; shows each tool with a readable title and, for edits, a diff (from the patch Claude reports, or worked out from the call); asks for approval by the session's mode (auto, approve edits, ask first, plan only); shows `AskUserQuestion` as the question card and hands the answers back; sends images as image blocks and other files by their place on disk; changes model and effort from the next message; stops cleanly (a stopped answer ends as stopped, a waiting card is let go); resumes the conversation after a restart or a crash; and, if Claude no longer has the conversation, starts a new one from Celeste's log and says so in one line.
+- **Celeste's approval modes are the only rule.** A person's own allow rules in `~/.claude` are not loaded into Chat sessions, so they cannot skip an approval. A Develop session reads the project's own settings and `CLAUDE.md` (and so also the project's allow rules).
+- **Devices.** Every Claude session is given Celeste's device server with that session's token. Device commands raise Celeste's own card only. Plan mode allows exactly the device tools that only look.
+- **Sign-in, by what was tried.** Claude Code is given a settings folder of Celeste's own, so signing in never signs anyone out of the `claude` in a terminal. Two ways to connect: Console sign-in (Claude Code opens the browser itself; Celeste notices when it ends and reads the account back from Claude Code) and a pasted API key (kept encrypted by the system, handed to Claude Code through its environment). A pasted key is checked with Anthropic at once, because Claude Code retries a rejected key ten times with growing waits, which looked like a hang of minutes; Celeste also caps those retries at three. A Claude **subscription** login is not accepted (Anthropic does not allow other apps to sign people in with one); `CELESTE_CLAUDE_USER_LOGIN=1` turns it on for development only.
+- **Models** are Claude's own list (with the effort levels each takes), read from Claude Code without sending a message. Names saved before Claude was real are mapped to the same family.
+- **Tests.** 44 unit tests (permissions, the translator, the session against a fake query, the host and its sign-in). 12 tests that run the **real SDK and the real Claude Code program** against a stand-in for Anthropic's API on this computer (`fake-anthropic.ts`; no account, no cost): streaming, approvals (yes, no, plan), questions, images, model change, a stopped answer, resume, the missing-conversation fallback, and a rejected key. `npm run verify:claude` runs the real built app against the same stand-in: paste a key, the real model list, a conversation, a restart, and a force-quit in the middle of an answer. The opt-in live suite (`CELESTE_LIVE_CLAUDE=1 node node_modules/vitest/vitest.mjs run src/core/adapters/claude/claude.live.test.ts`) is written but **has not passed yet**.
+
+**Not done, and not verified, for Claude:**
+
+- **Not run against a real Claude account.** The Claude sign-in on this PC has expired ("OAuth session expired and could not be refreshed"), so no real turn was possible. The adapter has met the real program and the real SDK, but not the real model: please run `claude auth login` in a terminal (this does not affect Celeste's own settings folder) and then the live suite, which uses your own login for development only.
+- **Finishing a Console sign-in in a browser.** Tried only up to the point where Claude Code prints its address and waits (in a throwaway settings folder), not through to the end. What Claude Code reports about a Console account (`tokenSource`) is a guess until someone completes one.
+- **Claude's program is not downloaded on first Connect.** It is found beside the SDK (about 330 MB), so a packaged Celeste either ships it or reports "Claude's program is not installed". The download, like Copilot's, still has to be built, and `verify:package` leaves the program out to prove the message. Both belong to the release phase.
+- **Subscription sign-in** waits for Anthropic's approval (section 6.2).
+
+*OpenAI (Codex) and Gemini (ACP)* are not started. Both need their program downloaded to learn the real protocol (Codex about 480 MB, Gemini about 95 MB), and neither is installed on this PC.
+
 ### Phase 6: Modes and tools complete (L)
 
 - **Develop:** diff review, file tree, integrated terminal, git worktrees, vendor-neutral per-turn snapshots with revert.

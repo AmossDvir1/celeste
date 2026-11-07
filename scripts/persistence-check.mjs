@@ -24,6 +24,8 @@ const ready = (page) => page.getByRole('button', { name: /Analyze WFO logs/ }).f
 
 async function rowMenu(page, rowName, item) {
   const r = row(page, rowName)
+  // The sample sessions are dated by the time of day, so shortly after midnight more of them fall under "Show more".
+  if ((await r.count()) === 0) await page.getByRole('button', { name: 'Show more' }).first().click()
   await r.hover()
   await r.getByRole('button', { name: /More actions/ }).click()
   await page.getByRole('menuitem', { name: item }).click()

@@ -79,8 +79,9 @@ export async function bootstrap(): Promise<void> {
 
   useSettings.getState().load(settings)
   await useVendors.getState().init(data.vendors)
-  // Copilot's own model list, only for someone who connected it: asking starts its program.
-  if (useVendors.getState().vendors.copilot.status === 'connected') void useModels.getState().refresh()
+  // A vendor's own model list, only for someone who connected it: asking starts its program.
+  const connected = (['copilot', 'claude'] as const).filter((v) => useVendors.getState().vendors[v].status === 'connected')
+  if (connected.length) void useModels.getState().refresh([...connected])
   useSessions.getState().init(data.sessions)
   useDrafts.getState().init(data.drafts)
   await useDevices.getState().refresh()

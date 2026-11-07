@@ -23,6 +23,9 @@ function runtimePackages() {
   const visit = (name, from) => {
     // Copilot's program (about 180 MB) is not shipped: Celeste downloads it when someone connects Copilot.
     if (/^@github\/copilot-sdk-(darwin|linux|linuxmusl|win32)-/.test(name)) return
+    // Claude Code's program (about 330 MB) is left out the same way. Downloading it on first Connect is not built yet, so for now
+    // a Celeste laid out like this reports that it is missing, and the program has to come with the installer or be installed.
+    if (/^@anthropic-ai\/claude-agent-sdk-(darwin|linux|win32)-/.test(name)) return
     const dir = lookup(name, from)
     if (!dir || found.has(dir)) return
     found.set(dir, name)
@@ -81,6 +84,8 @@ try {
   const status = await app.page.evaluate(() => window.celeste.core.call('vendor.status', ['copilot']))
   check(`Copilot reports that its program has not been downloaded (${JSON.stringify(status)})`, status.state === 'runtime-missing')
   check('the SDK loads inside the archive: models come back empty, not as an error', JSON.stringify(await app.page.evaluate(() => window.celeste.core.call('vendor.models', ['copilot']))) === '[]')
+  const claude = await app.page.evaluate(() => window.celeste.core.call('vendor.status', ['claude']))
+  check(`Claude's SDK loads inside the archive and says its program is missing, in words (${JSON.stringify(claude)})`, claude.state === 'unavailable' && /not installed/.test(claude.message))
 } catch (err) {
   console.error(err)
   failures.push('the script itself failed')

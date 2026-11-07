@@ -3,7 +3,8 @@ import { app, BrowserWindow, dialog, MessageChannelMain, utilityProcess, type Ut
 import { secrets } from './secrets'
 
 // Core may ask for the password or key passphrase of a device, and for nothing else.
-const DEVICE_SECRET = /^device\.dev-[0-9a-f-]{36}\.(password|passphrase)$/
+// Core may ask for a device's password or key passphrase, and for the API key of a vendor that takes one.
+const DEVICE_SECRET = /^(device\.dev-[0-9a-f-]{36}\.(password|passphrase)|vendor\.(claude|openai|gemini)\.key)$/
 
 /**
  * The Core process: database, sessions and the assistant, in a utility process of its own. Windows talk to it

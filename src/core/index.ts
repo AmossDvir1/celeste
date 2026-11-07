@@ -15,6 +15,7 @@ import { discoverAll } from './devices/discovery'
 import { DeviceToolServer } from './devices/mcp-server'
 import { nodeFileOps } from './devices/node-fs'
 import { DeviceTools } from './devices/tools'
+import { createClaudeHost, createClaudeSession, type ClaudeHost } from './adapters/claude'
 import { copilotRuntime, createCopilotHost, createCopilotSession, type CopilotHost } from './adapters/copilot'
 import { createMockSession } from './mock/engine'
 import { sampleSessions } from './mock/samples'
@@ -42,6 +43,7 @@ let service: SessionService | undefined
 let devices: DeviceService | undefined
 let toolServer: DeviceToolServer | undefined
 let copilot: CopilotHost | undefined
+let claude: ClaudeHost | undefined
 let api: CoreApi | undefined
 let store: SqliteStore | undefined
 
@@ -95,18 +97,29 @@ async function start(): Promise<void> {
     process.env['CELESTE_COPILOT_ISOLATED'] === '1' ? { isolatedDir: join(dataDir, 'copilot-isolated') } : {}
   )
   copilot = host
+  // Claude Code keeps its settings in a folder of Celeste's own, so signing in here never touches the `claude` in a terminal.
+  // CELESTE_CLAUDE_USER_LOGIN=1 uses the person's own sign-in instead, subscription included. For development and app checks only.
+  const ownLogin = process.env['CELESTE_CLAUDE_USER_LOGIN'] === '1'
+  const claudeHost = createClaudeHost({
+    installedAt: require.resolve.paths('@anthropic-ai/claude-agent-sdk') ?? [],
+    getKey: () => getSecret('vendor.claude.key'),
+    ...(ownLogin ? { allowSubscription: true } : { configDir: join(dataDir, 'claude-config') })
+  })
+  claude = claudeHost
   const scripted = process.env['CELESTE_SCRIPTED'] === '1'
 
   service = new SessionService({
     store,
     files: new DiskFileStore(join(dataDir, 'attachments')),
     dataDir,
-    // Copilot is real. The other vendors still play the scripted assistant until their adapters arrive in Phase 5.
-    // CELESTE_SCRIPTED=1 plays it for Copilot too, so the app checks that run without a Copilot account still work.
+    // Copilot and Claude are real. The other vendors still play the scripted assistant until their adapters arrive.
+    // CELESTE_SCRIPTED=1 plays it for all of them, so the app checks that run without accounts still work.
     adapter: (ctx) =>
       ctx.vendor === 'copilot' && !scripted
         ? createCopilotSession(host, ctx, (id) => servers.info(id))
-        : createMockSession({ ...ctx, devices: { call: (name, args, hooks) => tools.call(ctx.sessionId, name, args, hooks) } }),
+        : ctx.vendor === 'claude' && !scripted
+          ? createClaudeSession(claudeHost, ctx, (id) => servers.info(id))
+          : createMockSession({ ...ctx, devices: { call: (name, args, hooks) => tools.call(ctx.sessionId, name, args, hooks) } }),
     onSessionStopped: (id) => tools.cancel(id),
     push,
     defaults: {
@@ -122,7 +135,7 @@ async function start(): Promise<void> {
   api = {
     ...service.api,
     ...devices.api,
-    ...new VendorService(host, push, scripted).api,
+    ...new VendorService({ copilot: host, claude: claudeHost }, push, scripted).api,
     'devices.toolServer': async (sessionId) => servers.info(sessionId)
   }
   parent.postMessage({ type: 'ready' })
@@ -170,6 +183,7 @@ parent.on('message', (event) => {
       await devices?.close().catch(() => undefined)
       await toolServer?.stop().catch(() => undefined)
       await copilot?.stop().catch(() => undefined)
+      await claude?.stop().catch(() => undefined)
       store?.close()
       parent.postMessage({ type: 'closed' })
     })()

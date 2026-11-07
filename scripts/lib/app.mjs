@@ -16,12 +16,13 @@ export const root = resolve(import.meta.dirname, '..', '..')
  * `scripted` (the default) plays the scripted assistant for every vendor, so checks never need an account or spend any
  * quota. Pass `scripted: false` to use the real Copilot of whoever is signed in on this computer, or
  * `scripted: false, copilotKnowsNoOne: true` to give it a data folder of its own, so the sign-in screens can be tried.
+ * `env` adds environment variables to the app, for example the address of a stand-in for a vendor's API.
  */
-export async function launch({ width, height, query = '', theme = 'dark', profile: given, entry = root, scripted = true, copilotKnowsNoOne = false }) {
+export async function launch({ width, height, query = '', theme = 'dark', profile: given, entry = root, scripted = true, copilotKnowsNoOne = false, env = {} }) {
   const profile = given ?? mkdtempSync(join(tmpdir(), 'celeste-shots-'))
   const app = await electron.launch({
     args: [entry, `--user-data-dir=${profile}`],
-    env: { ...process.env, CELESTE_QUERY: query, ELECTRON_RENDERER_URL: '', CELESTE_SCRIPTED: scripted ? '1' : '', CELESTE_COPILOT_ISOLATED: copilotKnowsNoOne ? '1' : '' }
+    env: { ...process.env, ...env, CELESTE_QUERY: query, ELECTRON_RENDERER_URL: '', CELESTE_SCRIPTED: scripted ? '1' : '', CELESTE_COPILOT_ISOLATED: copilotKnowsNoOne ? '1' : '' }
   })
   const page = await app.firstWindow()
   await app.evaluate(
