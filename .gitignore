@@ -1,0 +1,12 @@
+node_modules/
+out/
+dist/
+*.log
+.DS_Store
+
+# Reference pictures and design kits belong to their creators: never publish by accident
+design/
+
+# Local-only tooling output
+.claude/settings.local.json
+scripts/.output/

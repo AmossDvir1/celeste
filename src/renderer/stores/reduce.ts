@@ -1,0 +1,171 @@
+import type { AgentEvent, AskAnswers, ToolKind } from '@shared/agent'
+import { basename } from '@/lib/format'
+import type { Activity, Session, TimelineItem } from './types'
+
+let counter = 0
+export const itemId = (): string => `i${Date.now().toString(36)}${(counter++).toString(36)}`
+
+/** The shimmering line while a tool runs, for example "Reading auth.ts". */
+export function activityLabel(kind: ToolKind, title: string): string {
+  const short = (t: string, n = 38) => (t.length > n ? `${t.slice(0, n - 1)}…` : t)
+  switch (kind) {
+    case 'read':
+      return `Reading ${basename(title.replace(/^Read\s+/, ''))}`
+    case 'edit':
+      return 'Editing files'
+    case 'write':
+      return 'Creating a file'
+    case 'shell':
+      return `Running ${short(title)}`
+    case 'web':
+      return /fetch|read/i.test(title) ? 'Reading a web page' : 'Searching the web'
+    case 'search':
+      return 'Searching the project'
+    case 'mcp':
+      return `Calling ${short(title.split('·')[0].trim(), 26)}`
+    case 'agent':
+      return 'Working with a helper'
+    default:
+      return 'Working'
+  }
+}
+
+const THINKING: Activity = { label: 'Thinking', working: true }
+
+function closeThinking(items: TimelineItem[], now: number): TimelineItem[] {
+  const last = items[items.length - 1]
+  if (last?.kind === 'thinking' && last.endedAt === undefined) {
+    return [...items.slice(0, -1), { ...last, endedAt: now }]
+  }
+  return items
+}
+
+/** Applies one agent event to a session. Pure: returns a new session. */
+export function reduceEvent(s: Session, e: AgentEvent): Session {
+  const now = Date.now()
+  switch (e.type) {
+    case 'turn.started':
+      return { ...s, status: 'working', activity: THINKING, updatedAt: now }
+
+    case 'thinking.delta': {
+      const last = s.items[s.items.length - 1]
+      const items: TimelineItem[] =
+        last?.kind === 'thinking' && last.endedAt === undefined
+          ? [...s.items.slice(0, -1), { ...last, text: last.text + e.text }]
+          : [...s.items, { kind: 'thinking', id: itemId(), text: e.text, startedAt: now }]
+      return { ...s, items, status: 'working', activity: THINKING }
+    }
+
+    case 'message.delta': {
+      const base = closeThinking(s.items, now)
+      const last = base[base.length - 1]
+      const items: TimelineItem[] =
+        last?.kind === 'assistant'
+          ? [...base.slice(0, -1), { ...last, text: last.text + e.text }]
+          : [...base, { kind: 'assistant', id: itemId(), text: e.text }]
+      return { ...s, items, status: 'working', activity: { label: 'Writing', working: true }, updatedAt: now }
+    }
+
+    case 'tool.started': {
+      const items = [
+        ...closeThinking(s.items, now),
+        {
+          kind: 'tool' as const,
+          id: e.id,
+          tool: e.kind,
+          title: e.title,
+          input: typeof e.input === 'string' ? e.input : undefined,
+          output: '',
+          status: 'running' as const,
+          startedAt: now
+        }
+      ]
+      return { ...s, items, status: 'working', activity: { label: activityLabel(e.kind, e.title), working: true } }
+    }
+
+    case 'tool.output':
+      return {
+        ...s,
+        items: s.items.map((it) => (it.kind === 'tool' && it.id === e.id ? { ...it, output: it.output + e.text } : it))
+      }
+
+    case 'tool.completed':
+      return {
+        ...s,
+        items: s.items.map((it) =>
+          it.kind === 'tool' && it.id === e.id
+            ? { ...it, status: e.ok ? 'ok' : 'failed', endedAt: now, diff: e.diff ?? it.diff, output: it.output || e.result || '' }
+            : it
+        ),
+        activity: THINKING
+      }
+
+    case 'approval.requested':
+      return {
+        ...s,
+        items: [
+          ...closeThinking(s.items, now),
+          { kind: 'approval', id: itemId(), requestId: e.requestId, tool: e.kind, title: e.title, detail: e.detail, status: 'pending' }
+        ],
+        status: 'waiting',
+        activity: { label: 'Waiting for your approval', working: false }
+      }
+
+    case 'ask_user.requested':
+      return {
+        ...s,
+        items: [
+          ...closeThinking(s.items, now),
+          { kind: 'ask', id: itemId(), requestId: e.requestId, questions: e.questions, status: 'pending' }
+        ],
+        status: 'waiting',
+        activity: { label: 'Waiting for your answer', working: false }
+      }
+
+    case 'usage.updated':
+      return s
+
+    case 'turn.completed':
+      return { ...s, items: closeThinking(s.items, now), status: 'idle', activity: null, updatedAt: now }
+
+    case 'turn.interrupted':
+      return {
+        ...s,
+        items: [...closeThinking(s.items, now), { kind: 'notice', id: itemId(), text: 'You stopped this response.' }],
+        status: 'idle',
+        activity: null,
+        updatedAt: now
+      }
+
+    case 'turn.failed':
+      return {
+        ...s,
+        items: [...closeThinking(s.items, now), { kind: 'error', id: itemId(), error: e.error }],
+        status: 'idle',
+        activity: null,
+        updatedAt: now
+      }
+  }
+}
+
+/** The user answered an approval card: mark it and go back to working. */
+export function resolveApproval(s: Session, requestId: string, allow: boolean): Session {
+  return {
+    ...s,
+    items: s.items.map((it) =>
+      it.kind === 'approval' && it.requestId === requestId ? { ...it, status: allow ? 'allowed' : 'denied' } : it
+    ),
+    status: 'working',
+    activity: THINKING
+  }
+}
+
+/** The user answered an ask_user card. */
+export function resolveAsk(s: Session, requestId: string, answers: AskAnswers): Session {
+  return {
+    ...s,
+    items: s.items.map((it) => (it.kind === 'ask' && it.requestId === requestId ? { ...it, answers, status: 'answered' } : it)),
+    status: 'working',
+    activity: THINKING
+  }
+}

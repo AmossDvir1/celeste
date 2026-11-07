@@ -1,0 +1,158 @@
+/*
+ * Celeste design tokens. Components use semantic names (bg-panel, text-ink-muted) and never raw colors.
+ * Dark values were sampled from design/Design.jpeg and design/Inner chat design.jpeg.
+ * Light values come from the light kit, with the inner chat area proposed in softer tones.
+ * Brand palette: #1F306E #553772 #8F3B76 #C7417B #F5487F
+ */
+:root,
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --c-canvas: #080c17;
+  --c-panel: #0b111e;
+  --c-raised: #101826;
+  --c-raised-2: #141d2f;
+  --c-field: #0f1624;
+  --c-edge: #1b2538;
+  --c-edge-strong: #2a3650;
+
+  --c-ink: #f7f8fc;
+  --c-ink-soft: #cfd8ee;
+  --c-ink-muted: #aeb8d1;
+  --c-ink-faint: #6f7b98;
+
+  --c-accent: #f5487f;
+  --c-accent-ink: #ffffff;
+  --c-accent-text: #ff7aa3;
+  --c-accent-soft: rgb(245 72 127 / 0.14);
+  --c-accent-edge: rgb(245 72 127 / 0.45);
+  --c-select: rgb(143 59 118 / 0.3);
+  --c-hover: rgb(255 255 255 / 0.045);
+
+  --c-composer: #121929;
+  --c-composer-edge: #66658a;
+  --c-pill: #131e33;
+  --c-send: #372346;
+  --c-send-ink: #f4d3fb;
+
+  --c-success: #31d0aa;
+  --c-warning: #f6c85f;
+  --c-danger: #ff647c;
+  --c-info: #55c7ff;
+
+  --c-shimmer-hi: #ffffff;
+  --tab-active-bg: linear-gradient(180deg, rgb(143 59 118 / 0.55), rgb(199 65 123 / 0.4));
+  --tab-active-edge: rgb(245 72 127 / 0.6);
+  --tab-active-ink: #ffffff;
+  --shadow-pop: 0 16px 50px rgb(0 0 0 / 0.5);
+  --shadow-card: 0 1px 0 rgb(255 255 255 / 0.03) inset;
+
+  /* Glow arc: the colors along the arc from its lower-left end to the top-right end. */
+  --glow-core-1: #171f4a;
+  --glow-core-2: #4b2c6d;
+  --glow-core-3: #7b3877;
+  --glow-core-4: #a04684;
+  --glow-core-5: #b0529c;
+  --glow-core-6: #8e4dad;
+  --glow-core-7: #7440a0;
+  --glow-haze-1: #4d6df0;
+  --glow-haze-2: #a04bd8;
+  --glow-haze-3: #d452c4;
+  --glow-haze-4: #e056c8;
+  --glow-haze-5: #e456c4;
+  --glow-haze-6: #c258d6;
+  --glow-haze-7: #a354dc;
+  --glow-wide-1: #5560dc;
+  --glow-wide-2: #b45af0;
+  --glow-wide-3: #c850f5;
+  --glow-wide-4: #a858ff;
+  --glow-wide-5: #7a55ff;
+  --glow-wide-6: #7a55f5;
+  --glow-wide-7: #8a58f0;
+  --glow-haze-opacity: 1;
+  --glow-wide-opacity: 1;
+  --glow-core-opacity: 1;
+  --glow-lift: #3a2a7a;
+  --glow-lift-opacity: 0.1;
+  --glow-planet: #080c17;
+  --glow-planet-opacity: 1;
+  --glow-planet-deep: 1;
+  --glow-star: #cdb6f5;
+  --glow-star-opacity: 0.2;
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+
+  --c-canvas: #f7f8fc;
+  --c-panel: #ffffff;
+  --c-raised: #f2f4fa;
+  --c-raised-2: #ffffff;
+  --c-field: #ffffff;
+  --c-edge: #dde2f0;
+  --c-edge-strong: #c8d0e3;
+
+  --c-ink: #111b4c;
+  --c-ink-soft: #3b4672;
+  --c-ink-muted: #526080;
+  --c-ink-faint: #8a94b0;
+
+  --c-accent: #f5487f;
+  --c-accent-ink: #ffffff;
+  --c-accent-text: #c7417b;
+  --c-accent-soft: rgb(245 72 127 / 0.1);
+  --c-accent-edge: rgb(245 72 127 / 0.4);
+  --c-select: #f7e2ee;
+  --c-hover: rgb(31 48 110 / 0.05);
+
+  --c-composer: rgb(255 255 255 / 0.88);
+  --c-composer-edge: #c9bff0;
+  --c-pill: #ffffff;
+  --c-send: #f7d4e6;
+  --c-send-ink: #c7417b;
+
+  --c-success: #12a66a;
+  --c-warning: #b9760f;
+  --c-danger: #d93f5e;
+  --c-info: #315dce;
+
+  --c-shimmer-hi: #f5487f;
+  --tab-active-bg: #f9dcec;
+  --tab-active-edge: #f3a6c9;
+  --tab-active-ink: #c7417b;
+  --shadow-pop: 0 12px 32px rgb(31 48 110 / 0.16);
+  --shadow-card: 0 2px 8px rgb(31 48 110 / 0.06);
+
+  /* Same arc, softer: a pastel haze with a saturated thin line, on a lavender planet. */
+  --glow-core-1: #c9c2ee;
+  --glow-core-2: #a98ad6;
+  --glow-core-3: #c36fb4;
+  --glow-core-4: #e0579b;
+  --glow-core-5: #f0508f;
+  --glow-core-6: #d462a6;
+  --glow-core-7: #b377c8;
+  --glow-haze-1: #8fa0ee;
+  --glow-haze-2: #a48cea;
+  --glow-haze-3: #bc8be6;
+  --glow-haze-4: #d68add;
+  --glow-haze-5: #e48ad2;
+  --glow-haze-6: #cf8ee6;
+  --glow-haze-7: #b596ec;
+  --glow-wide-1: #9fb4f5;
+  --glow-wide-2: #b8a4f2;
+  --glow-wide-3: #d3a8f0;
+  --glow-wide-4: #cfaaf0;
+  --glow-wide-5: #b8aaf2;
+  --glow-wide-6: #b8aaf0;
+  --glow-wide-7: #c1abee;
+  --glow-haze-opacity: 0.75;
+  --glow-wide-opacity: 0.7;
+  --glow-core-opacity: 0.9;
+  --glow-lift: #dcd6f6;
+  --glow-lift-opacity: 0.45;
+  --glow-planet: #ebe6fb;
+  --glow-planet-opacity: 0.85;
+  --glow-planet-deep: 0;
+  --glow-star: #8f6fd0;
+  --glow-star-opacity: 0;
+}

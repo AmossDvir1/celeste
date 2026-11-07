@@ -1,0 +1,237 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/outfit';
+@import '@fontsource-variable/jetbrains-mono';
+@import './tokens.css';
+
+@theme inline {
+  --font-sans: 'Outfit Variable', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'Cascadia Code', Consolas, monospace;
+
+  --color-canvas: var(--c-canvas);
+  --color-panel: var(--c-panel);
+  --color-raised: var(--c-raised);
+  --color-raised-2: var(--c-raised-2);
+  --color-field: var(--c-field);
+  --color-edge: var(--c-edge);
+  --color-edge-strong: var(--c-edge-strong);
+  --color-ink: var(--c-ink);
+  --color-ink-soft: var(--c-ink-soft);
+  --color-ink-muted: var(--c-ink-muted);
+  --color-ink-faint: var(--c-ink-faint);
+  --color-accent: var(--c-accent);
+  --color-accent-ink: var(--c-accent-ink);
+  --color-accent-text: var(--c-accent-text);
+  --color-accent-soft: var(--c-accent-soft);
+  --color-accent-edge: var(--c-accent-edge);
+  --color-select: var(--c-select);
+  --color-hover: var(--c-hover);
+  --color-composer: var(--c-composer);
+  --color-composer-edge: var(--c-composer-edge);
+  --color-pill: var(--c-pill);
+  --color-send: var(--c-send);
+  --color-send-ink: var(--c-send-ink);
+  --color-success: var(--c-success);
+  --color-warning: var(--c-warning);
+  --color-danger: var(--c-danger);
+  --color-info: var(--c-info);
+
+  --radius-control: 8px;
+  --radius-card: 12px;
+  --radius-hero: 18px;
+  --shadow-pop: var(--shadow-pop);
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--c-canvas);
+    color: var(--c-ink);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  /* Text people read or copy stays selectable. */
+  .selectable,
+  .selectable * {
+    user-select: text;
+  }
+
+  ::selection {
+    background: rgb(245 72 127 / 0.35);
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+    color: inherit;
+  }
+
+  /* Top bar: draggable except for the controls inside it. */
+  .app-drag {
+    -webkit-app-region: drag;
+  }
+  .app-no-drag {
+    -webkit-app-region: no-drag;
+  }
+
+  /* Thin, quiet scrollbars. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--c-edge-strong) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--c-edge-strong);
+    border-radius: 8px;
+    border: 3px solid transparent;
+    background-clip: padding-box;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--c-accent);
+    outline-offset: 2px;
+  }
+}
+
+/* The active top-level tab: a pink-tinted fill with a pink edge. */
+.tab-active {
+  background: var(--tab-active-bg);
+  border-color: var(--tab-active-edge);
+  color: var(--tab-active-ink);
+}
+
+/* Shimmering working labels: a light sweep across the text. Quiet when motion is reduced. */
+.shimmer {
+  background-image: linear-gradient(
+    100deg,
+    var(--c-ink-muted) 0%,
+    var(--c-ink-muted) 38%,
+    var(--c-shimmer-hi) 50%,
+    var(--c-ink-muted) 62%,
+    var(--c-ink-muted) 100%
+  );
+  background-size: 260% 100%;
+  background-repeat: no-repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer-sweep 2.2s linear infinite;
+}
+@keyframes shimmer-sweep {
+  from {
+    background-position: 130% 0;
+  }
+  to {
+    background-position: -30% 0;
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-up {
+  animation: fade-up 0.28s ease-out both;
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+.pop-in {
+  animation: pop-in 0.14s ease-out both;
+  transform-origin: var(--radix-popper-transform-origin, center);
+}
+
+@keyframes slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+.animate-slide-in-right {
+  animation: slide-in-right 0.22s ease-out both;
+}
+
+@keyframes spin-slow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes dash-flow {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer {
+    animation: none;
+    background-image: none;
+    color: var(--c-ink-muted);
+  }
+  .animate-fade-up,
+  .pop-in,
+  .animate-slide-in-right {
+    animation: none;
+  }
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+  }
+}
+
+/* React Flow, skinned to the tokens. */
+.react-flow {
+  --xy-background-color: transparent;
+  --xy-edge-stroke: var(--c-accent);
+  --xy-attribution-background-color: transparent;
+}
+.react-flow__attribution {
+  display: none;
+}
+.react-flow__edge-path {
+  stroke-width: 1.6;
+}
+.react-flow__handle {
+  width: 9px;
+  height: 9px;
+  background: var(--c-accent);
+  border: 2px solid var(--c-canvas);
+}
