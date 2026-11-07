@@ -2,7 +2,12 @@
   "name": "celeste",
   "version": "0.1.0",
   "private": true,
-  "description": "Celeste: your AI workbench",
+  "description": "Celeste: one desktop workbench for Claude, GitHub Copilot, OpenAI and Google Gemini",
+  "keywords": ["ai", "electron", "claude", "copilot", "openai", "gemini", "agents", "desktop"],
+  "homepage": "https://github.com/AmossDvir1/celeste#readme",
+  "repository": { "type": "git", "url": "git+https://github.com/AmossDvir1/celeste.git" },
+  "bugs": { "url": "https://github.com/AmossDvir1/celeste/issues" },
+  "engines": { "node": ">=22.13" },
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",

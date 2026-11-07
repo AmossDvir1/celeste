@@ -1,46 +1,84 @@
+<div align="center">
+
+<img src="resources/icons/celeste-256.png" alt="Celeste" width="96" height="96" />
+
 # Celeste
 
-Your AI workbench: one desktop app for Claude, GitHub Copilot, OpenAI and Google Gemini.
-Built with Electron, React and Tailwind. See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for the full plan.
+**One desktop workbench for Claude, GitHub Copilot, OpenAI and Google Gemini.**
 
-## Status: Phase 3, devices
+Use each vendor's own agent from a single, fast interface, with your sessions saved on your computer and every
+action under your control. No Celeste server, no account with us: your usage goes to your own vendor account.
 
-**Nothing talks to a real AI vendor yet**: the assistant, the Connect button's steps, the tools list and the
-workflow runs are scripted samples. What is real now: your sessions, settings, drafts and attached files are
-saved on this computer (SQLite, in the app's data folder, shown under Settings → Data), and survive closing the
-app or a crash. Delete has Undo, search looks inside conversations, and a pasted API key is stored encrypted by
-your operating system and never shown again. The window, themes, glow line, composer, workflow canvas, wizard
-and settings are as in the design preview.
+[![CI](https://github.com/AmossDvir1/celeste/actions/workflows/ci.yml/badge.svg)](https://github.com/AmossDvir1/celeste/actions/workflows/ci.yml)
+![Status](https://img.shields.io/badge/status-early%20development-c2417d)
+![Electron](https://img.shields.io/badge/Electron-45-47848f?logo=electron&logoColor=white)
+![React](https://img.shields.io/badge/React-19-149eca?logo=react&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-7-3178c6?logo=typescript&logoColor=white)
 
-The sample sessions in the sidebar are added on the first start only. Delete them like any other.
+<img src="docs/images/chat.png" alt="A Celeste conversation with a table, code and a numbered list of next steps" width="880" />
 
-**Devices (new):** Settings, Devices adds other computers and VMs (over SSH, including Windows with its OpenSSH Server),
-Hyper-V VMs on this PC, and Android phones (wireless debugging, by QR code or code). A device starts read only. Commands on it
-ask for your approval, shown with the exact command, unless you give that device full access, and a device only reaches a chat
-you attach it to. A folder on a device can be read live or copied as a read-only snapshot. Passwords are kept encrypted by your
-operating system. Android needs Google's `adb` installed (Android Studio's platform-tools), or its path in `CELESTE_ADB`.
-Only the scripted assistant uses devices so far, through the same tools the vendors will use. It has not been tried against a
-real VM or phone yet; see the plan for what is still to test.
+</div>
 
-## Run it
+## Why Celeste
+
+- **Your choice of model, one place to work.** Switch between Claude, Copilot, OpenAI and Gemini models in the same
+  conversation, and pin the ones you use most to the top of the model menu.
+- **Their agents, not a re-implementation.** Each vendor's official CLI or SDK does the work underneath (reading and
+  editing files, running commands, calling tools), so you get the vendor's real behavior, and Celeste adds the interface.
+- **You approve what matters.** Choose when the agent may act: automatically, ask before edits, ask for everything, or
+  plan only. Commands on a remote machine always show the exact command and ask first.
+- **Your data stays yours.** Sessions live in a local SQLite database. Keys are stored encrypted by your operating
+  system. There is no Celeste backend to send anything to.
+- **Chat and Develop.** Chat is for questions, analysis and writing. Develop works in a project folder, with inline diffs
+  and a Changes panel.
+- **Devices.** Give the agent other computers, VMs and Android phones as context or as places to work, read-only by default.
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/develop.png" alt="Develop mode with inline diffs and a Changes panel" /></td>
+    <td width="50%"><img src="docs/images/light.png" alt="The light theme" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Develop: tool calls and diffs next to the conversation</sub></td>
+    <td align="center"><sub>Light and dark themes</sub></td>
+  </tr>
+</table>
+
+## Status
+
+Celeste is in early development and not released yet. Here is what is real today and what is still a design preview:
+
+| Area | State |
+|---|---|
+| GitHub Copilot | **Working.** Streaming, tools, approvals, `ask_user` questions, image attachments, model and effort switching, resuming a conversation after a restart |
+| Claude, OpenAI, Gemini | Design preview (a scripted assistant). Real adapters are the next phase |
+| Sessions, settings, drafts, attachments | **Working.** Saved locally, and they survive a crash |
+| Devices (SSH, Hyper-V, Android) | **Working against test fixtures**, not yet tried on a wide range of real hardware. Read-only by default, with approvals |
+| Workflows and Tools & Integrations | Design preview |
+| Installers and auto-update | Not yet |
+
+The full plan, with the reasoning behind each decision, is in [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md).
+
+## Getting started
+
+You need [Node.js](https://nodejs.org) 22.13 or newer (the database is `node:sqlite`, built into Node and Electron).
 
 ```bash
+git clone https://github.com/AmossDvir1/celeste.git
+cd celeste
 npm install
 npm run dev
 ```
 
-Requires Node 22.13 or newer (the database is `node:sqlite`, built into Node and Electron). `npm run dev:web` runs
-only the interface in a browser at http://localhost:5199, with the session code in memory, so nothing is saved
-there. It is handy for quick visual checks.
+To use **GitHub Copilot**, open Settings, then AI vendors, and choose Connect. If you are already signed in to Copilot on
+this computer it connects at once. Otherwise Celeste opens GitHub's sign-in page, or shows a code to enter at
+github.com/login/device. The first time, Celeste downloads Copilot's runtime (about 180 MB) from npm and checks its
+checksum. Disconnecting only makes Celeste stop using Copilot: it never signs you out of GitHub.
 
-## Looking around
+`npm run dev:web` runs only the interface in a browser at http://localhost:5199 with the data in memory, which is handy for
+quick visual checks.
 
-Press **Ctrl+Shift+D** (development only) for the scenario switcher. It jumps straight to each state so you
-don't have to wait: thinking, a running tool, `ask_user`, an approval prompt, an error, a long conversation,
-a Develop session with diffs, an image attachment, and the setup wizard. It is not part of release builds.
-
-You can also type these in a chat to steer the sample assistant: `ask me` (asks questions),
-`simulate error`, or mention a PR, a Jira issue, or a workflow.
+## Keyboard shortcuts
 
 | Shortcut | Action |
 |---|---|
@@ -50,47 +88,65 @@ You can also type these in a chat to steer the sample assistant: `ask me` (asks 
 | Ctrl B | Show or hide the sidebar |
 | Ctrl , | Settings |
 
-## Scripts
+## How it works
 
-| Command | What it does |
-|---|---|
-| `npm run typecheck` | Type-checks the interface, the main process and Core |
-| `npm test` | Unit tests: database, migrations, session logic, replay |
-| `npm run verify:persistence` | Runs the built app three times on one profile (normal restart, then a crash) and checks that nothing is lost |
-| `npm run verify:package` | Runs the built app from an `app.asar`, with its run-time libraries, the way an installer lays it out |
-| `npm run verify:devices` | Runs the built app against an in-process SSH server that stands in for a VM: add, confirm the key, attach, approve a command, snapshot, changed key, restart |
-| `npm run build` | Production build into `out/` (the app and the Core process) |
-| `npm run shots` | Screenshots of the key screens in both themes: `scripts/.output/shots/` |
-| `npm run glow:compare` | Renders the Chat home at the reference picture's size and measures the glow line against it |
-| `npm run icons` | Regenerates the app icons from `src/renderer/assets/logo/celeste-mark.svg` |
+```
+ Window (React)  ──message port──▶  Core process  ──▶  vendor adapters ──▶ Copilot SDK / CLIs
+                                        │
+                                        ├── SQLite: sessions are an event log, replayed on open
+                                        ├── Devices: SSH, Hyper-V, adb, behind approvals
+                                        └── Tool server (MCP, loopback only): lets agents use your devices
+```
 
-## Logo
-
-`src/renderer/assets/logo/celeste-mark.svg` is the only place the logo lives, and it is an interim trace of the
-"C" without the star. To use the final logo, replace that file and run `npm run icons`.
-
-## Vendor logos
-
-`src/renderer/components/VendorLogo.tsx` holds the GitHub Copilot, Claude, OpenAI and Gemini marks, taken from the
-MIT-licensed [@lobehub/icons](https://github.com/lobehub/lobe-icons) set. The marks are trademarks of their owners and are
-shown only to say which service a control talks to. Before a public release, check each vendor's brand guidelines.
-
-## Layout
+- Each session is an **event log**. Opening it replays the log through the same reducer that handles live events, so a
+  restart or crash loses nothing. Each vendor's own resume id is stored too, so a conversation continues natively when the
+  vendor still has it, and is rebuilt from Celeste's log when it does not.
+- Vendors sit behind one small boundary (`AgentAdapter`, `AgentSession`, `AgentEvent`), so adding a vendor does not touch the interface.
+- Secrets stay in Electron's main process. The Core process asks for a device password only when connecting.
 
 ```
 src/
-  shared/      the vendor boundary: AgentEvent, AgentSession, AgentAdapter
-  main/        the Electron window, the Core process launcher, secrets, the attachment address
-  core/        the Core process: SQLite, sessions, the scripted assistant (core/mock), devices (core/devices)
-  preload/     the bridge the interface calls: a message port to Core, and secrets
-  renderer/
-    app/       shell: top bar, sidebar, layout, scenario switcher
-    features/  chat, develop, workflows, settings, wizard, search, tools
-    components shared pieces: buttons, menus, dialogs, markdown
-    glow/      the glow line
-    api/       the client for Core (and an in-memory copy of it for dev:web)
-    mocks/     model and tool catalogs for the preview (replaced by real adapters later)
-    stores/    app state
-    styles/    design tokens for both themes
-design/        your pictures and design kits (git-ignored: they belong to their creators)
+  shared/      the vendor boundary and the API between the window and Core
+  main/        the Electron window, the Core launcher, secrets
+  core/        the Core process: SQLite, sessions, vendor adapters, devices, the tool server
+  preload/     the bridge the interface calls
+  renderer/    the React interface: app shell, chat, develop, workflows, settings, stores
+docs/          the implementation plan and images
+scripts/       end-to-end checks that drive the built app, screenshot tools
 ```
+
+## Development
+
+| Command | What it does |
+|---|---|
+| `npm run dev` | Start the app with hot reload |
+| `npm run typecheck` | Type-check the interface, the main process and Core |
+| `npm test` | Unit tests: storage, sessions, adapters, devices |
+| `npm run build` | Production build into `out/` |
+| `npm run verify:persistence` | Run the built app on one profile, restart and crash it, and check nothing is lost |
+| `npm run verify:package` | Run the built app from an `app.asar`, as an installer lays it out |
+| `npm run verify:devices` | Run the built app against an in-process SSH server that stands in for a VM |
+| `npm run verify:copilot` | Drive the real app with your real Copilot account (spends a few premium requests) |
+| `npm run shots` | Screenshots of the key screens in both themes |
+
+The Copilot live tests are opt-in (`CELESTE_LIVE_COPILOT=1`) because they use a real account. See
+[CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+
+## Roadmap
+
+1. Design, foundation (storage, sessions), devices, **Copilot** (done)
+2. Claude, OpenAI and Gemini adapters
+3. Modes and tools: Plan, tool catalog, MCP
+4. Workflows
+5. Public release: installers, signing, auto-update
+6. A companion app for phones that controls your desktop Celeste
+
+## License
+
+No license has been chosen yet. Until one is added to this repository, the code is not licensed for reuse.
+
+## Trademarks
+
+Claude, GitHub Copilot, OpenAI and Gemini are trademarks of their owners. Celeste is an independent project and is not
+affiliated with or endorsed by them. Their marks appear only to say which service a control talks to; the marks come from
+the MIT-licensed [@lobehub/icons](https://github.com/lobehub/lobe-icons) set.

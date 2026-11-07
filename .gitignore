@@ -1,13 +1,31 @@
+# Dependencies and build output
 node_modules/
 out/
 dist/
+release/
+*.tsbuildinfo
+
+# Logs, caches and test output
 *.log
+.vitest/
+coverage/
+scripts/.output/
+
+# Secrets and local configuration: never commit these
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Editors and operating systems
 .DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Local tooling
+.claude/
 
 # Reference pictures and design kits belong to their creators: never publish by accident
 design/
-
-# Local-only tooling output
-.claude/settings.local.json
-scripts/.output/
-.vitest/

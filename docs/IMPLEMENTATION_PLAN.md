@@ -1,5 +1,7 @@
 # Celeste: Implementation Plan
 
+> **About this document.** This is the working plan the project is built from, kept as written during development. Where it says "your picture" or "your machine" it refers to the original design reference and the maintainer's computer. Phase 4 (Copilot) is complete; later phases are intentions, not promises.
+
 Draft for your review, 7 November 2026. Package versions and vendor behavior were checked on this date. Anything not yet confirmed is marked **Verify**.
 
 ## 1. Summary
