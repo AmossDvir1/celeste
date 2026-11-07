@@ -5,7 +5,7 @@ import { cn } from '@/lib/cn'
 import { IconButton } from '@/components/ui'
 import { MODEL_BY_ID } from '@/mocks/models'
 import { AttachmentStrip, type AttachmentsApi } from './attachments'
-import { ApprovalPicker, EffortPopover, ModelPicker, type Prefs } from './controls'
+import { ApprovalPicker, ModelControls, type Prefs } from './controls'
 
 export interface ComposerProps {
   variant: 'home' | 'dock'
@@ -137,7 +137,7 @@ export function Composer({
         )}
       />
 
-      <div className={cn('flex items-center', home ? 'mt-2 h-9 -ml-[9px] gap-[11px]' : 'mt-1.5 -ml-1.5 gap-1')}>
+      <div className={cn('flex items-center gap-2', home ? 'mt-2.5 h-[34px]' : 'mt-1.5')}>
         <input
           ref={fileRef}
           type="file"
@@ -148,14 +148,11 @@ export function Composer({
             e.target.value = ''
           }}
         />
-        <IconButton label="Attach files" onClick={() => fileRef.current?.click()} className="w-11 text-ink-soft">
-          <Paperclip className="h-[21px] w-[21px]" />
+        <IconButton label="Attach files" onClick={() => fileRef.current?.click()} className="-ml-1.5 text-ink-soft">
+          <Paperclip className="h-[18px] w-[18px]" />
         </IconButton>
-        <EffortPopover prefs={prefs} onPrefs={onPrefs} />
-        <div className="flex items-center gap-2">
-          <ModelPicker prefs={prefs} onPrefs={onPrefs} />
-          <ApprovalPicker value={prefs.approval} onChange={(approval) => onPrefs({ approval })} mode={mode} />
-        </div>
+        <ModelControls prefs={prefs} onPrefs={onPrefs} />
+        <ApprovalPicker value={prefs.approval} onChange={(approval) => onPrefs({ approval })} mode={mode} />
         {!home && sendButton}
       </div>
       {home && sendButton}

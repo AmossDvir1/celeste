@@ -13,7 +13,6 @@ export interface VendorMeta {
   connectHint: string
   billedTo: string
   keyHint: string
-  accent: string
 }
 
 export const VENDORS: Record<VendorId, VendorMeta> = {
@@ -24,8 +23,7 @@ export const VENDORS: Record<VendorId, VendorMeta> = {
     blurb: 'Free and paid Copilot plans, including Business and Enterprise.',
     connectHint: 'Opens GitHub in your browser to authorize.',
     billedTo: 'Your Copilot plan',
-    keyHint: 'Use your own provider key instead',
-    accent: '#8b7cf6'
+    keyHint: 'Use your own provider key instead'
   },
   claude: {
     id: 'claude',
@@ -34,8 +32,7 @@ export const VENDORS: Record<VendorId, VendorMeta> = {
     blurb: 'Anthropic’s agent, billed as API usage on your Claude Console account.',
     connectHint: 'Opens the Claude Console in your browser to authorize.',
     billedTo: 'Your Claude Console account',
-    keyHint: 'Paste an API key instead',
-    accent: '#e08a5c'
+    keyHint: 'Paste an API key instead'
   },
   openai: {
     id: 'openai',
@@ -44,8 +41,7 @@ export const VENDORS: Record<VendorId, VendorMeta> = {
     blurb: 'Use your ChatGPT plan, or an OpenAI API key.',
     connectHint: 'Continue with ChatGPT in your browser.',
     billedTo: 'Your ChatGPT plan',
-    keyHint: 'Paste an API key instead',
-    accent: '#3fb69b'
+    keyHint: 'Paste an API key instead'
   },
   gemini: {
     id: 'gemini',
@@ -54,8 +50,7 @@ export const VENDORS: Record<VendorId, VendorMeta> = {
     blurb: 'Gemini through an API key, or Vertex AI for teams.',
     connectHint: 'Opens Google AI Studio so you can create a key.',
     billedTo: 'Your Gemini API account',
-    keyHint: 'Use Vertex AI instead',
-    accent: '#5b9cf5'
+    keyHint: 'Use Vertex AI instead'
   }
 }
 
@@ -64,8 +59,8 @@ const FULL: Effort[] = ['low', 'medium', 'high', 'xhigh', 'max']
 // Mock catalog. Real adapters report their own models and effort levels.
 export const MODELS: ModelInfo[] = [
   { id: 'copilot-auto', vendor: 'copilot', label: 'Copilot Auto', efforts: [], images: true },
-  { id: 'copilot-gpt', vendor: 'copilot', label: 'Copilot · GPT-5', efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'medium', images: true },
-  { id: 'copilot-sonnet', vendor: 'copilot', label: 'Copilot · Claude Sonnet', efforts: ['low', 'medium', 'high', 'max'], defaultEffort: 'medium', images: true },
+  { id: 'copilot-gpt', vendor: 'copilot', label: 'GPT-5', efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'medium', images: true },
+  { id: 'copilot-sonnet', vendor: 'copilot', label: 'Claude Sonnet', efforts: ['low', 'medium', 'high', 'max'], defaultEffort: 'medium', images: true },
   { id: 'claude-opus', vendor: 'claude', label: 'Claude Opus', efforts: FULL, defaultEffort: 'high', images: true },
   { id: 'claude-sonnet', vendor: 'claude', label: 'Claude Sonnet', efforts: FULL, defaultEffort: 'medium', images: true },
   { id: 'claude-haiku', vendor: 'claude', label: 'Claude Haiku', efforts: [], images: true },

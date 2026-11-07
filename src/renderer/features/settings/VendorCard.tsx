@@ -3,6 +3,7 @@ import { Check, KeyRound } from 'lucide-react'
 import type { VendorId } from '@shared/agent'
 import { cn } from '@/lib/cn'
 import { Badge, Button, Spinner, TextInput } from '@/components/ui'
+import { VendorTile } from '@/components/VendorLogo'
 import { VENDORS } from '@/mocks/models'
 import { useVendors } from '@/stores/vendors'
 
@@ -33,13 +34,7 @@ export function VendorCard({ id, compact }: { id: VendorId; compact?: boolean })
       )}
     >
       <div className="flex items-start gap-3.5">
-        <span
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-lg font-semibold"
-          style={{ background: `${meta.accent}26`, color: meta.accent }}
-          aria-hidden
-        >
-          {meta.name[0]}
-        </span>
+        <VendorTile id={id} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-[15px] font-medium text-ink">{meta.name}</h3>
@@ -54,7 +49,7 @@ export function VendorCard({ id, compact }: { id: VendorId; compact?: boolean })
           </p>
           {!compact && v.status !== 'connected' && v.status !== 'waiting' && v.status !== 'downloading' && (
             <p className="mt-1 text-xs text-ink-faint">
-              {meta.connectHint} Billed to: {meta.billedTo.toLowerCase()}.
+              {meta.connectHint} Billed to {meta.billedTo.replace(/^Your/, 'your')}.
             </p>
           )}
           {v.status === 'downloading' && (

@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowRight, Check } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Field } from '@/components/form'
 import { Logo } from '@/components/Logo'
+import { VendorLogo } from '@/components/VendorLogo'
 import { Button, TextInput } from '@/components/ui'
 import { GlowArc } from '@/glow/GlowArc'
 import { ApprovalCards, ModelSelect, ThemeTiles } from '@/features/settings/SettingsDialog'
@@ -133,12 +134,38 @@ export function Wizard() {
                   You’re all set, <span className="bg-gradient-to-r from-[#f45f9d] via-[#c06ae0] to-[#8f8aff] bg-clip-text text-transparent">{name.trim() || 'there'}.</span>
                 </h1>
                 <ul className="mt-8 divide-y divide-edge/70 rounded-xl border border-edge bg-field/40">
-                  {[
-                    ['Look', settings.theme === 'system' ? 'Follows your system' : settings.theme === 'dark' ? 'Dark' : 'Light'],
-                    ['Connected', connected.length ? `${connected.length} vendor${connected.length > 1 ? 's' : ''}` : 'None yet (add one in Settings)'],
-                    ['Default model', model?.label ?? '—'],
-                    ['Approval', settings.defaults.approval === 'auto' ? 'Auto-approve' : settings.defaults.approval === 'edits' ? 'Approve edits' : 'Ask first']
-                  ].map(([k, v]) => (
+                  {(
+                    [
+                      ['Look', settings.theme === 'system' ? 'Follows your system' : settings.theme === 'dark' ? 'Dark' : 'Light'],
+                      [
+                        'Connected',
+                        connected.length ? (
+                          <>
+                            <span className="flex items-center gap-1.5">
+                              {connected.map((id) => (
+                                <VendorLogo key={id} id={id} className="h-4 w-4" />
+                              ))}
+                            </span>
+                            {connected.length} vendor{connected.length > 1 ? 's' : ''}
+                          </>
+                        ) : (
+                          'None yet (add one in Settings)'
+                        )
+                      ],
+                      [
+                        'Default model',
+                        model ? (
+                          <>
+                            <VendorLogo id={model.vendor} className="h-4 w-4" />
+                            {model.label}
+                          </>
+                        ) : (
+                          '—'
+                        )
+                      ],
+                      ['Approval', settings.defaults.approval === 'auto' ? 'Auto-approve' : settings.defaults.approval === 'edits' ? 'Approve edits' : 'Ask first']
+                    ] as [string, ReactNode][]
+                  ).map(([k, v]) => (
                     <li key={k} className="flex items-center justify-between px-4 py-3 text-[14px]">
                       <span className="text-ink-muted">{k}</span>
                       <span className="flex items-center gap-2 text-ink">

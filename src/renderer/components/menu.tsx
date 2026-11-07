@@ -4,7 +4,7 @@ import { Check } from 'lucide-react'
 import { cn } from '@/lib/cn'
 
 const itemBase =
-  'relative flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-ink outline-none select-none ' +
+  'relative flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13.5px] text-ink outline-none select-none ' +
   'data-[highlighted]:bg-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-45'
 
 const Content = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<typeof DropdownMenu.Content>>(function Content(
@@ -19,8 +19,8 @@ const Content = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<typeof Dropd
         align="start"
         collisionPadding={12}
         className={cn(
-          'pop-in z-[60] max-h-[min(420px,var(--radix-dropdown-menu-content-available-height))] min-w-[220px] overflow-y-auto',
-          'rounded-xl border border-edge-strong bg-raised-2 p-1.5 shadow-pop',
+          'pop-in z-[60] max-h-[min(420px,var(--radix-dropdown-menu-content-available-height))] min-w-[200px] overflow-y-auto',
+          'rounded-xl border border-edge-strong bg-raised-2 p-1 shadow-pop',
           className
         )}
         {...props}
@@ -45,10 +45,10 @@ function RadioItem({
     <DropdownMenu.RadioItem className={cn(itemBase, 'items-start pr-8', className)} {...props}>
       <span className="flex min-w-0 flex-col">
         <span>{children}</span>
-        {description && <span className="text-xs leading-snug text-ink-faint">{description}</span>}
+        {description && <span className="text-[11.5px] leading-snug text-ink-faint">{description}</span>}
       </span>
-      <DropdownMenu.ItemIndicator className="absolute top-2.5 right-2.5 text-accent-text">
-        <Check className="h-4 w-4" />
+      <DropdownMenu.ItemIndicator className="absolute top-2 right-2.5 text-accent-text">
+        <Check className="h-3.5 w-3.5" />
       </DropdownMenu.ItemIndicator>
     </DropdownMenu.RadioItem>
   )
@@ -57,14 +57,14 @@ function RadioItem({
 function Label({ className, ...props }: ComponentPropsWithoutRef<typeof DropdownMenu.Label>) {
   return (
     <DropdownMenu.Label
-      className={cn('px-2.5 pt-2 pb-1 text-[11px] font-medium tracking-wider text-ink-faint uppercase', className)}
+      className={cn('px-2.5 pt-1.5 pb-1 text-[10.5px] font-medium tracking-wider text-ink-faint uppercase', className)}
       {...props}
     />
   )
 }
 
 function Separator() {
-  return <DropdownMenu.Separator className="my-1.5 h-px bg-edge" />
+  return <DropdownMenu.Separator className="my-1 h-px bg-edge" />
 }
 
 export const Menu = {

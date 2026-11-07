@@ -13,6 +13,7 @@ import type { ApprovalMode, Effort, SessionMode } from '@shared/agent'
 import { cn } from '@/lib/cn'
 import { Menu, Popover } from '@/components/menu'
 import { IconButton, Tip } from '@/components/ui'
+import { VendorLogo } from '@/components/VendorLogo'
 import {
   APPROVAL_OPTIONS,
   EFFORT_LABEL,
@@ -31,11 +32,25 @@ export interface Prefs {
   approval: ApprovalMode
 }
 
-const pill =
-  'inline-flex h-[34px] items-center gap-2.5 rounded-control border border-edge-strong bg-pill px-3.5 text-[15px] text-ink-soft ' +
-  'transition-colors hover:bg-raised-2 data-[state=open]:bg-raised-2'
+// Small, quiet controls under the text box. The model and effort controls join into one segmented pill.
+const control =
+  'inline-flex h-[30px] items-center text-[13px] text-ink-soft transition-colors hover:bg-raised-2 hover:text-ink ' +
+  'data-[state=open]:bg-raised-2 data-[state=open]:text-ink'
+const pill = `${control} gap-1.5 rounded-lg border border-edge-strong bg-pill px-2.5`
+const chevron = 'h-3.5 w-3.5 text-ink-faint'
 
-export function ModelPicker({ prefs, onPrefs }: { prefs: Prefs; onPrefs: (p: Partial<Prefs>) => void }) {
+/** Model and thinking effort, side by side: effort belongs to the model, so they share one outline. */
+export function ModelControls({ prefs, onPrefs }: { prefs: Prefs; onPrefs: (p: Partial<Prefs>) => void }) {
+  return (
+    <div className="inline-flex rounded-lg border border-edge-strong bg-pill">
+      <ModelPicker prefs={prefs} onPrefs={onPrefs} />
+      <span className="my-1.5 w-px bg-edge-strong" aria-hidden />
+      <EffortPopover prefs={prefs} onPrefs={onPrefs} />
+    </div>
+  )
+}
+
+function ModelPicker({ prefs, onPrefs }: { prefs: Prefs; onPrefs: (p: Partial<Prefs>) => void }) {
   const vendors = useVendors((s) => s.vendors)
   const openSettings = useUi((s) => s.openSettings)
   const current = MODEL_BY_ID[prefs.model] ?? MODELS[0]
@@ -44,12 +59,17 @@ export function ModelPicker({ prefs, onPrefs }: { prefs: Prefs; onPrefs: (p: Par
   return (
     <Menu.Root>
       <Menu.Trigger asChild>
-        <button type="button" className={pill} aria-label={`Model: ${current.label}`}>
+        <button
+          type="button"
+          className={cn(control, 'gap-1.5 rounded-l-[7px] pr-2 pl-2.5')}
+          aria-label={`Model: ${VENDORS[current.vendor].menuLabel} ${current.label}`}
+        >
+          <VendorLogo id={current.vendor} className="h-4 w-4" />
           <span>{current.label}</span>
-          <ChevronDown className="ml-2.5 h-4 w-4 text-ink-muted" />
+          <ChevronDown className={chevron} />
         </button>
       </Menu.Trigger>
-      <Menu.Content className="min-w-[240px]">
+      <Menu.Content className="min-w-[210px]">
         <Menu.RadioGroup
           value={prefs.model}
           onValueChange={(id) => {
@@ -59,7 +79,10 @@ export function ModelPicker({ prefs, onPrefs }: { prefs: Prefs; onPrefs: (p: Par
         >
           {connected.map((v) => (
             <div key={v}>
-              <Menu.Label>{VENDORS[v].menuLabel}</Menu.Label>
+              <Menu.Label className="flex items-center gap-1.5">
+                <VendorLogo id={v} className="h-3.5 w-3.5 text-ink-soft" />
+                {VENDORS[v].menuLabel}
+              </Menu.Label>
               {MODELS.filter((m) => m.vendor === v).map((m) => (
                 <Menu.RadioItem key={m.id} value={m.id}>
                   {m.label}
@@ -70,7 +93,7 @@ export function ModelPicker({ prefs, onPrefs }: { prefs: Prefs; onPrefs: (p: Par
         </Menu.RadioGroup>
         <Menu.Separator />
         <Menu.Item onSelect={() => openSettings('vendors')} className="text-ink-muted">
-          <Plug className="h-4 w-4" />
+          <Plug className="h-3.5 w-3.5" />
           Connect another vendor…
         </Menu.Item>
       </Menu.Content>
@@ -100,19 +123,19 @@ export function ApprovalPicker({
   return (
     <Menu.Root>
       <Menu.Trigger asChild>
-        <button type="button" className={pill} aria-label={`Approval: ${current.label}`}>
-          <Icon className={cn('h-4 w-4', current.value === 'auto' ? 'text-accent-text' : 'text-ink-muted')} />
+        <button type="button" className={cn(pill, 'pr-2')} aria-label={`Approval: ${current.label}`}>
+          <Icon className={cn('h-3.5 w-3.5', current.value === 'auto' ? 'text-accent-text' : 'text-ink-muted')} />
           <span>{current.short}</span>
-          <ChevronDown className="ml-1.5 h-4 w-4 text-ink-muted" />
+          <ChevronDown className={chevron} />
         </button>
       </Menu.Trigger>
-      <Menu.Content className="w-[290px]">
+      <Menu.Content className="w-[270px]">
         <Menu.Label>When the agent wants to act</Menu.Label>
         <Menu.RadioGroup value={value} onValueChange={(v) => onChange(v as ApprovalMode)}>
           {options.map((o) => (
             <Menu.RadioItem key={o.value} value={o.value} description={o.description}>
               {o.label}
-              {o.value === 'auto' && <span className="ml-2 text-[11px] text-ink-faint">default</span>}
+              {o.value === 'auto' && <span className="ml-1.5 text-[10.5px] text-ink-faint">default</span>}
             </Menu.RadioItem>
           ))}
         </Menu.RadioGroup>
@@ -121,7 +144,7 @@ export function ApprovalPicker({
   )
 }
 
-export function EffortPopover({
+function EffortPopover({
   prefs,
   onPrefs
 }: {
@@ -136,14 +159,14 @@ export function EffortPopover({
 
   return (
     <Popover.Root>
-      <Tip label="Thinking effort and tools">
+      <Tip label={disabled ? 'Thinking effort and tools' : `Thinking effort: ${EFFORT_LABEL[efforts[idx]]}`}>
         <Popover.Trigger asChild>
           <button
             type="button"
             aria-label="Thinking effort and tools"
-            className="inline-flex h-9 w-11 items-center justify-center rounded-control text-ink-soft transition-colors hover:bg-hover hover:text-ink data-[state=open]:bg-hover data-[state=open]:text-ink"
+            className={cn(control, 'w-8 justify-center rounded-r-[7px]')}
           >
-            <SlidersHorizontal className="h-[21px] w-[21px]" />
+            <SlidersHorizontal className="h-[15px] w-[15px]" />
           </button>
         </Popover.Trigger>
       </Tip>
@@ -175,7 +198,7 @@ export function EffortPopover({
 
         {disabled ? (
           <p className="mt-3 text-xs leading-snug text-ink-faint">
-            {model.label} has no effort setting. It decides how much to think on its own.
+            This model has no effort setting. It decides how much to think on its own.
           </p>
         ) : (
           <div className="mt-2 flex justify-between text-[11px] text-ink-faint">

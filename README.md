@@ -52,6 +52,12 @@ You can also type these in a chat to steer the sample assistant: `ask me` (asks 
 `src/renderer/assets/logo/celeste-mark.svg` is the only place the logo lives, and it is an interim trace of the
 "C" without the star. To use the final logo, replace that file and run `npm run icons`.
 
+## Vendor logos
+
+`src/renderer/components/VendorLogo.tsx` holds the GitHub Copilot, Claude, OpenAI and Gemini marks, taken from the
+MIT-licensed [@lobehub/icons](https://github.com/lobehub/lobe-icons) set. The marks are trademarks of their owners and are
+shown only to say which service a control talks to. Before a public release, check each vendor's brand guidelines.
+
 ## Layout
 
 ```
