@@ -6,7 +6,7 @@ Draft for your review, 7 November 2026. Package versions and vendor behavior wer
 
 Celeste is an open-source Electron desktop app built with React and Tailwind, to be published for personal users and teams at work. It gives one interface over Claude, GitHub Copilot, OpenAI and Google Gemini. Each vendor's own agent does the work underneath: editing files, running commands, browsing the web and calling tools. Celeste adds the interface, saved sessions, a shared tool list and workflows. It has no server of its own, so each user's usage goes to their own vendor account.
 
-The work runs in eight phases. **Phase 1 is a clickable design with mock data and no real functionality, so you can approve it before anything else is built.**
+The work runs in nine phases. **Phase 1 is a clickable design with mock data and no real functionality, so you can approve it before anything else is built.**
 
 | Topic | Decision |
 |---|---|
@@ -18,22 +18,26 @@ The work runs in eight phases. **Phase 1 is a clickable design with mock data an
 | Chat vs Develop | Same agent and same abilities. They differ in where the agent works and how its activity is shown (section 3) |
 | Glow line | Rebuilt from measurements of your picture, then checked against it by script (section 7.2) |
 | Logo | Interim "C" without the star, kept in one file so your final logo is a simple swap (section 7.3) |
-| Devices | VMs, other computers and Android phones as extra context and as places the assistant can work, with read-only as the default (section 7.11) |
+| Devices | VMs, other computers and Android phones, with a limited helper for iPhone, as extra context and as places the assistant can work. Every device needs approval, and read-only is the default. Built first, before the vendor adapters (section 7.11) |
+| Mobile | Celeste can't run on iOS itself, so a companion app for iPhone, iPad and Android controls your desktop Celeste. It is built from the same React interface with Capacitor (section 7.12) |
 
 ## 2. Decisions for you
 
-None of these blocks Phase 1. Each has a default that I'll use unless you say otherwise.
+Each has a default that I'll use unless you say otherwise. The last column says when an answer is needed.
 
 | # | Question | Default | Needed by |
 |---|---|---|---|
 | 1 | Which open-source license for Celeste's code? | Apache-2.0. It's permissive, includes the patent grant company legal teams look for, and matches Codex and Gemini CLI. The name and logo stay yours and aren't covered | Before the repository goes public |
-| 2 | Which vendors come first? | Copilot, then Claude. Copilot has the fewest sign-in unknowns, is the default model in your picture, and is installed on your machine (1.0.95), as is Claude (2.1.259). Codex and Gemini are not. | Phase 3 |
+| 2 | Which vendors come first? | Copilot, then Claude. Copilot has the fewest sign-in unknowns, is the default model in your picture, and is installed on your machine (1.0.95), as is Claude (2.1.259). Codex and Gemini are not. | Phase 4 |
 | 3 | What should the light theme look like in the inner chat area? Your picture only shows dark. | I'll propose the same arc in softer tones on the light background, for you to judge in Phase 1 | Phase 1 review |
 | 4 | Which platforms at launch? | Windows and Mac, with Linux soon after. Development stays Windows-first, with the code kept cross-platform | Phase 8 |
 | 5 | Final logo | Interim logo until yours is ready | Any time |
-| 6 | Should a device follow the global auto-approve setting? | No. A new device starts **Read only**. Commands on it ask first, unless you set that device to **Full**. Remote machines can be shared or production ones, and a command there can't be reverted the way a local edit can | Phase 6 |
-| 7 | iPhone and iPad? | Not in v1. Apple gives no way to run commands on the device, and the open tools that reach its files need a USB pairing first (section 7.11). Android phones work over Wi-Fi | Phase 6 |
-| 8 | Which ways of connecting in v1? | SSH (Linux, Mac, Windows with OpenSSH Server), PowerShell Direct for Hyper-V VMs on this PC, and Android wireless debugging. WinRM, mounting remote drives, and Develop on a remote folder come later if wanted | Phase 6 |
+| 6 | Should a device follow the global auto-approve setting? | **Confirmed by you on 7 November: devices need approval.** A new device starts **Read only**, commands on it ask first, and the global auto-approve default doesn't apply. A device can still be set to **Full** (no asking) behind a warning badge. That option is easy to remove if you'd rather not offer it | Settled |
+| 7 | iPhone and iPad as devices? | Not as a remote shell, because Apple doesn't allow one. Two supported routes: a limited helper (open-source libimobiledevice tools: media files, logs and app install, after a USB pairing), and the Celeste Companion app (section 7.12), which shares folders and things you send, while it is open. A spike in Phase 3 decides whether the helper ships | Phase 3 |
+| 8 | Which ways of connecting in v1? | SSH (Linux, Mac, Windows with OpenSSH Server), PowerShell Direct for Hyper-V VMs on this PC, and Android wireless debugging. WinRM, mounting remote drives, and Develop on a remote folder come later if wanted | Phase 3 |
+| 9 | How should Celeste run on iPhone, iPad and Android? | A companion app that controls your desktop Celeste, not the full app, which can't run on a phone (section 7.12). Built with Capacitor from the same React interface, after the first public release. It needs an Apple Developer account (US$99 a year **Verify**) and a macOS builder | Before Phase 9 |
+| 10 | Designs for the phone screens | Do you have designs, or want to make them? If not, I'll adapt the desktop design to a small screen and you review it | Phase 9 |
+| 11 | Push notifications to the phone | None in v1. Apple and Google need a provider key that can't ship inside open-source code, so push needs a small relay run by the project. Without it the phone shows what needs you when you open the app | Phase 9 |
 
 ## 3. Chat vs Develop
 
@@ -68,7 +72,9 @@ The scratch folder is a default working location, not a security boundary. With 
 | Database | `node:sqlite`, built into Electron's Node | SQLite 3.53 in Electron 45 | Local storage with FTS5 full-text search. Chosen over better-sqlite3 (13.x) in Phase 2: it needs no native rebuild per platform or Electron version, adds nothing for signing to cover, and its tests run in plain Node. It sits behind one small `Store` interface, so swapping it later is a one-file change |
 | Remote machines | `ssh2` | 1.17 (MIT) | Pure-JavaScript SSH and SFTP client with a host-key check. It also has a server mode, so tests can run without a VM. Its native speed-ups are optional |
 | Device discovery | `bonjour-service` | 1.4 (MIT) | Finds devices that announce themselves on the local network (mDNS) |
-| Android | Google's `adb`, downloaded on demand, or `@yume-chan/adb` (MIT, 2.6) | | Settled by a spike at the start of Phase 6 (section 7.11) |
+| Android | Google's `adb`, downloaded on demand, or `@yume-chan/adb` (MIT, 2.6) | | Settled by a spike at the start of Phase 3 (section 7.11) |
+| Device tool server | `@modelcontextprotocol/sdk` | 1.32 (MIT) | The official TypeScript MCP SDK, for Celeste's own tool server (devices, then `ask_user`) |
+| Phone app | Capacitor | 8.6 (MIT) | Wraps the React interface as an iPhone, iPad and Android app (section 7.12) |
 | Markdown and code | react-markdown, remark-gfm, Shiki | | Message and code rendering |
 | Icons | lucide-react | 1.x | The kits' icon sets lack several icons you need, such as paperclip and sliders. Lucide matches their line style |
 | Fonts | Outfit, JetBrains Mono | | Outfit matches your inner chat picture. The dark kit's Liberation Sans does not |
@@ -96,7 +102,7 @@ The scratch folder is a default working location, not a security boundary. With 
 
 - **Core process.** Database work and agent streams stay out of the window process, so a vendor crash can't freeze or take down the UI.
 - **Credentials.** API keys and the OpenAI tokens Celeste holds are encrypted with Electron's `safeStorage` (Windows DPAPI). Main decrypts them and hands them to Core in memory, and they never reach the renderer.
-- **Devices.** From Phase 6, connectors for remote machines and phones live in Core and reach the agents through a small MCP server that listens on this computer only (section 7.11).
+- **Devices.** From Phase 3, connectors for remote machines and phones live in Core and reach the agents through a small MCP server that listens on this computer only (section 7.11).
 - **Security.** `contextIsolation` and `sandbox` are on, and there is a strict content security policy. Attachment images load through a custom protocol limited to Celeste's attachments folder.
 
 ### The vendor boundary
@@ -155,7 +161,7 @@ celeste/
     preload/              window.celeste bridge
     core/                 from Phase 2: database, sessions, MCP, workflow runner
       adapters/           claude, copilot, codex, gemini, mock
-      devices/            ssh, hyper-v and adb connectors, and the device MCP server (Phase 6)
+      devices/            ssh, hyper-v and adb connectors, and the device MCP server (Phase 3)
     renderer/
       app/                shell and navigation
       features/           chat, develop, workflows, wizard, settings, tools
@@ -477,7 +483,7 @@ Left out on purpose to keep it light: MCP tools, shortcuts and advanced agent op
 
 ### 7.8 Settings
 
-Opened from the bottom-left button. Sections: General, Appearance, AI Vendors, Agent Defaults, Tools & Integrations, Devices (from Phase 6), Data (storage location, export, delete all), About.
+Opened from the bottom-left button. Sections: General, Appearance, AI Vendors, Agent Defaults, Tools & Integrations, Devices (from Phase 3), Data (storage location, export, delete all), About.
 
 ### 7.9 Tools & Integrations
 
@@ -527,21 +533,36 @@ Scheduling isn't in v1.
 | Hyper-V VM on this PC | Yes, with no network and no IP address | PowerShell Direct, which needs a Hyper-V administrator and the VM's login. Windows 10 or Server 2016 and later guests | PowerShell commands and file copy |
 | Windows machine that only offers WinRM | Later, if wanted | WinRM. Outside a domain it needs HTTPS or a TrustedHosts entry, which is a security setting on your computer **Verify** | |
 | Android phone, tablet or TV | Yes, on Android 11 and later (TV and Wear OS: 13) | Wireless debugging over Wi-Fi, paired by QR code or six-digit code, then ADB | What Android's `shell` user can do, which is not root: files in shared storage, logs, screenshots, installing an app, device information |
-| iPhone and iPad | No | Apple offers no way to run commands on the device. The open tool `pymobiledevice3` can reach media files, logs, screenshots and app install, but only after a USB pairing, with Developer Mode on and a tunnel, and on Windows it also needs Apple's iTunes drivers | Not planned |
+| iPhone and iPad | Not as a shell. Two supported routes instead | **A limited helper:** the open-source libimobiledevice tools run on Windows, Mac and Linux, and work over Wi-Fi once the phone is paired by USB (iOS 11 and later). They reach files in the media area, logs, crash reports and app install, not a shell, and on Windows they need Apple's iTunes drivers. For iOS 17 and later `pymobiledevice3` adds Developer Mode and tunnel steps **Verify**. **The Celeste Companion app** on the phone (section 7.12) | The helper: device information, logs and media files. The Companion: folders you pick, photos you choose, and anything you send from the share sheet, while the app is open |
+
+**On every desktop.** Celeste runs on Windows, Mac and Linux, so each piece has to as well:
+
+| Piece | Windows | Mac | Linux |
+|---|---|---|---|
+| SSH connector (`ssh2`, pure JavaScript) | Yes | Yes | Yes |
+| Finding devices (mDNS, `bonjour-service`) | Yes. The firewall asks once | Yes. macOS asks for Local Network permission **Verify** | Yes |
+| Android `adb` | Google's Windows build | Mac build | Linux build |
+| Local VMs listed | Hyper-V (`Get-VM`), WSL (`wsl -l -v`), VirtualBox (`VBoxManage list vms`), VMware (`vmrun list`) | Parallels (`prlctl list -a -j`), UTM (`utmctl list`), VMware Fusion (`vmrun list`), VirtualBox, Multipass (`multipass list --format json`) | libvirt (`virsh list --all`), VirtualBox, Multipass |
+| PowerShell Direct | Yes. Hyper-V is Windows only | No | No |
+| iPhone helper (libimobiledevice) | With Apple's iTunes drivers | Yes | Yes |
+
+Listing a VM only finds it. Connecting is by SSH to its address, which Celeste fills in when the tool reports one. Only `prlctl`, `VBoxManage` and `utmctl` are confirmed from documentation. The commands for `multipass`, `vmrun` and `virsh` are marked **Verify**.
+
+**One shell per device.** Each device reports its operating system, shell and path style, and `devices_list` passes that to the model. Linux and Mac use a POSIX shell, Windows uses PowerShell, Android uses `adb shell`, and the iPhone Companion has no shell, only file and share actions. The tool descriptions say so, so the model writes the right syntax for each device.
 
 **Why not let the agent run `ssh` itself?** It already can, through its normal shell tool, if your computer has the keys. A built-in feature adds what that lacks: credentials the model never sees, a permission level for each device, an approval card with the exact command, a limit to the devices you attached to this session, a record of every call, folder context, and phones.
 
 **How the assistant reaches a device**
 
 - **Connectors in Core.** One small contract (`probe`, `connect`, `run`, `readFile`, `writeFile`, `list`, `disconnect`) with three implementations: SSH (with `ssh2`, SFTP included), Hyper-V (a PowerShell process on this PC), and Android (ADB).
-- **One MCP server for every vendor.** Celeste's own MCP server listens on `127.0.0.1` only, on a random port, and each session gets its own secret token. All four vendors accept MCP servers (section 6.3), so one implementation covers them, and the permission rules live in Celeste instead of in four different permission systems.
+- **One MCP server for every vendor.** Celeste's own MCP server listens on `127.0.0.1` only, on a random port, and each session gets its own secret token. All four vendors accept MCP servers (section 6.3), so one implementation covers them, and the permission rules live in Celeste instead of in four different permission systems. It is built in Phase 3 with the official MCP SDK, before any vendor adapter exists, and tested with a real MCP client and with the scripted assistant. Each adapter connects to it in Phases 4 and 5.
 - **Tools it offers:** `devices_list`, `device_run`, `device_read_file`, `device_list_dir`, `device_write_file`, `device_pull`, `device_push`, and on Android `device_screenshot`. A session sees only the devices you attached to it.
-- **The approval gate is Celeste's own.** The vendor's approval mode treats MCP tools in its own way, so `device_run` and `device_write_file` ask through Celeste's approval card whatever the vendor's mode is. **Verify** that every vendor keeps a tool call open while the card waits, which is the same long-wait question as `ask_user`.
+- **The approval gate is Celeste's own.** The vendor's approval mode treats MCP tools in its own way, so `device_run` and `device_write_file` ask through Celeste's approval card whatever the vendor's mode is. **Verify**, adapter by adapter in Phases 4 and 5, that each vendor keeps a tool call open while the card waits, which is the same long-wait question as `ask_user`.
 - **Android's `adb` is downloaded on demand**, the same way as vendor runtimes (section 6.4), not bundled. **Verify** Google's redistribution terms for platform-tools. A spike settles whether to drive Google's `adb` or the TypeScript client `@yume-chan/adb`, which depends on whether the latter supports Wi-Fi pairing.
 
 **Folders from a device as context.** Every vendor's extra-folder option takes a local path (section 6.3), so a folder on another machine needs one of these:
 
-| Way | What happens | Needs | Phase 6? |
+| Way | What happens | Needs | Phase 3? |
 |---|---|---|---|
 | **Browse live** | The assistant lists and reads the folder through the device tools, when it needs to | Nothing | Yes |
 | **Snapshot** | Celeste copies the folder into a read-only local cache, and the vendor gets it as an ordinary extra folder, so its own file and search tools work at full speed. The chat says which device it came from and when | Nothing | Yes |
@@ -572,7 +593,7 @@ Snapshot rules: skip `.git`, `node_modules` and build folders; skip files over 2
 |---|---|---|
 | Android phone | Celeste browses the local network for the services Android announces: `_adb-tls-pairing._tcp` while the pairing screen is open and `_adb-tls-connect._tcp` while wireless debugging is on. It shows its own QR code, so scanning it on the phone pairs it | If nothing is announced, enter the address and six-digit code the phone shows |
 | Mac, Linux, Raspberry Pi, NAS | Services that announce `_ssh._tcp` or `_sftp-ssh._tcp` | Windows machines don't normally announce SSH **Verify**, so add them by address |
-| Hyper-V VMs | The VM list on this PC | Needs Hyper-V administrator rights, and Celeste says so if it lacks them |
+| Local VMs on this computer | The VM list from each product's command line (table above). Hyper-V on Windows also connects with PowerShell Direct, which needs no address | Hyper-V needs administrator rights, and Celeste says so if it lacks them |
 | Anything else | Type a name or IP address and a port | Always available |
 | Subnet scan for SSH | Off by default, and you start it yourself | Company networks may flag a port scan, so Celeste says that first |
 
@@ -581,11 +602,11 @@ Announcements are blocked by VPNs, guest Wi-Fi and router client isolation. That
 **Screens**
 
 - **Settings, Devices:** one card per device with online status, kind, address, access level (changeable), last seen, and Test, Edit and Remove.
-- **Add device** (a dialog, not part of the setup wizard): choose Find on my network, Enter an address, Android phone, or Hyper-V VM on this PC, then credentials, confirm the fingerprint, run a test (it shows the operating system and user), then a name and an access level.
+- **Add device** (a dialog, not part of the setup wizard): choose Find on my network, Enter an address, Android phone, or VM on this computer, then credentials, confirm the fingerprint, run a test (it shows the operating system and user), then a name and an access level.
 - **In a session:** the Tools & Integrations panel gets a **Devices** section with an attach switch for each device. Attached devices show as chips in the session header, and tool cards show which device ran them.
 - **Add a folder from a device:** a remote folder picker, then a choice of Browse live or Snapshot. The folder shows under its device in the panel.
 
-**Data (a migration in Phase 6):**
+**Data (a migration in Phase 3):**
 
 ```
 devices          id, name, kind, host, port, username, auth_method, secret_ref, host_key_sha256,
@@ -596,6 +617,53 @@ device_activity  id, device_id, session_id, tool, summary, ok, bytes, at
 ```
 
 Workflows (section 7.10) can run a Tool step's shell command on a device.
+
+### 7.12 Mobile companion: iPhone, iPad and Android
+
+**The straight answer.** Celeste itself can't run on iOS. It is built on Electron, which targets Windows, Mac and Linux only, and the agents underneath are desktop programs (the Claude, Copilot, Codex and Gemini CLIs) that an iPhone can't run. Android is the same. What can run on a phone is a **companion app** that controls the Celeste on your computer, which does the work. It puts the Celeste screens on your phone: see your sessions, send a message, answer a question, and approve or deny a command while you're away from your desk.
+
+**What the companion does**
+
+| It can | It cannot |
+|---|---|
+| Show your sessions and their live activity | Run an agent on the phone |
+| Start a Chat or Develop session on your computer, and send messages | Work while your computer is off or asleep |
+| Answer `ask_user` questions, and approve or deny commands | Change vendors, sign-ins, devices, access levels or auto-approve |
+| Send things to the assistant: files, photos, links and text from the share sheet | Delete sessions in bulk |
+| Share folders from the phone as a device (below) | |
+
+**How it connects**
+
+- **Pairing.** Mobile access is off by default. In Settings you turn it on, and your computer shows a QR code holding its address, a one-time secret and its certificate's fingerprint. The phone scans it. From then on the phone holds a device key in the iPhone Keychain (or Android's keystore) and proves it on every connection. Each phone is listed in Settings and can be revoked at once.
+- **Same Wi-Fi.** The phone finds your computer on the local network. iOS asks permission for that (Local Network), and the app declares the service it looks for.
+- **Away from home.** Through a tunnel you set up yourself, such as Tailscale or Cloudflare Tunnel. Celeste has no server of its own, so it doesn't offer one. The plan shows the steps.
+- **The same interface.** The desktop screens already reach Core through one typed channel (section 5), and the browser preview already swaps in another way to reach it. The phone adds a third, an encrypted WebSocket that pins the certificate. The phone screens are the same React code, with layouts made for a small screen.
+- **Narrower permissions than the desktop.** Every Core method carries a scope (read, chat, approve, admin), and a phone is never given admin. Risky actions can be set to need approval on the phone.
+
+**The phone as a device.** The companion can also act as a device for the assistant (section 7.11), within what iOS and Android allow:
+
+| | iPhone and iPad | Android |
+|---|---|---|
+| Folders you choose (Files, iCloud Drive, On My iPhone) | Yes, while the app is open | Yes, with storage access you grant |
+| Photos you choose | Yes | Yes |
+| Send to Celeste from the share sheet | Yes | Yes |
+| Clipboard | Only while the app is on screen | Only while the app is on screen |
+| Commands | No | Through ADB, as in section 7.11 |
+| Reachable with the app closed | No. iOS suspends an app soon after it leaves the screen, and background pushes are throttled **Verify** | Yes, with a background service you allow **Verify** |
+
+A phone whose app is closed shows as asleep, and the assistant is told so instead of waiting.
+
+**How it is built.** Capacitor 8 (MIT) wraps the React interface as a native iPhone, iPad and Android app and gives it native plugins (Keychain, QR scanner, share extension, local network discovery). The alternatives fit worse. React Native would mean rewriting every screen. A web app saved to the home screen needs a trusted HTTPS address for a computer on your Wi-Fi, which is awkward without a server. The share extension and local discovery need a little Swift.
+
+**No push notifications in v1.** Apple and Google deliver push only with a provider key, and that key can't ship inside an open-source app. So a closed phone gets no "needs you" alert. It shows when the app is opened. An optional small relay run by the project could come later, and it would carry no message content (decision 11).
+
+**Cost and rules.** An iOS app needs an Apple Developer Program account (US$99 a year **Verify**), builds on macOS (a cloud macOS builder in CI is enough), review before the App Store, and TestFlight for betas, whose builds expire after 90 days **Verify**. Android needs a Google Play developer account. Celeste's Apache-2.0 license is fine for both stores.
+
+**What earlier phases do now so this stays easy**
+
+- Everything the interface needs from Core keeps going through the one typed channel, never through anything Electron-only.
+- Each Core method gets a scope as it is added.
+- New screens avoid layouts that only work on a wide window where avoiding that costs nothing.
 
 ## 8. Phases
 
@@ -654,22 +722,42 @@ What was built, and the choices made along the way:
 - **Attachments** are saved when added (so an unsent draft with files survives a restart), linked to the session on send, and shown through `celeste-file://attachments/`, which serves that one folder only. Only known file types keep their extension.
 - **Credentials.** API keys go to `safeStorage` in the main process. The window can store, remove and ask for the last four characters, and never read a key back. If the system cannot encrypt, nothing is stored.
 - **Search** is FTS5 over titles, your messages and the assistant's answers, with prefix matching.
-- **After a restart:** a turn that was running is marked cut off and the session is idle. A question or approval that was waiting stays on screen. Answering it starts a new turn with the answer as a message, which is the fallback the plan describes. Real resume of the vendor's own session is Phase 3.
+- **After a restart:** a turn that was running is marked cut off and the session is idle. A question or approval that was waiting stays on screen. Answering it starts a new turn with the answer as a message, which is the fallback the plan describes. Real resume of the vendor's own session is Phase 4.
 - **Still sample content:** the assistant, the sample sessions (added on the first start only), the Connect button's steps, and workflows. Workflows are saved in Phase 7.
 
-### Phase 3: Copilot end to end (M)
+### Phase 3: Devices (L)
 
-Full adapter: streaming, tools, approvals, `ask_user`, attachments, effort, models, resume, fallback, Connect button, runtime download. Also the adapter contract test suite.
+Brought ahead of the vendor adapters at your request. It needs only Phase 2 (the database, Core and secrets). The device tools are served by Celeste's own MCP server, built here with the official SDK and tested with a real MCP client and with the scripted assistant. Each vendor adapter in Phases 4 and 5 then connects to the same server.
+
+**Steps:**
+
+1. **Spikes first**, to settle the **Verify** items in section 7.11:
+   - SSH to a Windows machine's OpenSSH Server and run encoded commands in Windows PowerShell 5.1 and in PowerShell 7 (quoting, exit codes, output encoding).
+   - Pair and connect an Android phone over Wi-Fi from Celeste, with Google's `adb` and with `@yume-chan/adb`, and browse mDNS from Core on Windows (firewall prompt, multicast).
+   - From Windows, with Apple's drivers, list a paired iPhone and read its syslog and media files with libimobiledevice, then decide whether the iPhone helper ships here or waits for the Companion in Phase 9.
+   - Copy a 100 MB folder of many small files over SFTP, to size the snapshot limits.
+2. **Connector contract and tests that need no VM:** a fake connector, and an in-process SSH server built with `ssh2`'s server mode.
+3. **Storage:** the migration, secrets, and host-key pinning.
+4. **The device MCP server:** on loopback only with a token for each session, the access levels, the approval gate and the activity record.
+5. **Connectors:** SSH (with PowerShell for Windows), Hyper-V, Android, and the local VM lists for each desktop.
+6. **Discovery:** network announcements, local VM lists, manual entry.
+7. **Screens:** Settings, Devices; the Add dialog; the panel section; chips; the remote folder picker; snapshots. The scripted assistant gets a devices scenario, so you can review all of it before any vendor is connected.
+
+**Done when:** with a real Linux VM, a Windows VM, a Hyper-V VM and an Android phone, you can add each one, and a real MCP client and the scripted assistant can run a command and read a file on it. The approval card shows the exact command. A snapshot of a folder opens as local context. A changed host key is refused. Dropping Wi-Fi in the middle of a command gives a clear error and nothing hangs. A Read-only device offers no command tool. Everything shows in the session log.
+
+### Phase 4: Copilot end to end (M)
+
+Full adapter: streaming, tools, approvals, `ask_user`, attachments, effort, models, resume, fallback, Connect button, runtime download. Also the adapter contract test suite, which includes a call to a device tool through Celeste's device server (Phase 3), approval card included.
 
 **Done when:** real tasks complete in Chat and Develop, and force-quitting mid-task then resuming keeps the full conversation and agent context.
 
-### Phase 4: Claude, OpenAI, Gemini (L)
+### Phase 5: Claude, OpenAI, Gemini (L)
 
-A short test against each real CLI to settle the **Verify** items, starting with Claude's sign-out side effect, then each adapter in turn. Includes capability-driven UI and each vendor's Connect flow.
+A short test against each real CLI to settle the **Verify** items, starting with Claude's sign-out side effect, then each adapter in turn. Includes capability-driven UI and each vendor's Connect flow. Each adapter also connects to the device server (Phase 3) and passes device snapshots through the vendor's extra-folder option.
 
 **Done when:** all four vendors pass the same contract suite, and any gaps appear clearly in the UI.
 
-### Phase 5: Modes and tools complete (L)
+### Phase 6: Modes and tools complete (L)
 
 - **Develop:** diff review, file tree, integrated terminal, git worktrees, vendor-neutral per-turn snapshots with revert.
 - **Chat:** output file cards.
@@ -677,26 +765,6 @@ A short test against each real CLI to settle the **Verify** items, starting with
 - **Search:** global search from the top bar.
 
 **Done when:** a real change can be made, reviewed and reverted in Develop, and a real internal MCP server works with every vendor.
-
-### Phase 6: Devices (L)
-
-Needs Celeste's own MCP server and the real MCP configuration from Phases 3 and 5.
-
-**Steps:**
-
-1. **Spikes first**, to settle the **Verify** items in section 7.11:
-   - SSH to a Windows machine's OpenSSH Server and run encoded commands in Windows PowerShell 5.1 and in PowerShell 7 (quoting, exit codes, output encoding).
-   - Pair and connect an Android phone over Wi-Fi from Celeste, with Google's `adb` and with `@yume-chan/adb`, and browse mDNS from Core on Windows (firewall prompt, multicast).
-   - Reach the loopback MCP server from all four vendors' agents, with the per-session token and an approval that waits for you.
-   - Copy a 100 MB folder of many small files over SFTP, to size the snapshot limits.
-2. **Connector contract and tests that need no VM:** a fake connector, and an in-process SSH server built with `ssh2`'s server mode.
-3. **Storage:** the migration, secrets, and host-key pinning.
-4. **The device MCP server**, the access levels, the approval gate and the activity record.
-5. **Connectors:** SSH (with PowerShell for Windows), Hyper-V, and Android.
-6. **Discovery:** network announcements, the Hyper-V list, manual entry.
-7. **Screens:** Settings, Devices; the Add dialog; the panel section; chips; the remote folder picker; snapshots.
-
-**Done when:** with a real Linux VM, a Windows VM, a Hyper-V VM and an Android phone, you can add each one, and the assistant can run a command and read a file on it. The approval card shows the exact command. A snapshot of a folder opens as local context. A changed host key is refused. Dropping Wi-Fi in the middle of a command gives a clear error and nothing hangs. A Read-only device offers no command tool. Everything shows in the session log.
 
 ### Phase 7: Workflows (L)
 
@@ -715,10 +783,24 @@ Schema, runner, Tool and Agent steps, inputs and outputs, error handling, live r
 
 **Done when:** clean Windows and Mac machines can install Celeste, finish the wizard and run a session with every sign-in that ships.
 
+### Phase 9: Mobile companion for iPhone, iPad and Android (L)
+
+After the first public release. It needs your decisions 9 to 11 and a design for the phone screens.
+
+**Steps:**
+
+1. **Network access to Core:** an authenticated, encrypted channel, pairing by QR code, scopes for each method, revocation of a phone, and a record of what a phone did.
+2. **Phone layouts** for the screens, from your design.
+3. **The Capacitor app,** iOS first with Android following from the same code: secure storage, QR scanner, finding your computer on the local network.
+4. **The phone as a device:** shared folders, "Send to Celeste" from the share sheet, clipboard, and on Android ADB or the Companion.
+5. **Distribution:** TestFlight beta, then the App Store, and an internal track on Google Play.
+
+**Done when:** a paired iPhone on the same Wi-Fi can open a session, send a message, answer a question and approve a command on your computer, and removing the phone from Settings cuts it off at once.
+
 ### Testing throughout
 
 - **Adapter contract suite:** one scripted scenario every vendor must pass (text, tool call, approval, `ask_user`, image, interrupt, resume). Recorded vendor events let it run without spending tokens.
-- **Connector contract suite (Phase 6):** one scenario every device connector must pass (run a command, output cut at the limit, timeout, Stop, read, write and list, odd paths, a changed host key), plus tests that Read only never offers the command tool and that Ask first always asks. They run against the fake connector and the in-process SSH server.
+- **Connector contract suite (Phase 3):** one scenario every device connector must pass (run a command, output cut at the limit, timeout, Stop, read, write and list, odd paths, a changed host key), plus tests that Read only never offers the command tool and that Ask first always asks. They run against the fake connector and the in-process SSH server.
 - **Vitest:** event reducers, session restore, workflow runner.
 - **Playwright for Electron:** startup, core flows, and screenshot comparison of key screens and the glow.
 
@@ -740,9 +822,14 @@ Schema, runner, Tool and Agent steps, inputs and outputs, error handling, live r
 | **Devices can be damaged, or their data leaked.** An assistant with a shell on a shared or production machine can do harm that can't be reverted, and prompt injection from remote content makes that more likely | A new device is Read only, commands ask by default and ignore the global auto-approve, the assistant sees only devices attached to its session, every call is recorded, and Full carries a warning badge. Reviewed again in the Phase 8 security review |
 | **Setup on the other machine is the user's job.** OpenSSH Server on Windows, the PowerShell 7 subsystem and WinRM trust all need steps there | Celeste shows the exact steps to copy, tests the connection and explains each failure. It never changes a remote machine or your system settings itself |
 | **Finding devices is unreliable on some networks.** VPNs, guest Wi-Fi and client isolation block the announcements, and Windows machines rarely announce SSH | Typing an address always works, QR pairing falls back to the pairing code, and a subnet scan is optional |
-| **Android pairing from a client other than Google's `adb` is less proven**, and platform-tools redistribution terms are unchecked | A spike at the start of Phase 6. The fallback is Google's own `adb`, downloaded on demand and not bundled |
+| **Android pairing from a client other than Google's `adb` is less proven**, and platform-tools redistribution terms are unchecked | A spike at the start of Phase 3. The fallback is Google's own `adb`, downloaded on demand and not bundled |
 | **What the assistant reads on a device goes to your AI vendor**, which may break a company policy for work machines or phones | Said plainly when adding a device and when attaching one, and controlled per device |
-| **iPhone expectations.** People may expect their iPhone to work | Stated up front in the plan and left out of the Add dialog |
+| **iPhone expectations.** People may expect an iPhone to behave like a Linux machine | Stated up front: no shell, only the helper and the Companion's shared folders and share sheet, and only while the app is open |
+| **Celeste can't run on iOS itself.** Electron is a desktop framework, and the vendor agents are desktop programs an iPhone can't run | The companion app controls your desktop Celeste instead (section 7.12), and the plan and the app say so plainly |
+| **A paired phone can steer a desktop agent that runs commands** | Mobile access is off by default, each phone is paired by QR code and can be revoked at once, its permissions are narrower than the desktop's (no settings, vendors, devices or deletion), and risky actions can require approval on the phone |
+| **No push notifications without a server.** Apple and Google need a provider key that can't ship inside open-source code | None in v1: the phone shows what needs you when opened. An optional small relay run by the project can come later and would carry no message content |
+| **Apple's rules and costs.** A paid developer account, builds on macOS, review, and TestFlight builds that expire | Planned in decision 9. Betas through TestFlight first, with a macOS cloud builder in CI |
+| **iOS and macOS ask permission before an app finds devices on the network**, and iOS suspends apps in the background | Celeste explains the prompt first and typing an address always works. A phone shows as asleep when its app is closed |
 
 ## 10. Sources
 
@@ -809,3 +896,14 @@ Schema, runner, Tool and Agent steps, inputs and outputs, error handling, live r
 [WinFsp licensing](https://winfsp.dev/com/),
 [SSHFS-Win](https://github.com/winfsp/sshfs-win).
 WinRM details come from secondary sources and are marked **Verify**.
+
+**Mobile and iPhone:**
+[Capacitor](https://capacitorjs.com/docs),
+[libimobiledevice](https://libimobiledevice.org),
+[Local network permission (Apple)](https://developer.apple.com/documentation/bundleresources/information-property-list/nslocalnetworkusagedescription),
+[MCP TypeScript SDK](https://www.npmjs.com/package/@modelcontextprotocol/sdk),
+[Parallels command line](https://docs.parallels.com/landing/parallels-desktop-developers-guide/command-line-interface-utility/manage-virtual-machines-from-cli/general-virtual-machine-management/list-virtual-machines),
+[UTM scripting](https://docs.getutm.app/scripting/scripting/),
+[Apple Developer Program renewal](https://developer.apple.com/support/renewal),
+[Background pushes (Apple forum)](https://developer.apple.com/forums/thread/757094).
+Apple's fee, the TestFlight 90-day expiry and iOS background limits come from secondary sources or general knowledge and are marked **Verify**. That Electron has no iOS or Android target is from its documentation of supported platforms and general knowledge.
