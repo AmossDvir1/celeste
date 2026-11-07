@@ -1,4 +1,5 @@
 import type { DraftState, LogEvent, SearchHit, SessionSummary, StoredEvent } from '@shared/api'
+import type { DeviceActivity, DeviceFolder, DeviceRecord } from '@shared/devices'
 
 /** A session as stored. `deletedAt` is set between Delete and the end of the undo window. */
 export interface SessionRow extends SessionSummary {
@@ -56,8 +57,27 @@ export interface Store {
   deleteAttachment(id: string): AttachmentRow | undefined
   unlinkedAttachments(): AttachmentRow[]
 
+  listDevices(): DeviceRecord[]
+  getDevice(id: string): DeviceRecord | undefined
+  insertDevice(device: DeviceRecord): void
+  patchDevice(id: string, patch: Partial<Omit<DeviceRecord, 'id' | 'createdAt'>>): DeviceRecord | undefined
+  /** Removes the device with its folders and activity. Returns its folders so cached copies can be deleted. */
+  deleteDevice(id: string): DeviceFolder[]
+  setAttached(sessionId: string, deviceId: string, on: boolean): void
+  attachedDevices(sessionId: string): string[]
+  listFolders(): DeviceFolder[]
+  getFolder(id: string): StoredFolder | undefined
+  insertFolder(folder: StoredFolder): void
+  patchFolder(id: string, patch: Partial<Pick<DeviceFolder, 'snapshotAt' | 'bytes' | 'files'> & { snapshotPath: string | null }>): void
+  deleteFolder(id: string): StoredFolder | undefined
+  addActivity(row: Omit<DeviceActivity, 'id'>): void
+  activity(deviceId: string, limit: number): DeviceActivity[]
+
   close(): void
 }
+
+/** A folder as stored: with where its snapshot copy lives on this computer, which the window never sees. */
+export type StoredFolder = DeviceFolder & { snapshotPath: string | null }
 
 /** Where attachment bytes live: a folder on disk in the app, in memory in the browser preview. */
 export interface FileStore {

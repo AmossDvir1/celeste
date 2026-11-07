@@ -1,6 +1,8 @@
 import { useEffect } from 'react'
 import { PanelLeft } from 'lucide-react'
 import { ChatHome } from '@/features/chat/ChatHome'
+import { AddDeviceDialog } from '@/features/devices/AddDeviceDialog'
+import { FolderPicker } from '@/features/devices/FolderPicker'
 import { ConversationView } from '@/features/chat/ConversationView'
 import { ProjectBar } from '@/features/develop/ProjectBar'
 import { ChangesPanel, FilesPanel, TerminalPanel } from '@/features/develop/panels'
@@ -149,6 +151,8 @@ export function App() {
         {wizardOpen && <Wizard />}
         <SettingsDialog />
         <SearchDialog />
+        <AddDeviceDialog />
+        <FolderPicker />
         <Toasts />
         {import.meta.env.DEV && <DevMenu />}
       </div>

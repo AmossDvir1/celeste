@@ -4,9 +4,17 @@ import { mkdirSync } from 'node:fs'
 import { homedir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import type { MessagePortMain } from 'electron'
-import type { CoreMessage, CorePush, CoreRequest } from '@shared/api'
+import type { CoreApi, CoreMessage, CorePush, CoreRequest } from '@shared/api'
 import { DEFAULT_SETTINGS, DEFAULT_VENDORS } from '@shared/defaults'
 import { DiskFileStore } from './disk-files'
+import { AdbPairing } from './devices/adb-pairing'
+import { findAdb } from './devices/adb-connector'
+import { connectorsForApp } from './devices/connectors'
+import { DeviceService } from './devices/device-service'
+import { discoverAll } from './devices/discovery'
+import { DeviceToolServer } from './devices/mcp-server'
+import { nodeFileOps } from './devices/node-fs'
+import { DeviceTools } from './devices/tools'
 import { createMockSession } from './mock/engine'
 import { sampleSessions } from './mock/samples'
 import { SessionService } from './service'
@@ -29,18 +37,60 @@ const send = (port: MessagePortMain, message: CoreMessage) => port.postMessage(m
 const push = (p: CorePush) => ports.forEach((port) => send(port, { kind: 'push', push: p }))
 
 let service: SessionService | undefined
+let devices: DeviceService | undefined
+let toolServer: DeviceToolServer | undefined
+let api: CoreApi | undefined
 let store: SqliteStore | undefined
 
-try {
+// Passwords and key passphrases live in the main process. Core asks for one only when it is about to connect.
+let nextSecretId = 0
+const waitingForSecret = new Map<number, (value: string | null) => void>()
+function getSecret(name: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const id = ++nextSecretId
+    const timer = setTimeout(() => {
+      waitingForSecret.delete(id)
+      resolve(null)
+    }, 10_000)
+    waitingForSecret.set(id, (value) => {
+      clearTimeout(timer)
+      resolve(value)
+    })
+    parent.postMessage({ type: 'secret-request', id, name })
+  })
+}
+
+async function start(): Promise<void> {
   const dataDir = process.env['CELESTE_DATA_DIR']
   if (!dataDir) throw new Error('CELESTE_DATA_DIR is not set')
   mkdirSync(dataDir, { recursive: true })
   store = new SqliteStore(join(dataDir, 'celeste.db'))
+  const db = store
+
+  devices = new DeviceService({
+    store: db,
+    dataDir,
+    getSecret,
+    connectorFor: connectorsForApp(),
+    push,
+    fs: nodeFileOps,
+    discover: () => discoverAll(),
+    pairing: (() => {
+      const pairing = new AdbPairing(() => findAdb())
+      return { pairByCode: (a, c) => pairing.pairByCode(a, c), startQr: (n, ok, fail) => pairing.startQr(n, ok, fail) }
+    })()
+  })
+  const tools = new DeviceTools(db, devices, { requestApproval: (...a) => (service as SessionService).requestApproval(...a) }, nodeFileOps, dataDir)
+  toolServer = new DeviceToolServer(tools)
+  await toolServer.start()
+  const servers = toolServer
+
   service = new SessionService({
     store,
     files: new DiskFileStore(join(dataDir, 'attachments')),
     dataDir,
-    adapter: createMockSession,
+    adapter: (ctx) => createMockSession({ ...ctx, devices: { call: (name, args, hooks) => tools.call(ctx.sessionId, name, args, hooks) } }),
+    onSessionStopped: (id) => tools.cancel(id),
     push,
     defaults: {
       ...DEFAULT_SETTINGS,
@@ -51,22 +101,29 @@ try {
     samples: sampleSessions
   })
   service.init()
+  api = {
+    ...service.api,
+    ...devices.api,
+    'devices.toolServer': async (sessionId) => servers.info(sessionId)
+  }
   parent.postMessage({ type: 'ready' })
-} catch (err) {
+}
+
+start().catch((err) => {
   // Typically a database made by a newer Celeste. The main process tells the user and quits.
   parent.postMessage({ type: 'fatal', message: err instanceof Error ? err.message : String(err) })
-}
+})
 
 function onRequest(port: MessagePortMain, data: unknown): void {
   const req = data as Partial<CoreRequest> | null
-  if (!service || typeof req?.id !== 'number' || typeof req.method !== 'string' || !Array.isArray(req.params)) return
+  if (!api || typeof req?.id !== 'number' || typeof req.method !== 'string' || !Array.isArray(req.params)) return
   const id = req.id
-  const api = service.api
-  if (!Object.hasOwn(api, req.method)) {
+  const methods = api
+  if (!Object.hasOwn(methods, req.method)) {
     send(port, { kind: 'response', response: { id, ok: false, error: `Unknown method ${req.method}` } })
     return
   }
-  const method = api[req.method as keyof typeof api] as (...args: unknown[]) => unknown
+  const method = methods[req.method as keyof typeof methods] as (...args: unknown[]) => unknown
   const params = req.params
   Promise.resolve()
     .then(() => method(...params))
@@ -77,8 +134,11 @@ function onRequest(port: MessagePortMain, data: unknown): void {
 }
 
 parent.on('message', (event) => {
-  const message = event.data as { type?: string } | null
-  if (message?.type === 'connect') {
+  const message = event.data as { type?: string; id?: number; value?: string | null } | null
+  if (message?.type === 'secret-reply' && typeof message.id === 'number') {
+    waitingForSecret.get(message.id)?.(message.value ?? null)
+    waitingForSecret.delete(message.id)
+  } else if (message?.type === 'connect') {
     const port = event.ports[0]
     if (!port) return
     ports.add(port)
@@ -87,7 +147,11 @@ parent.on('message', (event) => {
     port.start()
   } else if (message?.type === 'shutdown') {
     service?.close()
-    store?.close()
-    parent.postMessage({ type: 'closed' })
+    void (async () => {
+      await devices?.close().catch(() => undefined)
+      await toolServer?.stop().catch(() => undefined)
+      store?.close()
+      parent.postMessage({ type: 'closed' })
+    })()
   }
 })

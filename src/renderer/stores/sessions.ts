@@ -104,7 +104,7 @@ export const useSessions = create<SessionsState>((set, get) => {
         })
       } else if (push.type === 'removed') {
         drop(push.id)
-      } else {
+      } else if (push.type === 'event') {
         const queue = loading.get(push.sessionId)
         if (queue) queue.push(push.stored)
         else if (get().sessions[push.sessionId]?.loaded) update(push.sessionId, (s) => foldEvents(s, [push.stored]))

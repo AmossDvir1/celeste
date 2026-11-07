@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { Bot, Database, Info, Moon, Palette, Plug, Settings as SettingsIcon, Sun, Laptop, X, Plug2 } from 'lucide-react'
+import { Bot, Database, Info, Monitor, Moon, Palette, Plug, Settings as SettingsIcon, Sun, Laptop, X, Plug2 } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Modal } from '@/components/Dialog'
 import { Field, SelectField } from '@/components/form'
@@ -10,6 +10,7 @@ import { useSessions } from '@/stores/sessions'
 import { useSettings, type ThemePref } from '@/stores/settings'
 import { useUi, type SettingsSection } from '@/stores/ui'
 import { useVendors } from '@/stores/vendors'
+import { DevicesSettings } from '@/features/devices/DevicesSettings'
 import { VendorCard } from './VendorCard'
 
 const SECTIONS: { id: SettingsSection; label: string; icon: typeof Bot }[] = [
@@ -18,6 +19,7 @@ const SECTIONS: { id: SettingsSection; label: string; icon: typeof Bot }[] = [
   { id: 'vendors', label: 'AI vendors', icon: Plug2 },
   { id: 'agent', label: 'Agent defaults', icon: Bot },
   { id: 'tools', label: 'Tools & Integrations', icon: Plug },
+  { id: 'devices', label: 'Devices', icon: Monitor },
   { id: 'data', label: 'Data', icon: Database },
   { id: 'about', label: 'About', icon: Info }
 ]
@@ -252,6 +254,12 @@ function Content({ section }: { section: SettingsSection }) {
             <Plug className="h-4 w-4" /> Open Tools &amp; Integrations
           </Button>
           <p className="text-[13px] text-ink-faint">In this preview the list is sample data.</p>
+        </Section>
+      )
+    case 'devices':
+      return (
+        <Section title="Devices" description="VMs, other computers and Android phones the assistant can work on.">
+          <DevicesSettings />
         </Section>
       )
     case 'data':

@@ -2,8 +2,9 @@ import { copyFileSync } from 'node:fs'
 import { DatabaseSync, type StatementSync } from 'node:sqlite'
 import type { ApprovalMode, Effort, SessionMode } from '@shared/agent'
 import type { DraftState, LogEvent, SearchHit, SessionStatus, StoredEvent } from '@shared/api'
+import type { AccessLevel, AuthMethod, DeviceActivity, DeviceFolder, DeviceKind, DeviceOs, DeviceRecord, DeviceShell, FolderMode } from '@shared/devices'
 import { MIGRATIONS } from './migrations'
-import { toMatchQuery, type AttachmentRow, type IndexKind, type SessionRow, type Store } from './store'
+import { toMatchQuery, type AttachmentRow, type IndexKind, type SessionRow, type StoredFolder, type Store } from './store'
 
 type Row = Record<string, unknown>
 
@@ -48,6 +49,53 @@ function attachmentFrom(r: Row): AttachmentRow {
     file: r.file as string,
     ...(r.width != null ? { width: r.width as number } : {}),
     ...(r.height != null ? { height: r.height as number } : {}),
+    createdAt: r.created_at as number
+  }
+}
+
+function deviceFrom(r: Row): DeviceRecord {
+  return {
+    id: r.id as string,
+    name: r.name as string,
+    kind: r.kind as DeviceKind,
+    host: r.host as string,
+    port: r.port as number,
+    username: r.username as string,
+    authMethod: r.auth_method as AuthMethod,
+    ...(r.key_path != null ? { keyPath: r.key_path as string } : {}),
+    os: r.os as DeviceOs,
+    shell: r.shell as DeviceShell,
+    accessLevel: r.access_level as AccessLevel,
+    hostKeySha256: (r.host_key_sha256 ?? null) as string | null,
+    createdAt: r.created_at as number,
+    lastSeenAt: (r.last_seen_at ?? null) as number | null
+  }
+}
+
+const DEVICE_COLUMNS: Record<string, string> = {
+  name: 'name',
+  host: 'host',
+  port: 'port',
+  username: 'username',
+  authMethod: 'auth_method',
+  keyPath: 'key_path',
+  os: 'os',
+  shell: 'shell',
+  accessLevel: 'access_level',
+  hostKeySha256: 'host_key_sha256',
+  lastSeenAt: 'last_seen_at'
+}
+
+function folderFrom(r: Row): StoredFolder {
+  return {
+    id: r.id as string,
+    deviceId: r.device_id as string,
+    path: r.path as string,
+    mode: r.mode as FolderMode,
+    snapshotPath: (r.snapshot_path ?? null) as string | null,
+    snapshotAt: (r.snapshot_at ?? null) as number | null,
+    bytes: r.bytes as number,
+    files: r.files as number,
     createdAt: r.created_at as number
   }
 }
@@ -281,6 +329,107 @@ export class SqliteStore implements Store {
 
   unlinkedAttachments(): AttachmentRow[] {
     return this.all('SELECT * FROM attachments WHERE session_id IS NULL').map(attachmentFrom)
+  }
+
+  listDevices(): DeviceRecord[] {
+    return this.all('SELECT * FROM devices ORDER BY created_at').map(deviceFrom)
+  }
+
+  getDevice(id: string): DeviceRecord | undefined {
+    const r = this.get('SELECT * FROM devices WHERE id = ?', id)
+    return r && deviceFrom(r)
+  }
+
+  insertDevice(d: DeviceRecord): void {
+    this.run(
+      `INSERT INTO devices (id, name, kind, host, port, username, auth_method, key_path, os, shell, access_level, host_key_sha256, created_at, last_seen_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      d.id, d.name, d.kind, d.host, d.port, d.username, d.authMethod, d.keyPath ?? null, d.os, d.shell, d.accessLevel, d.hostKeySha256, d.createdAt, d.lastSeenAt
+    )
+  }
+
+  patchDevice(id: string, patch: Partial<Omit<DeviceRecord, 'id' | 'createdAt'>>): DeviceRecord | undefined {
+    const sets: string[] = []
+    const values: unknown[] = []
+    for (const [key, value] of Object.entries(patch)) {
+      const column = DEVICE_COLUMNS[key]
+      if (!column || value === undefined) continue
+      sets.push(`${column} = ?`)
+      values.push(value)
+    }
+    if (sets.length) this.run(`UPDATE devices SET ${sets.join(', ')} WHERE id = ?`, ...values, id)
+    return this.getDevice(id)
+  }
+
+  deleteDevice(id: string): DeviceFolder[] {
+    return this.tx(() => {
+      const folders = this.all('SELECT * FROM device_folders WHERE device_id = ?', id).map(folderFrom)
+      this.run('DELETE FROM devices WHERE id = ?', id)
+      return folders.map(({ snapshotPath: _path, ...folder }) => folder)
+    })
+  }
+
+  setAttached(sessionId: string, deviceId: string, on: boolean): void {
+    if (on) this.run('INSERT OR IGNORE INTO session_devices (session_id, device_id) VALUES (?, ?)', sessionId, deviceId)
+    else this.run('DELETE FROM session_devices WHERE session_id = ? AND device_id = ?', sessionId, deviceId)
+  }
+
+  attachedDevices(sessionId: string): string[] {
+    return this.all('SELECT device_id FROM session_devices WHERE session_id = ?', sessionId).map((r) => r.device_id as string)
+  }
+
+  listFolders(): DeviceFolder[] {
+    return this.all('SELECT * FROM device_folders ORDER BY created_at').map((r) => {
+      const { snapshotPath: _path, ...folder } = folderFrom(r)
+      return folder
+    })
+  }
+
+  getFolder(id: string): StoredFolder | undefined {
+    const r = this.get('SELECT * FROM device_folders WHERE id = ?', id)
+    return r && folderFrom(r)
+  }
+
+  insertFolder(f: StoredFolder): void {
+    this.run(
+      'INSERT INTO device_folders (id, device_id, path, mode, snapshot_path, snapshot_at, bytes, files, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      f.id, f.deviceId, f.path, f.mode, f.snapshotPath, f.snapshotAt, f.bytes, f.files, f.createdAt
+    )
+  }
+
+  patchFolder(id: string, patch: Partial<Pick<DeviceFolder, 'snapshotAt' | 'bytes' | 'files'> & { snapshotPath: string | null }>): void {
+    const columns: Record<string, string> = { snapshotAt: 'snapshot_at', bytes: 'bytes', files: 'files', snapshotPath: 'snapshot_path' }
+    const sets: string[] = []
+    const values: unknown[] = []
+    for (const [key, value] of Object.entries(patch)) {
+      if (!columns[key] || value === undefined) continue
+      sets.push(`${columns[key]} = ?`)
+      values.push(value)
+    }
+    if (sets.length) this.run(`UPDATE device_folders SET ${sets.join(', ')} WHERE id = ?`, ...values, id)
+  }
+
+  deleteFolder(id: string): StoredFolder | undefined {
+    const row = this.getFolder(id)
+    if (row) this.run('DELETE FROM device_folders WHERE id = ?', id)
+    return row
+  }
+
+  addActivity(a: Omit<DeviceActivity, 'id'>): void {
+    this.run('INSERT INTO device_activity (device_id, session_id, tool, summary, ok, bytes, at) VALUES (?, ?, ?, ?, ?, ?, ?)', a.deviceId, a.sessionId, a.tool, a.summary, a.ok ? 1 : 0, a.bytes, a.at)
+  }
+
+  activity(deviceId: string, limit: number): DeviceActivity[] {
+    return this.all('SELECT * FROM device_activity WHERE device_id = ? ORDER BY at DESC, id DESC LIMIT ?', deviceId, limit).map((r) => ({
+      id: r.id as number,
+      deviceId: r.device_id as string,
+      sessionId: (r.session_id ?? null) as string | null,
+      tool: r.tool as string,
+      summary: r.summary as string,
+      ok: r.ok === 1,
+      bytes: r.bytes as number,
+      at: r.at as number
+    }))
   }
 
   close(): void {

@@ -1,11 +1,36 @@
 // Packaged-layout check: runs the built app from an app.asar archive, the way an installer lays it out,
 // and confirms the window, Core and the database all work from inside it.   npm run verify:package
 // (This is not the installer. Windows and Mac installers, signing and updates are Phase 7.)
-import { cpSync, mkdirSync, mkdtempSync, rmSync, statSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
 import { createPackage } from '@electron/asar'
 import { launch, root } from './lib/app.mjs'
+
+/**
+ * The packages the main process and Core load at run time: what package.json lists as dependencies, and what those
+ * need in turn, found the way Node finds them. (The interface's libraries are bundled and are not needed.)
+ */
+function runtimePackages() {
+  const found = new Map()
+  const lookup = (name, from) => {
+    for (let dir = from; ; dir = dirname(dir)) {
+      const candidate = join(dir, 'node_modules', name)
+      if (existsSync(join(candidate, 'package.json'))) return candidate
+      if (dir === dirname(dir)) return null
+    }
+  }
+  const visit = (name, from) => {
+    const dir = lookup(name, from)
+    if (!dir || found.has(dir)) return
+    found.set(dir, name)
+    const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+    for (const dep of Object.keys({ ...pkg.dependencies, ...pkg.optionalDependencies, ...pkg.peerDependencies })) visit(dep, dir)
+  }
+  const own = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+  for (const dep of Object.keys(own.dependencies ?? {})) visit(dep, root)
+  return [...found.keys()]
+}
 
 const work = mkdtempSync(join(tmpdir(), 'celeste-pack-'))
 const stage = join(work, 'stage')
@@ -21,6 +46,9 @@ try {
   mkdirSync(join(stage, 'resources'), { recursive: true })
   cpSync(join(root, 'package.json'), join(stage, 'package.json'))
   cpSync(join(root, 'out'), join(stage, 'out'), { recursive: true })
+  const packages = runtimePackages()
+  for (const dir of packages) cpSync(dir, join(stage, relative(root, dir)), { recursive: true })
+  check(`the run-time libraries are included (${packages.length} packages)`, packages.some((p) => p.endsWith('ssh2')) && packages.some((p) => p.includes('modelcontextprotocol')))
   cpSync(join(root, 'resources', 'icon.png'), join(stage, 'resources', 'icon.png'))
   await createPackage(stage, archive)
   check(`the app packs into one archive (${Math.round(statSync(archive).size / 1024)} KB)`, true)

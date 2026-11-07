@@ -18,7 +18,7 @@
       "@shared/*": ["./src/shared/*"],
       "@core/*": ["./src/core/*"]
     },
-    "types": ["vite/client"]
+    "types": ["vite/client", "node"]
   },
-  "include": ["src/renderer/**/*", "src/shared/**/*", "src/core/service.ts", "src/core/store.ts", "src/core/memory-store.ts", "src/core/mock/**/*"]
+  "include": ["src/renderer/**/*", "src/shared/**/*", "src/core/service.ts", "src/core/store.ts", "src/core/memory-store.ts", "src/core/mock/**/*", "src/core/devices/connector.ts", "src/core/devices/device-service.ts", "src/core/devices/tools.ts", "src/core/devices/fake-connector.ts"]
 }

@@ -3,6 +3,18 @@
 // resolves with its result. Core also pushes changes (new events, updated sessions) as `CorePush` messages.
 
 import type {
+  AddFolderResult,
+  DeviceActivity,
+  DeviceFolder,
+  DevicePatch,
+  DeviceRecord,
+  DirEntry,
+  FolderMode,
+  FoundDevice,
+  NewDevice,
+  TestResult
+} from './devices'
+import type {
   AgentEvent,
   ApprovalAnswer,
   ApprovalMode,
@@ -142,16 +154,47 @@ export interface CoreApi {
   /** Removes an attachment that was never sent. Sent ones belong to their session. */
   'attachments.discard': (id: string) => void
 
+  'devices.list': () => Promise<DeviceRecord[]>
+  /** Adds an unverified device. Store its password with `window.celeste.secrets`, then call `devices.test`. */
+  'devices.create': (input: NewDevice) => Promise<DeviceRecord>
+  'devices.update': (id: string, patch: DevicePatch) => Promise<DeviceRecord>
+  'devices.remove': (id: string) => Promise<void>
+  /** Connects, learns the operating system, and checks the pinned host key. */
+  'devices.test': (id: string) => Promise<TestResult>
+  /** Pins the host key the person confirmed. */
+  'devices.trustKey': (id: string, fingerprint: string) => Promise<DeviceRecord>
+  'devices.discover': () => Promise<FoundDevice[]>
+  /** Android: pairs with the address and six-digit code the phone shows, connects, and adds the device. */
+  'devices.pairByCode': (address: string, code: string, name: string) => Promise<DeviceRecord>
+  /** Android: returns the text for a QR code to scan on the phone, then waits for it and adds the device. */
+  'devices.startQrPairing': (name: string) => Promise<{ payload: string }>
+  'devices.cancelQrPairing': () => Promise<void>
+  'devices.attach': (sessionId: string, deviceId: string, on: boolean) => Promise<string[]>
+  'devices.attached': (sessionId: string) => Promise<string[]>
+  'devices.browse': (deviceId: string, path: string) => Promise<DirEntry[]>
+  'devices.folders': () => Promise<DeviceFolder[]>
+  'devices.addFolder': (deviceId: string, path: string, mode: FolderMode, confirm?: boolean) => Promise<AddFolderResult>
+  'devices.refreshFolder': (folderId: string) => Promise<AddFolderResult>
+  'devices.removeFolder': (folderId: string) => Promise<void>
+  'devices.activity': (deviceId: string) => Promise<DeviceActivity[]>
+  /** The loopback address and token an agent uses to reach this session's device tools. */
+  'devices.toolServer': (sessionId: string) => Promise<{ url: string; token: string } | null>
+
   // Preview only: the scripted assistant and its sample sessions.
   'dev.forceScenario': (scenario: string | null) => void
   'dev.restoreSamples': () => SessionSummary[]
 }
+
+export type DeviceApi = { [K in keyof CoreApi as K extends `devices.${string}` ? K : never]: CoreApi[K] }
+/** The methods the session service answers. The device service answers the rest. */
+export type SessionApi = Omit<CoreApi, keyof DeviceApi>
 
 export type CoreMethod = keyof CoreApi
 export type CoreParams<M extends CoreMethod> = Parameters<CoreApi[M]>
 export type CoreResult<M extends CoreMethod> = ReturnType<CoreApi[M]>
 
 export type CorePush =
+  | { type: 'devices' }
   | { type: 'event'; sessionId: string; stored: StoredEvent }
   | { type: 'summary'; session: SessionSummary }
   | { type: 'removed'; id: string }

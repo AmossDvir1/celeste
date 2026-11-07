@@ -29,6 +29,9 @@ export const core = {
 // live in memory, which is enough for the preview.
 const inMemory = new Map<string, string>()
 
+/** The preview's Core reads a password back from here. In the app, Core asks the main process instead. */
+export const previewSecret = (name: string): string | null => inMemory.get(name) ?? null
+
 export const secrets = {
   available: async (): Promise<boolean> => (window.celeste ? window.celeste.secrets.available() : true),
   set: async (name: string, value: string): Promise<void> => {

@@ -3,7 +3,7 @@
 Your AI workbench: one desktop app for Claude, GitHub Copilot, OpenAI and Google Gemini.
 Built with Electron, React and Tailwind. See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for the full plan.
 
-## Status: Phase 2, app foundation
+## Status: Phase 3, devices
 
 **Nothing talks to a real AI vendor yet**: the assistant, the Connect button's steps, the tools list and the
 workflow runs are scripted samples. What is real now: your sessions, settings, drafts and attached files are
@@ -13,6 +13,14 @@ your operating system and never shown again. The window, themes, glow line, comp
 and settings are as in the design preview.
 
 The sample sessions in the sidebar are added on the first start only. Delete them like any other.
+
+**Devices (new):** Settings, Devices adds other computers and VMs (over SSH, including Windows with its OpenSSH Server),
+Hyper-V VMs on this PC, and Android phones (wireless debugging, by QR code or code). A device starts read only. Commands on it
+ask for your approval, shown with the exact command, unless you give that device full access, and a device only reaches a chat
+you attach it to. A folder on a device can be read live or copied as a read-only snapshot. Passwords are kept encrypted by your
+operating system. Android needs Google's `adb` installed (Android Studio's platform-tools), or its path in `CELESTE_ADB`.
+Only the scripted assistant uses devices so far, through the same tools the vendors will use. It has not been tried against a
+real VM or phone yet; see the plan for what is still to test.
 
 ## Run it
 
@@ -49,7 +57,8 @@ You can also type these in a chat to steer the sample assistant: `ask me` (asks 
 | `npm run typecheck` | Type-checks the interface, the main process and Core |
 | `npm test` | Unit tests: database, migrations, session logic, replay |
 | `npm run verify:persistence` | Runs the built app three times on one profile (normal restart, then a crash) and checks that nothing is lost |
-| `npm run verify:package` | Runs the built app from an `app.asar`, the way an installer lays it out |
+| `npm run verify:package` | Runs the built app from an `app.asar`, with its run-time libraries, the way an installer lays it out |
+| `npm run verify:devices` | Runs the built app against an in-process SSH server that stands in for a VM: add, confirm the key, attach, approve a command, snapshot, changed key, restart |
 | `npm run build` | Production build into `out/` (the app and the Core process) |
 | `npm run shots` | Screenshots of the key screens in both themes: `scripts/.output/shots/` |
 | `npm run glow:compare` | Renders the Chat home at the reference picture's size and measures the glow line against it |
@@ -72,7 +81,7 @@ shown only to say which service a control talks to. Before a public release, che
 src/
   shared/      the vendor boundary: AgentEvent, AgentSession, AgentAdapter
   main/        the Electron window, the Core process launcher, secrets, the attachment address
-  core/        the Core process: SQLite, sessions, the scripted assistant (core/mock)
+  core/        the Core process: SQLite, sessions, the scripted assistant (core/mock), devices (core/devices)
   preload/     the bridge the interface calls: a message port to Core, and secrets
   renderer/
     app/       shell: top bar, sidebar, layout, scenario switcher

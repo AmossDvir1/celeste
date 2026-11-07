@@ -1,9 +1,9 @@
-import type { AgentSession, ApprovalAnswer, ApprovalMode, AskAnswers, AttachmentInfo, SessionMode, UserInput, VendorId } from '@shared/agent'
+import type { AgentSession, ApprovalAnswer, ApprovalMode, AskAnswers, AttachmentInfo, SessionMode, ToolKind, UserInput, VendorId } from '@shared/agent'
 import {
   UNDO_WINDOW_MS,
   type AppSettings,
   type Bootstrap,
-  type CoreApi,
+  type SessionApi,
   type CorePush,
   type CreateSessionInput,
   type DraftState,
@@ -28,6 +28,7 @@ import type { AttachmentRow, FileStore, SessionRow, Store } from './store'
  */
 
 export type AdapterFactory = (ctx: {
+  sessionId: string
   mode: SessionMode
   getApproval: () => ApprovalMode
   takeForcedScenario: () => string | undefined
@@ -42,6 +43,8 @@ export interface ServiceOptions {
   defaults: AppSettings
   defaultVendors: VendorRecords
   samples?: () => SampleSession[]
+  /** Called when a session is stopped or deleted, so work started on its behalf (device commands) can be cancelled. */
+  onSessionStopped?: (sessionId: string) => void
   now?: () => number
   undoMs?: number
 }
@@ -93,6 +96,8 @@ export class SessionService {
   private readonly undoTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private forced: string | undefined
   private readonly undoMs: number
+  /** Approval cards raised for tool calls that are not the agent's own (device commands), waiting for an answer. */
+  private readonly toolApprovals = new Map<string, { sessionId: string; resolve: (allow: boolean) => void }>()
 
   constructor(private readonly opts: ServiceOptions) {
     this.store = opts.store
@@ -136,7 +141,8 @@ export class SessionService {
 
   // --- the methods the window can call ---------------------------------------------------------------
 
-  readonly api: CoreApi = {
+  /** Everything except the device methods, which DeviceService adds. */
+  readonly api: SessionApi = {
     'app.bootstrap': () => this.bootstrap(),
     'settings.patch': (patch) => this.patchSettings(patch),
     'vendors.set': (id, record) => this.setVendor(id, record),
@@ -288,6 +294,7 @@ export class SessionService {
     if (existing) return existing
     const row = this.requireSession(id)
     const session = this.opts.adapter({
+      sessionId: id,
       mode: row.mode,
       getApproval: () => this.store.getSession(id)?.approval ?? 'auto',
       takeForcedScenario: () => {
@@ -363,6 +370,13 @@ export class SessionService {
 
   private respondApproval(id: string, requestId: string, answer: ApprovalAnswer): void {
     this.requireSession(id)
+    const waiting = this.toolApprovals.get(requestId)
+    if (waiting && waiting.sessionId === id) {
+      this.toolApprovals.delete(requestId)
+      this.record(id, { type: 'approval.resolved', requestId, allow: answer.allow === true }, { text: '' })
+      waiting.resolve(answer.allow === true)
+      return
+    }
     const live = this.live.get(id)
     this.record(id, { type: 'approval.resolved', requestId, allow: answer.allow === true }, live ?? { text: '' })
     if (answer.allow && answer.always) {
@@ -386,8 +400,27 @@ export class SessionService {
     }
   }
 
+  /** Raises an approval card in the session for something that is not the agent's own tool, and waits. */
+  requestApproval(sessionId: string, request: { kind: ToolKind; title: string; detail?: string }): Promise<boolean> {
+    const requestId = `tool-${crypto.randomUUID()}`
+    // Not tied to the running agent: the answer goes to whoever is waiting, not to the vendor.
+    this.record(sessionId, { type: 'approval.requested', requestId, kind: request.kind, title: request.title, detail: request.detail }, { text: '' })
+    return new Promise((resolve) => this.toolApprovals.set(requestId, { sessionId, resolve }))
+  }
+
+  /** Says no to every approval a session is waiting on, so the calls behind them finish instead of hanging. */
+  private declineToolApprovals(sessionId: string): void {
+    for (const [requestId, waiting] of [...this.toolApprovals]) {
+      if (waiting.sessionId !== sessionId) continue
+      this.toolApprovals.delete(requestId)
+      waiting.resolve(false)
+    }
+  }
+
   private interrupt(id: string): void {
     const row = this.requireSession(id)
+    this.declineToolApprovals(id)
+    this.opts.onSessionStopped?.(id)
     const live = this.live.get(id)
     if (live) {
       void live.session.interrupt()
@@ -409,6 +442,8 @@ export class SessionService {
 
   private remove(id: string): void {
     this.requireSession(id)
+    this.declineToolApprovals(id)
+    this.opts.onSessionStopped?.(id)
     this.stopRuntime(id)
     this.store.patchSession(id, { deletedAt: this.now() })
     this.opts.push({ type: 'removed', id })

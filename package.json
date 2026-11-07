@@ -13,6 +13,7 @@
     "test": "vitest run",
     "verify:persistence": "electron-vite build && node scripts/persistence-check.mjs",
     "verify:package": "electron-vite build && node scripts/package-check.mjs",
+    "verify:devices": "electron-vite build && node scripts/devices-check.mjs",
     "shots": "electron-vite build && node scripts/screenshots.mjs",
     "glow:compare": "electron-vite build && node scripts/glow-compare.mjs",
     "icons": "node scripts/make-icons.mjs"
@@ -24,28 +25,35 @@
     "@resvg/resvg-js": "^2.6.2",
     "@tailwindcss/vite": "^4.3.5",
     "@types/node": "^26.6.6",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@types/ssh2": "^1.15.6",
     "@vitejs/plugin-react": "^6.2.1",
+    "@xyflow/react": "^12.12.1",
+    "buffer": "^6.0.3",
     "electron": "^45.2.3",
     "electron-vite": "^6.0.0",
     "jpeg-js": "^0.4.4",
+    "lucide-react": "^1.70.0",
     "playwright-core": "^1.65.0",
     "png-to-ico": "^3.0.2",
     "pngjs": "^7.0.0",
-    "tailwindcss": "^4.3.5",
-    "typescript": "^7.0.2",
-    "vite": "^8.3.6",
-    "vitest": "^5.1.0"
-  },
-  "dependencies": {
-    "@xyflow/react": "^12.12.1",
-    "lucide-react": "^1.70.0",
+    "qrcode": "^1.5.4",
     "radix-ui": "^1.8.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
+    "tailwindcss": "^4.3.5",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.6",
+    "vitest": "^5.1.0",
     "zustand": "^5.1.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "bonjour-service": "^1.4.4",
+    "ssh2": "^1.17.0"
   }
 }

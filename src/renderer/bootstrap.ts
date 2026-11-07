@@ -1,5 +1,6 @@
 import type { SettingsPatch } from '@shared/api'
 import { core } from '@/api'
+import { useDevices } from '@/stores/devices'
 import { useDrafts } from '@/stores/drafts'
 import { useSessions } from '@/stores/sessions'
 import { setSaveErrorHandler, useSettings } from '@/stores/settings'
@@ -54,7 +55,10 @@ function within<T>(promise: Promise<T>, ms: number): Promise<T> {
  */
 export async function bootstrap(): Promise<void> {
   setSaveErrorHandler(() => useUi.getState().pushToast({ text: 'Could not save that setting.' }))
-  core.onPush((push) => useSessions.getState().applyPush(push))
+  core.onPush((push) => {
+    useSessions.getState().applyPush(push)
+    useDevices.getState().applyPush(push)
+  })
 
   const data = await within(core.call('app.bootstrap'), 15_000)
 
@@ -75,6 +79,7 @@ export async function bootstrap(): Promise<void> {
   await useVendors.getState().init(data.vendors)
   useSessions.getState().init(data.sessions)
   useDrafts.getState().init(data.drafts)
+  await useDevices.getState().refresh()
   useUi.getState().setDataDir(data.dataDir)
   useUi.getState().resetDraft()
 

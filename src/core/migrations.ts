@@ -61,5 +61,55 @@ export const MIGRATIONS: string[] = [
     text,
     tokenize = 'unicode61 remove_diacritics 2'
   );
+  `,
+
+  // 2: devices (remote machines and phones), which sessions they are attached to, their folders and activity
+  `
+  CREATE TABLE devices (
+    id               TEXT PRIMARY KEY,
+    name             TEXT NOT NULL,
+    kind             TEXT NOT NULL,
+    host             TEXT NOT NULL,
+    port             INTEGER NOT NULL,
+    username         TEXT NOT NULL,
+    auth_method      TEXT NOT NULL,
+    key_path         TEXT,
+    os               TEXT NOT NULL DEFAULT 'unknown',
+    shell            TEXT NOT NULL DEFAULT 'posix',
+    access_level     TEXT NOT NULL DEFAULT 'read',
+    host_key_sha256  TEXT,
+    created_at       INTEGER NOT NULL,
+    last_seen_at     INTEGER
+  );
+
+  CREATE TABLE session_devices (
+    session_id  TEXT NOT NULL REFERENCES sessions (id) ON DELETE CASCADE,
+    device_id   TEXT NOT NULL REFERENCES devices (id) ON DELETE CASCADE,
+    PRIMARY KEY (session_id, device_id)
+  );
+
+  CREATE TABLE device_folders (
+    id             TEXT PRIMARY KEY,
+    device_id      TEXT NOT NULL REFERENCES devices (id) ON DELETE CASCADE,
+    path           TEXT NOT NULL,
+    mode           TEXT NOT NULL,
+    snapshot_path  TEXT,
+    snapshot_at    INTEGER,
+    bytes          INTEGER NOT NULL DEFAULT 0,
+    files          INTEGER NOT NULL DEFAULT 0,
+    created_at     INTEGER NOT NULL
+  );
+
+  CREATE TABLE device_activity (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id   TEXT NOT NULL REFERENCES devices (id) ON DELETE CASCADE,
+    session_id  TEXT,
+    tool        TEXT NOT NULL,
+    summary     TEXT NOT NULL,
+    ok          INTEGER NOT NULL,
+    bytes       INTEGER NOT NULL DEFAULT 0,
+    at          INTEGER NOT NULL
+  );
+  CREATE INDEX device_activity_by_device ON device_activity (device_id, at DESC);
   `
 ]

@@ -206,6 +206,8 @@ function ApprovalCard({
   onAnswer: (allow: boolean, always?: boolean) => void
 }) {
   const Icon = TOOL_ICON[item.tool]
+  // A command on a device is Celeste's own approval: it names the device, and cannot be allowed for the whole session.
+  const onDevice = item.requestId.startsWith('tool-')
   if (item.status !== 'pending') {
     const allowed = item.status === 'allowed'
     return (
@@ -219,7 +221,7 @@ function ApprovalCard({
     <div role="group" aria-label="Approval needed" className="animate-fade-up max-w-[760px] rounded-xl border border-accent-edge bg-accent-soft/50 p-4">
       <div className="flex items-center gap-2 text-[14px] font-medium text-ink">
         <ShieldQuestion className="h-[18px] w-[18px] text-accent-text" />
-        {APPROVAL_TITLE[item.tool] ?? 'Allow this action?'}
+        {onDevice ? `${item.title}?` : (APPROVAL_TITLE[item.tool] ?? 'Allow this action?')}
       </div>
       <div className="mt-2.5 flex items-start gap-2.5 rounded-lg bg-field px-3 py-2.5">
         <Icon className="mt-0.5 h-4 w-4 shrink-0 text-ink-muted" />
@@ -231,9 +233,11 @@ function ApprovalCard({
         <Button variant="primary" size="sm" onClick={() => onAnswer(true)} autoFocus>
           Allow
         </Button>
-        <Button variant="secondary" size="sm" onClick={() => onAnswer(true, true)}>
-          Allow for this session
-        </Button>
+        {!onDevice && (
+          <Button variant="secondary" size="sm" onClick={() => onAnswer(true, true)}>
+            Allow for this session
+          </Button>
+        )}
         <Button variant="ghost" size="sm" onClick={() => onAnswer(false)}>
           Deny
         </Button>

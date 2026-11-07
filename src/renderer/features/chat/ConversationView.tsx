@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDown, FileDiff, Folder, GitBranch, Plug, SquareTerminal } from 'lucide-react'
 import type { UserInput } from '@shared/agent'
 import { cn } from '@/lib/cn'
@@ -10,6 +10,8 @@ import { useDrafts } from '@/stores/drafts'
 import { useSessions } from '@/stores/sessions'
 import { useUi, type RightPanel } from '@/stores/ui'
 import { useVendors } from '@/stores/vendors'
+import { DeviceGlyph } from '@/features/devices/parts'
+import { useDevices } from '@/stores/devices'
 import { Composer } from './Composer'
 import { Timeline } from './Timeline'
 import { DropZone, useAttachments } from './attachments'
@@ -44,6 +46,12 @@ export function ConversationView({ sessionId }: { sessionId: string }) {
   const text = useDrafts((s) => s.drafts[sessionId]?.text ?? '')
   const setText = (t: string) => useDrafts.getState().setText(sessionId, t)
   const scroller = useRef<HTMLDivElement>(null)
+  const attachedIds = useDevices((s) => s.attached[sessionId])
+  const allDevices = useDevices((s) => s.devices)
+  const loadAttached = useDevices((s) => s.loadAttached)
+  useEffect(() => {
+    void loadAttached(sessionId)
+  }, [sessionId, loadAttached])
   const [following, setFollowing] = useState(true)
 
   const changedFiles = useMemo(() => {
@@ -89,6 +97,15 @@ export function ConversationView({ sessionId }: { sessionId: string }) {
         <header className="relative z-10 flex h-14 shrink-0 items-center gap-3 border-b border-edge/70 px-5">
           <h1 className="min-w-0 truncate text-[15px] font-medium text-ink">{session.title}</h1>
           {model && <Badge className="shrink-0">{model.label}</Badge>}
+          {attachedIds?.map((id) => {
+            const d = allDevices.find((x) => x.id === id)
+            return d ? (
+              <Badge key={id} tone={d.accessLevel === 'full' ? 'warning' : 'neutral'} className="shrink-0">
+                <DeviceGlyph kind={d.kind} className="h-3 w-3" /> {d.name}
+                {d.accessLevel === 'full' && ' · full access'}
+              </Badge>
+            ) : null
+          })}
           {develop && session.cwd && (
             <span className="hidden min-w-0 items-center gap-3 text-[13px] text-ink-muted md:flex" title={session.cwd}>
               <span className="flex min-w-0 items-center gap-1.5">

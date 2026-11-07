@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ChevronRight, Package } from 'lucide-react'
 import { cn } from '@/lib/cn'
+import { DevicesPanelSection } from '@/features/devices/DevicesPanelSection'
 import { PanelCard } from '@/components/PanelCard'
 import { SearchInput, Switch } from '@/components/ui'
 import { INTEGRATIONS } from '@/mocks/tools'
@@ -29,6 +30,7 @@ export function ToolsPanel() {
 
   return (
     <PanelCard title="Tools & Integrations" onClose={() => setRight(null)} className="h-full">
+      <DevicesPanelSection />
       <div className="px-4 pt-3">
         <SearchInput value={query} onChange={setQuery} placeholder="Search tools…" className="h-10" />
       </div>

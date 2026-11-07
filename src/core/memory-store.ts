@@ -1,5 +1,6 @@
 import type { DraftState, LogEvent, SearchHit, StoredEvent } from '@shared/api'
-import type { AttachmentRow, FileStore, IndexKind, SessionRow, Store } from './store'
+import type { DeviceActivity, DeviceFolder, DeviceRecord } from '@shared/devices'
+import type { AttachmentRow, FileStore, IndexKind, SessionRow, StoredFolder, Store } from './store'
 
 const fold = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
 
@@ -14,6 +15,11 @@ export class MemoryStore implements Store {
   private kv = new Map<string, unknown>()
   private draftMap = new Map<string, DraftState>()
   private files = new Map<string, AttachmentRow>()
+  private devs = new Map<string, DeviceRecord>()
+  private attached = new Map<string, Set<string>>()
+  private folders = new Map<string, StoredFolder>()
+  private acts: DeviceActivity[] = []
+  private actId = 0
 
   insertSession(row: SessionRow): void {
     if (this.sessions.has(row.id)) throw new Error(`Session ${row.id} exists`)
@@ -52,6 +58,7 @@ export class MemoryStore implements Store {
     this.sessions.delete(id)
     this.logs.delete(id)
     this.draftMap.delete(id)
+    this.attached.delete(id)
     this.indexRows = this.indexRows.filter((r) => r.sessionId !== id)
     return structuredClone(gone)
   }
@@ -134,6 +141,70 @@ export class MemoryStore implements Store {
   }
   unlinkedAttachments(): AttachmentRow[] {
     return structuredClone([...this.files.values()].filter((a) => a.sessionId === null))
+  }
+
+  listDevices(): DeviceRecord[] {
+    return structuredClone([...this.devs.values()].sort((a, b) => a.createdAt - b.createdAt))
+  }
+  getDevice(id: string): DeviceRecord | undefined {
+    const d = this.devs.get(id)
+    return d && structuredClone(d)
+  }
+  insertDevice(device: DeviceRecord): void {
+    this.devs.set(device.id, structuredClone(device))
+  }
+  patchDevice(id: string, patch: Partial<Omit<DeviceRecord, 'id' | 'createdAt'>>): DeviceRecord | undefined {
+    const d = this.devs.get(id)
+    if (!d) return undefined
+    for (const [key, value] of Object.entries(patch)) {
+      if (value !== undefined) (d as unknown as Record<string, unknown>)[key] = value
+    }
+    return structuredClone(d)
+  }
+  deleteDevice(id: string): DeviceFolder[] {
+    const gone = [...this.folders.values()].filter((f) => f.deviceId === id)
+    gone.forEach((f) => this.folders.delete(f.id))
+    this.devs.delete(id)
+    this.attached.forEach((set) => set.delete(id))
+    this.acts = this.acts.filter((a) => a.deviceId !== id)
+    return structuredClone(gone.map(({ snapshotPath: _p, ...folder }) => folder))
+  }
+  setAttached(sessionId: string, deviceId: string, on: boolean): void {
+    const set = this.attached.get(sessionId) ?? new Set<string>()
+    if (on) set.add(deviceId)
+    else set.delete(deviceId)
+    this.attached.set(sessionId, set)
+  }
+  attachedDevices(sessionId: string): string[] {
+    return [...(this.attached.get(sessionId) ?? [])]
+  }
+  listFolders(): DeviceFolder[] {
+    return structuredClone([...this.folders.values()].sort((a, b) => a.createdAt - b.createdAt).map(({ snapshotPath: _p, ...folder }) => folder))
+  }
+  getFolder(id: string): StoredFolder | undefined {
+    const f = this.folders.get(id)
+    return f && structuredClone(f)
+  }
+  insertFolder(folder: StoredFolder): void {
+    this.folders.set(folder.id, structuredClone(folder))
+  }
+  patchFolder(id: string, patch: Partial<Pick<DeviceFolder, 'snapshotAt' | 'bytes' | 'files'> & { snapshotPath: string | null }>): void {
+    const f = this.folders.get(id)
+    if (!f) return
+    for (const [key, value] of Object.entries(patch)) {
+      if (value !== undefined) (f as unknown as Record<string, unknown>)[key] = value
+    }
+  }
+  deleteFolder(id: string): StoredFolder | undefined {
+    const f = this.folders.get(id)
+    this.folders.delete(id)
+    return f && structuredClone(f)
+  }
+  addActivity(row: Omit<DeviceActivity, 'id'>): void {
+    this.acts.push({ ...row, id: ++this.actId })
+  }
+  activity(deviceId: string, limit: number): DeviceActivity[] {
+    return structuredClone(this.acts.filter((a) => a.deviceId === deviceId).sort((a, b) => b.at - a.at || b.id - a.id).slice(0, limit))
   }
 
   close(): void {}

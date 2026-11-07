@@ -12,6 +12,7 @@ import type {
   ToolKind,
   UserInput
 } from '@shared/agent'
+import type { CallHooks, ToolOutput } from '../devices/tools'
 import { validationDiff } from './diffs'
 
 /*
@@ -19,7 +20,12 @@ import { validationDiff } from './diffs'
  * so the screens approved in Phase 1 are the screens real adapters plug into later.
  */
 
-export type ScenarioId = 'auto' | 'ask' | 'error' | 'stuck-thinking' | 'stuck-tool'
+export type ScenarioId = 'auto' | 'ask' | 'error' | 'stuck-thinking' | 'stuck-tool' | 'devices'
+
+/** The device tools, bound to this session. They apply the access levels and ask for approval themselves. */
+export interface DevicePort {
+  call(name: string, args: Record<string, unknown>, hooks?: CallHooks): Promise<ToolOutput>
+}
 
 class EventQueue<T> implements AsyncIterable<T> {
   private buffer: T[] = []
@@ -86,6 +92,9 @@ interface Ctx {
   emit: (e: AgentEvent) => void
   /** True while a tool is never going to finish (the "tool running" demo). */
   hang: () => Promise<never>
+  /** Calls a device tool and shows it as a tool card. The tool itself decides whether the user must approve. */
+  device: (name: string, args: Record<string, unknown>, title: string, kind: ToolKind) => Promise<ToolOutput>
+  hasDevices: boolean
 }
 
 function needsApproval(kind: ToolKind, mode: ApprovalMode): boolean {
@@ -267,7 +276,43 @@ async function stuckTool(c: Ctx): Promise<void> {
   return c.hang()
 }
 
+/** Looks at the first attached device: reads a folder if it is read only, or runs a command if it may. */
+async function devicesScenario(c: Ctx): Promise<void> {
+  await c.think('This is about a device. I should see which ones are attached to this chat before doing anything.')
+  const list = await c.device('devices_list', {}, 'Devices · list attached devices', 'mcp')
+  const first = /^- ([^:\n]+): (\w+)\./m.exec(list.text)
+  if (!first) {
+    await c.say('No device is attached to this chat yet. Open **Tools & Integrations**, switch a device on, and ask again.')
+    return
+  }
+  const [, name, os] = first
+  const line = list.text.split('\n').find((l) => l.startsWith(`- ${name}:`)) ?? ''
+  const readOnly = /Access: read only/.test(line)
+  const home = os === 'Windows' ? 'C:/Users' : os === 'Android' ? '/sdcard' : '/'
+
+  if (readOnly) {
+    await c.think(`${name} is read only, so I can look but not run anything.`)
+    const dir = await c.device('device_list_dir', { device: name, path: home }, `List ${home} on ${name}`, 'read')
+    await c.say(
+      dir.isError
+        ? `I could not look at ${name}: ${dir.text}`
+        : `${name} is read only, so I only looked. In \`${home}\` there is:\n\n\`\`\`text\n${dir.text}\n\`\`\`\n\nSet the device to **Ask first** in Settings, Devices, if you want me to run commands on it.`
+    )
+    return
+  }
+
+  const command = os === 'Windows' ? 'Get-PSDrive -PSProvider FileSystem | Format-Table -AutoSize' : os === 'Android' ? 'df /data' : 'uname -a; df -h /'
+  await c.think(`${name} allows commands. Disk space is a safe thing to check first.`)
+  const out = await c.device('device_run', { device: name, command }, `Run on ${name}`, 'shell')
+  await c.say(
+    out.isError
+      ? `That did not run on ${name}: ${out.text}`
+      : `Here is what \`${name}\` reported:\n\n\`\`\`text\n${out.text}\n\`\`\`\n\nNothing was changed. Want me to look at anything else on it?`
+  )
+}
+
 const SCENARIOS: Record<Exclude<ScenarioId, 'auto'>, (c: Ctx) => Promise<void>> = {
+  devices: devicesScenario,
   ask: askScenario,
   error: errorScenario,
   'stuck-thinking': stuckThinking,
@@ -276,8 +321,9 @@ const SCENARIOS: Record<Exclude<ScenarioId, 'auto'>, (c: Ctx) => Promise<void>> 
 
 export const isScenario = (s: string | undefined): s is ScenarioId => s === 'auto' || (s !== undefined && s in SCENARIOS)
 
-function pick(mode: SessionMode, text: string, forced: string | undefined): (c: Ctx) => Promise<void> {
+function pick(mode: SessionMode, text: string, forced: string | undefined, hasDevices: boolean): (c: Ctx) => Promise<void> {
   if (isScenario(forced) && forced !== 'auto') return SCENARIOS[forced]
+  if (hasDevices && /\b(devices?|vm|phone|my (server|machine)|disk space on)\b/i.test(text)) return devicesScenario
   if (/\b(ask me|ask_user|clarify)\b/i.test(text)) return askScenario
   if (/\b(simulate error|error demo)\b/i.test(text)) return errorScenario
   return mode === 'develop' ? developScenario : chatScenario
@@ -285,6 +331,8 @@ function pick(mode: SessionMode, text: string, forced: string | undefined): (c: 
 
 export interface MockOptions {
   mode: SessionMode
+  /** The device tools for this session. Without them the devices scenario says so. */
+  devices?: DevicePort
   getApproval: () => ApprovalMode
   /** Dev menu: force a scenario for the next message. */
   takeForcedScenario?: () => string | undefined
@@ -347,6 +395,24 @@ export function createMockSession(opts: MockOptions): AgentSession {
         hung = true
         return new Promise<never>(() => undefined)
       },
+      hasDevices: !!opts.devices,
+      device: async (name, args, title, kind) => {
+        if (!opts.devices) return { text: 'Devices are not available in this session.', isError: true }
+        const id = nextId('t')
+        let started = false
+        const begin = () => {
+          if (started) return
+          started = true
+          const input = typeof args.command === 'string' ? args.command : typeof args.path === 'string' ? args.path : undefined
+          emit({ type: 'tool.started', id, kind, title, input })
+        }
+        // The tool shows the card after any approval, so a declined command never looks as if it ran.
+        const out = await opts.devices.call(name, args, { started: begin })
+        begin()
+        emit({ type: 'tool.output', id, text: out.text.endsWith('\n') ? out.text : `${out.text}\n` })
+        emit({ type: 'tool.completed', id, ok: !out.isError })
+        return out
+      },
       ask: async (questions) => {
         const requestId = nextId('ask')
         emit({ type: 'ask_user.requested', requestId, questions })
@@ -382,7 +448,7 @@ export function createMockSession(opts: MockOptions): AgentSession {
     }
 
     try {
-      await pick(opts.mode, input.text, opts.takeForcedScenario?.())(ctx)
+      await pick(opts.mode, input.text, opts.takeForcedScenario?.(), !!opts.devices)(ctx)
       emit({ type: 'turn.completed', turnId })
     } catch (err) {
       if (err instanceof Aborted) emit({ type: 'turn.interrupted', turnId })

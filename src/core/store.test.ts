@@ -174,6 +174,45 @@ describe.each(factories)('%s', (_name, make) => {
     expect(Object.keys(s.drafts())).toEqual(['home:chat'])
   })
 
+  it('keeps devices, what each session has attached, their folders and activity', () => {
+    const s = make()
+    s.insertSession(session({ id: 'one' }))
+    s.insertDevice({ id: 'd1', name: 'build-vm', kind: 'ssh', host: '10.0.0.5', port: 22, username: 'dev', authMethod: 'key', keyPath: 'C:\keys\id', os: 'unknown', shell: 'posix', accessLevel: 'read', hostKeySha256: null, createdAt: 1, lastSeenAt: null })
+    s.insertDevice({ id: 'd2', name: 'pixel', kind: 'adb', host: '192.168.1.9', port: 5555, username: 'shell', authMethod: 'none', os: 'android', shell: 'adb', accessLevel: 'ask', hostKeySha256: null, createdAt: 2, lastSeenAt: null })
+    expect(s.listDevices().map((d) => d.id)).toEqual(['d1', 'd2'])
+    expect(s.getDevice('d1')).toMatchObject({ keyPath: 'C:\keys\id', hostKeySha256: null, lastSeenAt: null })
+    expect(s.getDevice('d2')).not.toHaveProperty('keyPath')
+
+    s.patchDevice('d1', { os: 'linux', accessLevel: 'ask', hostKeySha256: 'abc', lastSeenAt: 9 })
+    expect(s.getDevice('d1')).toMatchObject({ os: 'linux', accessLevel: 'ask', hostKeySha256: 'abc', lastSeenAt: 9 })
+    expect(s.patchDevice('nope', { name: 'x' })).toBeUndefined()
+
+    s.setAttached('one', 'd1', true)
+    s.setAttached('one', 'd1', true)
+    s.setAttached('one', 'd2', true)
+    s.setAttached('one', 'd2', false)
+    expect(s.attachedDevices('one')).toEqual(['d1'])
+
+    s.insertFolder({ id: 'f1', deviceId: 'd1', path: '/srv/app', mode: 'snapshot', snapshotPath: 'C:\cache\f1', snapshotAt: null, bytes: 0, files: 0, createdAt: 1 })
+    s.patchFolder('f1', { snapshotAt: 5, bytes: 100, files: 3 })
+    expect(s.listFolders()).toEqual([{ id: 'f1', deviceId: 'd1', path: '/srv/app', mode: 'snapshot', snapshotAt: 5, bytes: 100, files: 3, createdAt: 1 }])
+    expect(s.getFolder('f1')?.snapshotPath).toBe('C:\cache\f1')
+
+    s.addActivity({ deviceId: 'd1', sessionId: 'one', tool: 'device_run', summary: 'df -h', ok: true, bytes: 42, at: 10 })
+    s.addActivity({ deviceId: 'd1', sessionId: null, tool: 'test', summary: 'connected', ok: false, bytes: 0, at: 20 })
+    expect(s.activity('d1', 10).map((a) => a.summary)).toEqual(['connected', 'df -h'])
+    expect(s.activity('d1', 1)).toHaveLength(1)
+
+    // A session that goes takes its attachments with it; a device that goes takes its folders and activity.
+    s.purgeSession('one')
+    expect(s.attachedDevices('one')).toEqual([])
+    expect(s.deleteDevice('d1').map((f) => f.id)).toEqual(['f1'])
+    expect(s.getDevice('d1')).toBeUndefined()
+    expect(s.listFolders()).toEqual([])
+    expect(s.activity('d1', 10)).toEqual([])
+    expect(s.listDevices().map((d) => d.id)).toEqual(['d2'])
+  })
+
   it('links attachments to a session once and tells which are still loose', () => {
     const s = make()
     s.insertSession(session({ id: 'one' }))

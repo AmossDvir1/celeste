@@ -1,5 +1,9 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, MessageChannelMain, utilityProcess, type UtilityProcess, type WebContents } from 'electron'
+import { secrets } from './secrets'
+
+// Core may ask for the password or key passphrase of a device, and for nothing else.
+const DEVICE_SECRET = /^device\.dev-[0-9a-f-]{36}\.(password|passphrase)$/
 
 /**
  * The Core process: database, sessions and the assistant, in a utility process of its own. Windows talk to it
@@ -17,7 +21,12 @@ export class CoreProcess {
     })
     this.child = child
 
-    child.on('message', (message: { type?: string; message?: string }) => {
+    child.on('message', (message: { type?: string; message?: string; id?: number; name?: string }) => {
+      if (message?.type === 'secret-request' && typeof message.id === 'number') {
+        const allowed = typeof message.name === 'string' && DEVICE_SECRET.test(message.name)
+        child.postMessage({ type: 'secret-reply', id: message.id, value: allowed ? secrets.get(message.name as string) : null })
+        return
+      }
       if (message?.type !== 'fatal') return
       // Core could not open the data, usually because it was saved by a newer Celeste. Nothing is changed.
       this.shuttingDown = true

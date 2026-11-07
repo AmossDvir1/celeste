@@ -745,6 +745,28 @@ Brought ahead of the vendor adapters at your request. It needs only Phase 2 (the
 
 **Done when:** with a real Linux VM, a Windows VM, a Hyper-V VM and an Android phone, you can add each one, and a real MCP client and the scripted assistant can run a command and read a file on it. The approval card shows the exact command. A snapshot of a folder opens as local context. A changed host key is refused. Dropping Wi-Fi in the middle of a command gives a clear error and nothing hangs. A Read-only device offers no command tool. Everything shows in the session log.
 
+**Status: built, and verified except for what needs your devices** (132 unit tests, plus `npm run verify:devices`, `verify:persistence` and `verify:package` against the real app).
+
+What was built, and the choices made along the way:
+
+- **Connectors** behind one contract: SSH (`ssh2`, with SFTP, host-key pinning, output cap, timeout, Stop, one command at a time, and a clear error when the connection drops), PowerShell Direct for Hyper-V, and Android through Google's `adb`. SSH is tested against an in-process SSH server with real SFTP, posing as Linux or Windows. Hyper-V and Android are tested against canned tool output, which proves the commands and the error messages, not that they work on a real VM or phone.
+- **The tools** (`devices_list`, `device_run`, `device_read_file`, `device_list_dir`, `device_write_file`, `device_pull`, `device_screenshot`) enforce everything themselves: a session sees only devices attached to it, a Read only device has no command or write tool, and an Ask first device raises an approval card with the exact command before anything runs. The card names the device and has no "allow for this session" button.
+- **One MCP server for every vendor**, built with the official SDK. It listens on `127.0.0.1` only, each session has its own token, and it refuses requests from web pages or with the wrong address. No vendor is connected to it yet: each adapter in Phases 4 and 5 does that. Until then the scripted assistant uses the same tools, so you can review everything.
+- **Secrets stay in the main process.** Core asks for a device's password only when it is about to connect, and the main process answers only for device passwords.
+- **Snapshots** copy a folder into a local cache, skipping build folders and files over 25 MB, and ask first above 200 MB or 10,000 files. A refresh and a delete remove the old copy.
+- **Finding devices:** announcements on the network (SSH machines, and Android phones ready to pair), and the VM lists of Hyper-V, WSL, VirtualBox, VMware, Parallels, UTM, Multipass and libvirt.
+- **Android pairing** by QR code or six-digit code, and the phone is found again when it moves to a new port.
+- **Screens:** Settings, Devices; the Add dialog; the folder picker; the Devices section of Tools & Integrations; device chips in a chat's header. The browser preview runs the same code with pretend devices.
+- Also fixed on the way: a render loop (a store selector returning a new list each time), and the app now has an error boundary, so a screen that fails to draw shows a message and a Reload button instead of a blank window. The interface's libraries moved to `devDependencies`, so the installer carries only what the main process and Core load.
+
+**Not done, and why:**
+
+- **The spikes that need real hardware.** This PC has no phone connected, no running VM, no WSL distro, a stopped `sshd`, and no administrator rights for Hyper-V, and Celeste does not change those. Still to try: SSH to a real Windows machine with Windows PowerShell 5.1 and 7, a real Android pairing, the Hyper-V connector on a real VM, the iPhone helper, and the macOS and Linux VM commands.
+- **`adb` is found, not downloaded.** Celeste uses Google's `adb` if it is installed (it looks in the Android SDK folders and the PATH, and honors `CELESTE_ADB`). Downloading platform-tools when first needed waits for a decision on Google's redistribution terms.
+- **"Ask for the password each time"**, `device_push`, WinRM, mounting, and Develop on a remote folder.
+- **The iPhone helper.** Its spike is one of those that need a phone.
+- **Vendor connections** to the tool server (Phases 4 and 5).
+
 ### Phase 4: Copilot end to end (M)
 
 Full adapter: streaming, tools, approvals, `ask_user`, attachments, effort, models, resume, fallback, Connect button, runtime download. Also the adapter contract test suite, which includes a call to a device tool through Celeste's device server (Phase 3), approval card included.
