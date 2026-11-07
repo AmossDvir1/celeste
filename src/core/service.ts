@@ -27,12 +27,8 @@ import type { AttachmentRow, FileStore, SessionRow, Store } from './store'
  * can always be rebuilt from the log.
  */
 
-export type AdapterFactory = (ctx: {
-  sessionId: string
-  mode: SessionMode
-  getApproval: () => ApprovalMode
-  takeForcedScenario: () => string | undefined
-}) => AgentSession
+import type { AdapterFactory } from './adapters/types'
+export type { AdapterContext, AdapterFactory } from './adapters/types'
 
 export interface ServiceOptions {
   store: Store
@@ -63,6 +59,7 @@ const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const THEMES = ['dark', 'light', 'system']
 const VENDOR_IDS: VendorId[] = ['copilot', 'claude', 'openai', 'gemini']
 const SETTINGS_KEYS = ['theme', 'userName', 'wizardDone', 'sidebarCollapsed', 'defaults'] as const
+const TRANSCRIPT_LIMIT = 24_000
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 const MAX_ATTACHMENTS = 10
 
@@ -88,7 +85,7 @@ function text(value: unknown, what: string, max: number): string {
   return value
 }
 
-const summaryOf = ({ deletedAt: _deleted, ...summary }: SessionRow): SessionSummary => summary
+const summaryOf = ({ deletedAt: _deleted, vendorSessionId: _vendorSession, ...summary }: SessionRow): SessionSummary => summary
 
 export class SessionService {
   private readonly store: Store
@@ -253,6 +250,7 @@ export class SessionService {
     const now = this.now()
     const row: SessionRow = {
       id: `s-${crypto.randomUUID()}`,
+      vendor: oneOf(input.vendor, VENDOR_IDS, 'vendor'),
       mode: oneOf(input.mode, MODES, 'mode'),
       title: text(input.title, 'title', 200).trim() || 'New chat',
       model: text(input.model, 'model', 100),
@@ -295,8 +293,20 @@ export class SessionService {
     const row = this.requireSession(id)
     const session = this.opts.adapter({
       sessionId: id,
+      vendor: row.vendor,
       mode: row.mode,
+      options: () => {
+        const now = this.store.getSession(id) ?? row
+        return { model: now.model, effort: now.effort, approval: now.approval, ...(now.cwd ? { cwd: now.cwd } : {}) }
+      },
       getApproval: () => this.store.getSession(id)?.approval ?? 'auto',
+      ...(row.vendorSessionId ? { vendorSessionId: row.vendorSessionId } : {}),
+      remember: (vendorSessionId) => this.store.patchSession(id, { vendorSessionId }),
+      transcript: () => this.transcript(id),
+      attachmentPath: (attachmentId) => {
+        const file = this.store.attachment(attachmentId)?.file
+        return file ? this.opts.files.pathOf?.(file) : undefined
+      },
       takeForcedScenario: () => {
         const s = this.forced
         this.forced = undefined
@@ -313,6 +323,25 @@ export class SessionService {
       }
     })()
     return live
+  }
+
+  /** The conversation as plain text, newest last, cut from the front when long. Seeds a new vendor session. */
+  private transcript(id: string): string {
+    const lines: string[] = []
+    let answer = ''
+    const flush = () => {
+      if (answer.trim()) lines.push(`Assistant: ${answer.trim()}`)
+      answer = ''
+    }
+    for (const { event } of this.store.events(id)) {
+      if (event.type === 'user.message') {
+        flush()
+        lines.push(`User: ${event.text}`)
+      } else if (event.type === 'message.delta') answer += event.text
+    }
+    flush()
+    const text = lines.join('\n\n')
+    return text.length > TRANSCRIPT_LIMIT ? `…${text.slice(text.length - TRANSCRIPT_LIMIT)}` : text
   }
 
   /** Writes an event to the log, then tells the windows. Status changes also update the session's summary. */
@@ -533,6 +562,7 @@ export class SessionService {
       const last = sample.events[sample.events.length - 1]?.at ?? sample.createdAt
       this.store.insertSession({
         id: sample.id,
+        vendor: sample.vendor,
         mode: sample.mode,
         title: sample.title,
         model: sample.model,

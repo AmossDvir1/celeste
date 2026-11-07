@@ -111,5 +111,17 @@ export const MIGRATIONS: string[] = [
     at          INTEGER NOT NULL
   );
   CREATE INDEX device_activity_by_device ON device_activity (device_id, at DESC);
+  `,
+
+  // 3: which vendor runs a session, and the id that vendor gave it so the next message can resume it.
+  // Sessions made before this had only the scripted assistant; its model names say which vendor they imitated.
+  `
+  ALTER TABLE sessions ADD COLUMN vendor TEXT NOT NULL DEFAULT 'copilot';
+  ALTER TABLE sessions ADD COLUMN vendor_session_id TEXT;
+  UPDATE sessions SET vendor = CASE
+    WHEN model LIKE 'claude-%' THEN 'claude'
+    WHEN model LIKE 'openai-%' THEN 'openai'
+    WHEN model LIKE 'gemini-%' THEN 'gemini'
+    ELSE 'copilot' END;
   `
 ]

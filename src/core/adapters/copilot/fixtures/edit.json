@@ -1,0 +1,1156 @@
+{
+ "model": "claude-haiku-4.5",
+ "prompt": "Create a new file hello.txt containing exactly: hi there. Then change the text in notes.txt so it says: bye from celeste. Reply with the single word done.",
+ "events": [
+  {
+   "type": "session.start",
+   "id": "63cc9228-7136-493e-ad06-9645e151fb8d",
+   "timestamp": "2026-11-07T18:26:36.013Z",
+   "data": {
+    "sessionId": "e3f9a9e2-cdc4-48fd-9532-f37c3a0bb106",
+    "version": 1,
+    "producer": "copilot-agent",
+    "copilotVersion": "1.0.107",
+    "startTime": "2026-11-07T18:26:35.898Z",
+    "selectedModel": "claude-haiku-4.5",
+    "contextTier": null,
+    "context": {
+     "cwd": "C:/work/demo"
+    },
+    "remoteSteerable": false,
+    "alreadyInUse": false
+   }
+  },
+  {
+   "type": "session.mcp_server_status_changed",
+   "id": "a315ced5-a507-4145-a848-d77c0c2a0df5",
+   "timestamp": "2026-11-07T18:26:36.093Z",
+   "data": {
+    "serverName": "markitdown",
+    "status": "pending"
+   }
+  },
+  {
+   "type": "session.mcp_server_status_changed",
+   "id": "09bc422c-18dc-436f-b879-b99afcbe095a",
+   "timestamp": "2026-11-07T18:26:36.093Z",
+   "data": {
+    "serverName": "travel-planner",
+    "status": "pending"
+   }
+  },
+  {
+   "type": "session.title_changed",
+   "id": "b5186f2f-3934-46c6-843a-019670bd5063",
+   "timestamp": "2026-11-07T18:26:36.160Z",
+   "data": {
+    "title": "Create a new file hello.txt containing exactly: hi there. Then change the text in notes.txt so it says: bye from celeste. Reply with the single word done."
+   }
+  },
+  {
+   "type": "user.message",
+   "id": "d37fca12-9daf-42d3-8919-a62cc1f60102",
+   "timestamp": "2026-11-07T18:26:38.383Z",
+   "data": {
+    "content": "Create a new file hello.txt containing exactly: hi there. Then change the text in notes.txt so it says: bye from celeste. Reply with the single word done.",
+    "transformedContent": "<current_datetime>2026-11-07T20:26:38.381+02:00</current_datetime>\n\nCreate a new file hello.txt containing exactly: hi there. Then change the text in notes.txt so it says: bye from celeste. Reply with the single word done.",
+    "messageId": "1c1d87a1-e38e-4b5b-a7cc-612a23e92875",
+    "supportedNativeDocumentMimeTypes": [],
+    "delivery": "idle",
+    "interactionId": "86065d55-dcf8-4b65-9fb6-1c87a5e8ca71",
+    "turnId": "0",
+    "parentAgentTaskId": "4c321afa-f525-4ad4-ab81-16abde191843"
+   }
+  },
+  {
+   "type": "model.turn_started",
+   "id": "91f7b22b-a04e-4579-84a5-4447eaaeedda",
+   "timestamp": "2026-11-07T18:26:38.386Z",
+   "data": {
+    "kind": "turn_started",
+    "model": "claude-haiku-4.5",
+    "modelInfo": {
+     "billing": {
+      "auto_discount": 0.1,
+      "token_prices": {
+       "batch_size": 1000000,
+       "default": {
+        "cache_read_price": 10,
+        "cache_write_price": 125,
+        "input_price": 100,
+        "output_price": 500
+       }
+      }
+     },
+     "capabilities": {
+      "family": "claude-haiku-4.5",
+      "limits": {
+       "max_context_window_tokens": 144000,
+       "max_non_streaming_output_tokens": 16000,
+       "max_output_tokens": 32000,
+       "max_prompt_tokens": 128000,
+       "vision": {
+        "max_prompt_image_size": 3145728,
+        "max_prompt_images": 5,
+        "supported_media_types": [
+         "image/jpeg",
+         "image/png",
+         "image/webp",
+         "application/pdf"
+        ]
+       }
+      },
+      "object": "model_capabilities",
+      "supports": {
+       "max_thinking_budget": 32000,
+       "min_thinking_budget": 1024,
+       "parallel_tool_calls": true,
+       "streaming": true,
+       "tool_calls": true,
+       "vision": true,
+       "adaptive_thinking": "unsupported"
+      },
+      "tokenizer": "o200k_base",
+      "type": "chat"
+     },
+     "id": "claude-haiku-4.5",
+     "is_chat_default": false,
+     "is_chat_fallback": false,
+     "model_picker_category": "lightweight",
+     "model_picker_enabled": true,
+     "model_picker_price_category": "low",
+     "name": "Claude Haiku 4.5",
+     "object": "model",
+     "policy": {
+      "state": "enabled",
+      "terms": "Enable access to the latest Claude Haiku 4.5 model from Anthropic. [Learn more about how GitHub Copilot serves Claude Haiku 4.5](https://gh.io/copilot-anthropic)."
+     },
+     "preview": false,
+     "supported_endpoints": [
+      "/chat/completions",
+      "/v1/messages"
+     ],
+     "vendor": "Anthropic",
+     "version": "claude-haiku-4.5",
+     "modelProviderId": "copilot",
+     "modelProviderOrdering": 0,
+     "provider": {
+      "id": "copilot",
+      "kind": "copilot",
+      "label": "GitHub Copilot"
+     }
+    },
+    "turn": 0,
+    "timestampMs": 1794075998386
+   }
+  },
+  {
+   "type": "assistant.turn_start",
+   "id": "091e9f11-8a56-4c4a-9117-a316050d9c20",
+   "timestamp": "2026-11-07T18:26:38.386Z",
+   "data": {
+    "turnId": "0",
+    "interactionId": "86065d55-dcf8-4b65-9fb6-1c87a5e8ca71",
+    "agentMode": "interactive"
+   }
+  },
+  {
+   "type": "assistant.streaming_delta",
+   "id": "897e0aa7-c97e-4ac2-bf03-7f772c9d8165",
+   "timestamp": "2026-11-07T18:26:39.338Z",
+   "data": {
+    "totalResponseSizeBytes": 18
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "ef2b3cff-e716-4799-bd4e-ab6125c210eb",
+   "timestamp": "2026-11-07T18:26:39.338Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": "The user is asking"
+   }
+  },
+  {
+   "type": "assistant.streaming_delta",
+   "id": "c5135d55-1aa9-4ab4-8c31-87ec592e9aa2",
+   "timestamp": "2026-11-07T18:26:39.339Z",
+   "data": {
+    "totalResponseSizeBytes": 25
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "4c5c71bb-749d-4c39-ab4c-bae36d2db37c",
+   "timestamp": "2026-11-07T18:26:39.339Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": " me to:"
+   }
+  },
+  {
+   "type": "assistant.streaming_delta",
+   "id": "f1019204-4b17-4ac5-8da5-8bf4a9f6627f",
+   "timestamp": "2026-11-07T18:26:39.339Z",
+   "data": {
+    "totalResponseSizeBytes": 37
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "667d010c-66a8-4f0a-8b38-70153486cc2c",
+   "timestamp": "2026-11-07T18:26:39.339Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": "\n1. Create a"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "0294adb8-802f-4959-9532-b3c1b598c2e8",
+   "timestamp": "2026-11-07T18:26:39.340Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": " new file hello"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "76a42c64-a4f5-4e38-bea7-20945b1aaceb",
+   "timestamp": "2026-11-07T18:26:39.340Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": ".txt with the"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "63b35ea8-ffe7-4068-b1b0-e433127de0d7",
+   "timestamp": "2026-11-07T18:26:39.340Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": " text \"hi there"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "503b450a-5640-4432-940f-148a8961cda8",
+   "timestamp": "2026-11-07T18:26:39.340Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": "\"\n2."
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "2fda78bc-54d6-41cd-807d-e51779994cd2",
+   "timestamp": "2026-11-07T18:26:39.482Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": " Modify notes"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "0cc423df-97c1-41ec-859e-5b3733e6876b",
+   "timestamp": "2026-11-07T18:26:39.482Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": ".txt to say"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "362292ef-b40b-41a1-96df-fdc2bf86ef5a",
+   "timestamp": "2026-11-07T18:26:39.482Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": " \"bye from cel"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "3648777a-8cf7-473e-82b0-90e046c6d833",
+   "timestamp": "2026-11-07T18:26:39.482Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": "este\""
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "25d23c83-f61f-4102-a67e-e4268fd2c865",
+   "timestamp": "2026-11-07T18:26:39.483Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": "\n3. Reply"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "50d675fd-1b81-4f42-87d5-54dd9ff2a7da",
+   "timestamp": "2026-11-07T18:26:39.483Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": " with just"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "1ff8386f-1616-4639-8307-bf3e892a8a07",
+   "timestamp": "2026-11-07T18:26:39.672Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": " \"done\""
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "efb18fcf-3c39-4273-ac80-d06ceee7bf4d",
+   "timestamp": "2026-11-07T18:26:39.672Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": "\n\nLet me start by"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "74216247-55f6-410f-bc49-25528bf7699d",
+   "timestamp": "2026-11-07T18:26:39.672Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": " checking"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "8d57db2e-e03c-422b-a5f5-178c206b4c85",
+   "timestamp": "2026-11-07T18:26:39.673Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": " if"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "156c9d5f-8fec-491d-8d85-2970b274a9e5",
+   "timestamp": "2026-11-07T18:26:39.673Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": " these"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "93834eb3-40ed-45ee-922a-d78067c2517b",
+   "timestamp": "2026-11-07T18:26:39.673Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": " files"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "dab06c02-b09f-4e40-9cca-a5c678755560",
+   "timestamp": "2026-11-07T18:26:39.673Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": " exist and their current"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "44185f33-6aa5-4917-9305-a444b7be40ef",
+   "timestamp": "2026-11-07T18:26:39.860Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": " state"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "f1acc51f-9e84-4b47-8105-0e26462c24bf",
+   "timestamp": "2026-11-07T18:26:39.860Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": ","
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "6ad3df86-eec1-4e8f-8157-37482e07603c",
+   "timestamp": "2026-11-07T18:26:39.861Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": " then make"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "caf590b5-d02f-4f82-b69d-96a9bdb2c607",
+   "timestamp": "2026-11-07T18:26:39.861Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": " the necessary changes."
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "34167370-2842-4fc8-8ecb-6fc4231fe2f1",
+   "timestamp": "2026-11-07T18:26:39.861Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": "\n\nI should"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "e977a99e-5d19-49fa-aa95-b6fcbfc68d3d",
+   "timestamp": "2026-11-07T18:26:39.861Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": " use"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "507eeb73-e2e3-4f78-abfa-7a74a3a774f6",
+   "timestamp": "2026-11-07T18:26:39.861Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": " view"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "21dc3fb9-8f7e-4627-8883-d24be022431e",
+   "timestamp": "2026-11-07T18:26:40.052Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": " to"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "d2965e48-7fec-440c-9e3d-e6d42b37575e",
+   "timestamp": "2026-11-07T18:26:40.052Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": " check if notes"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "4e1b894c-b3e4-4ea3-8a6d-777e93f4e69d",
+   "timestamp": "2026-11-07T18:26:40.053Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": ".txt exists first"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "3a0557bb-bf5f-4fc1-95f4-85d97ab6d131",
+   "timestamp": "2026-11-07T18:26:40.053Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": ","
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "8165c3d6-579f-425d-bc28-0275f039f554",
+   "timestamp": "2026-11-07T18:26:40.053Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": " then create hello."
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "8551bf9c-0d0b-47e5-bcc7-2889e5baa269",
+   "timestamp": "2026-11-07T18:26:40.053Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": "txt and edit"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "9bc255fb-2861-4807-a779-456cb61a7879",
+   "timestamp": "2026-11-07T18:26:40.054Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": " notes"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "3ef96a02-e58c-4bf0-9c25-ea4eb935e20e",
+   "timestamp": "2026-11-07T18:26:40.054Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": ".txt."
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "ce0c33b0-eac3-4b68-8c77-6d168defa402",
+   "timestamp": "2026-11-07T18:26:40.241Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": "\n\nActually"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "ddb88bef-9826-4ed9-8749-4cec302e1d22",
+   "timestamp": "2026-11-07T18:26:40.241Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": ","
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "776bbfc9-b0ff-45ca-a565-3a83df24150d",
+   "timestamp": "2026-11-07T18:26:40.241Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": " let"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "7fc3122b-a646-45fe-b6db-7bd6e53788f5",
+   "timestamp": "2026-11-07T18:26:40.241Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": " me just"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "b4b34bdf-ce7e-4455-a3b5-9aa02a67d0dc",
+   "timestamp": "2026-11-07T18:26:40.241Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": " proceed"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "1cf5293f-4989-40cb-8b61-424b4228a835",
+   "timestamp": "2026-11-07T18:26:40.242Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": " with creating"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "70ac1c47-b539-4352-87a2-5c9510fa8930",
+   "timestamp": "2026-11-07T18:26:40.242Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": " hello"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "6e79b139-2d71-4cba-970f-5213c3b4a9df",
+   "timestamp": "2026-11-07T18:26:40.434Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": ".txt and"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "424122ed-3ede-474a-9706-edade6048d94",
+   "timestamp": "2026-11-07T18:26:40.435Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": " viewing"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "c21db7bf-3f89-45f2-be6c-e26306672dff",
+   "timestamp": "2026-11-07T18:26:40.435Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": "/"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "9b3158cd-e62c-4ee2-a23f-2077062430db",
+   "timestamp": "2026-11-07T18:26:40.435Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": "editing"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "91b6c4bd-99d3-44b8-81a8-526571fe0431",
+   "timestamp": "2026-11-07T18:26:40.435Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "deltaContent": " notes.txt."
+   }
+  },
+  {
+   "type": "assistant.tool_call_delta",
+   "id": "9930fa65-afc4-462a-9a27-778c146cb679",
+   "timestamp": "2026-11-07T18:26:41.686Z",
+   "data": {
+    "toolCallId": "toolu_01BwbiU1dVugynji4Mn72ojj",
+    "toolName": "create",
+    "inputDelta": "{\"path\""
+   }
+  },
+  {
+   "type": "assistant.tool_call_delta",
+   "id": "5b600c2c-4923-45af-8aa3-3ea16cae9efc",
+   "timestamp": "2026-11-07T18:26:41.686Z",
+   "data": {
+    "toolCallId": "toolu_01BwbiU1dVugynji4Mn72ojj",
+    "toolName": "create",
+    "inputDelta": ": \"C:\\\\"
+   }
+  },
+  {
+   "type": "assistant.usage",
+   "id": "d2700320-0002-46e8-9358-37e43c51496e",
+   "timestamp": "2026-11-07T18:26:42.512Z",
+   "data": {
+    "model": "claude-haiku-4.5",
+    "inputTokens": 26442,
+    "outputTokens": 350,
+    "cacheReadTokens": 20355,
+    "cacheWriteTokens": 6077,
+    "reasoningTokens": 120,
+    "cost": 0.33
+   }
+  },
+  {
+   "type": "assistant.message",
+   "id": "a6358689-5891-42e9-8d6f-3e5fbeb2b77c",
+   "timestamp": "2026-11-07T18:26:42.514Z",
+   "data": {
+    "messageId": "a4b421f8-f09f-4145-b2d7-e1eb9a8dcfdf",
+    "originatingMessageId": "1c1d87a1-e38e-4b5b-a7cc-612a23e92875",
+    "model": "claude-haiku-4.5",
+    "providerId": "copilot",
+    "content": "",
+    "toolRequests": [
+     {
+      "toolCallId": "toolu_01BwbiU1dVugynji4Mn72ojj",
+      "name": "create",
+      "arguments": {
+       "path": "C:\\work\\demo\\hello.txt",
+       "file_text": "hi there"
+      },
+      "type": "function",
+      "intentionSummary": "create a new file at C:\\work\\demo\\hello.txt.",
+      "toolTitle": "Creating file"
+     },
+     {
+      "toolCallId": "toolu_01H6WhmZ7sdWRyFhFCTeYDcP",
+      "name": "view",
+      "arguments": {
+       "path": "C:\\work\\demo\\notes.txt"
+      },
+      "type": "function",
+      "intentionSummary": "view the file at C:\\work\\demo\\notes.txt.",
+      "toolTitle": "Viewing file"
+     }
+    ],
+    "interactionId": "86065d55-dcf8-4b65-9fb6-1c87a5e8ca71",
+    "turnId": "0",
+    "reasoningOpaque": "Eu0FCtABCBMYAipAc4tn8jKS4CsCDKZlOeVr5UUm37EalzeijjBCb3O8HuOtpIhO6PPWQq61g7RKfPnbv77eE0xNqsY6GJ+HV6QNszIZY2xhdWRlLWhhaWt1LTQtNS0yMDI1MTAwMTgAQgh0aGlua2luZ1okY2VkMWY5OGUtMGI1MS00NjEwLTgyODItNGU1ZDg4Mzg0NTc0chDYtRWx/qg2YoexTQkRmU4diAEBmgEbChljbGF1ZGUtaGFpa3UtNC01LTIwMjUxMDAxqAHg2r3XBrABAhIM5kz+60FSrXjWdOEAGgzQPrxvuATrJ2T+ST0iMGUn8lpBkSpb8ZkparN06U5giPtoM7+swm6lw5b4LJLfUOB1lHkci8hFkO8keE3uPCrJA44lOCmd8wE5kDkoMzS+O+K5RlvrWhBWwA037N/ACBgXjomZ8wIe/iIZ6HDeRRlEnZKQYwBf4stjTLVAlUOrYKfj5X4+7zntdP/63Gs2tdJSa01n4YNTaOH8ps+kMI8Out+qnsT3ww8rGZrSZ9EY05M4lUMh0sqwsYMPLU3blaVp6uOIaZbXv1mxs4LbauxYU7qC6tgt2sC99jqiRanBjmbNudGzB9eJlQzV1zobUS7qhV19LcyLsmXkGzXQfsJPczECSJKDQnf3tnzViLBN+cw2hUkO8i0OJfqOzO+N9yR/QhYDLzqAtqdltAFfmayGQ8EyjSkXRPPBs5S99KNUIhvegWoYguSrs1USwweLCC7Am1ChwGKXg0LluqYXP+TIpytyDODDvx9ZqVgpobPwfH9Jw57dGL7W3PilWSYdg4w+K4kVHBYMrJ7qHHUyg8iEnzYGhvY8DwEW5xWvPExJrdxUG4I+UE8Q7tc5PX1/RL/iJQ8f4HzARa7IWZsMijfgS0J/2wSt9zMjFiwHX0afaFn40xRnSEwZvVxfOp244l9RaWTLmwjuwB2NZVcd9H+pJQoDO+3ytAXILkY8xuKCBZWBqi1yqjpAGaQYAQ==",
+    "reasoningText": "The user is asking me to:\n1. Create a new file hello.txt with the text \"hi there\"\n2. Modify notes.txt to say \"bye from celeste\"\n3. Reply with just \"done\"\n\nLet me start by checking if these files exist and their current state, then make the necessary changes.\n\nI should use view to check if notes.txt exists first, then create hello.txt and edit notes.txt.\n\nActually, let me just proceed with creating hello.txt and viewing/editing notes.txt.",
+    "rte": true,
+    "apiCallId": "msg_011Cgp3CYYNDCd3d99BEyJL3",
+    "reasoningBlocks": {
+     "provider": "anthropic-messages",
+     "blocks": [
+      {
+       "signature": "Eu0FCtABCBMYAipAc4tn8jKS4CsCDKZlOeVr5UUm37EalzeijjBCb3O8HuOtpIhO6PPWQq61g7RKfPnbv77eE0xNqsY6GJ+HV6QNszIZY2xhdWRlLWhhaWt1LTQtNS0yMDI1MTAwMTgAQgh0aGlua2luZ1okY2VkMWY5OGUtMGI1MS00NjEwLTgyODItNGU1ZDg4Mzg0NTc0chDYtRWx/qg2YoexTQkRmU4diAEBmgEbChljbGF1ZGUtaGFpa3UtNC01LTIwMjUxMDAxqAHg2r3XBrABAhIM5kz+60FSrXjWdOEAGgzQPrxvuATrJ2T+ST0iMGUn8lpBkSpb8ZkparN06U5giPtoM7+swm6lw5b4LJLfUOB1lHkci8hFkO8keE3uPCrJA44lOCmd8wE5kDkoMzS+O+K5RlvrWhBWwA037N/ACBgXjomZ8wIe/iIZ6HDeRRlEnZKQYwBf4stjTLVAlUOrYKfj5X4+7zntdP/63Gs2tdJSa01n4YNTaOH8ps+kMI8Out+qnsT3ww8rGZrSZ9EY05M4lUMh0sqwsYMPLU3blaVp6uOIaZbXv1mxs4LbauxYU7qC6tgt2sC99jqiRanBjmbNudGzB9eJlQzV1zobUS7qhV19LcyLsmXkGzXQfsJPczECSJKDQnf3tnzViLBN+cw2hUkO8i0OJfqOzO+N9yR/QhYDLzqAtqdltAFfmayGQ8EyjSkXRPPBs5S99KNUIhvegWoYguSrs1USwweLCC7Am1ChwGKXg0LluqYXP+TIpytyDODDvx9ZqVgpobPwfH9Jw57dGL7W3PilWSYdg4w+K4kVHBYMrJ7qHHUyg8iEnzYGhvY8DwEW5xWvPExJrdxUG4I+UE8Q7tc5PX1/RL/iJQ8f4HzARa7IWZsMijfgS0J/2wSt9zMjFiwHX0afaFn40xRnSEwZvVxfOp244l9RaWTLmwjuwB2NZVcd9H+pJQoDO+3ytAXILkY8xuKCBZWBqi1yqjpAGaQYAQ==",
+       "thinking": "The user is asking me to:\n1. Create a new file hello.txt with the text \"hi there\"\n2. Modify notes.txt to say \"bye from celeste\"\n3. Reply with just \"done\"\n\nLet me start by checking if these files exist and their current state, then make the necessary changes.\n\nI should use view to check if notes.txt exists first, then create hello.txt and edit notes.txt.\n\nActually, let me just proceed with creating hello.txt and viewing/editing notes.txt.",
+       "type": "thinking"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "type": "assistant.reasoning",
+   "id": "750523e9-6e64-450c-b77e-9b91217f588e",
+   "timestamp": "2026-11-07T18:26:42.515Z",
+   "data": {
+    "reasoningId": "e5b48012-2bf9-4f78-985b-0ff6331d5303",
+    "content": "The user is asking me to:\n1. Create a new file hello.txt with the text \"hi there\"\n2. Modify notes.txt to say \"bye from celeste\"\n3. Reply with just \"done\"\n\nLet me start by checking if these files exist and their current state, then make the necessary changes.\n\nI should use view to check if notes.txt exists first, then create hello.txt and edit notes.txt.\n\nActually, let me just proceed with creating hello.txt and viewing/editing notes.txt.",
+    "rte": true,
+    "turnId": "0",
+    "apiCallId": "msg_011Cgp3CYYNDCd3d99BEyJL3",
+    "model": "claude-haiku-4.5",
+    "isByok": false
+   }
+  },
+  {
+   "type": "tool.execution_start",
+   "id": "39e6e6d3-02d6-408f-98bd-c3c8ebca3778",
+   "timestamp": "2026-11-07T18:26:42.517Z",
+   "data": {
+    "toolCallId": "toolu_01BwbiU1dVugynji4Mn72ojj",
+    "toolName": "create",
+    "arguments": {
+     "path": "C:\\work\\demo\\hello.txt",
+     "file_text": "hi there"
+    },
+    "turnId": "0",
+    "model": "claude-haiku-4.5",
+    "toolTitle": "Creating file"
+   }
+  },
+  {
+   "type": "tool.execution_start",
+   "id": "e9297293-4198-4973-b368-769f34082397",
+   "timestamp": "2026-11-07T18:26:42.518Z",
+   "data": {
+    "toolCallId": "toolu_01H6WhmZ7sdWRyFhFCTeYDcP",
+    "toolName": "view",
+    "arguments": {
+     "path": "C:\\work\\demo\\notes.txt"
+    },
+    "turnId": "0",
+    "model": "claude-haiku-4.5",
+    "toolTitle": "Viewing file"
+   }
+  },
+  {
+   "type": "permission.requested",
+   "id": "84e07d58-de54-4560-9cb4-fd3110479d07",
+   "timestamp": "2026-11-07T18:26:42.525Z",
+   "data": {
+    "requestId": "639a55d2-f42e-40fe-ba78-acb7edc5dae9",
+    "permissionRequest": {
+     "kind": "read",
+     "toolCallId": "toolu_01H6WhmZ7sdWRyFhFCTeYDcP",
+     "intention": "Read file: C:\\work\\demo\\notes.txt",
+     "path": "C:\\work\\demo\\notes.txt"
+    },
+    "promptRequest": {
+     "kind": "read",
+     "intention": "Read file: C:\\work\\demo\\notes.txt",
+     "path": "C:\\work\\demo\\notes.txt",
+     "toolCallId": "toolu_01H6WhmZ7sdWRyFhFCTeYDcP"
+    },
+    "agentMode": "interactive",
+    "permissionMode": "manual",
+    "ownerSessionId": "e3f9a9e2-cdc4-48fd-9532-f37c3a0bb106"
+   }
+  },
+  {
+   "type": "permission.requested",
+   "id": "20cc5bd3-ad2c-44b7-b03f-a3c4a8b31428",
+   "timestamp": "2026-11-07T18:26:42.526Z",
+   "data": {
+    "requestId": "a98bd559-ed86-4815-a952-43df6d61614d",
+    "permissionRequest": {
+     "kind": "write",
+     "toolCallId": "toolu_01BwbiU1dVugynji4Mn72ojj",
+     "intention": "Create file",
+     "fileName": "C:\\work\\demo\\hello.txt",
+     "diff": "\ndiff --git a/C:/work/demo/hello.txt b/C:/work/demo/hello.txt\ncreate file mode 100644\nindex 0000000..0000000\n--- a/dev/null\n+++ b/C:/work/demo/hello.txt\n@@ -1,0 +1,1 @@\n+hi there\n",
+     "newFileContents": "hi there",
+     "fileEdits": [
+      {
+       "after": {
+        "path": "C:\\work\\demo\\hello.txt",
+        "content": "hi there"
+       }
+      }
+     ],
+     "canOfferSessionApproval": true
+    },
+    "promptRequest": {
+     "kind": "write",
+     "toolCallId": "toolu_01BwbiU1dVugynji4Mn72ojj",
+     "intention": "Create file",
+     "fileName": "C:\\work\\demo\\hello.txt",
+     "diff": "\ndiff --git a/C:/work/demo/hello.txt b/C:/work/demo/hello.txt\ncreate file mode 100644\nindex 0000000..0000000\n--- a/dev/null\n+++ b/C:/work/demo/hello.txt\n@@ -1,0 +1,1 @@\n+hi there\n",
+     "newFileContents": "hi there",
+     "fileEdits": [
+      {
+       "after": {
+        "path": "C:\\work\\demo\\hello.txt",
+        "content": "hi there"
+       }
+      }
+     ],
+     "canOfferSessionApproval": true,
+     "_permissionRequestSessionId": "e3f9a9e2-cdc4-48fd-9532-f37c3a0bb106"
+    },
+    "agentMode": "interactive",
+    "permissionMode": "manual",
+    "ownerSessionId": "e3f9a9e2-cdc4-48fd-9532-f37c3a0bb106"
+   }
+  },
+  {
+   "type": "permission.completed",
+   "id": "d4bc0b45-ef39-42a7-aa4a-77f5ed31e8f7",
+   "timestamp": "2026-11-07T18:26:42.529Z",
+   "data": {
+    "requestId": "639a55d2-f42e-40fe-ba78-acb7edc5dae9",
+    "toolCallId": "toolu_01H6WhmZ7sdWRyFhFCTeYDcP",
+    "result": {
+     "kind": "approved"
+    }
+   }
+  },
+  {
+   "type": "permission.completed",
+   "id": "6a0c91ec-6ba9-4180-b278-6e2f0ed05aa9",
+   "timestamp": "2026-11-07T18:26:42.530Z",
+   "data": {
+    "requestId": "a98bd559-ed86-4815-a952-43df6d61614d",
+    "toolCallId": "toolu_01BwbiU1dVugynji4Mn72ojj",
+    "result": {
+     "kind": "approved"
+    }
+   }
+  },
+  {
+   "type": "session.info",
+   "id": "ebb945a4-283f-4137-a684-6d880e243fc5",
+   "timestamp": "2026-11-07T18:26:42.534Z",
+   "data": {
+    "infoType": "file_created",
+    "message": "C:\\work\\demo\\hello.txt"
+   }
+  },
+  {
+   "type": "tool.execution_complete",
+   "id": "d5211c99-9e42-45d8-961b-dc79b0ba6580",
+   "timestamp": "2026-11-07T18:26:42.534Z",
+   "data": {
+    "toolCallId": "toolu_01H6WhmZ7sdWRyFhFCTeYDcP",
+    "model": "claude-haiku-4.5",
+    "turnId": "0",
+    "rte": true,
+    "success": true,
+    "result": {
+     "content": "hello from celeste\n"
+    }
+   }
+  },
+  {
+   "type": "tool.execution_complete",
+   "id": "777e09ac-9e18-4544-b66f-4204afbcfbdf",
+   "timestamp": "2026-11-07T18:26:42.538Z",
+   "data": {
+    "toolCallId": "toolu_01BwbiU1dVugynji4Mn72ojj",
+    "model": "claude-haiku-4.5",
+    "turnId": "0",
+    "rte": true,
+    "fileEdits": [
+     {
+      "path": "C:\\work\\demo\\hello.txt",
+      "kind": "create"
+     }
+    ],
+    "success": true,
+    "result": {
+     "content": "Created file C:\\work\\demo\\hello.txt with 8 characters"
+    }
+   }
+  },
+  {
+   "type": "assistant.turn_end",
+   "id": "9098419c-3a3f-425c-bfc1-89106c3a9715",
+   "timestamp": "2026-11-07T18:26:42.563Z",
+   "data": {
+    "turnId": "0"
+   }
+  },
+  {
+   "type": "assistant.turn_start",
+   "id": "9f78a633-312f-402c-a21b-00f4340f2cb3",
+   "timestamp": "2026-11-07T18:26:42.564Z",
+   "data": {
+    "turnId": "1",
+    "interactionId": "86065d55-dcf8-4b65-9fb6-1c87a5e8ca71",
+    "agentMode": "interactive"
+   }
+  },
+  {
+   "type": "assistant.message_start",
+   "id": "c30d43af-cb55-4df2-a43f-ca48ea2d93a4",
+   "timestamp": "2026-11-07T18:26:43.212Z",
+   "data": {
+    "messageId": "688b0b49-a061-499a-ad9b-f0f74c6767ef"
+   }
+  },
+  {
+   "type": "assistant.message_delta",
+   "id": "9643bb2c-fe29-4f0c-9613-6a31928fd939",
+   "timestamp": "2026-11-07T18:26:43.212Z",
+   "data": {
+    "messageId": "688b0b49-a061-499a-ad9b-f0f74c6767ef",
+    "deltaContent": "Now"
+   }
+  },
+  {
+   "type": "assistant.message_delta",
+   "id": "55a731a5-7674-40aa-8bfa-187608ca5888",
+   "timestamp": "2026-11-07T18:26:43.785Z",
+   "data": {
+    "messageId": "688b0b49-a061-499a-ad9b-f0f74c6767ef",
+    "deltaContent": " I'll edit notes"
+   }
+  },
+  {
+   "type": "assistant.message_delta",
+   "id": "bca1d4b2-216c-4ea6-9307-fbb1ef3e9861",
+   "timestamp": "2026-11-07T18:26:43.785Z",
+   "data": {
+    "messageId": "688b0b49-a061-499a-ad9b-f0f74c6767ef",
+    "deltaContent": ".txt:"
+   }
+  },
+  {
+   "type": "assistant.usage",
+   "id": "a3ea5b3a-5860-4fb5-8e93-c71c23a63155",
+   "timestamp": "2026-11-07T18:26:44.334Z",
+   "data": {
+    "model": "claude-haiku-4.5",
+    "inputTokens": 26925,
+    "outputTokens": 165,
+    "cacheReadTokens": 26432,
+    "cacheWriteTokens": 486,
+    "reasoningTokens": 0,
+    "cost": 0.33
+   }
+  },
+  {
+   "type": "assistant.message",
+   "id": "426bd67c-dc96-43d8-bb2d-5d7bfb18463c",
+   "timestamp": "2026-11-07T18:26:44.336Z",
+   "data": {
+    "messageId": "688b0b49-a061-499a-ad9b-f0f74c6767ef",
+    "originatingMessageId": "1c1d87a1-e38e-4b5b-a7cc-612a23e92875",
+    "model": "claude-haiku-4.5",
+    "providerId": "copilot",
+    "content": "Now I'll edit notes.txt:",
+    "toolRequests": [
+     {
+      "toolCallId": "toolu_01ThGXKDUzWmHWfry6wXerhu",
+      "name": "edit",
+      "arguments": {
+       "path": "C:\\work\\demo\\notes.txt",
+       "old_str": "hello from celeste",
+       "new_str": "bye from celeste"
+      },
+      "type": "function",
+      "intentionSummary": "edit the file at C:\\work\\demo\\notes.txt.",
+      "toolTitle": "Editing file"
+     }
+    ],
+    "interactionId": "86065d55-dcf8-4b65-9fb6-1c87a5e8ca71",
+    "turnId": "1",
+    "rte": true,
+    "apiCallId": "msg_011Cgp3CqjUyH9TvoZzj9PLa"
+   }
+  },
+  {
+   "type": "tool.execution_start",
+   "id": "fb7a4640-0d88-48b1-a6ba-9050a4ff2144",
+   "timestamp": "2026-11-07T18:26:44.338Z",
+   "data": {
+    "toolCallId": "toolu_01ThGXKDUzWmHWfry6wXerhu",
+    "toolName": "edit",
+    "arguments": {
+     "path": "C:\\work\\demo\\notes.txt",
+     "old_str": "hello from celeste",
+     "new_str": "bye from celeste"
+    },
+    "turnId": "1",
+    "model": "claude-haiku-4.5",
+    "toolTitle": "Editing file"
+   }
+  },
+  {
+   "type": "permission.requested",
+   "id": "e2e5702d-7b91-404f-bd2e-ce6648d7796d",
+   "timestamp": "2026-11-07T18:26:44.343Z",
+   "data": {
+    "requestId": "7194891b-2829-4ef1-beb8-4d4ea67b260d",
+    "permissionRequest": {
+     "kind": "write",
+     "toolCallId": "toolu_01ThGXKDUzWmHWfry6wXerhu",
+     "intention": "Edit file",
+     "fileName": "C:\\work\\demo\\notes.txt",
+     "diff": "\ndiff --git a/C:/work/demo/notes.txt b/C:/work/demo/notes.txt\nindex 0000000..0000000 100644\n--- a/C:/work/demo/notes.txt\n+++ b/C:/work/demo/notes.txt\n@@ -1,2 +1,2 @@\n-hello from celeste\n+bye from celeste\n \n",
+     "newFileContents": "bye from celeste\n",
+     "canOfferSessionApproval": true,
+     "fileEdits": [
+      {
+       "before": {
+        "path": "C:\\work\\demo\\notes.txt",
+        "content": "hello from celeste\n"
+       },
+       "after": {
+        "path": "C:\\work\\demo\\notes.txt",
+        "content": "bye from celeste\n"
+       }
+      }
+     ]
+    },
+    "promptRequest": {
+     "kind": "write",
+     "toolCallId": "toolu_01ThGXKDUzWmHWfry6wXerhu",
+     "intention": "Edit file",
+     "fileName": "C:\\work\\demo\\notes.txt",
+     "diff": "\ndiff --git a/C:/work/demo/notes.txt b/C:/work/demo/notes.txt\nindex 0000000..0000000 100644\n--- a/C:/work/demo/notes.txt\n+++ b/C:/work/demo/notes.txt\n@@ -1,2 +1,2 @@\n-hello from celeste\n+bye from celeste\n \n",
+     "newFileContents": "bye from celeste\n",
+     "canOfferSessionApproval": true,
+     "fileEdits": [
+      {
+       "before": {
+        "path": "C:\\work\\demo\\notes.txt",
+        "content": "hello from celeste\n"
+       },
+       "after": {
+        "path": "C:\\work\\demo\\notes.txt",
+        "content": "bye from celeste\n"
+       }
+      }
+     ],
+     "_permissionRequestSessionId": "e3f9a9e2-cdc4-48fd-9532-f37c3a0bb106"
+    },
+    "agentMode": "interactive",
+    "permissionMode": "manual",
+    "ownerSessionId": "e3f9a9e2-cdc4-48fd-9532-f37c3a0bb106"
+   }
+  },
+  {
+   "type": "permission.completed",
+   "id": "62d65f42-4a4d-4cc8-b277-3e7607105e9c",
+   "timestamp": "2026-11-07T18:26:44.344Z",
+   "data": {
+    "requestId": "7194891b-2829-4ef1-beb8-4d4ea67b260d",
+    "toolCallId": "toolu_01ThGXKDUzWmHWfry6wXerhu",
+    "result": {
+     "kind": "approved"
+    }
+   }
+  },
+  {
+   "type": "tool.execution_complete",
+   "id": "0e067530-d3bb-4a93-8dd1-f1e798125e38",
+   "timestamp": "2026-11-07T18:26:44.351Z",
+   "data": {
+    "toolCallId": "toolu_01ThGXKDUzWmHWfry6wXerhu",
+    "model": "claude-haiku-4.5",
+    "turnId": "1",
+    "rte": true,
+    "fileEdits": [
+     {
+      "path": "C:\\work\\demo\\notes.txt",
+      "kind": "edit"
+     }
+    ],
+    "success": true,
+    "result": {
+     "content": "File C:\\work\\demo\\notes.txt updated with changes."
+    }
+   }
+  },
+  {
+   "type": "assistant.turn_end",
+   "id": "425d1832-4dfc-4118-8dbb-9554363af90a",
+   "timestamp": "2026-11-07T18:26:44.374Z",
+   "data": {
+    "turnId": "1"
+   }
+  },
+  {
+   "type": "assistant.turn_start",
+   "id": "c3488f51-3d68-4faf-9f0b-629d0179eed8",
+   "timestamp": "2026-11-07T18:26:44.374Z",
+   "data": {
+    "turnId": "2",
+    "interactionId": "86065d55-dcf8-4b65-9fb6-1c87a5e8ca71",
+    "agentMode": "interactive"
+   }
+  },
+  {
+   "type": "assistant.message_start",
+   "id": "39501763-6140-42da-9f04-40351b4db258",
+   "timestamp": "2026-11-07T18:26:45.022Z",
+   "data": {
+    "messageId": "0390daed-0fbc-4c36-96d2-4b0d25b5db77"
+   }
+  },
+  {
+   "type": "assistant.message_delta",
+   "id": "4c5fc1b9-b268-40ef-acba-e2f043b9d9c0",
+   "timestamp": "2026-11-07T18:26:45.022Z",
+   "data": {
+    "messageId": "0390daed-0fbc-4c36-96d2-4b0d25b5db77",
+    "deltaContent": "done"
+   }
+  },
+  {
+   "type": "assistant.usage",
+   "id": "a04a2101-f2aa-47aa-a552-bd48f10e8465",
+   "timestamp": "2026-11-07T18:26:45.026Z",
+   "data": {
+    "model": "claude-haiku-4.5",
+    "inputTokens": 27145,
+    "outputTokens": 4,
+    "cacheReadTokens": 25960,
+    "cacheWriteTokens": 1180,
+    "cost": 0.33
+   }
+  },
+  {
+   "type": "assistant.message",
+   "id": "60d39c99-5359-4494-a5ff-b4c4fbf15426",
+   "timestamp": "2026-11-07T18:26:45.027Z",
+   "data": {
+    "messageId": "0390daed-0fbc-4c36-96d2-4b0d25b5db77",
+    "originatingMessageId": "1c1d87a1-e38e-4b5b-a7cc-612a23e92875",
+    "model": "claude-haiku-4.5",
+    "providerId": "copilot",
+    "content": "done",
+    "toolRequests": [],
+    "interactionId": "86065d55-dcf8-4b65-9fb6-1c87a5e8ca71",
+    "turnId": "2",
+    "rte": true,
+    "apiCallId": "msg_011Cgp3CyT5ULAWpL3ck8E7E"
+   }
+  },
+  {
+   "type": "assistant.turn_end",
+   "id": "3a0faee0-aadd-4602-ba68-6e12fcde4627",
+   "timestamp": "2026-11-07T18:26:45.028Z",
+   "data": {
+    "turnId": "2"
+   }
+  },
+  {
+   "type": "session.idle",
+   "id": "636500c6-96d3-42d4-aa74-940cf6498533",
+   "timestamp": "2026-11-07T18:26:45.033Z",
+   "data": {
+    "mode": "interactive"
+   }
+  }
+ ],
+ "inputs": []
+}

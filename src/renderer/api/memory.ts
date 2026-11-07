@@ -1,5 +1,5 @@
 import { Buffer } from 'buffer'
-import type { CoreApi, CoreMethod, CoreParams, CorePush } from '@shared/api'
+import type { CoreApi, CoreMethod, CoreParams, CorePush, VendorLinkApi } from '@shared/api'
 import type { CelesteBridge } from '@shared/bridge'
 import { DEFAULT_SETTINGS, DEFAULT_VENDORS } from '@shared/defaults'
 import { previewSecret } from '@/api'
@@ -55,7 +55,16 @@ export function createMemoryTransport(): CelesteBridge['core'] {
     samples: sampleSessions
   })
   sessions.init()
-  const api: CoreApi = { ...sessions.api, ...devices.api, 'devices.toolServer': async () => null }
+  // No real vendor runs in a browser tab: every vendor says so, and the window plays its scripted connection.
+  const vendors: VendorLinkApi = {
+    'vendor.status': async () => ({ state: 'unsupported' }),
+    'vendor.signIn': async () => {
+      throw new Error('Connecting a vendor needs the Celeste app.')
+    },
+    'vendor.cancelSignIn': async () => undefined,
+    'vendor.models': async () => []
+  }
+  const api: CoreApi = { ...sessions.api, ...devices.api, ...vendors, 'devices.toolServer': async () => null }
 
   return {
     call: async <M extends CoreMethod>(method: M, params: CoreParams<M>) => {

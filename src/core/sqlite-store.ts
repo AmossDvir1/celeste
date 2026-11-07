@@ -1,6 +1,6 @@
 import { copyFileSync } from 'node:fs'
 import { DatabaseSync, type StatementSync } from 'node:sqlite'
-import type { ApprovalMode, Effort, SessionMode } from '@shared/agent'
+import type { ApprovalMode, Effort, SessionMode, VendorId } from '@shared/agent'
 import type { DraftState, LogEvent, SearchHit, SessionStatus, StoredEvent } from '@shared/api'
 import type { AccessLevel, AuthMethod, DeviceActivity, DeviceFolder, DeviceKind, DeviceOs, DeviceRecord, DeviceShell, FolderMode } from '@shared/devices'
 import { MIGRATIONS } from './migrations'
@@ -9,6 +9,8 @@ import { toMatchQuery, type AttachmentRow, type IndexKind, type SessionRow, type
 type Row = Record<string, unknown>
 
 const SESSION_COLUMNS: Record<string, string> = {
+  vendor: 'vendor',
+  vendorSessionId: 'vendor_session_id',
   title: 'title',
   model: 'model',
   effort: 'effort',
@@ -24,11 +26,13 @@ const SESSION_COLUMNS: Record<string, string> = {
 function sessionFrom(r: Row): SessionRow {
   return {
     id: r.id as string,
+    vendor: r.vendor as VendorId,
     mode: r.mode as SessionMode,
     title: r.title as string,
     model: r.model as string,
     effort: (r.effort ?? null) as Effort | null,
     approval: r.approval as ApprovalMode,
+    ...(r.vendor_session_id != null ? { vendorSessionId: r.vendor_session_id as string } : {}),
     ...(r.cwd != null ? { cwd: r.cwd as string } : {}),
     ...(r.branch != null ? { branch: r.branch as string } : {}),
     status: r.status as SessionStatus,
@@ -177,9 +181,9 @@ export class SqliteStore implements Store {
 
   insertSession(s: SessionRow): void {
     this.run(
-      `INSERT INTO sessions (id, mode, title, model, effort, approval, cwd, branch, status, created_at, updated_at, last_seq, deleted_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      s.id, s.mode, s.title, s.model, s.effort, s.approval, s.cwd ?? null, s.branch ?? null,
+      `INSERT INTO sessions (id, vendor, vendor_session_id, mode, title, model, effort, approval, cwd, branch, status, created_at, updated_at, last_seq, deleted_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      s.id, s.vendor, s.vendorSessionId ?? null, s.mode, s.title, s.model, s.effort, s.approval, s.cwd ?? null, s.branch ?? null,
       s.status, s.createdAt, s.updatedAt, s.lastSeq, s.deletedAt
     )
   }

@@ -17,12 +17,11 @@ import { VendorLogo } from '@/components/VendorLogo'
 import {
   APPROVAL_OPTIONS,
   EFFORT_LABEL,
-  MODELS,
-  MODEL_BY_ID,
   VENDORS,
   VENDOR_ORDER,
   effortFor
 } from '@/mocks/models'
+import { lookupModel, useModels } from '@/stores/models'
 import { useVendors } from '@/stores/vendors'
 import { useUi } from '@/stores/ui'
 
@@ -53,7 +52,9 @@ export function ModelControls({ prefs, onPrefs }: { prefs: Prefs; onPrefs: (p: P
 function ModelPicker({ prefs, onPrefs }: { prefs: Prefs; onPrefs: (p: Partial<Prefs>) => void }) {
   const vendors = useVendors((s) => s.vendors)
   const openSettings = useUi((s) => s.openSettings)
-  const current = MODEL_BY_ID[prefs.model] ?? MODELS[0]
+  const models = useModels((s) => s.list)
+  const byId = useModels((s) => s.byId)
+  const current = lookupModel(byId, prefs.model)
   const connected = VENDOR_ORDER.filter((v) => vendors[v].status === 'connected')
 
   return (
@@ -71,9 +72,9 @@ function ModelPicker({ prefs, onPrefs }: { prefs: Prefs; onPrefs: (p: Partial<Pr
       </Menu.Trigger>
       <Menu.Content className="min-w-[210px]">
         <Menu.RadioGroup
-          value={prefs.model}
+          value={current.id}
           onValueChange={(id) => {
-            const m = MODEL_BY_ID[id]
+            const m = byId[id]
             if (m) onPrefs({ model: id, effort: effortFor(m, prefs.effort) })
           }}
         >
@@ -83,7 +84,7 @@ function ModelPicker({ prefs, onPrefs }: { prefs: Prefs; onPrefs: (p: Partial<Pr
                 <VendorLogo id={v} className="h-3.5 w-3.5 text-ink-soft" />
                 {VENDORS[v].menuLabel}
               </Menu.Label>
-              {MODELS.filter((m) => m.vendor === v).map((m) => (
+              {models.filter((m) => m.vendor === v).map((m) => (
                 <Menu.RadioItem key={m.id} value={m.id}>
                   {m.label}
                 </Menu.RadioItem>
@@ -152,7 +153,8 @@ function EffortPopover({
   onPrefs: (p: Partial<Prefs>) => void
 }) {
   const setRight = useUi((s) => s.setRight)
-  const model = MODEL_BY_ID[prefs.model] ?? MODELS[0]
+  const byId = useModels((s) => s.byId)
+  const model = lookupModel(byId, prefs.model)
   const efforts = model.efforts
   const idx = Math.max(0, prefs.effort ? efforts.indexOf(prefs.effort) : 0)
   const disabled = efforts.length === 0

@@ -1,0 +1,678 @@
+{
+ "model": "claude-haiku-4.5",
+ "prompt": "Use the ask_user tool to ask me whether I prefer red or blue (offer exactly those two choices), then reply with just my answer.",
+ "events": [
+  {
+   "type": "session.start",
+   "id": "1b7e0fd1-b3ec-4ac5-9c68-4e539d045fee",
+   "timestamp": "2026-11-07T18:28:44.747Z",
+   "data": {
+    "sessionId": "2a994f37-baee-4490-80cc-36b10f9fa97c",
+    "version": 1,
+    "producer": "copilot-agent",
+    "copilotVersion": "1.0.107",
+    "startTime": "2026-11-07T18:28:44.630Z",
+    "selectedModel": "claude-haiku-4.5",
+    "contextTier": null,
+    "context": {
+     "cwd": "C:/work/demo"
+    },
+    "remoteSteerable": false,
+    "alreadyInUse": false
+   }
+  },
+  {
+   "type": "session.mcp_server_status_changed",
+   "id": "05ee5d15-33ce-473c-8013-6887e570cccf",
+   "timestamp": "2026-11-07T18:28:44.828Z",
+   "data": {
+    "serverName": "markitdown",
+    "status": "pending"
+   }
+  },
+  {
+   "type": "session.mcp_server_status_changed",
+   "id": "c03928a3-ab13-4a22-ab0d-581e933ba14d",
+   "timestamp": "2026-11-07T18:28:44.829Z",
+   "data": {
+    "serverName": "travel-planner",
+    "status": "pending"
+   }
+  },
+  {
+   "type": "session.title_changed",
+   "id": "5b2063e4-6b32-4d60-a6ea-366fe3bdbe0c",
+   "timestamp": "2026-11-07T18:28:44.897Z",
+   "data": {
+    "title": "Use the ask_user tool to ask me whether I prefer red or blue (offer exactly those two choices), then reply with just my answer."
+   }
+  },
+  {
+   "type": "user.message",
+   "id": "32bc91ca-3f84-49cf-b301-2299b33a1765",
+   "timestamp": "2026-11-07T18:28:47.210Z",
+   "data": {
+    "content": "Use the ask_user tool to ask me whether I prefer red or blue (offer exactly those two choices), then reply with just my answer.",
+    "transformedContent": "<current_datetime>2026-11-07T20:28:47.207+02:00</current_datetime>\n\nUse the ask_user tool to ask me whether I prefer red or blue (offer exactly those two choices), then reply with just my answer.",
+    "messageId": "b6c1454a-7fe0-45db-a511-8f0f05372c5a",
+    "supportedNativeDocumentMimeTypes": [],
+    "delivery": "idle",
+    "interactionId": "8d5a2f71-7ab5-4e61-a514-d50ac01beb25",
+    "turnId": "0",
+    "parentAgentTaskId": "f62231b4-ce8c-4fbb-be00-ed35d3c3d897"
+   }
+  },
+  {
+   "type": "model.turn_started",
+   "id": "34f18e1a-31ee-4ca0-973a-18369e4b3f04",
+   "timestamp": "2026-11-07T18:28:47.217Z",
+   "data": {
+    "kind": "turn_started",
+    "model": "claude-haiku-4.5",
+    "modelInfo": {
+     "billing": {
+      "auto_discount": 0.1,
+      "token_prices": {
+       "batch_size": 1000000,
+       "default": {
+        "cache_read_price": 10,
+        "cache_write_price": 125,
+        "input_price": 100,
+        "output_price": 500
+       }
+      }
+     },
+     "capabilities": {
+      "family": "claude-haiku-4.5",
+      "limits": {
+       "max_context_window_tokens": 144000,
+       "max_non_streaming_output_tokens": 16000,
+       "max_output_tokens": 32000,
+       "max_prompt_tokens": 128000,
+       "vision": {
+        "max_prompt_image_size": 3145728,
+        "max_prompt_images": 5,
+        "supported_media_types": [
+         "image/jpeg",
+         "image/png",
+         "image/webp",
+         "application/pdf"
+        ]
+       }
+      },
+      "object": "model_capabilities",
+      "supports": {
+       "max_thinking_budget": 32000,
+       "min_thinking_budget": 1024,
+       "parallel_tool_calls": true,
+       "streaming": true,
+       "tool_calls": true,
+       "vision": true,
+       "adaptive_thinking": "unsupported"
+      },
+      "tokenizer": "o200k_base",
+      "type": "chat"
+     },
+     "id": "claude-haiku-4.5",
+     "is_chat_default": false,
+     "is_chat_fallback": false,
+     "model_picker_category": "lightweight",
+     "model_picker_enabled": true,
+     "model_picker_price_category": "low",
+     "name": "Claude Haiku 4.5",
+     "object": "model",
+     "policy": {
+      "state": "enabled",
+      "terms": "Enable access to the latest Claude Haiku 4.5 model from Anthropic. [Learn more about how GitHub Copilot serves Claude Haiku 4.5](https://gh.io/copilot-anthropic)."
+     },
+     "preview": false,
+     "supported_endpoints": [
+      "/chat/completions",
+      "/v1/messages"
+     ],
+     "vendor": "Anthropic",
+     "version": "claude-haiku-4.5",
+     "modelProviderId": "copilot",
+     "modelProviderOrdering": 0,
+     "provider": {
+      "id": "copilot",
+      "kind": "copilot",
+      "label": "GitHub Copilot"
+     }
+    },
+    "turn": 0,
+    "timestampMs": 1794076127217
+   }
+  },
+  {
+   "type": "assistant.turn_start",
+   "id": "94a65deb-50ec-484d-a336-05ecb59b7f39",
+   "timestamp": "2026-11-07T18:28:47.217Z",
+   "data": {
+    "turnId": "0",
+    "interactionId": "8d5a2f71-7ab5-4e61-a514-d50ac01beb25",
+    "agentMode": "interactive"
+   }
+  },
+  {
+   "type": "assistant.streaming_delta",
+   "id": "4d21f6fc-3fd6-4c82-8c43-364e7552b95b",
+   "timestamp": "2026-11-07T18:28:48.143Z",
+   "data": {
+    "totalResponseSizeBytes": 18
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "128a71cd-2b89-4f08-a817-6ec52bb8ef9c",
+   "timestamp": "2026-11-07T18:28:48.143Z",
+   "data": {
+    "reasoningId": "ef5a02c8-a78c-42e5-93c7-002d3f4f0bce",
+    "deltaContent": "The user is asking"
+   }
+  },
+  {
+   "type": "assistant.streaming_delta",
+   "id": "5168f6d3-bece-45fb-b565-79af18863da3",
+   "timestamp": "2026-11-07T18:28:48.313Z",
+   "data": {
+    "totalResponseSizeBytes": 25
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "a61813cf-8da0-4d6b-94c7-dd1149c164d3",
+   "timestamp": "2026-11-07T18:28:48.313Z",
+   "data": {
+    "reasoningId": "ef5a02c8-a78c-42e5-93c7-002d3f4f0bce",
+    "deltaContent": " me to:"
+   }
+  },
+  {
+   "type": "assistant.streaming_delta",
+   "id": "e0021fc9-f8eb-4aca-bf4d-c49d8528fc33",
+   "timestamp": "2026-11-07T18:28:48.313Z",
+   "data": {
+    "totalResponseSizeBytes": 32
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "ef0a15cd-0986-4e7a-b243-e0f40b2c20d0",
+   "timestamp": "2026-11-07T18:28:48.313Z",
+   "data": {
+    "reasoningId": "ef5a02c8-a78c-42e5-93c7-002d3f4f0bce",
+    "deltaContent": "\n1. Use"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "456fd35d-22dd-43de-8041-a76c51624aff",
+   "timestamp": "2026-11-07T18:28:48.313Z",
+   "data": {
+    "reasoningId": "ef5a02c8-a78c-42e5-93c7-002d3f4f0bce",
+    "deltaContent": " the ask_user"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "0b734525-d145-4b7d-865b-c4a46ed015cf",
+   "timestamp": "2026-11-07T18:28:48.313Z",
+   "data": {
+    "reasoningId": "ef5a02c8-a78c-42e5-93c7-002d3f4f0bce",
+    "deltaContent": " tool to ask whether"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "70c56790-f1a2-44e0-9436-68af9924d8e9",
+   "timestamp": "2026-11-07T18:28:48.313Z",
+   "data": {
+    "reasoningId": "ef5a02c8-a78c-42e5-93c7-002d3f4f0bce",
+    "deltaContent": " they prefer red or"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "c395781b-da1e-45a8-be2a-0bd9e3fe5a72",
+   "timestamp": "2026-11-07T18:28:48.313Z",
+   "data": {
+    "reasoningId": "ef5a02c8-a78c-42e5-93c7-002d3f4f0bce",
+    "deltaContent": " blue ("
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "7ed6204e-ec9b-46e3-a66e-fd2d946fe154",
+   "timestamp": "2026-11-07T18:28:48.314Z",
+   "data": {
+    "reasoningId": "ef5a02c8-a78c-42e5-93c7-002d3f4f0bce",
+    "deltaContent": "with"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "50c5d4e6-14a1-4c3d-89b0-25980799fdfd",
+   "timestamp": "2026-11-07T18:28:48.339Z",
+   "data": {
+    "reasoningId": "ef5a02c8-a78c-42e5-93c7-002d3f4f0bce",
+    "deltaContent": " exactly those two choices"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "318465e6-3c61-4e52-8113-d93d815cabce",
+   "timestamp": "2026-11-07T18:28:48.360Z",
+   "data": {
+    "reasoningId": "ef5a02c8-a78c-42e5-93c7-002d3f4f0bce",
+    "deltaContent": ")\n2."
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "1a425645-0860-4237-af22-e9f1a8554b5d",
+   "timestamp": "2026-11-07T18:28:48.383Z",
+   "data": {
+    "reasoningId": "ef5a02c8-a78c-42e5-93c7-002d3f4f0bce",
+    "deltaContent": " Then"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "5ec351d2-833a-4f80-920c-a70cc987c80b",
+   "timestamp": "2026-11-07T18:28:48.409Z",
+   "data": {
+    "reasoningId": "ef5a02c8-a78c-42e5-93c7-002d3f4f0bce",
+    "deltaContent": " reply with just their"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "98f746fb-2259-4d27-b68b-1380d9b49bc5",
+   "timestamp": "2026-11-07T18:28:48.433Z",
+   "data": {
+    "reasoningId": "ef5a02c8-a78c-42e5-93c7-002d3f4f0bce",
+    "deltaContent": " answer\n\nThis"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "47034e5b-1ea9-4294-a6f2-e2f5bbf027e2",
+   "timestamp": "2026-11-07T18:28:48.475Z",
+   "data": {
+    "reasoningId": "ef5a02c8-a78c-42e5-93c7-002d3f4f0bce",
+    "deltaContent": " is"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "93b71126-14a9-437d-a980-817425a1e824",
+   "timestamp": "2026-11-07T18:28:48.479Z",
+   "data": {
+    "reasoningId": "ef5a02c8-a78c-42e5-93c7-002d3f4f0bce",
+    "deltaContent": " straight"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "a6bf891b-b9aa-4865-b1c2-1a14710bca3e",
+   "timestamp": "2026-11-07T18:28:48.507Z",
+   "data": {
+    "reasoningId": "ef5a02c8-a78c-42e5-93c7-002d3f4f0bce",
+    "deltaContent": "forward - I'll"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "7db2ebf5-967e-4b14-98c4-f55541182319",
+   "timestamp": "2026-11-07T18:28:48.537Z",
+   "data": {
+    "reasoningId": "ef5a02c8-a78c-42e5-93c7-002d3f4f0bce",
+    "deltaContent": " call ask"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "2ffa4d15-a19e-4dcf-aec3-1fa34e7973a5",
+   "timestamp": "2026-11-07T18:28:48.561Z",
+   "data": {
+    "reasoningId": "ef5a02c8-a78c-42e5-93c7-002d3f4f0bce",
+    "deltaContent": "_user with the"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "5861c69e-3ffd-4461-8c40-317c62e413e2",
+   "timestamp": "2026-11-07T18:28:48.579Z",
+   "data": {
+    "reasoningId": "ef5a02c8-a78c-42e5-93c7-002d3f4f0bce",
+    "deltaContent": " question"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "490b20f7-765d-40f1-94e2-3b70c61df556",
+   "timestamp": "2026-11-07T18:28:48.605Z",
+   "data": {
+    "reasoningId": "ef5a02c8-a78c-42e5-93c7-002d3f4f0bce",
+    "deltaContent": " and"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "05b1103d-365b-4269-9f1c-bc52773f7695",
+   "timestamp": "2026-11-07T18:28:48.627Z",
+   "data": {
+    "reasoningId": "ef5a02c8-a78c-42e5-93c7-002d3f4f0bce",
+    "deltaContent": " the"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "8a3867de-466f-4f63-8bd1-4e79ae8b199b",
+   "timestamp": "2026-11-07T18:28:48.651Z",
+   "data": {
+    "reasoningId": "ef5a02c8-a78c-42e5-93c7-002d3f4f0bce",
+    "deltaContent": " two"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "00f63b5d-9681-40c0-8bea-ff3ddd4f27e7",
+   "timestamp": "2026-11-07T18:28:48.691Z",
+   "data": {
+    "reasoningId": "ef5a02c8-a78c-42e5-93c7-002d3f4f0bce",
+    "deltaContent": " choices"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "ffc2bcde-96aa-4f5a-b199-8f4965267249",
+   "timestamp": "2026-11-07T18:28:48.701Z",
+   "data": {
+    "reasoningId": "ef5a02c8-a78c-42e5-93c7-002d3f4f0bce",
+    "deltaContent": ", then wait"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "81793e0b-8458-4de7-9827-c3c8c6ef6f2e",
+   "timestamp": "2026-11-07T18:28:48.725Z",
+   "data": {
+    "reasoningId": "ef5a02c8-a78c-42e5-93c7-002d3f4f0bce",
+    "deltaContent": " for their"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "a593c63a-9fd9-403f-b90a-4765796b91e2",
+   "timestamp": "2026-11-07T18:28:48.749Z",
+   "data": {
+    "reasoningId": "ef5a02c8-a78c-42e5-93c7-002d3f4f0bce",
+    "deltaContent": " response and"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "9999805f-ad46-4e32-871c-85b958b4630e",
+   "timestamp": "2026-11-07T18:28:48.775Z",
+   "data": {
+    "reasoningId": "ef5a02c8-a78c-42e5-93c7-002d3f4f0bce",
+    "deltaContent": " echo"
+   }
+  },
+  {
+   "type": "assistant.reasoning_delta",
+   "id": "4b319f48-c722-4f78-aec2-a20e49268a8a",
+   "timestamp": "2026-11-07T18:28:48.807Z",
+   "data": {
+    "reasoningId": "ef5a02c8-a78c-42e5-93c7-002d3f4f0bce",
+    "deltaContent": " it back."
+   }
+  },
+  {
+   "type": "assistant.tool_call_delta",
+   "id": "4d693a3d-4728-4d20-a159-2abd15b45a7d",
+   "timestamp": "2026-11-07T18:28:49.214Z",
+   "data": {
+    "toolCallId": "toolu_014vHXbPLoszfy9ZG2wku6jq",
+    "toolName": "ask_user",
+    "inputDelta": "{\"quest"
+   }
+  },
+  {
+   "type": "assistant.tool_call_delta",
+   "id": "0fe90576-bc3c-461c-912d-9d124d105076",
+   "timestamp": "2026-11-07T18:28:49.214Z",
+   "data": {
+    "toolCallId": "toolu_014vHXbPLoszfy9ZG2wku6jq",
+    "toolName": "ask_user",
+    "inputDelta": "ion\": \""
+   }
+  },
+  {
+   "type": "assistant.usage",
+   "id": "95cda5df-8cc4-4227-afd4-cf742875625c",
+   "timestamp": "2026-11-07T18:28:49.406Z",
+   "data": {
+    "model": "claude-haiku-4.5",
+    "inputTokens": 26430,
+    "outputTokens": 159,
+    "cacheReadTokens": 20355,
+    "cacheWriteTokens": 6065,
+    "reasoningTokens": 75,
+    "cost": 0.33
+   }
+  },
+  {
+   "type": "assistant.message",
+   "id": "8ad16a5b-8cef-4849-bef4-54064639cf4a",
+   "timestamp": "2026-11-07T18:28:49.408Z",
+   "data": {
+    "messageId": "dbe9ab58-8af3-47af-a755-91c103cacb21",
+    "originatingMessageId": "b6c1454a-7fe0-45db-a511-8f0f05372c5a",
+    "model": "claude-haiku-4.5",
+    "providerId": "copilot",
+    "content": "",
+    "toolRequests": [
+     {
+      "toolCallId": "toolu_014vHXbPLoszfy9ZG2wku6jq",
+      "name": "ask_user",
+      "arguments": {
+       "question": "Do you prefer red or blue?",
+       "choices": [
+        "Red",
+        "Blue"
+       ]
+      },
+      "type": "function",
+      "intentionSummary": "Do you prefer red or blue?",
+      "toolTitle": "Asking user"
+     }
+    ],
+    "interactionId": "8d5a2f71-7ab5-4e61-a514-d50ac01beb25",
+    "turnId": "0",
+    "reasoningOpaque": "EtcECtABCBMYAipABm6ds1BCk4gSTHTIJQEHjKrpTBrXDq870aC2iVFOLaEh5RCOiNpe9D8pUrQ6QDj/1fDW6Qn/SNnyecyVKgFodTIZY2xhdWRlLWhhaWt1LTQtNS0yMDI1MTAwMTgAQgh0aGlua2luZ1okY2VkMWY5OGUtMGI1MS00NjEwLTgyODItNGU1ZDg4Mzg0NTc0chDYtRWx/qg2YoexTQkRmU4diAEBmgEbChljbGF1ZGUtaGFpa3UtNC01LTIwMjUxMDAxqAHg273XBrABAhIML8okm0cj4nfcy2FCGgzxKATflUx7mqHmCHgiMDw7PYBSHvwfTRedEOIy+9LpOOoX/A89UT2X9krQh0ITdYcgEtgGVZykkMQgMAajiSqzAgDajMNIQqRQUU4GRcTU4O/Pq0HL8wH+Sw0y2rhhQWc30Zpq4kMGSrFykeswhCZLgMtWcJYoedF/H9TFmNOaEdrNzltiCLPhveKOqcp3eYoYWoryyVtR1ALtW0/VR9JSmq90BXN0lM7ZOAFK8VwjXvWpDT7P1Tkq+ER9XSUJk43fqbnxCT8PNXkjPtTovnICsuFEkD8jGdUnMFgxG05XbRZGq1DRsjEhfQzEcF9wOu2KT/KDo0USlFj62v+KmXBbw+Atw9+xX9EetFZiup0TBCR9SJVMfSMadzUSPcZcjsktZPnjQdajL1r4XrhZ1jWMfhJdP3bGAddV9FwnscZj9f5PHHoNS2pV3bNX9qKFxBF5OATIZLj4OXt6MOCT7qVQukvTmLSWhCxURDsMIttTT3iAy2YYAQ==",
+    "reasoningText": "The user is asking me to:\n1. Use the ask_user tool to ask whether they prefer red or blue (with exactly those two choices)\n2. Then reply with just their answer\n\nThis is straightforward - I'll call ask_user with the question and the two choices, then wait for their response and echo it back.",
+    "rte": true,
+    "apiCallId": "msg_011Cgp3N48cPUDyYB6NAcvFk",
+    "reasoningBlocks": {
+     "provider": "anthropic-messages",
+     "blocks": [
+      {
+       "signature": "EtcECtABCBMYAipABm6ds1BCk4gSTHTIJQEHjKrpTBrXDq870aC2iVFOLaEh5RCOiNpe9D8pUrQ6QDj/1fDW6Qn/SNnyecyVKgFodTIZY2xhdWRlLWhhaWt1LTQtNS0yMDI1MTAwMTgAQgh0aGlua2luZ1okY2VkMWY5OGUtMGI1MS00NjEwLTgyODItNGU1ZDg4Mzg0NTc0chDYtRWx/qg2YoexTQkRmU4diAEBmgEbChljbGF1ZGUtaGFpa3UtNC01LTIwMjUxMDAxqAHg273XBrABAhIML8okm0cj4nfcy2FCGgzxKATflUx7mqHmCHgiMDw7PYBSHvwfTRedEOIy+9LpOOoX/A89UT2X9krQh0ITdYcgEtgGVZykkMQgMAajiSqzAgDajMNIQqRQUU4GRcTU4O/Pq0HL8wH+Sw0y2rhhQWc30Zpq4kMGSrFykeswhCZLgMtWcJYoedF/H9TFmNOaEdrNzltiCLPhveKOqcp3eYoYWoryyVtR1ALtW0/VR9JSmq90BXN0lM7ZOAFK8VwjXvWpDT7P1Tkq+ER9XSUJk43fqbnxCT8PNXkjPtTovnICsuFEkD8jGdUnMFgxG05XbRZGq1DRsjEhfQzEcF9wOu2KT/KDo0USlFj62v+KmXBbw+Atw9+xX9EetFZiup0TBCR9SJVMfSMadzUSPcZcjsktZPnjQdajL1r4XrhZ1jWMfhJdP3bGAddV9FwnscZj9f5PHHoNS2pV3bNX9qKFxBF5OATIZLj4OXt6MOCT7qVQukvTmLSWhCxURDsMIttTT3iAy2YYAQ==",
+       "thinking": "The user is asking me to:\n1. Use the ask_user tool to ask whether they prefer red or blue (with exactly those two choices)\n2. Then reply with just their answer\n\nThis is straightforward - I'll call ask_user with the question and the two choices, then wait for their response and echo it back.",
+       "type": "thinking"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "type": "assistant.reasoning",
+   "id": "0077009a-28e6-4f03-b50e-95af33e3ebad",
+   "timestamp": "2026-11-07T18:28:49.408Z",
+   "data": {
+    "reasoningId": "ef5a02c8-a78c-42e5-93c7-002d3f4f0bce",
+    "content": "The user is asking me to:\n1. Use the ask_user tool to ask whether they prefer red or blue (with exactly those two choices)\n2. Then reply with just their answer\n\nThis is straightforward - I'll call ask_user with the question and the two choices, then wait for their response and echo it back.",
+    "rte": true,
+    "turnId": "0",
+    "apiCallId": "msg_011Cgp3N48cPUDyYB6NAcvFk",
+    "model": "claude-haiku-4.5",
+    "isByok": false
+   }
+  },
+  {
+   "type": "tool.execution_start",
+   "id": "1a60c11d-828e-4284-a28d-8a909dd56ba5",
+   "timestamp": "2026-11-07T18:28:49.411Z",
+   "data": {
+    "toolCallId": "toolu_014vHXbPLoszfy9ZG2wku6jq",
+    "toolName": "ask_user",
+    "arguments": {
+     "question": "Do you prefer red or blue?",
+     "choices": [
+      "Red",
+      "Blue"
+     ]
+    },
+    "turnId": "0",
+    "model": "claude-haiku-4.5",
+    "toolTitle": "Asking user"
+   }
+  },
+  {
+   "type": "user_input.requested",
+   "id": "84b0a630-24ac-4c71-ac18-db4225a36c9f",
+   "timestamp": "2026-11-07T18:28:49.413Z",
+   "data": {
+    "requestId": "c8d8ce3e-c05e-4508-bdce-b87bbbf4e6bf",
+    "question": "Do you prefer red or blue?",
+    "choices": [
+     "Red",
+     "Blue"
+    ],
+    "allowFreeform": true,
+    "toolCallId": "toolu_014vHXbPLoszfy9ZG2wku6jq"
+   }
+  },
+  {
+   "type": "user_input.completed",
+   "id": "a7f4b132-5ce1-440a-b433-37327c3cbcab",
+   "timestamp": "2026-11-07T18:28:49.416Z",
+   "data": {
+    "answer": "Red",
+    "wasFreeform": false,
+    "requestId": "c8d8ce3e-c05e-4508-bdce-b87bbbf4e6bf"
+   }
+  },
+  {
+   "type": "tool.execution_complete",
+   "id": "0ae701ae-237f-4e9d-aa52-ff50ec879d91",
+   "timestamp": "2026-11-07T18:28:49.419Z",
+   "data": {
+    "toolCallId": "toolu_014vHXbPLoszfy9ZG2wku6jq",
+    "model": "claude-haiku-4.5",
+    "turnId": "0",
+    "rte": true,
+    "success": true,
+    "result": {
+     "content": "User selected: Red"
+    }
+   }
+  },
+  {
+   "type": "assistant.turn_end",
+   "id": "89d9ac62-9a95-42bd-a42d-83a7ee9df54b",
+   "timestamp": "2026-11-07T18:28:49.443Z",
+   "data": {
+    "turnId": "0"
+   }
+  },
+  {
+   "type": "assistant.turn_start",
+   "id": "5fef64e1-fb14-46d7-91af-f8048a1e93ba",
+   "timestamp": "2026-11-07T18:28:49.443Z",
+   "data": {
+    "turnId": "1",
+    "interactionId": "8d5a2f71-7ab5-4e61-a514-d50ac01beb25",
+    "agentMode": "interactive"
+   }
+  },
+  {
+   "type": "assistant.message_start",
+   "id": "09d72d66-9e36-4529-819b-11498f926ee9",
+   "timestamp": "2026-11-07T18:28:50.324Z",
+   "data": {
+    "messageId": "10a0bb1d-2b94-4140-9855-82ea0704cb66"
+   }
+  },
+  {
+   "type": "assistant.message_delta",
+   "id": "ca4f5434-55c1-4041-ba6d-54e1b45ae80d",
+   "timestamp": "2026-11-07T18:28:50.324Z",
+   "data": {
+    "messageId": "10a0bb1d-2b94-4140-9855-82ea0704cb66",
+    "deltaContent": "Red"
+   }
+  },
+  {
+   "type": "assistant.usage",
+   "id": "3121b6f7-1fd2-4719-a5ad-c7eaffedd688",
+   "timestamp": "2026-11-07T18:28:50.357Z",
+   "data": {
+    "model": "claude-haiku-4.5",
+    "inputTokens": 26605,
+    "outputTokens": 4,
+    "cacheReadTokens": 26420,
+    "cacheWriteTokens": 179,
+    "reasoningTokens": 0,
+    "cost": 0.33
+   }
+  },
+  {
+   "type": "assistant.message",
+   "id": "ad8805e7-e295-46f0-a1ab-0b037b4476e9",
+   "timestamp": "2026-11-07T18:28:50.359Z",
+   "data": {
+    "messageId": "10a0bb1d-2b94-4140-9855-82ea0704cb66",
+    "originatingMessageId": "b6c1454a-7fe0-45db-a511-8f0f05372c5a",
+    "model": "claude-haiku-4.5",
+    "providerId": "copilot",
+    "content": "Red",
+    "toolRequests": [],
+    "interactionId": "8d5a2f71-7ab5-4e61-a514-d50ac01beb25",
+    "turnId": "1",
+    "rte": true,
+    "apiCallId": "msg_011Cgp3NC3c2gznsX2RvLF8N"
+   }
+  },
+  {
+   "type": "assistant.turn_end",
+   "id": "c46ec3f6-d34c-4d9e-a594-af030ae7dbb4",
+   "timestamp": "2026-11-07T18:28:50.359Z",
+   "data": {
+    "turnId": "1"
+   }
+  },
+  {
+   "type": "session.idle",
+   "id": "21115cf4-0394-49c3-993a-94169ace2472",
+   "timestamp": "2026-11-07T18:28:50.365Z",
+   "data": {
+    "mode": "interactive"
+   }
+  }
+ ],
+ "inputs": [
+  {
+   "question": "Do you prefer red or blue?",
+   "choices": [
+    "Red",
+    "Blue"
+   ],
+   "allowFreeform": true,
+   "requestId": "c8d8ce3e-c05e-4508-bdce-b87bbbf4e6bf"
+  }
+ ]
+}

@@ -9,5 +9,6 @@ export default defineConfig({
       '@core': resolve('src/core')
     }
   },
-  test: { environment: 'node', include: ['src/**/*.test.ts'] }
+  // The SSH tests do real key exchanges, which can take a few seconds when the machine is busy with other test files.
+  test: { environment: 'node', include: ['src/**/*.test.ts'], testTimeout: 20_000, hookTimeout: 30_000 }
 })

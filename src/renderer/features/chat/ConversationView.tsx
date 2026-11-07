@@ -5,7 +5,7 @@ import { cn } from '@/lib/cn'
 import { basename } from '@/lib/format'
 import { Badge, IconButton } from '@/components/ui'
 import { GlowArc } from '@/glow/GlowArc'
-import { MODEL_BY_ID } from '@/mocks/models'
+import { lookupModel, useModels } from '@/stores/models'
 import { useDrafts } from '@/stores/drafts'
 import { useSessions } from '@/stores/sessions'
 import { useUi, type RightPanel } from '@/stores/ui'
@@ -41,6 +41,7 @@ export function ConversationView({ sessionId }: { sessionId: string }) {
   const respondApproval = useSessions((s) => s.respondApproval)
   const respondAsk = useSessions((s) => s.respondAsk)
   const vendors = useVendors((s) => s.vendors)
+  const byId = useModels((s) => s.byId)
   const attachments = useAttachments(sessionId)
   // Unsent text belongs to the session, and is saved with it.
   const text = useDrafts((s) => s.drafts[sessionId]?.text ?? '')
@@ -79,7 +80,7 @@ export function ConversationView({ sessionId }: { sessionId: string }) {
   }, [])
 
   if (!session) return null
-  const model = MODEL_BY_ID[session.model]
+  const model = lookupModel(byId, session.model)
   const busy = session.status !== 'idle'
   const lastUser = [...session.items].reverse().find((i) => i.kind === 'user')
   const develop = session.mode === 'develop'

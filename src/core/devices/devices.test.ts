@@ -47,7 +47,7 @@ function world(useMock = false) {
   const devices = new DeviceService({ store, dataDir: '/data', getSecret: async () => 'pw', connectorFor: connectors, push: (p) => pushes.push(p), fs: noDisk(removed) })
   tools = new DeviceTools(store, devices, sessions, noDisk(removed), '/data')
   const newSession = () =>
-    sessions.api['sessions.create']({ mode: 'chat', title: 'Check the servers', model: 'copilot-auto', effort: null, approval: 'auto' }).id
+    sessions.api['sessions.create']({ vendor: 'claude', mode: 'chat', title: 'Check the servers', model: 'copilot-auto', effort: null, approval: 'auto' }).id
 
   /** Adds a device the way the window does: create, test (key unknown), trust the key, test again. */
   async function addDevice(name: string, level: AccessLevel = 'read', host = '10.0.0.5'): Promise<DeviceRecord> {
@@ -371,7 +371,7 @@ describe('folders from a device', () => {
     mkdirSync(join(fixture.root, 'docs'))
     writeFileSync(join(fixture.root, 'docs', 'a.md'), '# a')
     const session = new SessionService({ store, files: new MemoryFileStore(), dataDir: '/x', adapter: () => idle as never, push: () => undefined, defaults: DEFAULT_SETTINGS, defaultVendors: DEFAULT_VENDORS })
-    const s = session.api['sessions.create']({ mode: 'chat', title: 't', model: 'm', effort: null, approval: 'auto' }).id
+    const s = session.api['sessions.create']({ vendor: 'claude', mode: 'chat', title: 't', model: 'm', effort: null, approval: 'auto' }).id
     const snap = await devices.api['devices.addFolder'](device.id, '/docs', 'snapshot')
     await devices.api['devices.addFolder'](device.id, '/docs', 'live')
     expect(devices.snapshotDirs(s)).toEqual([])

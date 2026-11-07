@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { ApprovalMode, Effort } from '@shared/agent'
-import { MODEL_BY_ID } from '@/mocks/models'
+import { modelOf } from './models'
 import { useSettings } from '@/stores/settings'
 
 export type AppMode = 'chat' | 'develop' | 'workflows'
@@ -54,7 +54,7 @@ interface UiState {
 
 function freshDraft(): Draft {
   const { defaults } = useSettings.getState()
-  const model = MODEL_BY_ID[defaults.model] ?? MODEL_BY_ID['copilot-auto']
+  const model = modelOf(defaults.model)
   return {
     model: model.id,
     effort: model.efforts.length ? (model.defaultEffort ?? model.efforts[0]) : null,

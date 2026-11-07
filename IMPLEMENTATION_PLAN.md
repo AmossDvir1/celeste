@@ -722,7 +722,7 @@ What was built, and the choices made along the way:
 - **Attachments** are saved when added (so an unsent draft with files survives a restart), linked to the session on send, and shown through `celeste-file://attachments/`, which serves that one folder only. Only known file types keep their extension.
 - **Credentials.** API keys go to `safeStorage` in the main process. The window can store, remove and ask for the last four characters, and never read a key back. If the system cannot encrypt, nothing is stored.
 - **Search** is FTS5 over titles, your messages and the assistant's answers, with prefix matching.
-- **After a restart:** a turn that was running is marked cut off and the session is idle. A question or approval that was waiting stays on screen. Answering it starts a new turn with the answer as a message, which is the fallback the plan describes. Real resume of the vendor's own session is Phase 4.
+- **After a restart:** a turn that was running is marked cut off and the session is idle. A question or approval that was waiting stays on screen. Answering it starts a new turn with the answer as a message, which is the fallback the plan describes. Real resume of the vendor's own session arrived with Copilot in Phase 4.
 - **Still sample content:** the assistant, the sample sessions (added on the first start only), the Connect button's steps, and workflows. Workflows are saved in Phase 7.
 
 ### Phase 3: Devices (L)
@@ -765,13 +765,39 @@ What was built, and the choices made along the way:
 - **`adb` is found, not downloaded.** Celeste uses Google's `adb` if it is installed (it looks in the Android SDK folders and the PATH, and honors `CELESTE_ADB`). Downloading platform-tools when first needed waits for a decision on Google's redistribution terms.
 - **"Ask for the password each time"**, `device_push`, WinRM, mounting, and Develop on a remote folder.
 - **The iPhone helper.** Its spike is one of those that need a phone.
-- **Vendor connections** to the tool server (Phases 4 and 5).
+- **Vendor connections** to the tool server: Copilot's was done in Phase 4, the others come in Phase 5.
 
 ### Phase 4: Copilot end to end (M)
 
 Full adapter: streaming, tools, approvals, `ask_user`, attachments, effort, models, resume, fallback, Connect button, runtime download. Also the adapter contract test suite, which includes a call to a device tool through Celeste's device server (Phase 3), approval card included.
 
 **Done when:** real tasks complete in Chat and Develop, and force-quitting mid-task then resuming keeps the full conversation and agent context.
+
+**Status: built, and verified against your real Copilot account** (the one signed in on this PC). 235 unit tests; the opt-in live suite (`CELESTE_LIVE_COPILOT=1 node node_modules/vitest/vitest.mjs run src/core/adapters/copilot/copilot.live.test.ts`, 12 tests, about 1.5 minutes, a few premium requests on a small model); `npm run verify:copilot` (the real app: connect, the real model list, a conversation, a restart, a force-quit in the middle of an answer, and the sign-in screens); and `verify:package`, `verify:persistence` and `verify:devices` as before.
+
+What was built, and the choices made along the way:
+
+- **The seam.** A session now has a vendor and the vendor's own session id (migration 3, which also fills in the vendor of older sessions from their model names). Core picks the adapter by vendor: Copilot is real; Claude, OpenAI and Gemini still play the scripted assistant until Phase 5. `CELESTE_SCRIPTED=1` plays it for Copilot too, which the older app checks use so they never need an account.
+- **The Copilot adapter** (`src/core/adapters/copilot`) is split so that most of it needs no Copilot to test: a pure translator from Copilot's events to Celeste's, a thin session wrapper, the approval policy, a host that owns the one shared runtime, and the downloader. It was built on real turns recorded from the runtime (shell and read, edits, `ask_user`; `scripts/record` makes new recordings), then run live.
+- **What it does:** streams the answer and the reasoning; shows each tool with a readable title, its output and, for edits, the diff Copilot attached to its question; reports token use; maps errors to the ones the screens know; takes an image as an attachment by path; applies a changed model or effort from the next message; and stops cleanly (a waiting card is let go, the running turn ends as stopped, and nothing is sent if Stop came before the session had started).
+- **Approvals follow the mode you chose.** Auto never asks. Approve edits asks for commands, web access and other tools. Ask first asks for everything except reading. Plan only refuses anything that changes things, and tells the agent why. Reading a file never asks. The mode is read at each question, so changing it in the window applies at once. A command on a device does not ask twice: Celeste's own card, with the device's name, is the only one.
+- **`ask_user`** shows as the question card, with its choices, and the answer goes back to the agent. The tool itself is hidden from the timeline, since the card is its place.
+- **Device tools through Copilot.** Every Copilot session is given Celeste's device server with that session's token. A real Copilot ran `uname -a` on a pretend device, after Celeste's own approval card, and a denied command did not run. The tools now carry a read-only hint, which is what lets plan mode use the ones that change nothing.
+- **Resume and fallback.** Celeste's log stays the source of truth for what you see; Copilot's own session id restores what the agent remembers. Reopening after a restart, or after a crash in the middle of an answer, picks the same Copilot session up. If Copilot no longer has it, a new session is started from a text version of the log, and the answer begins with one italic line saying so.
+- **Connect.** The Connect button signs in for real: if you are already signed in on this PC it is Connected at once, with your real account. Otherwise GitHub's sign-in page opens in the browser (or, from "Use a code instead", a code to type on github.com/login/device). It stops waiting after ten minutes, Cancel works at every moment (including while GitHub is still starting the flow), and only github.com addresses are ever opened. **Disconnect** only makes Celeste stop using Copilot: it does not sign you out of GitHub Copilot on this computer, because that sign-in is shared with the Copilot command line tool and other editors.
+- **Runtime download.** Copilot's program is 181 MB unpacked, so it is not in the installer. The first Connect downloads it from npm (it is MIT licensed), checks the checksum npm publishes, unpacks it into Celeste's data folder, and refuses archives that write outside it. Progress shows on the card. During development it is found next to the SDK. A real download of the Windows copy was tried against npm, and the downloaded copy was started and used.
+- **Models.** The picker lists the models your account really has (24 on this PC), each with the effort levels it takes and whether it reads images. The scripted Copilot names (`copilot-auto` and so on) are gone; old sessions that used them are treated as Auto.
+- **A real start has nobody connected.** The design preview still starts with Copilot and Claude pretending to be connected; the real app no longer does.
+
+**Not done, and not verified:**
+
+- **Finishing a first sign-in in a browser.** Your account was already signed in, so the last step (you authorize on GitHub, and Celeste notices) was tested only against a pretend runtime. The steps before it were tested with a real, signed-out runtime kept apart from your login: the real sign-in page address and a real code are shown, and Cancel works. Please try it once with an account that is not signed in.
+- **Sign-out.** Not offered, see Disconnect above.
+- **The download on macOS and Linux**, and a download started from an installed app. Only the Windows copy was downloaded, and the installed layout was checked to report "not downloaded yet" rather than fail.
+- **Develop-mode extras** (diff review as a screen of its own, per-turn snapshots and revert, git worktrees) are Phase 6. Edits already show their diff in the timeline.
+- **Copilot's own tools beyond these** (its MCP servers and plugins) are not configured from Celeste yet; that is Phase 6.
+- **The other three vendors** still play the scripted assistant, and their Connect buttons still play the scripted steps.
+- **A cost note.** Every real turn uses your Copilot plan's premium requests. The default model is Auto. The checks above use Claude Haiku 4.5.
 
 ### Phase 5: Claude, OpenAI, Gemini (L)
 

@@ -15,9 +15,11 @@ import { discoverAll } from './devices/discovery'
 import { DeviceToolServer } from './devices/mcp-server'
 import { nodeFileOps } from './devices/node-fs'
 import { DeviceTools } from './devices/tools'
+import { copilotRuntime, createCopilotHost, createCopilotSession, type CopilotHost } from './adapters/copilot'
 import { createMockSession } from './mock/engine'
 import { sampleSessions } from './mock/samples'
 import { SessionService } from './service'
+import { VendorService } from './vendors'
 import { SqliteStore } from './sqlite-store'
 
 const parent = process.parentPort
@@ -39,6 +41,7 @@ const push = (p: CorePush) => ports.forEach((port) => send(port, { kind: 'push',
 let service: SessionService | undefined
 let devices: DeviceService | undefined
 let toolServer: DeviceToolServer | undefined
+let copilot: CopilotHost | undefined
 let api: CoreApi | undefined
 let store: SqliteStore | undefined
 
@@ -84,12 +87,26 @@ async function start(): Promise<void> {
   toolServer = new DeviceToolServer(tools)
   await toolServer.start()
   const servers = toolServer
+  // Copilot's program is beside the SDK when developing, and in the data folder once it has been downloaded.
+  // CELESTE_COPILOT_ISOLATED=1 gives Copilot a data folder of its own that knows no one, so the sign-in screens can be tried
+  // without touching the GitHub sign-in on this computer. For app checks.
+  const host = createCopilotHost(
+    copilotRuntime(dataDir, require.resolve.paths('@github/copilot-sdk') ?? []),
+    process.env['CELESTE_COPILOT_ISOLATED'] === '1' ? { isolatedDir: join(dataDir, 'copilot-isolated') } : {}
+  )
+  copilot = host
+  const scripted = process.env['CELESTE_SCRIPTED'] === '1'
 
   service = new SessionService({
     store,
     files: new DiskFileStore(join(dataDir, 'attachments')),
     dataDir,
-    adapter: (ctx) => createMockSession({ ...ctx, devices: { call: (name, args, hooks) => tools.call(ctx.sessionId, name, args, hooks) } }),
+    // Copilot is real. The other vendors still play the scripted assistant until their adapters arrive in Phase 5.
+    // CELESTE_SCRIPTED=1 plays it for Copilot too, so the app checks that run without a Copilot account still work.
+    adapter: (ctx) =>
+      ctx.vendor === 'copilot' && !scripted
+        ? createCopilotSession(host, ctx, (id) => servers.info(id))
+        : createMockSession({ ...ctx, devices: { call: (name, args, hooks) => tools.call(ctx.sessionId, name, args, hooks) } }),
     onSessionStopped: (id) => tools.cancel(id),
     push,
     defaults: {
@@ -97,13 +114,15 @@ async function start(): Promise<void> {
       userName: friendlyName(),
       defaults: { ...DEFAULT_SETTINGS.defaults, projectsFolder: join(homedir(), 'Projects') }
     },
-    defaultVendors: DEFAULT_VENDORS,
+    // The design preview starts with two vendors pretending to be connected. A real start has nobody connected.
+    defaultVendors: scripted ? DEFAULT_VENDORS : {},
     samples: sampleSessions
   })
   service.init()
   api = {
     ...service.api,
     ...devices.api,
+    ...new VendorService(host, push, scripted).api,
     'devices.toolServer': async (sessionId) => servers.info(sessionId)
   }
   parent.postMessage({ type: 'ready' })
@@ -150,6 +169,7 @@ parent.on('message', (event) => {
     void (async () => {
       await devices?.close().catch(() => undefined)
       await toolServer?.stop().catch(() => undefined)
+      await copilot?.stop().catch(() => undefined)
       store?.close()
       parent.postMessage({ type: 'closed' })
     })()

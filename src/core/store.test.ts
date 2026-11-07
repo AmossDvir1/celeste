@@ -8,6 +8,7 @@ import type { AttachmentRow, SessionRow, Store } from './store'
 
 const session = (over: Partial<SessionRow> = {}): SessionRow => ({
   id: 's1',
+  vendor: 'copilot',
   mode: 'chat',
   title: 'Analyze WFO logs',
   model: 'copilot-auto',

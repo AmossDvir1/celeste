@@ -21,6 +21,8 @@ function runtimePackages() {
     }
   }
   const visit = (name, from) => {
+    // Copilot's program (about 180 MB) is not shipped: Celeste downloads it when someone connects Copilot.
+    if (/^@github\/copilot-sdk-(darwin|linux|linuxmusl|win32)-/.test(name)) return
     const dir = lookup(name, from)
     if (!dir || found.has(dir)) return
     found.set(dir, name)
@@ -71,6 +73,14 @@ try {
   const img = page.locator('img[src^="celeste-file://"]').first()
   await img.waitFor({ timeout: 10_000 })
   check('attached images load through the celeste-file address', (await img.evaluate((el) => el.complete && el.naturalWidth)) === 1)
+  await app.close()
+
+  // The real Copilot, in the same layout: its program is not in the archive, so it must say so and offer to download it.
+  app = await launch({ width: 1440, height: 900, theme: null, entry: archive, scripted: false })
+  await app.page.getByRole('dialog', { name: 'Set up Celeste' }).waitFor({ timeout: 20_000 })
+  const status = await app.page.evaluate(() => window.celeste.core.call('vendor.status', ['copilot']))
+  check(`Copilot reports that its program has not been downloaded (${JSON.stringify(status)})`, status.state === 'runtime-missing')
+  check('the SDK loads inside the archive: models come back empty, not as an error', JSON.stringify(await app.page.evaluate(() => window.celeste.core.call('vendor.models', ['copilot']))) === '[]')
 } catch (err) {
   console.error(err)
   failures.push('the script itself failed')

@@ -2,7 +2,8 @@ import { create } from 'zustand'
 import type { ApprovalMode, AskAnswers, Effort, SessionMode, UserInput } from '@shared/agent'
 import type { CorePush, SessionSummary, StoredEvent } from '@shared/api'
 import { core } from '@/api'
-import { MODEL_BY_ID, effortFor } from '@/mocks/models'
+import { effortFor } from '@/mocks/models'
+import { modelOf, useModels } from './models'
 import { foldEvents } from './reduce'
 import type { Session } from './types'
 import { useUi } from './ui'
@@ -127,6 +128,7 @@ export const useSessions = create<SessionsState>((set, get) => {
           // The first message creates the session, with the settings chosen on the home screen.
           const d = useUi.getState().draft
           const created = await core.call('sessions.create', {
+            vendor: modelOf(d.model).vendor,
             mode,
             title: titleFrom(input.text || input.attachments[0]?.name || ''),
             model: d.model,
@@ -155,7 +157,7 @@ export const useSessions = create<SessionsState>((set, get) => {
       if (!s) return
       const next = { ...patch }
       if (patch.model) {
-        const m = MODEL_BY_ID[patch.model]
+        const m = useModels.getState().byId[patch.model]
         if (m && patch.effort === undefined) next.effort = effortFor(m, s.effort)
       }
       update(id, (cur) => ({ ...cur, ...next }))

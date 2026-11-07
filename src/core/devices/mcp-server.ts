@@ -76,7 +76,8 @@ export class DeviceToolServer {
     // The list is worked out for each request, so a device set to Read only stops offering commands at once.
     for (const name of this.tools.available(sessionId)) {
       const def = TOOLS[name as ToolName]
-      server.registerTool(name, { title: def.title, description: def.description, inputSchema: def.shape }, async (args: unknown) => {
+      // `readOnlyHint` is what lets an agent in plan mode use the tools that change nothing on the device.
+      server.registerTool(name, { title: def.title, description: def.description, inputSchema: def.shape, annotations: { readOnlyHint: def.needs === 'any' } }, async (args: unknown) => {
         const out = await this.tools.call(sessionId, name, args)
         return {
           content: [

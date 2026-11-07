@@ -2,6 +2,7 @@ import type { SettingsPatch } from '@shared/api'
 import { core } from '@/api'
 import { useDevices } from '@/stores/devices'
 import { useDrafts } from '@/stores/drafts'
+import { useModels } from '@/stores/models'
 import { useSessions } from '@/stores/sessions'
 import { setSaveErrorHandler, useSettings } from '@/stores/settings'
 import { useUi } from '@/stores/ui'
@@ -58,6 +59,7 @@ export async function bootstrap(): Promise<void> {
   core.onPush((push) => {
     useSessions.getState().applyPush(push)
     useDevices.getState().applyPush(push)
+    useVendors.getState().applyPush(push)
   })
 
   const data = await within(core.call('app.bootstrap'), 15_000)
@@ -77,6 +79,8 @@ export async function bootstrap(): Promise<void> {
 
   useSettings.getState().load(settings)
   await useVendors.getState().init(data.vendors)
+  // Copilot's own model list, only for someone who connected it: asking starts its program.
+  if (useVendors.getState().vendors.copilot.status === 'connected') void useModels.getState().refresh()
   useSessions.getState().init(data.sessions)
   useDrafts.getState().init(data.drafts)
   await useDevices.getState().refresh()

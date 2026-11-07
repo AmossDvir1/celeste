@@ -14,6 +14,7 @@
     "verify:persistence": "electron-vite build && node scripts/persistence-check.mjs",
     "verify:package": "electron-vite build && node scripts/package-check.mjs",
     "verify:devices": "electron-vite build && node scripts/devices-check.mjs",
+    "verify:copilot": "electron-vite build && node scripts/copilot-check.mjs && node scripts/copilot-signin-check.mjs",
     "shots": "electron-vite build && node scripts/screenshots.mjs",
     "glow:compare": "electron-vite build && node scripts/glow-compare.mjs",
     "icons": "node scripts/make-icons.mjs"
@@ -52,6 +53,7 @@
     "zustand": "^5.1.0"
   },
   "dependencies": {
+    "@github/copilot-sdk": "1.0.29",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "bonjour-service": "^1.4.4",
     "ssh2": "^1.17.0"

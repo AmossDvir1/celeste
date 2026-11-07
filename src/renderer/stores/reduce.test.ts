@@ -8,6 +8,7 @@ import type { Session } from './types'
 
 const blank = (over: Partial<Session> = {}): Session => ({
   id: 's',
+  vendor: 'copilot',
   mode: 'chat',
   title: 'T',
   model: 'copilot-auto',

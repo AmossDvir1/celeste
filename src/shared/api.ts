@@ -21,6 +21,7 @@ import type {
   AskAnswers,
   AttachmentInfo,
   Effort,
+  ModelInfo,
   SessionMode,
   UserInput,
   VendorId
@@ -47,6 +48,7 @@ export type VendorRecords = Partial<Record<VendorId, VendorRecord>>
 
 export interface SessionSummary {
   id: string
+  vendor: VendorId
   mode: SessionMode
   title: string
   model: string
@@ -62,6 +64,7 @@ export interface SessionSummary {
 }
 
 export interface CreateSessionInput {
+  vendor: VendorId
   mode: SessionMode
   title: string
   model: string
@@ -118,6 +121,28 @@ export interface NewAttachment {
   height?: number
 }
 
+/** Whether a vendor's agent can be used from this computer right now. */
+export type VendorConnection =
+  | { state: 'signed-in'; account: string }
+  | { state: 'signed-out' }
+  /** The vendor's program has not been downloaded yet. Connecting downloads it. */
+  | { state: 'runtime-missing' }
+  | { state: 'unavailable'; message: string }
+  /** Celeste has no adapter for this vendor yet. */
+  | { state: 'unsupported' }
+
+/** What the person is asked to do to finish signing in. */
+export type SignInStep =
+  | { kind: 'open-url'; url: string }
+  | { kind: 'device-code'; url: string; code: string; expiresIn: number }
+
+/** How a connection that was started with `vendor.signIn` is going. Arrives as `CorePush` messages. */
+export type VendorProgress =
+  | { state: 'downloading'; progress: number }
+  | { state: 'step'; step: SignInStep }
+  | { state: 'done'; account: string }
+  | { state: 'failed'; message: string }
+
 export interface Bootstrap {
   settings: AppSettings
   /** False on the very first start, so a window can import settings an earlier build kept in the browser. */
@@ -133,6 +158,14 @@ export interface CoreApi {
   'app.bootstrap': () => Bootstrap
   'settings.patch': (patch: SettingsPatch) => AppSettings
   'vendors.set': (id: VendorId, record: VendorRecord | null) => void
+
+  /** Whether the vendor's agent is ready, without starting a sign-in. Starts its program if it is on this computer. */
+  'vendor.status': (id: VendorId) => Promise<VendorConnection>
+  /** Starts connecting: downloads the program if needed, then signs in. Answers at once; progress arrives as `vendor` pushes. */
+  'vendor.signIn': (id: VendorId, method: 'web' | 'code') => Promise<void>
+  'vendor.cancelSignIn': (id: VendorId) => Promise<void>
+  /** The models this account can use, with the effort levels each takes. Empty when the vendor is not ready. */
+  'vendor.models': (id: VendorId) => Promise<ModelInfo[]>
 
   'sessions.create': (input: CreateSessionInput) => SessionSummary
   'sessions.get': (id: string) => { summary: SessionSummary; events: StoredEvent[] } | null
@@ -186,8 +219,9 @@ export interface CoreApi {
 }
 
 export type DeviceApi = { [K in keyof CoreApi as K extends `devices.${string}` ? K : never]: CoreApi[K] }
-/** The methods the session service answers. The device service answers the rest. */
-export type SessionApi = Omit<CoreApi, keyof DeviceApi>
+export type VendorLinkApi = { [K in keyof CoreApi as K extends `vendor.${string}` ? K : never]: CoreApi[K] }
+/** The methods the session service answers. The device service and the vendor service answer the rest. */
+export type SessionApi = Omit<CoreApi, keyof DeviceApi | keyof VendorLinkApi>
 
 export type CoreMethod = keyof CoreApi
 export type CoreParams<M extends CoreMethod> = Parameters<CoreApi[M]>
@@ -195,6 +229,7 @@ export type CoreResult<M extends CoreMethod> = ReturnType<CoreApi[M]>
 
 export type CorePush =
   | { type: 'devices' }
+  | { type: 'vendor'; vendor: VendorId; progress: VendorProgress }
   | { type: 'event'; sessionId: string; stored: StoredEvent }
   | { type: 'summary'; session: SessionSummary }
   | { type: 'removed'; id: string }

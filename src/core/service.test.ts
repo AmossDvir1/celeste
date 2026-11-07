@@ -49,7 +49,7 @@ class FakeAgent implements AgentSession {
   }
 }
 
-const input: CreateSessionInput = { mode: 'chat', title: 'Plan the rollout', model: 'copilot-auto', effort: null, approval: 'ask' }
+const input: CreateSessionInput = { vendor: 'claude', mode: 'chat', title: 'Plan the rollout', model: 'copilot-auto', effort: null, approval: 'ask' }
 const flush = () => new Promise<void>((r) => setImmediate(r))
 
 function setup(store = new MemoryStore(), opts: { samples?: boolean } = {}) {

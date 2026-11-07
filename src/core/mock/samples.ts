@@ -1,4 +1,4 @@
-import type { ApprovalMode, AttachmentInfo, Effort, SessionMode, ToolKind } from '@shared/agent'
+import type { ApprovalMode, AttachmentInfo, Effort, SessionMode, ToolKind, VendorId } from '@shared/agent'
 import type { LogEvent } from '@shared/api'
 import { checkoutDiff } from './diffs'
 
@@ -14,6 +14,7 @@ export interface SampleEvent {
 
 export interface SampleSession {
   id: string
+  vendor: VendorId
   mode: SessionMode
   title: string
   model: string
@@ -138,7 +139,7 @@ Three things in the last 24 hours, in order of impact:
 
 I can turn steps 1 and 2 into a workflow if you like.`)
     .done()
-  return { id: 'seed-wfo', mode: 'chat', title: 'Analyze WFO logs', model: 'copilot-auto', effort: null, approval: 'auto', createdAt: t, events }
+  return { id: 'seed-wfo', vendor: 'copilot', mode: 'chat', title: 'Analyze WFO logs', model: 'copilot-auto', effort: null, approval: 'auto', createdAt: t, events }
 }
 
 function checkoutSession(): SampleSession {
@@ -168,6 +169,7 @@ I ran the checkout suite 20 times in a row and all passed. \`cart.spec.ts\` has 
     .done()
   return {
     id: 'seed-checkout',
+    vendor: 'claude',
     mode: 'develop',
     title: 'Fix flaky checkout test',
     model: 'claude-sonnet',
@@ -199,13 +201,14 @@ function buildFailureSession(): SampleSession {
 
 Change line 48 to \`format(o.total)\` and the build should pass. If other files break the same way, search for \`totalCents\`.`)
     .done()
-  return { id: 'seed-build', mode: 'chat', title: 'Investigate build failure', model: 'copilot-auto', effort: null, approval: 'auto', createdAt: t, events }
+  return { id: 'seed-build', vendor: 'copilot', mode: 'chat', title: 'Investigate build failure', model: 'copilot-auto', effort: null, approval: 'auto', createdAt: t, events }
 }
 
 function brief(id: string, title: string, at: number, question: string, answer: string, mode: SessionMode = 'chat', cwd?: string): SampleSession {
   const events = new Script(id, at).user(question).say(answer).done()
   return {
     id,
+    vendor: mode === 'develop' ? 'claude' : 'copilot',
     mode,
     title,
     model: mode === 'develop' ? 'claude-sonnet' : 'copilot-auto',

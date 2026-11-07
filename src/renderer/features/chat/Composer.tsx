@@ -3,7 +3,7 @@ import { Paperclip, Send, Square, TriangleAlert, X } from 'lucide-react'
 import type { SessionMode, UserInput } from '@shared/agent'
 import { cn } from '@/lib/cn'
 import { IconButton } from '@/components/ui'
-import { MODEL_BY_ID } from '@/mocks/models'
+import { lookupModel, useModels } from '@/stores/models'
 import { AttachmentStrip, type AttachmentsApi } from './attachments'
 import { ApprovalPicker, ModelControls, type Prefs } from './controls'
 
@@ -39,7 +39,8 @@ export function Composer({
   const areaRef = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const home = variant === 'home'
-  const model = MODEL_BY_ID[prefs.model]
+  const byId = useModels((s) => s.byId)
+  const model = lookupModel(byId, prefs.model)
   const canSend = text.trim().length > 0 || attachments.items.length > 0
   const imageBlocked = model?.images === false && attachments.items.some((a) => a.mime.startsWith('image/'))
 

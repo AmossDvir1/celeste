@@ -4,6 +4,8 @@ import type { DeviceActivity, DeviceFolder, DeviceRecord } from '@shared/devices
 /** A session as stored. `deletedAt` is set between Delete and the end of the undo window. */
 export interface SessionRow extends SessionSummary {
   deletedAt: number | null
+  /** The vendor's own id for this conversation, used to resume it. The window never sees it. */
+  vendorSessionId?: string
 }
 
 export interface AttachmentRow {
@@ -83,6 +85,8 @@ export type StoredFolder = DeviceFolder & { snapshotPath: string | null }
 export interface FileStore {
   save(id: string, ext: string, mime: string, data: ArrayBuffer): { file: string; url: string }
   remove(file: string): void
+  /** Where the file is on disk, for agents that read attachments by path. Absent in the browser preview. */
+  pathOf?(file: string): string
 }
 
 /** The words of a search box as FTS5 prefix terms: "ana log" becomes `"ana"* AND "log"*`. */

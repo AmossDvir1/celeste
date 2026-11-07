@@ -18,6 +18,10 @@ export class DiskFileStore implements FileStore {
     return { file, url: `celeste-file://attachments/${file}` }
   }
 
+  pathOf(file: string): string {
+    return join(this.dir, file)
+  }
+
   remove(file: string): void {
     if (!/^[\w-]+\.[a-z0-9]{1,5}$/.test(file)) return
     rmSync(join(this.dir, file), { force: true })

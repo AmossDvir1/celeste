@@ -8,7 +8,8 @@ import { Button, TextInput } from '@/components/ui'
 import { GlowArc } from '@/glow/GlowArc'
 import { ApprovalCards, ModelSelect, ThemeTiles } from '@/features/settings/SettingsDialog'
 import { VendorCard } from '@/features/settings/VendorCard'
-import { MODEL_BY_ID, VENDOR_ORDER } from '@/mocks/models'
+import { VENDOR_ORDER } from '@/mocks/models'
+import { lookupModel, useModels } from '@/stores/models'
 import { useSettings } from '@/stores/settings'
 import { useUi } from '@/stores/ui'
 import { useVendors, connectedVendors } from '@/stores/vendors'
@@ -37,7 +38,8 @@ export function Wizard() {
     setWizardOpen(false)
   }
   const last = step === STEPS.length - 1
-  const model = MODEL_BY_ID[settings.defaults.model]
+  const byId = useModels((s) => s.byId)
+  const model = lookupModel(byId, settings.defaults.model)
 
   return (
     <div role="dialog" aria-modal="true" aria-label="Set up Celeste" className="fixed inset-0 z-[80] flex flex-col bg-canvas text-ink">

@@ -4,7 +4,8 @@ import { cn } from '@/lib/cn'
 import { Modal } from '@/components/Dialog'
 import { Field, SelectField } from '@/components/form'
 import { Button, IconButton, Kbd, Switch, TextInput } from '@/components/ui'
-import { APPROVAL_OPTIONS, MODELS, VENDORS, VENDOR_ORDER } from '@/mocks/models'
+import { APPROVAL_OPTIONS, VENDORS, VENDOR_ORDER } from '@/mocks/models'
+import { useModels } from '@/stores/models'
 import { revealDataFolder } from '@/api'
 import { useSessions } from '@/stores/sessions'
 import { useSettings, type ThemePref } from '@/stores/settings'
@@ -112,13 +113,14 @@ export function ApprovalCards({ value, onChange }: { value: string; onChange: (v
 
 export function ModelSelect({ value, onChange, id }: { value: string; onChange: (id: string) => void; id?: string }) {
   const vendors = useVendors((s) => s.vendors)
+  const models = useModels((s) => s.list)
   const connected = VENDOR_ORDER.filter((v) => vendors[v].status === 'connected')
   return (
     <SelectField id={id} value={value} onChange={(e) => onChange(e.target.value)}>
       {connected.length === 0 && <option value={value}>Connect a vendor first</option>}
       {connected.map((v) => (
         <optgroup key={v} label={VENDORS[v].menuLabel}>
-          {MODELS.filter((m) => m.vendor === v).map((m) => (
+          {models.filter((m) => m.vendor === v).map((m) => (
             <option key={m.id} value={m.id}>
               {m.label}
             </option>
