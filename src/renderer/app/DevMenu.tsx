@@ -1,6 +1,5 @@
 import { X } from 'lucide-react'
 import type { ApprovalMode, SessionMode } from '@shared/agent'
-import type { ScenarioId } from '@/mocks/engine'
 import { useSessions } from '@/stores/sessions'
 import { useSettings } from '@/stores/settings'
 import { useUi } from '@/stores/ui'
@@ -10,7 +9,7 @@ import { useUi } from '@/stores/ui'
  * it is not included in release builds.
  */
 
-function play(mode: SessionMode, scenario: ScenarioId, text: string, approval?: ApprovalMode) {
+function play(mode: SessionMode, scenario: string, text: string, approval?: ApprovalMode) {
   const ui = useUi.getState()
   const sessions = useSessions.getState()
   ui.setMode(mode)
@@ -18,7 +17,7 @@ function play(mode: SessionMode, scenario: ScenarioId, text: string, approval?: 
   ui.resetDraft()
   if (approval) ui.setDraft({ approval })
   sessions.setForcedScenario(scenario)
-  sessions.send(mode, { text, attachments: [] })
+  void sessions.send(mode, { text, attachments: [] })
   ui.resetDraft()
 }
 
@@ -43,7 +42,7 @@ const SCENARIOS: { label: string; hint: string; run: () => void }[] = [
     hint: 'Markdown, table, code',
     run: () => {
       useUi.getState().setMode('chat')
-      useSessions.getState().open('seed-wfo')
+      void useSessions.getState().openSample('seed-wfo')
     }
   },
   {
@@ -51,7 +50,7 @@ const SCENARIOS: { label: string; hint: string; run: () => void }[] = [
     hint: 'Edits, tests, Changes panel',
     run: () => {
       useUi.getState().setMode('develop')
-      useSessions.getState().open('seed-checkout')
+      void useSessions.getState().openSample('seed-checkout')
       useUi.getState().setRight('changes')
     }
   },
@@ -60,7 +59,7 @@ const SCENARIOS: { label: string; hint: string; run: () => void }[] = [
     hint: 'Hover the screenshot',
     run: () => {
       useUi.getState().setMode('chat')
-      useSessions.getState().open('seed-build')
+      void useSessions.getState().openSample('seed-build')
     }
   },
   {

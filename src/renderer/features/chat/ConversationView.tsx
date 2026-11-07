@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDown, FileDiff, Folder, GitBranch, Plug, SquareTerminal } from 'lucide-react'
 import type { UserInput } from '@shared/agent'
 import { cn } from '@/lib/cn'
@@ -6,6 +6,7 @@ import { basename } from '@/lib/format'
 import { Badge, IconButton } from '@/components/ui'
 import { GlowArc } from '@/glow/GlowArc'
 import { MODEL_BY_ID } from '@/mocks/models'
+import { useDrafts } from '@/stores/drafts'
 import { useSessions } from '@/stores/sessions'
 import { useUi, type RightPanel } from '@/stores/ui'
 import { useVendors } from '@/stores/vendors'
@@ -38,8 +39,10 @@ export function ConversationView({ sessionId }: { sessionId: string }) {
   const respondApproval = useSessions((s) => s.respondApproval)
   const respondAsk = useSessions((s) => s.respondAsk)
   const vendors = useVendors((s) => s.vendors)
-  const attachments = useAttachments()
-  const [text, setText] = useState('')
+  const attachments = useAttachments(sessionId)
+  // Unsent text belongs to the session, and is saved with it.
+  const text = useDrafts((s) => s.drafts[sessionId]?.text ?? '')
+  const setText = (t: string) => useDrafts.getState().setText(sessionId, t)
   const scroller = useRef<HTMLDivElement>(null)
   const [following, setFollowing] = useState(true)
 
@@ -66,8 +69,6 @@ export function ConversationView({ sessionId }: { sessionId: string }) {
     const el = scroller.current
     if (el) setFollowing(el.scrollHeight - el.scrollTop - el.clientHeight < 80)
   }, [])
-
-  useEffect(() => setText(''), [sessionId])
 
   if (!session) return null
   const model = MODEL_BY_ID[session.model]
@@ -150,7 +151,10 @@ export function ConversationView({ sessionId }: { sessionId: string }) {
               onPrefs={(p) => setPrefs(sessionId, p)}
               attachments={attachments}
               busy={busy}
-              onSend={(input: UserInput) => send(session.mode, input)}
+              onSend={(input: UserInput) => {
+                void send(session.mode, input)
+                useDrafts.getState().clear(sessionId)
+              }}
               onStop={() => stop(sessionId)}
               placeholder={session.status === 'waiting' ? 'Answer above to continue…' : 'Message Celeste...'}
             />

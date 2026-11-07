@@ -15,9 +15,10 @@
     "noUnusedParameters": true,
     "paths": {
       "@/*": ["./src/renderer/*"],
-      "@shared/*": ["./src/shared/*"]
+      "@shared/*": ["./src/shared/*"],
+      "@core/*": ["./src/core/*"]
     },
     "types": ["vite/client"]
   },
-  "include": ["src/renderer/**/*", "src/shared/**/*", "src/preload/index.d.ts"]
+  "include": ["src/renderer/**/*", "src/shared/**/*", "src/core/service.ts", "src/core/store.ts", "src/core/memory-store.ts", "src/core/mock/**/*"]
 }

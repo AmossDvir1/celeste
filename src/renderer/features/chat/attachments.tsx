@@ -2,80 +2,94 @@ import { useCallback, useRef, useState, type DragEvent, type ReactNode } from 'r
 import { HoverCard } from 'radix-ui'
 import { FileText, Image as ImageGlyph, Paperclip, X } from 'lucide-react'
 import type { AttachmentInfo } from '@shared/agent'
+import { core } from '@/api'
 import { cn } from '@/lib/cn'
 import { formatBytes } from '@/lib/format'
+import { useDrafts } from '@/stores/drafts'
 
 const MAX_FILES = 10
 const MAX_BYTES = 25 * 1024 * 1024
+const NONE: AttachmentInfo[] = []
 
-function readDimensions(url: string): Promise<{ width: number; height: number } | null> {
-  return new Promise((resolve) => {
-    const img = new Image()
-    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight })
-    img.onerror = () => resolve(null)
-    img.src = url
-  })
+async function readDimensions(file: File): Promise<{ width: number; height: number } | null> {
+  const url = URL.createObjectURL(file)
+  try {
+    return await new Promise((resolve) => {
+      const img = new Image()
+      img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight })
+      img.onerror = () => resolve(null)
+      img.src = url
+    })
+  } finally {
+    URL.revokeObjectURL(url)
+  }
 }
 
 export interface AttachmentsApi {
   items: AttachmentInfo[]
   add: (files: FileList | File[]) => Promise<void>
   remove: (id: string) => void
-  /** Empties the composer after a send. Image URLs stay alive because the sent message shows them. */
+  /** Empties the composer after a send. The files stay: the sent message now owns them. */
   clear: () => void
   notice: string | null
   dismissNotice: () => void
 }
 
-export function useAttachments(): AttachmentsApi {
-  const [items, setItems] = useState<AttachmentInfo[]>([])
+/**
+ * The files attached to the draft at `draftKey`. Each is saved as soon as it is added, so a draft with
+ * files survives a restart, and the preview of a sent message still shows after the original moves.
+ */
+export function useAttachments(draftKey: string): AttachmentsApi {
+  const items = useDrafts((s) => s.drafts[draftKey]?.attachments ?? NONE)
   const [notice, setNotice] = useState<string | null>(null)
-  const itemsRef = useRef(items)
-  itemsRef.current = items
 
-  const add = useCallback(async (input: FileList | File[]) => {
-    const files = Array.from(input)
-    if (files.length === 0) return
-    const room = Math.max(0, MAX_FILES - itemsRef.current.length)
-    const small = files.filter((f) => f.size <= MAX_BYTES)
-    const accepted = small.slice(0, room)
-    if (small.length < files.length) {
-      setNotice(`Files over ${formatBytes(MAX_BYTES)} were skipped.`)
-    } else if (small.length > room) {
-      setNotice(`You can attach up to ${MAX_FILES} files at once.`)
-    } else {
-      setNotice(null)
-    }
-    const next = await Promise.all(
-      accepted.map(async (f): Promise<AttachmentInfo> => {
-        const isImage = f.type.startsWith('image/')
-        const url = isImage ? URL.createObjectURL(f) : undefined
-        const dims = url ? await readDimensions(url) : null
-        return {
-          id: crypto.randomUUID(),
-          name: f.name || 'pasted-image.png',
-          mime: f.type || 'application/octet-stream',
-          size: f.size,
-          url,
-          ...(dims ?? {})
-        }
-      })
-    )
-    setItems((cur) => [...cur, ...next])
-  }, [])
+  const add = useCallback(
+    async (input: FileList | File[]) => {
+      const files = Array.from(input)
+      if (files.length === 0) return
+      const have = useDrafts.getState().drafts[draftKey]?.attachments.length ?? 0
+      const room = Math.max(0, MAX_FILES - have)
+      const small = files.filter((f) => f.size <= MAX_BYTES)
+      const accepted = small.slice(0, room)
+      if (small.length < files.length) {
+        setNotice(`Files over ${formatBytes(MAX_BYTES)} were skipped.`)
+      } else if (small.length > room) {
+        setNotice(`You can attach up to ${MAX_FILES} files at once.`)
+      } else {
+        setNotice(null)
+      }
+      try {
+        const saved = await Promise.all(
+          accepted.map(async (f): Promise<AttachmentInfo> => {
+            const dims = f.type.startsWith('image/') ? await readDimensions(f) : null
+            return core.call('attachments.save', {
+              name: f.name || 'pasted-image.png',
+              mime: f.type || 'application/octet-stream',
+              data: await f.arrayBuffer(),
+              ...(dims ?? {})
+            })
+          })
+        )
+        useDrafts.getState().setAttachments(draftKey, (cur) => [...cur, ...saved])
+      } catch {
+        setNotice('That file could not be attached.')
+      }
+    },
+    [draftKey]
+  )
 
-  const remove = useCallback((id: string) => {
-    setItems((cur) => {
-      const gone = cur.find((a) => a.id === id)
-      if (gone?.url) URL.revokeObjectURL(gone.url)
-      return cur.filter((a) => a.id !== id)
-    })
-  }, [])
+  const remove = useCallback(
+    (id: string) => {
+      useDrafts.getState().setAttachments(draftKey, (cur) => cur.filter((a) => a.id !== id))
+      void core.call('attachments.discard', id).catch(() => undefined)
+    },
+    [draftKey]
+  )
 
   const clear = useCallback(() => {
-    setItems([])
+    useDrafts.getState().setAttachments(draftKey, () => [])
     setNotice(null)
-  }, [])
+  }, [draftKey])
 
   return { items, add, remove, clear, notice, dismissNotice: () => setNotice(null) }
 }

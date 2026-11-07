@@ -1,64 +1,38 @@
 import { create } from 'zustand'
-import { createJSONStorage, persist } from 'zustand/middleware'
-import type { ApprovalMode } from '@shared/agent'
+import type { AppSettings, SettingsPatch, ThemePref } from '@shared/api'
+import { DEFAULT_SETTINGS } from '@shared/defaults'
+import { core } from '@/api'
 
-export type ThemePref = 'dark' | 'light' | 'system'
+export type { ThemePref }
 
-interface SettingsState {
-  theme: ThemePref
-  userName: string
-  wizardDone: boolean
-  sidebarCollapsed: boolean
-  defaults: { model: string; approval: ApprovalMode; projectsFolder: string }
-  set: (patch: Partial<Pick<SettingsState, 'theme' | 'userName' | 'wizardDone' | 'sidebarCollapsed'>>) => void
-  setDefaults: (patch: Partial<SettingsState['defaults']>) => void
-  reset: () => void
+interface SettingsState extends AppSettings {
+  /** Replaces everything with what Core has saved. Used once at start-up. */
+  load: (settings: AppSettings) => void
+  set: (patch: Partial<Omit<AppSettings, 'defaults'>>) => void
+  setDefaults: (patch: Partial<AppSettings['defaults']>) => void
 }
 
-// Browser storage can be missing or throw (private windows, blocked site data), so every access is guarded.
-const safeStorage = {
-  getItem: (key: string) => {
-    try {
-      return localStorage.getItem(key)
-    } catch {
-      return null
-    }
+// Set at start-up to show a message. Not imported from the UI store, which already imports this one.
+let onSaveError: () => void = () => {}
+export const setSaveErrorHandler = (handler: () => void): void => {
+  onSaveError = handler
+}
+
+/** The screen changes at once and Core saves it. If saving fails the person is told, since it would be lost. */
+const save = (patch: SettingsPatch): void => void core.call('settings.patch', patch).catch(() => onSaveError())
+
+export const useSettings = create<SettingsState>()((set) => ({
+  ...DEFAULT_SETTINGS,
+  load: (settings) => set(settings),
+  set: (patch) => {
+    set(patch)
+    save(patch)
   },
-  setItem: (key: string, value: string) => {
-    try {
-      localStorage.setItem(key, value)
-    } catch {
-      /* ignore */
-    }
-  },
-  removeItem: (key: string) => {
-    try {
-      localStorage.removeItem(key)
-    } catch {
-      /* ignore */
-    }
+  setDefaults: (patch) => {
+    set((s) => ({ defaults: { ...s.defaults, ...patch } }))
+    save({ defaults: patch })
   }
-}
-
-const INITIAL = {
-  theme: 'dark' as ThemePref,
-  userName: 'Amoss',
-  wizardDone: false,
-  sidebarCollapsed: false,
-  defaults: { model: 'copilot-auto', approval: 'auto' as ApprovalMode, projectsFolder: 'D:\\Projects' }
-}
-
-export const useSettings = create<SettingsState>()(
-  persist(
-    (set) => ({
-      ...INITIAL,
-      set: (patch) => set(patch),
-      setDefaults: (patch) => set((s) => ({ defaults: { ...s.defaults, ...patch } })),
-      reset: () => set({ ...INITIAL })
-    }),
-    { name: 'celeste.settings', storage: createJSONStorage(() => safeStorage), version: 1 }
-  )
-)
+}))
 
 export function resolveTheme(pref: ThemePref): 'dark' | 'light' {
   if (pref !== 'system') return pref
@@ -70,8 +44,25 @@ const WINDOW_COLORS = {
   light: { color: '#f7f8fc', symbolColor: '#526080' }
 }
 
+/** Kept in the browser's own storage too, so the next start shows the right theme before Core has answered. */
+const THEME_MIRROR = 'celeste.theme'
+
+export function mirroredTheme(): ThemePref | null {
+  try {
+    const value = localStorage.getItem(THEME_MIRROR)
+    return value === 'dark' || value === 'light' || value === 'system' ? value : null
+  } catch {
+    return null
+  }
+}
+
 export function applyTheme(pref: ThemePref): void {
   const theme = resolveTheme(pref)
   document.documentElement.dataset.theme = theme
   window.celeste?.setTheme(WINDOW_COLORS[theme])
+  try {
+    localStorage.setItem(THEME_MIRROR, pref)
+  } catch {
+    /* storage can be blocked: the theme still applies, it just flashes on the next start */
+  }
 }

@@ -1,12 +1,8 @@
 /// <reference types="vite/client" />
 
-interface CelesteBridge {
-  platform: string
-  setTheme(payload: { color: string; symbolColor: string }): void
-}
-
 interface Window {
-  celeste?: CelesteBridge
+  /** Provided by the preload script. Absent when the interface runs in a plain browser (`npm run dev:web`). */
+  celeste?: import('@shared/bridge').CelesteBridge
 }
 
 declare module '*.svg' {

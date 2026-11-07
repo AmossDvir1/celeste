@@ -10,7 +10,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': resolve('src/renderer'),
-      '@shared': resolve('src/shared')
+      '@shared': resolve('src/shared'),
+      '@core': resolve('src/core')
     }
   },
   server: { port: 5199, strictPort: true }

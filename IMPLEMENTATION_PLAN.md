@@ -61,7 +61,7 @@ The scratch folder is a default working location, not a security boundary. With 
 | Controls | Radix (`radix-ui`) | 1.x | Keyboard and accessibility behavior for dropdown, slider, hover card and dialog, with no visual style to fight |
 | State | Zustand | 5.x | Small, and enough for this app |
 | Workflow canvas | React Flow (`@xyflow/react`) | 12.x | Nodes, edges, pan and zoom are already solved |
-| Database | better-sqlite3 | 13.x | Fast local storage, with full-text search for sessions |
+| Database | `node:sqlite`, built into Electron's Node | SQLite 3.53 in Electron 45 | Local storage with FTS5 full-text search. Chosen over better-sqlite3 (13.x) in Phase 2: it needs no native rebuild per platform or Electron version, adds nothing for signing to cover, and its tests run in plain Node. It sits behind one small `Store` interface, so swapping it later is a one-file change |
 | Markdown and code | react-markdown, remark-gfm, Shiki | | Message and code rendering |
 | Icons | lucide-react | 1.x | The kits' icon sets lack several icons you need, such as paperclip and sliders. Lucide matches their line style |
 | Fonts | Outfit, JetBrains Mono | | Outfit matches your inner chat picture. The dark kit's Liberation Sans does not |
@@ -549,6 +549,21 @@ Core process, SQLite and migrations, typed API, real session create/rename/delet
 
 **Done when:** after closing and reopening, every mock session, draft and setting is intact, and delete with Undo works.
 
+**Status: built and verified** (53 unit tests, plus `npm run verify:persistence` and `npm run verify:package` against the real app).
+
+What was built, and the choices made along the way:
+
+- **Core process.** A utility process owns the database and the scripted assistant. Each window gets its own message port straight to it, so conversations never pass through the main process. If Core dies, the main process restarts it and reloads the windows. Closing the window or the app first makes the window save its unsent text, then Core closes the database.
+- **One log per session.** Every event is written to SQLite, then pushed to the window. Opening a session replays its log with the same reducer that handles live events, using each event's recorded time, so "Thought for 4s" survives a restart. Besides the agent's events, the log holds what you did (your messages, approval and question answers) and one note Celeste writes itself, `turn.abandoned`.
+- **Same code in the browser preview.** The session logic runs on a `Store` interface with a SQLite and an in-memory implementation. One contract test runs against both, and `npm run dev:web` uses the in-memory one (nothing saved).
+- **Migrations** use SQLite's `user_version`, run in a transaction, keep a `.v<N>.bak` copy of the old file before an upgrade, and refuse data made by a newer Celeste without touching it.
+- **Delete** hides a session at once and removes it for good after 10 seconds. Anything still waiting when Celeste closes is removed at the next start. Delete all has no undo.
+- **Attachments** are saved when added (so an unsent draft with files survives a restart), linked to the session on send, and shown through `celeste-file://attachments/`, which serves that one folder only. Only known file types keep their extension.
+- **Credentials.** API keys go to `safeStorage` in the main process. The window can store, remove and ask for the last four characters, and never read a key back. If the system cannot encrypt, nothing is stored.
+- **Search** is FTS5 over titles, your messages and the assistant's answers, with prefix matching.
+- **After a restart:** a turn that was running is marked cut off and the session is idle. A question or approval that was waiting stays on screen. Answering it starts a new turn with the answer as a message, which is the fallback the plan describes. Real resume of the vendor's own session is Phase 3.
+- **Still sample content:** the assistant, the sample sessions (added on the first start only), the Connect button's steps, and workflows. Workflows are saved in Phase 6.
+
 ### Phase 3: Copilot end to end (M)
 
 Full adapter: streaming, tools, approvals, `ask_user`, attachments, effort, models, resume, fallback, Connect button, runtime download. Also the adapter contract test suite.
@@ -604,7 +619,7 @@ Schema, runner, Tool and Agent steps, inputs and outputs, error handling, live r
 | **Connecting in Celeste could disturb a user's other CLI logins**, such as signing out their terminal `claude` | Test each login against a throwaway config folder before running it on a real one |
 | **Runtime downloads can fail**, especially on company networks | Clear errors with retry, integrity checks, and an Advanced setting to use an installed CLI |
 | **Auto-approve by default.** The agent runs commands as the user, and content from web pages or MCP tools could try to steer it. A public audience, including company machines, raises the stakes | Kept as you asked. The current mode is always visible in the composer, the wizard explains it in one line, and Claude uses its classifier-checked `auto` mode where available. Reviewed again in Phase 7 |
-| **Packaging.** better-sqlite3 needs rebuilding for Electron on each platform, and Mac signing covers everything in the app | Handle early with a packaged test build at the end of Phase 2 |
+| **Packaging.** Mac signing covers everything in the app, and the app is two programs (main and Core) | `node:sqlite` removes the native-module rebuild this row was about. `npm run verify:package` runs the built app from an `app.asar` as an installer would lay it out. Real installers, signing and notarization are Phase 7 |
 | **Vendor sessions can disappear** through cleanup or upgrades | Celeste's own log is the source of truth, and fallback reseeds the agent |
 | **The glow can only be exact at one size** | Exact at the reference size, proportional elsewhere, and reviewed at common window sizes |
 | **Licensing before the public release.** The kits' notes ask for a trademark and font review, and vendor logos appear in the UI | Review in Phase 7, including the name "Celeste" (section 6.4 covers runtime licenses). Outfit and JetBrains Mono are open-source fonts |

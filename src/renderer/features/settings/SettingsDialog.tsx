@@ -5,6 +5,7 @@ import { Modal } from '@/components/Dialog'
 import { Field, SelectField } from '@/components/form'
 import { Button, IconButton, Kbd, Switch, TextInput } from '@/components/ui'
 import { APPROVAL_OPTIONS, MODELS, VENDORS, VENDOR_ORDER } from '@/mocks/models'
+import { revealDataFolder } from '@/api'
 import { useSessions } from '@/stores/sessions'
 import { useSettings, type ThemePref } from '@/stores/settings'
 import { useUi, type SettingsSection } from '@/stores/ui'
@@ -155,6 +156,7 @@ function Content({ section }: { section: SettingsSection }) {
   const setWizardOpen = useUi((s) => s.setWizardOpen)
   const pushToast = useUi((s) => s.pushToast)
   const resetDraft = useUi((s) => s.resetDraft)
+  const dataDir = useUi((s) => s.dataDir)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   switch (section) {
@@ -255,13 +257,17 @@ function Content({ section }: { section: SettingsSection }) {
     case 'data':
       return (
         <Section title="Data" description="Your sessions stay on this computer.">
-          <Row title="Storage location" description="C:\Users\you\AppData\Roaming\Celeste">
-            <Button variant="secondary" size="sm" onClick={() => pushToast({ text: 'Opening the folder arrives with the real app.' })}>
+          <Row title="Storage location" description={dataDir || 'Not available'}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => void revealDataFolder().then((shown) => !shown && pushToast({ text: 'Your files can only be shown from the Celeste app.' }))}
+            >
               Show in folder
             </Button>
           </Row>
           <Row title="Export all sessions" description="A file you can keep or move to another computer.">
-            <Button variant="secondary" size="sm" onClick={() => pushToast({ text: 'Exported 12 sessions (sample).' })}>
+            <Button variant="secondary" size="sm" onClick={() => pushToast({ text: 'Export arrives in a later phase.' })}>
               Export
             </Button>
           </Row>
@@ -288,8 +294,7 @@ function Content({ section }: { section: SettingsSection }) {
                     variant="danger"
                     size="sm"
                     onClick={() => {
-                      const { sessions } = useSessions.getState()
-                      Object.keys(sessions).forEach((id) => useSessions.getState().remove(id))
+                      void useSessions.getState().removeAll()
                       setConfirmDelete(false)
                     }}
                   >
@@ -307,7 +312,7 @@ function Content({ section }: { section: SettingsSection }) {
       )
     case 'about':
       return (
-        <Section title="About Celeste" description="Version 0.1.0 · design preview. Everything the assistants say here is sample content.">
+        <Section title="About Celeste" description="Version 0.1.0 · design preview. Your sessions and settings are saved, but the assistants are still scripted samples.">
           <div>
             <h3 className="text-[14px] text-ink">Open-source software in this app</h3>
             <ul className="mt-3 divide-y divide-edge/70 rounded-xl border border-edge">

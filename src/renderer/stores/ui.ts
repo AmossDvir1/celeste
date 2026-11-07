@@ -34,6 +34,8 @@ interface UiState {
   devMenuOpen: boolean
   draft: Draft
   toasts: Toast[]
+  /** Where Celeste keeps its data, for the Data section of Settings. */
+  dataDir: string
 
   setMode: (mode: AppMode) => void
   toggleRight: (panel: Exclude<RightPanel, null>) => void
@@ -47,6 +49,7 @@ interface UiState {
   resetDraft: () => void
   pushToast: (toast: Omit<Toast, 'id'>) => void
   dismissToast: (id: number) => void
+  setDataDir: (dir: string) => void
 }
 
 function freshDraft(): Draft {
@@ -74,6 +77,7 @@ export const useUi = create<UiState>((set, get) => ({
   devMenuOpen: false,
   draft: freshDraft(),
   toasts: [],
+  dataDir: '',
 
   setMode: (mode) => set({ mode, rightPanel: null }),
   toggleRight: (panel) => set({ rightPanel: get().rightPanel === panel ? null : panel }),
@@ -90,5 +94,6 @@ export const useUi = create<UiState>((set, get) => ({
     set({ toasts: [...get().toasts, { ...toast, id }] })
     setTimeout(() => get().dismissToast(id), 7000)
   },
-  dismissToast: (id) => set({ toasts: get().toasts.filter((t) => t.id !== id) })
+  dismissToast: (id) => set({ toasts: get().toasts.filter((t) => t.id !== id) }),
+  setDataDir: (dataDir) => set({ dataDir })
 }))

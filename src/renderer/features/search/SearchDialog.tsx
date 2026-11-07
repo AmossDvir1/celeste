@@ -1,5 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Code, MessageSquare, Search, Workflow } from 'lucide-react'
+import type { SearchHit } from '@shared/api'
+import { core } from '@/api'
 import { cn } from '@/lib/cn'
 import { Modal } from '@/components/Dialog'
 import { useSessions } from '@/stores/sessions'
@@ -10,6 +12,8 @@ interface Result {
   key: string
   label: string
   kind: 'Chat' | 'Develop' | 'Workflow' | 'Template'
+  /** The part of the conversation that matched, when it was not the title. */
+  snippet?: string
   run: () => void
 }
 
@@ -24,30 +28,50 @@ export function SearchDialog() {
   const openWorkflow = useWorkflows((s) => s.open)
   const [q, setQ] = useState('')
   const [idx, setIdx] = useState(0)
+  const [hits, setHits] = useState<SearchHit[]>([])
+
+  // Sessions are searched by Core, in titles and in what was said, once typing pauses.
+  useEffect(() => {
+    const needle = q.trim()
+    if (!needle) {
+      setHits([])
+      return
+    }
+    let stale = false
+    const timer = setTimeout(() => {
+      core
+        .call('sessions.search', needle)
+        .then((found) => !stale && setHits(found))
+        .catch(() => !stale && setHits([]))
+    }, 120)
+    return () => {
+      stale = true
+      clearTimeout(timer)
+    }
+  }, [q])
 
   const results = useMemo<Result[]>(() => {
     const needle = q.trim().toLowerCase()
     const hit = (t: string) => !needle || t.toLowerCase().includes(needle)
     const out: Result[] = []
-    Object.values(sessions)
-      .filter((s) => hit(s.title))
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-      .slice(0, 8)
-      .forEach((s) =>
-        out.push({
-          key: s.id,
-          label: s.title,
-          kind: s.mode === 'develop' ? 'Develop' : 'Chat',
-          run: () => {
-            setMode(s.mode)
-            openSession(s.id)
-          }
-        })
-      )
+    const open = (id: string, mode: 'chat' | 'develop') => () => {
+      setMode(mode)
+      openSession(id)
+    }
+    if (needle) {
+      for (const h of hits.slice(0, 8)) {
+        out.push({ key: h.sessionId, label: h.title, snippet: h.snippet, kind: h.mode === 'develop' ? 'Develop' : 'Chat', run: open(h.sessionId, h.mode) })
+      }
+    } else {
+      Object.values(sessions)
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .slice(0, 8)
+        .forEach((s) => out.push({ key: s.id, label: s.title, kind: s.mode === 'develop' ? 'Develop' : 'Chat', run: open(s.id, s.mode) }))
+    }
     mine.filter((w) => hit(w.name)).forEach((w) => out.push({ key: w.id, label: w.name, kind: 'Workflow', run: () => { setMode('workflows'); openWorkflow(w.id) } }))
     TEMPLATES.filter((w) => hit(w.name)).forEach((w) => out.push({ key: w.id, label: w.name, kind: 'Template', run: () => { setMode('workflows'); openWorkflow(w.id) } }))
     return out.slice(0, 12)
-  }, [q, sessions, mine, setMode, openSession, openWorkflow])
+  }, [q, hits, sessions, mine, setMode, openSession, openWorkflow])
 
   const choose = (r?: Result) => {
     if (!r) return
@@ -113,7 +137,10 @@ export function SearchDialog() {
               className={cn('flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-[14px]', i === idx ? 'bg-select' : '')}
             >
               <Icon className="h-4 w-4 shrink-0 text-ink-muted" />
-              <span className="min-w-0 flex-1 truncate text-ink">{r.label}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-ink">{r.label}</span>
+                {r.snippet && <span className="block truncate text-[12px] text-ink-faint">{r.snippet}</span>}
+              </span>
               <span className="shrink-0 text-xs text-ink-faint">{r.kind}</span>
             </li>
           )

@@ -1,16 +1,37 @@
-import type { AttachmentInfo } from '@shared/agent'
-import { checkoutDiff } from '@/mocks/diffs'
-import type { Session, TimelineItem } from '@/stores/types'
+import type { ApprovalMode, AttachmentInfo, Effort, SessionMode, ToolKind } from '@shared/agent'
+import type { LogEvent } from '@shared/api'
+import { checkoutDiff } from './diffs'
 
-/* Sample sessions for Phase 1. They match the sidebar in design/Design.jpeg. */
+/*
+ * Sample sessions for the design preview. They match the sidebar in design/Design.jpeg and are written as
+ * event logs, so opening one replays exactly what a live conversation would have recorded.
+ */
 
-const HOUR = 3_600_000
+export interface SampleEvent {
+  at: number
+  event: LogEvent
+}
 
-/** Today at the given clock time. */
+export interface SampleSession {
+  id: string
+  mode: SessionMode
+  title: string
+  model: string
+  effort: Effort | null
+  approval: ApprovalMode
+  cwd?: string
+  branch?: string
+  createdAt: number
+  events: SampleEvent[]
+}
+
+const DAY = 86_400_000
+
+/** The given clock time today, or yesterday when that time has not come yet. */
 function today(h: number, m: number): number {
   const d = new Date()
   d.setHours(h, m, 0, 0)
-  return d.getTime()
+  return d.getTime() > Date.now() ? d.getTime() - DAY : d.getTime()
 }
 function daysAgo(n: number, h: number, m: number): number {
   const d = new Date()
@@ -19,25 +40,49 @@ function daysAgo(n: number, h: number, m: number): number {
   return d.getTime()
 }
 
-let n = 0
-const id = () => `seed-${++n}`
+/** Writes one conversation as events, moving a clock forward as it goes. */
+class Script {
+  readonly events: SampleEvent[] = []
+  private at: number
+  private tools = 0
+  private turns = 0
 
-const user = (text: string, at: number, attachments: AttachmentInfo[] = []): TimelineItem => ({ kind: 'user', id: id(), text, attachments, at })
-const assistant = (text: string): TimelineItem => ({ kind: 'assistant', id: id(), text })
-const thinking = (text: string, at: number, seconds: number): TimelineItem => ({
-  kind: 'thinking',
-  id: id(),
-  text,
-  startedAt: at,
-  endedAt: at + seconds * 1000
-})
-const tool = (
-  kind: Extract<TimelineItem, { kind: 'tool' }>['tool'],
-  title: string,
-  at: number,
-  output = '',
-  extra: Partial<Extract<TimelineItem, { kind: 'tool' }>> = {}
-): TimelineItem => ({ kind: 'tool', id: id(), tool: kind, title, output, status: 'ok', startedAt: at, endedAt: at + 1800, ...extra })
+  constructor(
+    private readonly id: string,
+    start: number
+  ) {
+    this.at = start
+  }
+
+  private add(event: LogEvent, waitMs = 0): this {
+    this.events.push({ at: this.at, event })
+    this.at += waitMs
+    return this
+  }
+
+  user(text: string, attachments: AttachmentInfo[] = []): this {
+    return this.add({ type: 'user.message', text, attachments }, 300).add({ type: 'turn.started', turnId: `${this.id}-turn${this.turns++}` }, 700)
+  }
+  /** The next event closes the thinking, so `seconds` is how long it shows as "Thought for". */
+  think(text: string, seconds: number): this {
+    return this.add({ type: 'thinking.delta', text }, seconds * 1000)
+  }
+  tool(kind: ToolKind, title: string, output = '', extra: { input?: string; diff?: typeof checkoutDiff; seconds?: number } = {}): this {
+    const id = `${this.id}-t${this.tools++}`
+    const run = (extra.seconds ?? 1.8) * 1000
+    this.add({ type: 'tool.started', id, kind, title, input: extra.input }, run / 2)
+    if (output) this.add({ type: 'tool.output', id, text: output }, run / 2)
+    else this.at += run / 2
+    return this.add({ type: 'tool.completed', id, ok: true, diff: extra.diff }, 400)
+  }
+  say(text: string): this {
+    return this.add({ type: 'message.delta', text }, 1500)
+  }
+  done(): SampleEvent[] {
+    this.add({ type: 'turn.completed', turnId: `${this.id}-turn${this.turns - 1}` })
+    return this.events
+  }
+}
 
 function buildErrorShot(): string {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
@@ -61,15 +106,15 @@ function buildErrorShot(): string {
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
 }
 
-function wfoSession(): Session {
+function wfoSession(): SampleSession {
   const t = today(11, 19)
-  const items: TimelineItem[] = [
-    user('Analyze the WFO logs from the last 24h and tell me what stands out.', t),
-    thinking('Pull the log window from Datadog, group errors by signature, then check what changed around the spikes.', t + 1000, 7),
-    tool('mcp', 'Datadog · search logs (service:wfo, last 24h)', t + 9000, '14,882 events\n  ERROR  1,204\n  WARN   3,917\n  INFO   9,761'),
-    tool('read', 'Read wfo-service-2026-11-06.log', t + 12000),
-    tool('search', 'Searched for "KbInstallTimeout"', t + 14000, '212 matches in 3 files'),
-    assistant(`## What stands out
+  const events = new Script('wfo', t)
+    .user('Analyze the WFO logs from the last 24h and tell me what stands out.')
+    .think('Pull the log window from Datadog, group errors by signature, then check what changed around the spikes.', 7)
+    .tool('mcp', 'Datadog · search logs (service:wfo, last 24h)', '14,882 events\n  ERROR  1,204\n  WARN   3,917\n  INFO   9,761')
+    .tool('read', 'Read wfo-service-2026-11-06.log')
+    .tool('search', 'Searched for "KbInstallTimeout"', '212 matches in 3 files')
+    .say(`## What stands out
 
 Three things in the last 24 hours, in order of impact:
 
@@ -92,46 +137,35 @@ Three things in the last 24 hours, in order of impact:
 3. Look at why \`ListInstalledKbs\` slows down after 14:00. It correlates with the nightly scan job.
 
 I can turn steps 1 and 2 into a workflow if you like.`)
-  ]
-  return {
-    id: 'seed-wfo',
-    mode: 'chat',
-    title: 'Analyze WFO logs',
-    model: 'copilot-auto',
-    effort: null,
-    approval: 'auto',
-    items,
-    status: 'idle',
-    activity: null,
-    createdAt: t,
-    updatedAt: t + 40_000
-  }
+    .done()
+  return { id: 'seed-wfo', mode: 'chat', title: 'Analyze WFO logs', model: 'copilot-auto', effort: null, approval: 'auto', createdAt: t, events }
 }
 
-function checkoutSession(): Session {
+function checkoutSession(): SampleSession {
   const t = today(10, 5)
-  const cwd = 'D:\\Work\\shop-web'
-  const items: TimelineItem[] = [
-    user('The checkout totals test fails about one run in five. Find out why and fix it.', t),
-    thinking('A test that fails intermittently is usually a timing assumption. I will read the test and the code it exercises.', t + 1000, 9),
-    tool('read', 'Read src/checkout/__tests__/checkout.spec.ts', t + 11000, '', { input: 'src/checkout/__tests__/checkout.spec.ts' }),
-    tool('read', 'Read src/checkout/pricing.ts', t + 13000, '', { input: 'src/checkout/pricing.ts' }),
-    tool('search', 'Searched for "sleep(" in src', t + 15000, 'src/checkout/__tests__/checkout.spec.ts:34:    await sleep(50)\nsrc/cart/__tests__/cart.spec.ts:12:    await sleep(10)'),
-    assistant('Found it. The test waits a fixed 50 ms for the pricing service to resolve, and on a busy machine that is sometimes not enough. I will make the test wait for the real condition instead.'),
-    tool('edit', 'Edited 2 files', t + 24000, '', { diff: checkoutDiff }),
-    tool('shell', 'npm test -- checkout', t + 30000, '> shop-web@2.4.0 test\n> vitest run checkout\n\n ✓ src/checkout/__tests__/checkout.spec.ts (14 tests) 412ms\n\n Test Files  1 passed (1)\n      Tests  14 passed (14)\n   Duration  1.31s', {
-      input: 'npm test -- checkout',
-      endedAt: t + 33000
-    }),
-    tool('shell', 'npm test -- checkout (x20)', t + 36000, 'Ran the suite 20 times in a loop.\n20 passed, 0 failed', { input: 'for i in 1..20: npm test -- checkout', endedAt: t + 52000 }),
-    assistant(`The flaky test is fixed. It was racing the pricing service.
+  const events = new Script('checkout', t)
+    .user('The checkout totals test fails about one run in five. Find out why and fix it.')
+    .think('A test that fails intermittently is usually a timing assumption. I will read the test and the code it exercises.', 9)
+    .tool('read', 'Read src/checkout/__tests__/checkout.spec.ts', '', { input: 'src/checkout/__tests__/checkout.spec.ts' })
+    .tool('read', 'Read src/checkout/pricing.ts', '', { input: 'src/checkout/pricing.ts' })
+    .tool('search', 'Searched for "sleep(" in src', 'src/checkout/__tests__/checkout.spec.ts:34:    await sleep(50)\nsrc/cart/__tests__/cart.spec.ts:12:    await sleep(10)')
+    .say('Found it. The test waits a fixed 50 ms for the pricing service to resolve, and on a busy machine that is sometimes not enough. I will make the test wait for the real condition instead.')
+    .tool('edit', 'Edited 2 files', '', { diff: checkoutDiff })
+    .tool(
+      'shell',
+      'npm test -- checkout',
+      '> shop-web@2.4.0 test\n> vitest run checkout\n\n ✓ src/checkout/__tests__/checkout.spec.ts (14 tests) 412ms\n\n Test Files  1 passed (1)\n      Tests  14 passed (14)\n   Duration  1.31s',
+      { input: 'npm test -- checkout', seconds: 3 }
+    )
+    .tool('shell', 'npm test -- checkout (x20)', 'Ran the suite 20 times in a loop.\n20 passed, 0 failed', { input: 'for i in 1..20: npm test -- checkout', seconds: 16 })
+    .say(`The flaky test is fixed. It was racing the pricing service.
 
 **What changed**
 - \`checkout.spec.ts\`: replaced the fixed \`sleep(50)\` with \`waitFor\` on the real condition.
 - \`pricing.ts\`: added \`pending()\` so tests can see whether quotes are still resolving.
 
 I ran the checkout suite 20 times in a row and all passed. \`cart.spec.ts\` has the same \`sleep(10)\` pattern, so it may flake the same way. Want me to fix that one too?`)
-  ]
+    .done()
   return {
     id: 'seed-checkout',
     mode: 'develop',
@@ -139,17 +173,14 @@ I ran the checkout suite 20 times in a row and all passed. \`cart.spec.ts\` has 
     model: 'claude-sonnet',
     effort: 'medium',
     approval: 'auto',
-    cwd,
+    cwd: 'D:\\Work\\shop-web',
     branch: 'fix/flaky-checkout',
-    items,
-    status: 'idle',
-    activity: null,
     createdAt: t,
-    updatedAt: t + 60_000
+    events
   }
 }
 
-function buildFailureSession(): Session {
+function buildFailureSession(): SampleSession {
   const t = today(8, 27)
   const shot: AttachmentInfo = {
     id: 'seed-shot',
@@ -160,40 +191,21 @@ function buildFailureSession(): Session {
     width: 960,
     height: 540
   }
-  const items: TimelineItem[] = [
-    user('The build breaks on my machine after pulling main. Here is the output.', t, [shot]),
-    thinking('The error is a missing property on the Order type. Check whether the field was renamed upstream.', t + 1000, 4),
-    tool('search', 'Searched for "totalCents"', t + 6000, 'src/features/orders/OrderTable.tsx:48\nsrc/api/orders.ts:22  (type Order = { ..., total: number })'),
-    assistant(`The build fails because \`OrderTable.tsx\` still reads \`o.totalCents\`, but the API type was changed in \`src/api/orders.ts\`. The field is now \`total\`, in cents.
+  const events = new Script('build', t)
+    .user('The build breaks on my machine after pulling main. Here is the output.', [shot])
+    .think('The error is a missing property on the Order type. Check whether the field was renamed upstream.', 4)
+    .tool('search', 'Searched for "totalCents"', 'src/features/orders/OrderTable.tsx:48\nsrc/api/orders.ts:22  (type Order = { ..., total: number })')
+    .say(`The build fails because \`OrderTable.tsx\` still reads \`o.totalCents\`, but the API type was changed in \`src/api/orders.ts\`. The field is now \`total\`, in cents.
 
 Change line 48 to \`format(o.total)\` and the build should pass. If other files break the same way, search for \`totalCents\`.`)
-  ]
-  return {
-    id: 'seed-build',
-    mode: 'chat',
-    title: 'Investigate build failure',
-    model: 'copilot-auto',
-    effort: null,
-    approval: 'auto',
-    items,
-    status: 'idle',
-    activity: null,
-    createdAt: t,
-    updatedAt: t + 20_000
-  }
+    .done()
+  return { id: 'seed-build', mode: 'chat', title: 'Investigate build failure', model: 'copilot-auto', effort: null, approval: 'auto', createdAt: t, events }
 }
 
-function brief(
-  sid: string,
-  title: string,
-  ts: number,
-  question: string,
-  answer: string,
-  mode: Session['mode'] = 'chat',
-  cwd?: string
-): Session {
+function brief(id: string, title: string, at: number, question: string, answer: string, mode: SessionMode = 'chat', cwd?: string): SampleSession {
+  const events = new Script(id, at).user(question).say(answer).done()
   return {
-    id: sid,
+    id,
     mode,
     title,
     model: mode === 'develop' ? 'claude-sonnet' : 'copilot-auto',
@@ -201,15 +213,12 @@ function brief(
     approval: 'auto',
     cwd,
     branch: cwd ? 'main' : undefined,
-    items: [user(question, ts), assistant(answer)],
-    status: 'idle',
-    activity: null,
-    createdAt: ts,
-    updatedAt: ts + 30_000
+    createdAt: at,
+    events
   }
 }
 
-export function seedSessions(): Session[] {
+export function sampleSessions(): SampleSession[] {
   return [
     wfoSession(),
     brief('seed-kb', 'Plan KB update', today(9, 42), 'Plan the rollout of the November KB updates across the WFO servers.', 'Here is a staged plan.\n\n1. **Canary** — two hosts, install, wait for the service, check logs for 30 minutes.\n2. **Wave 1** — 20% of hosts, one hour apart.\n3. **Wave 2** — the rest, outside business hours.\n\nEach wave stops if more than one host reports `ServiceNotReady`.'),
@@ -223,5 +232,5 @@ export function seedSessions(): Session[] {
     brief('seed-dark', 'Add dark mode toggle', today(8, 50), 'Add a dark mode toggle to the settings page.', 'Added a `ThemeToggle` to `SettingsPage` that stores the choice in `localStorage` and sets `data-theme` on `<html>`. It follows the system setting until you choose.', 'develop', 'D:\\Work\\shop-web'),
     brief('seed-auth', 'Refactor auth middleware', daysAgo(1, 14, 2), 'Split the auth middleware into token parsing and permission checks.', 'Split into `parseToken` and `requirePermission`. Routes now compose them, and the 11 existing tests pass unchanged.', 'develop', 'D:\\Work\\wfo-tools'),
     brief('seed-kbscan', 'Speed up KB scanner', daysAgo(2, 10, 15), 'The KB scanner takes four minutes per host. Make it faster.', 'Scanning installed updates one by one was the bottleneck. It now queries them in a single call and caches the result for 10 minutes: about 12 seconds per host.', 'develop', 'D:\\Work\\kb-scanner')
-  ].map((s) => ({ ...s, updatedAt: Math.min(s.updatedAt, Date.now() + HOUR) }))
+  ]
 }

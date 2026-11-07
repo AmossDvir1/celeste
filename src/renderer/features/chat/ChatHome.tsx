@@ -1,8 +1,9 @@
-import { useState, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { ArrowRight, Code, MessageSquare, Workflow } from 'lucide-react'
 import type { SessionMode, UserInput } from '@shared/agent'
 import { greetingFor } from '@/lib/format'
 import { GlowArc } from '@/glow/GlowArc'
+import { useDrafts } from '@/stores/drafts'
 import { useSettings } from '@/stores/settings'
 import { useUi } from '@/stores/ui'
 import { Composer } from './Composer'
@@ -41,8 +42,11 @@ export function ChatHome({
   const userName = useSettings((s) => s.userName)
   const draft = useUi((s) => s.draft)
   const setDraft = useUi((s) => s.setDraft)
-  const attachments = useAttachments()
-  const [text, setText] = useState('')
+  // What you type here is saved as a draft, so it is still there after a restart.
+  const draftKey = `home:${mode}`
+  const attachments = useAttachments(draftKey)
+  const text = useDrafts((s) => s.drafts[draftKey]?.text ?? '')
+  const setText = (t: string) => useDrafts.getState().setText(draftKey, t)
 
   return (
     <DropZone onFiles={(f) => void attachments.add(f)} className="h-full">
@@ -73,7 +77,7 @@ export function ChatHome({
               attachments={attachments}
               onSend={(input) => {
                 onSend(input)
-                setText('')
+                useDrafts.getState().clear(draftKey)
               }}
               autoFocus
             />

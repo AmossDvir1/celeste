@@ -1,16 +1,16 @@
 import type {
   AgentError,
-  ApprovalMode,
   AskAnswers,
   AttachmentInfo,
-  Effort,
   FileDiff,
   Question,
-  SessionMode,
   ToolKind
 } from '@shared/agent'
+import type { SessionStatus, SessionSummary } from '@shared/api'
 
-/** What the conversation shows, built by reducing AgentEvents. Saved with the session in Phase 2. */
+export type { SessionStatus }
+
+/** What the conversation shows, built by replaying the session's log of events. */
 export type TimelineItem =
   | { kind: 'user'; id: string; text: string; attachments: AttachmentInfo[]; at: number }
   | { kind: 'assistant'; id: string; text: string }
@@ -47,20 +47,15 @@ export interface Activity {
   working: boolean
 }
 
-export type SessionStatus = 'idle' | 'working' | 'waiting'
-
-export interface Session {
-  id: string
-  mode: SessionMode
-  title: string
-  model: string
-  effort: Effort | null
-  approval: ApprovalMode
-  cwd?: string
-  branch?: string
+/**
+ * A session in the window: its summary from Core, plus the conversation once it is loaded. Sessions that have
+ * not been opened are only a summary, so the sidebar can list thousands without reading their logs.
+ */
+export interface Session extends SessionSummary {
   items: TimelineItem[]
-  status: SessionStatus
   activity: Activity | null
-  createdAt: number
-  updatedAt: number
+  /** False until the session's log has been loaded and replayed. */
+  loaded: boolean
+  /** The newest log entry already replayed into `items`. */
+  foldedSeq: number
 }

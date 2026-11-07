@@ -1,0 +1,77 @@
+import { join } from 'node:path'
+import { app, BrowserWindow, dialog, MessageChannelMain, utilityProcess, type UtilityProcess, type WebContents } from 'electron'
+
+/**
+ * The Core process: database, sessions and the assistant, in a utility process of its own. Windows talk to it
+ * directly over a message port, so conversations stream without passing through the main process.
+ */
+export class CoreProcess {
+  private child: UtilityProcess | null = null
+  private shuttingDown = false
+  private exits: number[] = []
+
+  start(): void {
+    const child = utilityProcess.fork(join(__dirname, 'core.js'), [], {
+      serviceName: 'Celeste Core',
+      env: { ...process.env, CELESTE_DATA_DIR: app.getPath('userData') }
+    })
+    this.child = child
+
+    child.on('message', (message: { type?: string; message?: string }) => {
+      if (message?.type !== 'fatal') return
+      // Core could not open the data, usually because it was saved by a newer Celeste. Nothing is changed.
+      this.shuttingDown = true
+      dialog.showErrorBox('Celeste cannot open its data', message.message ?? 'Unknown error.')
+      app.exit(1)
+    })
+
+    child.on('exit', (code) => {
+      if (this.shuttingDown) return
+      console.error(`[main] Core exited unexpectedly (code ${code})`)
+      const now = Date.now()
+      this.exits = [...this.exits.filter((t) => now - t < 60_000), now]
+      if (this.exits.length > 3) {
+        dialog.showErrorBox('Celeste stopped', 'Its storage process keeps stopping. Please restart Celeste.')
+        app.exit(1)
+        return
+      }
+      // Everything in the log is safe. Start again and let every window reconnect.
+      setTimeout(() => {
+        this.start()
+        BrowserWindow.getAllWindows().forEach((w) => w.webContents.reload())
+      }, 300)
+    })
+  }
+
+  /** Gives a window its own line to Core. Its end of the port arrives in the preload script. */
+  connect(webContents: WebContents): void {
+    const { port1, port2 } = new MessageChannelMain()
+    this.child?.postMessage({ type: 'connect' }, [port1])
+    webContents.postMessage('celeste:port', null, [port2])
+  }
+
+  /** Lets Core close the database cleanly. Gives up after a few seconds. */
+  shutdown(): Promise<void> {
+    this.shuttingDown = true
+    const child = this.child
+    if (!child) return Promise.resolve()
+    return new Promise((resolve) => {
+      const finish = () => {
+        clearTimeout(timer)
+        resolve()
+      }
+      const timer = setTimeout(() => {
+        child.kill()
+        finish()
+      }, 3000)
+      child.on('message', (m: { type?: string }) => {
+        if (m?.type === 'closed') {
+          child.kill()
+          finish()
+        }
+      })
+      child.on('exit', finish)
+      child.postMessage({ type: 'shutdown' })
+    })
+  }
+}

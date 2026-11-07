@@ -93,9 +93,11 @@ export function VendorCard({ id, compact }: { id: VendorId; compact?: boolean })
               onSubmit={(e) => {
                 e.preventDefault()
                 if (!key.trim()) return
-                saveKey(id)
-                setKey('')
-                setKeyOpen(false)
+                void saveKey(id, key).then((stored) => {
+                  if (!stored) return
+                  setKey('')
+                  setKeyOpen(false)
+                })
               }}
             >
               <TextInput

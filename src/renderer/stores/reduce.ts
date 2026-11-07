@@ -1,4 +1,5 @@
-import type { AgentEvent, AskAnswers, ToolKind } from '@shared/agent'
+import type { AskAnswers, ToolKind } from '@shared/agent'
+import type { LogEvent, StoredEvent } from '@shared/api'
 import { basename } from '@/lib/format'
 import type { Activity, Session, TimelineItem } from './types'
 
@@ -40,10 +41,35 @@ function closeThinking(items: TimelineItem[], now: number): TimelineItem[] {
   return items
 }
 
-/** Applies one agent event to a session. Pure: returns a new session. */
-export function reduceEvent(s: Session, e: AgentEvent): Session {
-  const now = Date.now()
+function failRunningTools(items: TimelineItem[], now: number): TimelineItem[] {
+  return items.map((it) => (it.kind === 'tool' && it.status === 'running' ? { ...it, status: 'failed', endedAt: now } : it))
+}
+
+/** Applies one logged event, which happened at time `at`, to a session. Pure: returns a new session. */
+export function reduceEvent(s: Session, e: LogEvent, at: number): Session {
+  const now = at
   switch (e.type) {
+    case 'user.message':
+      return { ...s, items: [...s.items, { kind: 'user', id: itemId(), text: e.text, attachments: e.attachments, at: now }], updatedAt: now }
+
+    case 'approval.resolved':
+      return resolveApproval(s, e.requestId, e.allow)
+
+    case 'ask.answered':
+      return resolveAsk(s, e.requestId, e.answers)
+
+    case 'turn.abandoned':
+      return {
+        ...s,
+        items: [
+          ...failRunningTools(closeThinking(s.items, now), now),
+          { kind: 'notice', id: itemId(), text: 'Celeste was closed while this was running. Send a message to continue.' }
+        ],
+        status: 'idle',
+        activity: null,
+        updatedAt: now
+      }
+
     case 'turn.started':
       return { ...s, status: 'working', activity: THINKING, updatedAt: now }
 
@@ -168,4 +194,17 @@ export function resolveAsk(s: Session, requestId: string, answers: AskAnswers): 
     status: 'working',
     activity: THINKING
   }
+}
+
+/**
+ * Replays stored events into a session, skipping any it has already seen. Opening a session replays its
+ * whole log, and live events are replayed the same way, so the screen can never differ from the record.
+ */
+export function foldEvents(s: Session, events: StoredEvent[]): Session {
+  let next = s
+  for (const { seq, at, event } of events) {
+    if (seq <= next.foldedSeq) continue
+    next = { ...reduceEvent(next, event, at), updatedAt: at, foldedSeq: seq, lastSeq: Math.max(next.lastSeq, seq) }
+  }
+  return next
 }

@@ -274,8 +274,10 @@ const SCENARIOS: Record<Exclude<ScenarioId, 'auto'>, (c: Ctx) => Promise<void>> 
   'stuck-tool': stuckTool
 }
 
-function pick(mode: SessionMode, text: string, forced: ScenarioId | undefined): (c: Ctx) => Promise<void> {
-  if (forced && forced !== 'auto') return SCENARIOS[forced]
+export const isScenario = (s: string | undefined): s is ScenarioId => s === 'auto' || (s !== undefined && s in SCENARIOS)
+
+function pick(mode: SessionMode, text: string, forced: string | undefined): (c: Ctx) => Promise<void> {
+  if (isScenario(forced) && forced !== 'auto') return SCENARIOS[forced]
   if (/\b(ask me|ask_user|clarify)\b/i.test(text)) return askScenario
   if (/\b(simulate error|error demo)\b/i.test(text)) return errorScenario
   return mode === 'develop' ? developScenario : chatScenario
@@ -285,7 +287,7 @@ export interface MockOptions {
   mode: SessionMode
   getApproval: () => ApprovalMode
   /** Dev menu: force a scenario for the next message. */
-  takeForcedScenario?: () => ScenarioId | undefined
+  takeForcedScenario?: () => string | undefined
 }
 
 export function createMockSession(opts: MockOptions): AgentSession {

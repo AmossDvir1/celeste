@@ -1,0 +1,164 @@
+// The typed API between the window and the Core process (database, sessions, settings).
+// The window reaches it through `window.celeste.core` (see src/preload). Every method is a request that
+// resolves with its result. Core also pushes changes (new events, updated sessions) as `CorePush` messages.
+
+import type {
+  AgentEvent,
+  ApprovalAnswer,
+  ApprovalMode,
+  AskAnswers,
+  AttachmentInfo,
+  Effort,
+  SessionMode,
+  UserInput,
+  VendorId
+} from './agent'
+
+export type SessionStatus = 'idle' | 'working' | 'waiting'
+export type ThemePref = 'dark' | 'light' | 'system'
+
+export interface AppSettings {
+  theme: ThemePref
+  userName: string
+  wizardDone: boolean
+  sidebarCollapsed: boolean
+  defaults: { model: string; approval: ApprovalMode; projectsFolder: string }
+}
+export type SettingsPatch = Partial<Omit<AppSettings, 'defaults'>> & { defaults?: Partial<AppSettings['defaults']> }
+
+/** A connected vendor, without anything secret. Keys and tokens live in the main process only. */
+export interface VendorRecord {
+  account: string
+  method: 'browser' | 'key'
+}
+export type VendorRecords = Partial<Record<VendorId, VendorRecord>>
+
+export interface SessionSummary {
+  id: string
+  mode: SessionMode
+  title: string
+  model: string
+  effort: Effort | null
+  approval: ApprovalMode
+  cwd?: string
+  branch?: string
+  status: SessionStatus
+  createdAt: number
+  updatedAt: number
+  /** Sequence number of the newest event. A window that loaded the log up to here only needs later ones. */
+  lastSeq: number
+}
+
+export interface CreateSessionInput {
+  mode: SessionMode
+  title: string
+  model: string
+  effort: Effort | null
+  approval: ApprovalMode
+  cwd?: string
+  branch?: string
+}
+
+export interface SessionPatch {
+  title?: string
+  model?: string
+  effort?: Effort | null
+  approval?: ApprovalMode
+}
+
+/**
+ * What a session's log holds. The agent's events, plus the things the user did and one that Celeste recorded
+ * itself. Replaying the log rebuilds the conversation exactly, with no vendor call.
+ */
+export type LogEvent =
+  | AgentEvent
+  | { type: 'user.message'; text: string; attachments: AttachmentInfo[] }
+  | { type: 'approval.resolved'; requestId: string; allow: boolean }
+  | { type: 'ask.answered'; requestId: string; answers: AskAnswers }
+  /** Celeste was closed while a turn was running. Written the next time it starts. */
+  | { type: 'turn.abandoned' }
+
+export interface StoredEvent {
+  seq: number
+  at: number
+  event: LogEvent
+}
+
+export interface DraftState {
+  text: string
+  attachments: AttachmentInfo[]
+}
+
+export interface SearchHit {
+  sessionId: string
+  title: string
+  mode: SessionMode
+  updatedAt: number
+  /** A short piece of the matching message, when the match was in the conversation rather than the title. */
+  snippet?: string
+}
+
+export interface NewAttachment {
+  name: string
+  mime: string
+  data: ArrayBuffer
+  width?: number
+  height?: number
+}
+
+export interface Bootstrap {
+  settings: AppSettings
+  /** False on the very first start, so a window can import settings an earlier build kept in the browser. */
+  settingsStored: boolean
+  vendors: VendorRecords
+  sessions: SessionSummary[]
+  drafts: Record<string, DraftState>
+  dataDir: string
+}
+
+/** The methods of Core. Return types are what the caller receives, wrapped in a Promise by the transport. */
+export interface CoreApi {
+  'app.bootstrap': () => Bootstrap
+  'settings.patch': (patch: SettingsPatch) => AppSettings
+  'vendors.set': (id: VendorId, record: VendorRecord | null) => void
+
+  'sessions.create': (input: CreateSessionInput) => SessionSummary
+  'sessions.get': (id: string) => { summary: SessionSummary; events: StoredEvent[] } | null
+  'sessions.send': (id: string, input: UserInput) => void
+  'sessions.interrupt': (id: string) => void
+  'sessions.respondApproval': (id: string, requestId: string, answer: ApprovalAnswer) => void
+  'sessions.respondAsk': (id: string, requestId: string, answers: AskAnswers) => void
+  'sessions.update': (id: string, patch: SessionPatch) => SessionSummary
+  /** Hides the session. It is deleted for good a few seconds later, unless `restore` comes first. */
+  'sessions.remove': (id: string) => void
+  'sessions.restore': (id: string) => SessionSummary | null
+  /** Deletes every session at once, with no undo. Returns the ids. */
+  'sessions.removeAll': () => string[]
+  'sessions.search': (query: string) => SearchHit[]
+
+  'drafts.set': (key: string, draft: DraftState | null) => void
+
+  'attachments.save': (file: NewAttachment) => AttachmentInfo
+  /** Removes an attachment that was never sent. Sent ones belong to their session. */
+  'attachments.discard': (id: string) => void
+
+  // Preview only: the scripted assistant and its sample sessions.
+  'dev.forceScenario': (scenario: string | null) => void
+  'dev.restoreSamples': () => SessionSummary[]
+}
+
+export type CoreMethod = keyof CoreApi
+export type CoreParams<M extends CoreMethod> = Parameters<CoreApi[M]>
+export type CoreResult<M extends CoreMethod> = ReturnType<CoreApi[M]>
+
+export type CorePush =
+  | { type: 'event'; sessionId: string; stored: StoredEvent }
+  | { type: 'summary'; session: SessionSummary }
+  | { type: 'removed'; id: string }
+
+/** Wire format over the message port between the window and Core. */
+export type CoreRequest = { id: number; method: CoreMethod; params: unknown[] }
+export type CoreResponse = { id: number; ok: true; result: unknown } | { id: number; ok: false; error: string }
+export type CoreMessage = { kind: 'response'; response: CoreResponse } | { kind: 'push'; push: CorePush }
+
+export const UNDO_WINDOW_MS = 10_000

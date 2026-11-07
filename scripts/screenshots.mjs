@@ -3,7 +3,7 @@
 import { mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { deflateSync } from 'node:zlib'
-import { launch, root } from './lib/app.mjs'
+import { launch, root, saveSettings } from './lib/app.mjs'
 
 const out = resolve(root, 'scripts/.output/shots')
 mkdirSync(out, { recursive: true })
@@ -11,18 +11,13 @@ mkdirSync(out, { recursive: true })
 const W = 1440
 const H = 900
 
-function settings(theme, wizardDone = true) {
-  return JSON.stringify({
-    state: {
-      theme,
-      userName: 'Amoss',
-      wizardDone,
-      sidebarCollapsed: false,
-      defaults: { model: 'copilot-auto', approval: 'auto', projectsFolder: 'D:\\Projects' }
-    },
-    version: 1
-  })
-}
+const settings = (theme, wizardDone = true) => ({
+  theme,
+  userName: 'Amoss',
+  wizardDone,
+  sidebarCollapsed: false,
+  defaults: { model: 'copilot-auto', approval: 'auto', projectsFolder: 'D:\\Projects' }
+})
 
 /** A small gradient PNG for the attachment preview, made without any image library. */
 function gradientPng(w, h) {
@@ -69,7 +64,7 @@ for (const theme of ['dark', 'light']) {
     console.log(`${theme}-${name}`)
   }
   const reload = async (wizardDone = true) => {
-    await page.evaluate(([s]) => localStorage.setItem('celeste.settings', s), [settings(theme, wizardDone)])
+    await saveSettings(page, settings(theme, wizardDone))
     await page.reload()
     await page.waitForLoadState('domcontentloaded')
     await page.evaluate(() => document.fonts.ready)

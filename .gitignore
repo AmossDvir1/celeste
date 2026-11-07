@@ -10,3 +10,4 @@ design/
 # Local-only tooling output
 .claude/settings.local.json
 scripts/.output/
+.vitest/
