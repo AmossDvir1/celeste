@@ -6,7 +6,7 @@ Draft for your review, 7 November 2026. Package versions and vendor behavior wer
 
 Celeste is an open-source Electron desktop app built with React and Tailwind, to be published for personal users and teams at work. It gives one interface over Claude, GitHub Copilot, OpenAI and Google Gemini. Each vendor's own agent does the work underneath: editing files, running commands, browsing the web and calling tools. Celeste adds the interface, saved sessions, a shared tool list and workflows. It has no server of its own, so each user's usage goes to their own vendor account.
 
-The work runs in seven phases. **Phase 1 is a clickable design with mock data and no real functionality, so you can approve it before anything else is built.**
+The work runs in eight phases. **Phase 1 is a clickable design with mock data and no real functionality, so you can approve it before anything else is built.**
 
 | Topic | Decision |
 |---|---|
@@ -18,6 +18,7 @@ The work runs in seven phases. **Phase 1 is a clickable design with mock data an
 | Chat vs Develop | Same agent and same abilities. They differ in where the agent works and how its activity is shown (section 3) |
 | Glow line | Rebuilt from measurements of your picture, then checked against it by script (section 7.2) |
 | Logo | Interim "C" without the star, kept in one file so your final logo is a simple swap (section 7.3) |
+| Devices | VMs, other computers and Android phones as extra context and as places the assistant can work, with read-only as the default (section 7.11) |
 
 ## 2. Decisions for you
 
@@ -28,8 +29,11 @@ None of these blocks Phase 1. Each has a default that I'll use unless you say ot
 | 1 | Which open-source license for Celeste's code? | Apache-2.0. It's permissive, includes the patent grant company legal teams look for, and matches Codex and Gemini CLI. The name and logo stay yours and aren't covered | Before the repository goes public |
 | 2 | Which vendors come first? | Copilot, then Claude. Copilot has the fewest sign-in unknowns, is the default model in your picture, and is installed on your machine (1.0.95), as is Claude (2.1.259). Codex and Gemini are not. | Phase 3 |
 | 3 | What should the light theme look like in the inner chat area? Your picture only shows dark. | I'll propose the same arc in softer tones on the light background, for you to judge in Phase 1 | Phase 1 review |
-| 4 | Which platforms at launch? | Windows and Mac, with Linux soon after. Development stays Windows-first, with the code kept cross-platform | Phase 7 |
+| 4 | Which platforms at launch? | Windows and Mac, with Linux soon after. Development stays Windows-first, with the code kept cross-platform | Phase 8 |
 | 5 | Final logo | Interim logo until yours is ready | Any time |
+| 6 | Should a device follow the global auto-approve setting? | No. A new device starts **Read only**. Commands on it ask first, unless you set that device to **Full**. Remote machines can be shared or production ones, and a command there can't be reverted the way a local edit can | Phase 6 |
+| 7 | iPhone and iPad? | Not in v1. Apple gives no way to run commands on the device, and the open tools that reach its files need a USB pairing first (section 7.11). Android phones work over Wi-Fi | Phase 6 |
+| 8 | Which ways of connecting in v1? | SSH (Linux, Mac, Windows with OpenSSH Server), PowerShell Direct for Hyper-V VMs on this PC, and Android wireless debugging. WinRM, mounting remote drives, and Develop on a remote folder come later if wanted | Phase 6 |
 
 ## 3. Chat vs Develop
 
@@ -62,6 +66,9 @@ The scratch folder is a default working location, not a security boundary. With 
 | State | Zustand | 5.x | Small, and enough for this app |
 | Workflow canvas | React Flow (`@xyflow/react`) | 12.x | Nodes, edges, pan and zoom are already solved |
 | Database | `node:sqlite`, built into Electron's Node | SQLite 3.53 in Electron 45 | Local storage with FTS5 full-text search. Chosen over better-sqlite3 (13.x) in Phase 2: it needs no native rebuild per platform or Electron version, adds nothing for signing to cover, and its tests run in plain Node. It sits behind one small `Store` interface, so swapping it later is a one-file change |
+| Remote machines | `ssh2` | 1.17 (MIT) | Pure-JavaScript SSH and SFTP client with a host-key check. It also has a server mode, so tests can run without a VM. Its native speed-ups are optional |
+| Device discovery | `bonjour-service` | 1.4 (MIT) | Finds devices that announce themselves on the local network (mDNS) |
+| Android | Google's `adb`, downloaded on demand, or `@yume-chan/adb` (MIT, 2.6) | | Settled by a spike at the start of Phase 6 (section 7.11) |
 | Markdown and code | react-markdown, remark-gfm, Shiki | | Message and code rendering |
 | Icons | lucide-react | 1.x | The kits' icon sets lack several icons you need, such as paperclip and sliders. Lucide matches their line style |
 | Fonts | Outfit, JetBrains Mono | | Outfit matches your inner chat picture. The dark kit's Liberation Sans does not |
@@ -89,6 +96,7 @@ The scratch folder is a default working location, not a security boundary. With 
 
 - **Core process.** Database work and agent streams stay out of the window process, so a vendor crash can't freeze or take down the UI.
 - **Credentials.** API keys and the OpenAI tokens Celeste holds are encrypted with Electron's `safeStorage` (Windows DPAPI). Main decrypts them and hands them to Core in memory, and they never reach the renderer.
+- **Devices.** From Phase 6, connectors for remote machines and phones live in Core and reach the agents through a small MCP server that listens on this computer only (section 7.11).
 - **Security.** `contextIsolation` and `sandbox` are on, and there is a strict content security policy. Attachment images load through a custom protocol limited to Celeste's attachments folder.
 
 ### The vendor boundary
@@ -147,6 +155,7 @@ celeste/
     preload/              window.celeste bridge
     core/                 from Phase 2: database, sessions, MCP, workflow runner
       adapters/           claude, copilot, codex, gemini, mock
+      devices/            ssh, hyper-v and adb connectors, and the device MCP server (Phase 6)
     renderer/
       app/                shell and navigation
       features/           chat, develop, workflows, wizard, settings, tools
@@ -271,6 +280,7 @@ This is the starting map. Each adapter begins with a short test against the real
 | Resume | `resume` | `resumeSession` | `thread/resume` | `loadSession` |
 | Delete | `deleteSession` | `deleteSession` | `thread/delete` | None documented, so Celeste forgets the ID |
 | MCP tools | `mcpServers` | `mcpServers` | Config plus `config/mcpServer/reload` | Passed at ACP session setup |
+| Extra folders (device snapshots, section 7.11) | `additionalDirectories` | `--add-dir`, per session, so Celeste adds it again on resume | `--add-dir`, which grants write access and only in workspace-write sessions **Verify** | `--include-directories` **Verify** the limit on how many |
 
 Two details the docs confirm for Claude:
 
@@ -467,13 +477,13 @@ Left out on purpose to keep it light: MCP tools, shortcuts and advanced agent op
 
 ### 7.8 Settings
 
-Opened from the bottom-left button. Sections: General, Appearance, AI Vendors, Agent Defaults, Tools & Integrations, Data (storage location, export, delete all), About.
+Opened from the bottom-left button. Sections: General, Appearance, AI Vendors, Agent Defaults, Tools & Integrations, Devices (from Phase 6), Data (storage location, export, delete all), About.
 
 ### 7.9 Tools & Integrations
 
 Celeste stores one list of MCP servers and passes it to whichever vendor runs the session. MCP (Model Context Protocol) is the standard way agents connect to outside tools. Your internal tools are added once rather than per vendor. The panel matches `Design.jpeg`, with search and connection status. Phase 1 shows the pictured list as mock data.
 
-Celeste also runs a small MCP server of its own, for `ask_user` on vendors with no native version. **Verify** long-wait behavior, because some MCP clients time out on tool calls that wait for a person.
+Celeste also runs a small MCP server of its own, for `ask_user` on vendors with no native version, and for the device tools in section 7.11. **Verify** long-wait behavior, because some MCP clients time out on tool calls that wait for a person.
 
 ### 7.10 Workflows
 
@@ -482,7 +492,7 @@ A workflow is saved as JSON and validated against a shared schema.
 | Step type | What it does | Picture |
 |---|---|---|
 | Start | Defines inputs, such as `older_than_days` | Blue pill |
-| **Tool step** | Calls an MCP tool or a built-in (shell command, HTTP request, file) directly, with no model involved. The input form comes from the tool's schema | Pink: Find old KBs, Install updates, Wait for service |
+| **Tool step** | Calls an MCP tool or a built-in (shell command, HTTP request, file) directly, with no model involved. The input form comes from the tool's schema. A shell command can run on a device from section 7.11 | Pink: Find old KBs, Install updates, Wait for service |
 | **Agent step** | Runs a prompt with a chosen model, effort, tools and approval mode, with optional structured output | Blue-violet: Summarize |
 | End | Sets the final output | Pink pill |
 
@@ -503,6 +513,89 @@ A workflow is saved as JSON and validated against a shared schema.
 - **Templates:** the five pictured ones ship as starter definitions.
 
 Scheduling isn't in v1.
+
+### 7.11 Devices: remote machines and phones
+
+**What you asked for.** Connect to a VM by its IP address, or to devices on your Wi-Fi such as your phone. Detect them. Run operations on them, with PowerShell for Windows. Add a folder that lives on a device as context. Research on 7 November 2026 says this is possible, with one exception: the iPhone.
+
+**What works**
+
+| Device | Works? | How it connects | What the assistant can do |
+|---|---|---|---|
+| Linux or Mac VM, Raspberry Pi, NAS, another computer | Yes | SSH, with a key or a password | Run commands, read, write and list files |
+| Windows VM or PC | Yes, once its OpenSSH Server is on (Windows 10 build 1809 or Server 2019 and later) | SSH. Commands run as PowerShell, sent encoded so quoting never breaks. This should work with Windows PowerShell 5.1 and PowerShell 7 **Verify** | PowerShell commands and files |
+| Hyper-V VM on this PC | Yes, with no network and no IP address | PowerShell Direct, which needs a Hyper-V administrator and the VM's login. Windows 10 or Server 2016 and later guests | PowerShell commands and file copy |
+| Windows machine that only offers WinRM | Later, if wanted | WinRM. Outside a domain it needs HTTPS or a TrustedHosts entry, which is a security setting on your computer **Verify** | |
+| Android phone, tablet or TV | Yes, on Android 11 and later (TV and Wear OS: 13) | Wireless debugging over Wi-Fi, paired by QR code or six-digit code, then ADB | What Android's `shell` user can do, which is not root: files in shared storage, logs, screenshots, installing an app, device information |
+| iPhone and iPad | No | Apple offers no way to run commands on the device. The open tool `pymobiledevice3` can reach media files, logs, screenshots and app install, but only after a USB pairing, with Developer Mode on and a tunnel, and on Windows it also needs Apple's iTunes drivers | Not planned |
+
+**Why not let the agent run `ssh` itself?** It already can, through its normal shell tool, if your computer has the keys. A built-in feature adds what that lacks: credentials the model never sees, a permission level for each device, an approval card with the exact command, a limit to the devices you attached to this session, a record of every call, folder context, and phones.
+
+**How the assistant reaches a device**
+
+- **Connectors in Core.** One small contract (`probe`, `connect`, `run`, `readFile`, `writeFile`, `list`, `disconnect`) with three implementations: SSH (with `ssh2`, SFTP included), Hyper-V (a PowerShell process on this PC), and Android (ADB).
+- **One MCP server for every vendor.** Celeste's own MCP server listens on `127.0.0.1` only, on a random port, and each session gets its own secret token. All four vendors accept MCP servers (section 6.3), so one implementation covers them, and the permission rules live in Celeste instead of in four different permission systems.
+- **Tools it offers:** `devices_list`, `device_run`, `device_read_file`, `device_list_dir`, `device_write_file`, `device_pull`, `device_push`, and on Android `device_screenshot`. A session sees only the devices you attached to it.
+- **The approval gate is Celeste's own.** The vendor's approval mode treats MCP tools in its own way, so `device_run` and `device_write_file` ask through Celeste's approval card whatever the vendor's mode is. **Verify** that every vendor keeps a tool call open while the card waits, which is the same long-wait question as `ask_user`.
+- **Android's `adb` is downloaded on demand**, the same way as vendor runtimes (section 6.4), not bundled. **Verify** Google's redistribution terms for platform-tools. A spike settles whether to drive Google's `adb` or the TypeScript client `@yume-chan/adb`, which depends on whether the latter supports Wi-Fi pairing.
+
+**Folders from a device as context.** Every vendor's extra-folder option takes a local path (section 6.3), so a folder on another machine needs one of these:
+
+| Way | What happens | Needs | Phase 6? |
+|---|---|---|---|
+| **Browse live** | The assistant lists and reads the folder through the device tools, when it needs to | Nothing | Yes |
+| **Snapshot** | Celeste copies the folder into a read-only local cache, and the vendor gets it as an ordinary extra folder, so its own file and search tools work at full speed. The chat says which device it came from and when | Nothing | Yes |
+| **Mount** | The remote folder appears as a drive (a network share on Windows, or SSHFS) | Software you install yourself. SSHFS on Windows needs WinFsp and SSHFS-Win, which are GPL-licensed, so Celeste never bundles them | No |
+
+Snapshot rules: skip `.git`, `node_modules` and build folders; skip files over 25 MB; ask before copying more than 200 MB or 10,000 files; a Refresh button shows the snapshot's age; the cache is deleted with the session or the device. A snapshot is a copy, so changing the real files goes through `device_write_file`, which asks. Develop working directly in a remote folder is later work.
+
+**Safety.** The assistant is acting on machines that may be shared or in production, and a command there can't be reverted the way a local edit can.
+
+- **Three access levels per device, and a new device starts at the first.**
+  - **Read only:** only the file tools (`read`, `list`, `pull`). The command tool isn't offered at all, because a shell can't be made read-only.
+  - **Ask first:** commands and writes are allowed, and each one shows an approval card with the exact command or file.
+  - **Full:** commands and writes run without asking. Every chip, card and the composer show a warning badge while a device is at Full.
+- **The global auto-approve default does not apply to devices** (decision 6).
+- **Attach per session.** A device is invisible to a session until you attach it, so text on a web page or in a file can't send the assistant to another machine.
+- **SSH host keys:** trusted on first use. Celeste shows the SHA-256 fingerprint to confirm, pins it, and refuses a changed key with a plain explanation until you re-trust it.
+- **Credentials:** passwords and key passphrases are encrypted with the system store (section 5) and never reach the window or the model. A private key is used from the path you choose and is never copied. A device can also be set to ask for the password each time.
+- **Limits:** output is cut at 64 KB per call (the start and the end are kept), commands time out after 60 seconds (10 minutes at most), one command runs per device at a time, and Stop closes the channel.
+- **Untrusted content:** file contents and command output from a device can contain instructions meant for the model. The approval card and the per-session attach are the backstops, and a device at Full is the risky case.
+- **Your data goes to your AI vendor.** What the assistant reads on a device is sent to your vendor like any local file. The Add dialog and the attach step say so, because on a work machine or a phone that may matter.
+- **Celeste never changes a remote machine or your own system settings.** It doesn't turn on sshd, edit TrustedHosts or touch a firewall. It shows the exact steps for you to run.
+- **Record:** every device call is in the session log and in a per-device activity list.
+- **Phones:** wireless debugging is a developer setting you switch on, and you can revoke Celeste's pairing from the phone ("Forget").
+
+**Finding and adding a device.**
+
+| Source | How it is found | Notes |
+|---|---|---|
+| Android phone | Celeste browses the local network for the services Android announces: `_adb-tls-pairing._tcp` while the pairing screen is open and `_adb-tls-connect._tcp` while wireless debugging is on. It shows its own QR code, so scanning it on the phone pairs it | If nothing is announced, enter the address and six-digit code the phone shows |
+| Mac, Linux, Raspberry Pi, NAS | Services that announce `_ssh._tcp` or `_sftp-ssh._tcp` | Windows machines don't normally announce SSH **Verify**, so add them by address |
+| Hyper-V VMs | The VM list on this PC | Needs Hyper-V administrator rights, and Celeste says so if it lacks them |
+| Anything else | Type a name or IP address and a port | Always available |
+| Subnet scan for SSH | Off by default, and you start it yourself | Company networks may flag a port scan, so Celeste says that first |
+
+Announcements are blocked by VPNs, guest Wi-Fi and router client isolation. That is why typing an address always works.
+
+**Screens**
+
+- **Settings, Devices:** one card per device with online status, kind, address, access level (changeable), last seen, and Test, Edit and Remove.
+- **Add device** (a dialog, not part of the setup wizard): choose Find on my network, Enter an address, Android phone, or Hyper-V VM on this PC, then credentials, confirm the fingerprint, run a test (it shows the operating system and user), then a name and an access level.
+- **In a session:** the Tools & Integrations panel gets a **Devices** section with an attach switch for each device. Attached devices show as chips in the session header, and tool cards show which device ran them.
+- **Add a folder from a device:** a remote folder picker, then a choice of Browse live or Snapshot. The folder shows under its device in the panel.
+
+**Data (a migration in Phase 6):**
+
+```
+devices          id, name, kind, host, port, username, auth_method, secret_ref, host_key_sha256,
+                 os, access_level, created_at, last_seen_at
+session_devices  session_id, device_id
+device_folders   id, device_id, path, mode (live | snapshot), snapshot_path, snapshot_at, bytes
+device_activity  id, device_id, session_id, tool, summary, ok, bytes, at
+```
+
+Workflows (section 7.10) can run a Tool step's shell command on a device.
 
 ## 8. Phases
 
@@ -562,7 +655,7 @@ What was built, and the choices made along the way:
 - **Credentials.** API keys go to `safeStorage` in the main process. The window can store, remove and ask for the last four characters, and never read a key back. If the system cannot encrypt, nothing is stored.
 - **Search** is FTS5 over titles, your messages and the assistant's answers, with prefix matching.
 - **After a restart:** a turn that was running is marked cut off and the session is idle. A question or approval that was waiting stays on screen. Answering it starts a new turn with the answer as a message, which is the fallback the plan describes. Real resume of the vendor's own session is Phase 3.
-- **Still sample content:** the assistant, the sample sessions (added on the first start only), the Connect button's steps, and workflows. Workflows are saved in Phase 6.
+- **Still sample content:** the assistant, the sample sessions (added on the first start only), the Connect button's steps, and workflows. Workflows are saved in Phase 7.
 
 ### Phase 3: Copilot end to end (M)
 
@@ -585,13 +678,33 @@ A short test against each real CLI to settle the **Verify** items, starting with
 
 **Done when:** a real change can be made, reviewed and reverted in Develop, and a real internal MCP server works with every vendor.
 
-### Phase 6: Workflows (L)
+### Phase 6: Devices (L)
+
+Needs Celeste's own MCP server and the real MCP configuration from Phases 3 and 5.
+
+**Steps:**
+
+1. **Spikes first**, to settle the **Verify** items in section 7.11:
+   - SSH to a Windows machine's OpenSSH Server and run encoded commands in Windows PowerShell 5.1 and in PowerShell 7 (quoting, exit codes, output encoding).
+   - Pair and connect an Android phone over Wi-Fi from Celeste, with Google's `adb` and with `@yume-chan/adb`, and browse mDNS from Core on Windows (firewall prompt, multicast).
+   - Reach the loopback MCP server from all four vendors' agents, with the per-session token and an approval that waits for you.
+   - Copy a 100 MB folder of many small files over SFTP, to size the snapshot limits.
+2. **Connector contract and tests that need no VM:** a fake connector, and an in-process SSH server built with `ssh2`'s server mode.
+3. **Storage:** the migration, secrets, and host-key pinning.
+4. **The device MCP server**, the access levels, the approval gate and the activity record.
+5. **Connectors:** SSH (with PowerShell for Windows), Hyper-V, and Android.
+6. **Discovery:** network announcements, the Hyper-V list, manual entry.
+7. **Screens:** Settings, Devices; the Add dialog; the panel section; chips; the remote folder picker; snapshots.
+
+**Done when:** with a real Linux VM, a Windows VM, a Hyper-V VM and an Android phone, you can add each one, and the assistant can run a command and read a file on it. The approval card shows the exact command. A snapshot of a folder opens as local context. A changed host key is refused. Dropping Wi-Fi in the middle of a command gives a clear error and nothing hangs. A Read-only device offers no command tool. Everything shows in the session log.
+
+### Phase 7: Workflows (L)
 
 Schema, runner, Tool and Agent steps, inputs and outputs, error handling, live run view and history, Build with AI, versions, share and templates.
 
 **Done when:** your "Update old KBs" example runs end to end from the canvas, including a pause for a question.
 
-### Phase 7: Public release (L)
+### Phase 8: Public release (L)
 
 - **Distribution:** Windows and Mac installers, code signing and Mac notarization, auto-update, then Linux. Unsigned apps trigger security warnings that would put off public users.
 - **Vendor sign-off:** the confirmations in section 6.2 answered, and only approved sign-ins enabled.
@@ -605,6 +718,7 @@ Schema, runner, Tool and Agent steps, inputs and outputs, error handling, live r
 ### Testing throughout
 
 - **Adapter contract suite:** one scripted scenario every vendor must pass (text, tool call, approval, `ask_user`, image, interrupt, resume). Recorded vendor events let it run without spending tokens.
+- **Connector contract suite (Phase 6):** one scenario every device connector must pass (run a command, output cut at the limit, timeout, Stop, read, write and list, odd paths, a changed host key), plus tests that Read only never offers the command tool and that Ask first always asks. They run against the fake connector and the in-process SSH server.
 - **Vitest:** event reducers, session restore, workflow runner.
 - **Playwright for Electron:** startup, core flows, and screenshot comparison of key screens and the glow.
 
@@ -618,11 +732,17 @@ Schema, runner, Tool and Agent steps, inputs and outputs, error handling, live r
 | **A public repository exposes everything committed.** The kits' notes say the reference images belong to their creators | `design/` is git-ignored from the first commit, no vendor secret is needed anywhere, and `SECURITY.md` gives researchers a private channel |
 | **Connecting in Celeste could disturb a user's other CLI logins**, such as signing out their terminal `claude` | Test each login against a throwaway config folder before running it on a real one |
 | **Runtime downloads can fail**, especially on company networks | Clear errors with retry, integrity checks, and an Advanced setting to use an installed CLI |
-| **Auto-approve by default.** The agent runs commands as the user, and content from web pages or MCP tools could try to steer it. A public audience, including company machines, raises the stakes | Kept as you asked. The current mode is always visible in the composer, the wizard explains it in one line, and Claude uses its classifier-checked `auto` mode where available. Reviewed again in Phase 7 |
-| **Packaging.** Mac signing covers everything in the app, and the app is two programs (main and Core) | `node:sqlite` removes the native-module rebuild this row was about. `npm run verify:package` runs the built app from an `app.asar` as an installer would lay it out. Real installers, signing and notarization are Phase 7 |
+| **Auto-approve by default.** The agent runs commands as the user, and content from web pages or MCP tools could try to steer it. A public audience, including company machines, raises the stakes | Kept as you asked. The current mode is always visible in the composer, the wizard explains it in one line, and Claude uses its classifier-checked `auto` mode where available. Reviewed again in Phase 8 |
+| **Packaging.** Mac signing covers everything in the app, and the app is two programs (main and Core) | `node:sqlite` removes the native-module rebuild this row was about. `npm run verify:package` runs the built app from an `app.asar` as an installer would lay it out. Real installers, signing and notarization are Phase 8 |
 | **Vendor sessions can disappear** through cleanup or upgrades | Celeste's own log is the source of truth, and fallback reseeds the agent |
 | **The glow can only be exact at one size** | Exact at the reference size, proportional elsewhere, and reviewed at common window sizes |
-| **Licensing before the public release.** The kits' notes ask for a trademark and font review, and vendor logos appear in the UI | Review in Phase 7, including the name "Celeste" (section 6.4 covers runtime licenses). Outfit and JetBrains Mono are open-source fonts |
+| **Licensing before the public release.** The kits' notes ask for a trademark and font review, and vendor logos appear in the UI | Review in Phase 8, including the name "Celeste" (section 6.4 covers runtime licenses). Outfit and JetBrains Mono are open-source fonts |
+| **Devices can be damaged, or their data leaked.** An assistant with a shell on a shared or production machine can do harm that can't be reverted, and prompt injection from remote content makes that more likely | A new device is Read only, commands ask by default and ignore the global auto-approve, the assistant sees only devices attached to its session, every call is recorded, and Full carries a warning badge. Reviewed again in the Phase 8 security review |
+| **Setup on the other machine is the user's job.** OpenSSH Server on Windows, the PowerShell 7 subsystem and WinRM trust all need steps there | Celeste shows the exact steps to copy, tests the connection and explains each failure. It never changes a remote machine or your system settings itself |
+| **Finding devices is unreliable on some networks.** VPNs, guest Wi-Fi and client isolation block the announcements, and Windows machines rarely announce SSH | Typing an address always works, QR pairing falls back to the pairing code, and a subnet scan is optional |
+| **Android pairing from a client other than Google's `adb` is less proven**, and platform-tools redistribution terms are unchecked | A spike at the start of Phase 6. The fallback is Google's own `adb`, downloaded on demand and not bundled |
+| **What the assistant reads on a device goes to your AI vendor**, which may break a company policy for work machines or phones | Said plainly when adding a device and when attaching one, and controlled per device |
+| **iPhone expectations.** People may expect their iPhone to work | Stated up front in the plan and left out of the Add dialog |
 
 ## 10. Sources
 
@@ -673,3 +793,19 @@ Schema, runner, Tool and Agent steps, inputs and outputs, error handling, live r
 **Secondary sources on Claude client registration:**
 [Moltis on Anthropic OAuth](https://docs.moltis.org/anthropic-oauth.html),
 [Third-party OAuth feature request](https://claudeissues.com/issue/32335-feature-feature-request-third-party-oauth-support-for-consumer-subscriptions)
+
+**Devices:**
+[Android Debug Bridge, wireless debugging](https://developer.android.com/tools/adb),
+[ADB over Wi-Fi design (AOSP)](https://android.googlesource.com/platform/packages/modules/adb/+/refs/heads/main/docs/dev/adb_wifi.md),
+[PowerShell remoting over SSH](https://learn.microsoft.com/en-us/powershell/scripting/security/remoting/ssh-remoting-in-powershell?view=powershell-7.5),
+[PowerShell Direct](https://learn.microsoft.com/en-us/windows-server/virtualization/hyper-v/powershell-direct),
+[ssh2](https://github.com/mscdex/ssh2),
+[bonjour-service](https://www.npmjs.com/package/bonjour-service),
+[@yume-chan/adb](https://www.npmjs.com/package/@yume-chan/adb),
+[pymobiledevice3](https://github.com/doronz88/pymobiledevice3),
+[MCP tools specification](https://modelcontextprotocol.io/specification/2025-06-18/server/tools),
+[Copilot CLI command reference](https://docs.github.com/en/copilot/reference/cli-command-reference),
+[Codex CLI reference](https://developers.openai.com/codex/cli/reference),
+[WinFsp licensing](https://winfsp.dev/com/),
+[SSHFS-Win](https://github.com/winfsp/sshfs-win).
+WinRM details come from secondary sources and are marked **Verify**.
