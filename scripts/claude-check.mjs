@@ -79,6 +79,8 @@ try {
   page = app.page
   await page.getByRole('button', { name: /Say the word pong/ }).first().waitFor({ timeout: 30_000 })
   await page.getByRole('button', { name: /Say the word pong/ }).first().click()
+  // The log is read when the session is opened, which a slower computer takes a moment over.
+  await page.getByText('Echo: Say the word pong', { exact: false }).first().waitFor({ timeout: 15_000 }).catch(() => undefined)
   check('the whole conversation is back, from Celeste\'s own log', (await pageText(page)).includes('Echo: Say the word pong'))
   await textbox(page).fill('And again')
   await textbox(page).press('Enter')
