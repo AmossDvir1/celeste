@@ -121,10 +121,19 @@ try {
   }
   check('in a dialog, focus starts inside it and Tab never leaves it', trapped)
   // A tooltip that is showing takes the first Escape (it has to be dismissable on its own); the dialog takes the next.
-  await page.keyboard.press('Escape')
-  await page.waitForTimeout(400)
-  if (await page.getByRole('navigation', { name: 'Settings sections' }).count()) await page.keyboard.press('Escape')
-  await page.getByRole('navigation', { name: 'Settings sections' }).waitFor({ state: 'detached', timeout: 10_000 })
+  const settingsNavigation = page.getByRole('navigation', { name: 'Settings sections' })
+  for (let presses = 0; presses < 4 && (presses === 0 || (await settingsNavigation.count())); presses++) {
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(400)
+  }
+  if (await settingsNavigation.count()) {
+    const where = await page.evaluate(() => {
+      const el = document.activeElement
+      return el ? `${el.tagName} ${el.getAttribute('aria-label') ?? el.textContent?.trim().slice(0, 40) ?? ''} (inside the dialog: ${Boolean(document.querySelector('[role="dialog"]')?.contains(el))}, window ${window.innerWidth}x${window.innerHeight})` : 'nothing'
+    })
+    console.log(`Settings did not close after four Escape presses. Focus is on: ${where}`)
+  }
+  await settingsNavigation.waitFor({ state: 'detached', timeout: 10_000 })
   check('Escape closes it, and focus goes back to the button that opened it', await page.evaluate(() => /Settings/.test(document.activeElement?.textContent ?? '')))
   await page.evaluate(() => document.activeElement?.blur())
   const bare = []

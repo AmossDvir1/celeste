@@ -2,7 +2,7 @@
 // answer, a document can be opened or saved or shown in its folder, a program can only be shown, and the window cannot name any other
 // file.   npm run verify:files
 // Claude is real (the real SDK and program) but what it says is chosen by a stand-in for Anthropic's API (scripts/lib/stub.mjs).
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { launch, saveSettings } from './lib/app.mjs'
@@ -69,7 +69,7 @@ try {
   await page.getByRole('button', { name: 'Open report.csv' }).click()
   await page.waitForTimeout(400)
   const opened = (await asked()).find((a) => a[0] === 'open')
-  check('Open hands the file to the computer’s own program, and it is the file in the chat’s folder', Boolean(opened) && opened[1].startsWith(join(profile, 'chats')) && opened[1].endsWith('report.csv'), JSON.stringify(opened))
+  check('Open hands the file to the computer’s own program, and it is the file in the chat’s folder', Boolean(opened) && opened[1].startsWith(join(realpathSync(profile), 'chats')) && opened[1].endsWith('report.csv'), JSON.stringify(opened))
   await page.getByRole('button', { name: 'Show installer.exe in its folder' }).click()
   await page.waitForTimeout(400)
   check('Show in its folder reveals the file', (await asked()).some((a) => a[0] === 'reveal' && a[1].endsWith('installer.exe')))

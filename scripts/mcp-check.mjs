@@ -42,11 +42,11 @@ function filesWith(dir, text) {
     for (const entry of readdirSync(d, { withFileTypes: true })) {
       const p = join(d, entry.name)
       if (entry.isDirectory()) walk(p)
-      else if (statSync(p).size < 80_000_000) {
+      else if (entry.isFile()) {
         try {
-          if (readFileSync(p).includes(needle)) found.push(p)
+          if (statSync(p).size < 80_000_000 && readFileSync(p).includes(needle)) found.push(p)
         } catch {
-          /* in use by the app: not readable, so not a leak we can see */
+          /* in use by the app, or a link to nothing: not something we can read, so not a leak we can see */
         }
       }
     }
