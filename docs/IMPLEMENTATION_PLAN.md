@@ -29,7 +29,7 @@ Each has a default that I'll use unless you say otherwise. The last column says 
 
 | # | Question | Default | Needed by |
 |---|---|---|---|
-| 1 | Which open-source license for Celeste's code? | Apache-2.0. It's permissive, includes the patent grant company legal teams look for, and matches Codex and Gemini CLI. The name and logo stay yours and aren't covered | Before the repository goes public |
+| 1 | Which open-source license for Celeste's code? | Apache-2.0. It's permissive, includes the patent grant company legal teams look for, and matches Codex and Gemini CLI. The name and logo stay yours and aren't covered | **Settled 8 November 2026: Apache-2.0** (`LICENSE` added; the README says the name and logo are not covered) |
 | 2 | Which vendors come first? | Copilot, then Claude. Copilot has the fewest sign-in unknowns, is the default model in your picture, and is installed on your machine (1.0.95), as is Claude (2.1.259). Codex and Gemini are not. | Phase 4 |
 | 3 | What should the light theme look like in the inner chat area? Your picture only shows dark. | I'll propose the same arc in softer tones on the light background, for you to judge in Phase 1 | Phase 1 review |
 | 4 | Which platforms at launch? | Windows and Mac, with Linux soon after. Development stays Windows-first, with the code kept cross-platform | Phase 8 |
@@ -321,7 +321,7 @@ Bundling every vendor's CLI would add about 1 GB to the installer. Windows x64 u
 | **D. Use a program the user already has** | None | Yes | The user's own | Nothing shipped | Version drift (Celeste is tested against one version), the user must install it first, and Codex's protocol is still in preview. Kept as the Advanced setting below, not as the way in |
 | **E. Two installers: a small one (A) and a full "offline" one (B)** | 150 MB or 560 MB, the user chooses | The full one, yes | As in A and B | The full one has B's licence and signing problems, so it waits for Anthropic's OK | Two builds to test and publish. It is the answer for air-gapped companies, so it can come later than A |
 
-**Recommendation:** A now, with the download started during the wizard so it is ready when setup ends, and E later if companies ask for an offline build. B only if Anthropic agrees and the size is acceptable to you. This is your decision, and nothing built so far depends on it except that Claude's download is not written yet.
+**Recommendation:** A now, with the download started during the wizard so it is ready when setup ends, and E later if companies ask for an offline build. B only if Anthropic agrees and the size is acceptable to you. This is your decision. Under the default, both Copilot and Claude download on first Connect (built); changing to bundling would remove that path rather than add to it.
 
 **The default, A: runtimes download on demand.** The installer stays small, and Connect downloads only that vendor's runtime:
 
@@ -923,8 +923,16 @@ A short test against each real CLI to settle the **Verify** items, starting with
 
 - **Not run against a real Claude account.** The Claude sign-in on this PC has expired ("OAuth session expired and could not be refreshed"), so no real turn was possible. The adapter has met the real program and the real SDK, but not the real model: please run `claude auth login` in a terminal (this does not affect Celeste's own settings folder) and then the live suite, which uses your own login for development only.
 - **Finishing a Console sign-in in a browser.** Tried only up to the point where Claude Code prints its address and waits (in a throwaway settings folder), not through to the end. What Claude Code reports about a Console account (`tokenSource`) is a guess until someone completes one.
-- **Claude's program is not downloaded on first Connect.** It is found beside the SDK (about 330 MB), so a packaged Celeste either ships it or reports "Claude's program is not installed". The download, like Copilot's, still has to be built, and `verify:package` leaves the program out to prove the message. Both belong to the release phase.
 - **Subscription sign-in** waits for Anthropic's approval (section 6.2).
+
+*Claude's program downloads on first Connect (8 November 2026), under the default of decision 12.* Nothing in the installer: the program (about 330 MB unpacked, 153 MB to download) comes from npm the first time Claude is connected.
+
+- **One downloader for every vendor.** The download, checksum check, safe unpacking and clean-up that Copilot had moved to `src/core/adapters/npm-runtime.ts`; Copilot and Claude each say only which package they are and where the program sits in it. Claude's is `@anthropic-ai/claude-agent-sdk-<platform>` at the exact SDK version (a test checks they match), for all eight builds including the Linux ones without glibc.
+- **Where it is found.** Beside the SDK first (development), then in `<data folder>/runtimes/claude-<version>-<platform>`, which only counts once the download finished. It is looked for each time, so a download that finishes while Celeste runs is used at once. A different version replaces the old folder.
+- **When it downloads.** Connect (Console sign-in) downloads first, then signs in. Pasting a key starts the download as soon as the key field is opened, with a small "Getting Claude ready" progress line, so it is often done by the time the key is pasted; Save key waits for it if not. Asking twice joins the same download. Cancel stops it and keeps nothing. A connection by key whose program has gone missing fetches it again at the next start.
+- **Failure is in words:** a registry that says no, a checksum that does not match (the file is thrown away and the key is not kept), an archive that writes outside its folder, a computer with no build. A session started without the program says "Claude's program is not on this computer yet. Open Settings and choose Connect to download it."
+- **Checks.** Unit tests for the downloader and the host (`program.test.ts`, the host tests in `claude.test.ts`). `verify:package` now runs the packed app through the whole journey against a stand-in for npm on this computer that serves the real program: the program is absent, a key is pasted, it is downloaded, unpacked and marked complete, Claude lists its own models and runs a conversation from it; and a download with a wrong checksum is refused, the card says so, and nothing is kept. `CELESTE_NPM_REGISTRY` points the download at another registry (a company mirror, or that stand-in); `CELESTE_CLAUDE_NO_INSTALLED=1` ignores the program beside the SDK.
+- **Not done:** the download on macOS and Linux (only Windows was run); a real download from npmjs.org (the stand-in served the real file, but not over the internet); embedding the expected checksums in Celeste instead of trusting the ones npm publishes at the time (a hardening step for Phase 8); a proxy setting for company networks.
 
 *OpenAI (Codex) and Gemini (ACP)* are not started. Both need their program downloaded to learn the real protocol (Codex about 480 MB, Gemini about 95 MB), and neither is installed on this PC.
 

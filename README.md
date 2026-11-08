@@ -76,6 +76,9 @@ this computer it connects at once. Otherwise Celeste opens GitHub's sign-in page
 github.com/login/device. The first time, Celeste downloads Copilot's runtime (about 180 MB) from npm and checks its
 checksum. Disconnecting only makes Celeste stop using Copilot: it never signs you out of GitHub.
 
+**Claude** connects through the Claude Console in your browser, or with an API key you paste. Celeste downloads Claude Code's
+program (about 330 MB unpacked) from npm the first time, and starts doing so as soon as you open the key field.
+
 ## Keyboard shortcuts
 
 | Shortcut | Action |
@@ -142,7 +145,9 @@ The Copilot live tests are opt-in (`CELESTE_LIVE_COPILOT=1`) because they use a 
 
 ## License
 
-No license has been chosen yet. Until one is added to this repository, the code is not licensed for reuse.
+Celeste's code is licensed under the [Apache License 2.0](LICENSE). The name "Celeste" and the logo are not covered by it.
+The vendors' programs that Celeste downloads (Claude Code, the GitHub Copilot runtime) stay under their own terms and are not part of this
+repository.
 
 ## Trademarks
 

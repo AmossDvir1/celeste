@@ -16,8 +16,11 @@ export function VendorCard({ id, compact }: { id: VendorId; compact?: boolean })
   const cancel = useVendors((s) => s.cancel)
   const saveKey = useVendors((s) => s.saveKey)
   const disconnect = useVendors((s) => s.disconnect)
+  const prepare = useVendors((s) => s.prepare)
   const [keyOpen, setKeyOpen] = useState(false)
   const [key, setKey] = useState('')
+  const [saving, setSaving] = useState(false)
+  const getting = v.getting !== undefined && v.status !== 'downloading' ? v.getting : undefined
 
   const status = {
     'not-installed': 'Not on this computer yet. Celeste downloads it when you connect.',
@@ -83,6 +86,16 @@ export function VendorCard({ id, compact }: { id: VendorId; compact?: boolean })
               <div className="h-full rounded-full bg-gradient-to-r from-[#8f3b76] to-accent transition-[width]" style={{ width: `${(v.progress ?? 0) * 100}%` }} />
             </div>
           )}
+          {getting !== undefined && (
+            <div className="mt-2">
+              <p role="status" className="text-xs text-ink-faint">
+                Getting {meta.name} ready in the background… {Math.round(getting * 100)}%
+              </p>
+              <div className="mt-1 h-1 overflow-hidden rounded-full bg-edge-strong" role="progressbar" aria-valuenow={Math.round(getting * 100)} aria-valuemin={0} aria-valuemax={100} aria-label={`Getting ${meta.name} ready`}>
+                <div className="h-full rounded-full bg-gradient-to-r from-[#8f3b76] to-accent transition-[width]" style={{ width: `${getting * 100}%` }} />
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
@@ -110,7 +123,14 @@ export function VendorCard({ id, compact }: { id: VendorId; compact?: boolean })
       {meta.available && meta.keyHint && (v.status === 'ready' || v.status === 'not-installed') && (
         <div className="mt-3 pl-[58px]">
           {!keyOpen ? (
-            <button type="button" onClick={() => setKeyOpen(true)} className="inline-flex items-center gap-1.5 text-[13px] text-ink-muted underline decoration-edge-strong underline-offset-2 hover:text-ink">
+            <button
+              type="button"
+              onClick={() => {
+                setKeyOpen(true)
+                // Someone who pastes a key has chosen this vendor, so its program starts coming while they find the key.
+                void prepare(id)
+              }}
+              className="inline-flex items-center gap-1.5 text-[13px] text-ink-muted underline decoration-edge-strong underline-offset-2 hover:text-ink">
               <KeyRound className="h-3.5 w-3.5" /> {meta.keyHint}
             </button>
           ) : (
@@ -118,8 +138,10 @@ export function VendorCard({ id, compact }: { id: VendorId; compact?: boolean })
               className="flex gap-2"
               onSubmit={(e) => {
                 e.preventDefault()
-                if (!key.trim()) return
+                if (!key.trim() || saving) return
+                setSaving(true)
                 void saveKey(id, key).then((stored) => {
+                  setSaving(false)
                   if (!stored) return
                   setKey('')
                   setKeyOpen(false)
@@ -136,8 +158,8 @@ export function VendorCard({ id, compact }: { id: VendorId; compact?: boolean })
                 aria-label={`${meta.name} API key`}
                 className="h-9"
               />
-              <Button type="submit" variant="secondary" size="md" disabled={!key.trim()}>
-                Save key
+              <Button type="submit" variant="secondary" size="md" disabled={!key.trim() || saving}>
+                {saving ? 'Saving…' : 'Save key'}
               </Button>
               <Button type="button" variant="ghost" size="md" onClick={() => setKeyOpen(false)}>
                 Cancel

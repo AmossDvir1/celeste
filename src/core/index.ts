@@ -101,7 +101,11 @@ async function start(): Promise<void> {
   // CELESTE_CLAUDE_USER_LOGIN=1 uses the person's own sign-in instead, subscription included. For development and app checks only.
   const ownLogin = process.env['CELESTE_CLAUDE_USER_LOGIN'] === '1'
   const claudeHost = createClaudeHost({
-    installedAt: require.resolve.paths('@anthropic-ai/claude-agent-sdk') ?? [],
+    // Claude Code's program is beside the SDK when developing, and in the data folder once it has been downloaded.
+    // CELESTE_NPM_REGISTRY points the download at another npm registry (a company mirror; a stand-in for the app checks).
+    installedAt: process.env['CELESTE_CLAUDE_NO_INSTALLED'] === '1' ? [] : (require.resolve.paths('@anthropic-ai/claude-agent-sdk') ?? []),
+    dataDir,
+    ...(process.env['CELESTE_NPM_REGISTRY'] ? { registry: process.env['CELESTE_NPM_REGISTRY'] } : {}),
     getKey: () => getSecret('vendor.claude.key'),
     ...(ownLogin ? { allowSubscription: true } : { configDir: join(dataDir, 'claude-config') })
   })

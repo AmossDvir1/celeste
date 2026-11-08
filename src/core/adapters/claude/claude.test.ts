@@ -3,7 +3,7 @@ import type { CanUseTool, Options, PermissionResult, SDKMessage, SDKUserMessage 
 import type { AgentEvent, ApprovalMode, Effort } from '@shared/agent'
 import type { AdapterContext } from '../types'
 import { EventQueue } from '../event-queue'
-import { ClaudeHost, toModels, type Env, type LoginProcess, type Probe } from './host'
+import { ClaudeHost, PROGRAM_MISSING, toModels, type ClaudeHostDeps, type Env, type LoginProcess, type Probe } from './host'
 import { DEVICE_SERVER, decide, describe as describeTool, questionsFrom, toolKind } from './permissions'
 import { ClaudeAgentSession, RESUME_NOTICE, type ClaudeQuery, type StartQuery } from './session'
 import { Translator, errorFrom } from './translate'
@@ -526,7 +526,19 @@ const MODELS = [
   { value: 'haiku', displayName: 'Haiku' }
 ]
 
-function host(over: { account?: Probe['account']; key?: string | null; allowSubscription?: boolean; probe?: () => Promise<Probe>; login?: (env: Env) => LoginProcess; verify?: 'ok' | 'rejected' | 'unknown'; baseEnv?: Env } = {}) {
+function host(
+  over: {
+    account?: Probe['account']
+    key?: string | null
+    allowSubscription?: boolean
+    probe?: () => Promise<Probe>
+    login?: (env: Env) => LoginProcess
+    verify?: 'ok' | 'rejected' | 'unknown'
+    baseEnv?: Env
+    program?: () => string | undefined
+    download?: ClaudeHostDeps['download']
+  } = {}
+) {
   const envs: Env[] = []
   const account = { current: over.account ?? { tokenSource: 'none' } }
   const h = new ClaudeHost({
@@ -536,7 +548,9 @@ function host(over: { account?: Probe['account']; key?: string | null; allowSubs
     ...(over.verify ? { verifyKey: async () => over.verify as 'ok' | 'rejected' | 'unknown' } : {}),
     configDir: 'C:\\data\\claude-config',
     allowSubscription: over.allowSubscription,
-    startLogin: over.login ?? (() => new FakeLogin())
+    startLogin: over.login ?? (() => new FakeLogin()),
+    ...(over.program ? { program: over.program } : {}),
+    ...(over.download ? { download: over.download } : {})
   })
   return { h, envs, account }
 }
@@ -676,5 +690,139 @@ describe('the Claude host', () => {
       const second = host({ login: () => again })
       await expect(second.h.signIn(() => undefined)).resolves.toBeUndefined()
     })
+  })
+})
+
+describe('getting Claude Code’s program', () => {
+  const wait = () => new Promise((r) => setTimeout(r, 10))
+  /** A download the test finishes by hand. */
+  function manual() {
+    const calls: { onProgress: (f: number) => void; signal: AbortSignal; resolve: (file: string) => void; reject: (e: Error) => void }[] = []
+    const download: NonNullable<ClaudeHostDeps['download']> = (onProgress, signal) =>
+      new Promise<string>((resolve, reject) => {
+        calls.push({ onProgress, signal, resolve, reject })
+        signal.addEventListener('abort', () => reject(new Error('Cancelled.')))
+      })
+    return { calls, download }
+  }
+
+  it('says the program is missing, in the same words as Copilot, until it is there', async () => {
+    let file: string | undefined
+    const { h } = host({ program: () => file })
+    expect(h.hasProgram()).toBe(false)
+    expect(await h.status()).toEqual({ state: 'runtime-missing' })
+    expect(() => h.programPath()).toThrow(PROGRAM_MISSING)
+    file = '/data/runtimes/claude'
+    expect(h.hasProgram()).toBe(true)
+    expect(await h.status()).toEqual({ state: 'signed-out' })
+    expect(h.programPath()).toBe(file)
+  })
+
+  it('downloads it on prepare, reporting progress, and does nothing when it is already there', async () => {
+    let file: string | undefined
+    const { calls, download } = manual()
+    const { h } = host({ program: () => file, download })
+    const seen: unknown[] = []
+    const done = h.prepare((p) => seen.push(p))
+    await wait()
+    calls[0]?.onProgress(0.5)
+    file = '/data/claude'
+    calls[0]?.resolve(file)
+    expect(await done).toBe(true)
+    expect(seen).toEqual([
+      { state: 'downloading', progress: 0 },
+      { state: 'downloading', progress: 0.5 }
+    ])
+    expect(await h.prepare(() => undefined)).toBe(true)
+    expect(calls).toHaveLength(1)
+  })
+
+  it('lets a second request join the download under way, and tell it how far it is', async () => {
+    const { calls, download } = manual()
+    const { h } = host({ program: () => undefined, download })
+    const first: unknown[] = []
+    const second: unknown[] = []
+    const a = h.prepare((p) => first.push(p))
+    await wait()
+    calls[0]?.onProgress(0.4)
+    const b = h.prepare((p) => second.push(p))
+    calls[0]?.onProgress(0.8)
+    calls[0]?.resolve('x')
+    expect(await Promise.all([a, b])).toEqual([true, true])
+    expect(calls).toHaveLength(1)
+    expect(second).toEqual([
+      { state: 'downloading', progress: 0.4 },
+      { state: 'downloading', progress: 0.8 }
+    ])
+    expect(first.at(-1)).toEqual({ state: 'downloading', progress: 0.8 })
+  })
+
+  it('reports a failed download, once, to everyone waiting', async () => {
+    const { calls, download } = manual()
+    const { h } = host({ program: () => undefined, download })
+    const seen: unknown[] = []
+    const done = h.prepare((p) => seen.push(p))
+    await wait()
+    calls[0]?.reject(new Error('The package registry answered 503 when asked for the Claude program.'))
+    expect(await done).toBe(false)
+    expect(seen.at(-1)).toEqual({ state: 'failed', message: 'The package registry answered 503 when asked for the Claude program.' })
+    // It can be tried again.
+    const again = h.prepare(() => undefined)
+    await wait()
+    expect(calls).toHaveLength(2)
+    calls[1]?.resolve('x')
+    expect(await again).toBe(true)
+  })
+
+  it('stops the download when the person cancels, and says nothing', async () => {
+    const { calls, download } = manual()
+    const { h } = host({ program: () => undefined, download })
+    const seen: unknown[] = []
+    const done = h.prepare((p) => seen.push(p))
+    await wait()
+    await h.cancelSignIn()
+    expect(calls[0]?.signal.aborted).toBe(true)
+    expect(await done).toBe(false)
+    expect(seen).toEqual([{ state: 'downloading', progress: 0 }])
+  })
+
+  it('says so when there is nowhere to download to', async () => {
+    const { h } = host({ program: () => undefined })
+    const seen: unknown[] = []
+    expect(await h.prepare((p) => seen.push(p))).toBe(false)
+    expect(seen).toEqual([{ state: 'failed', message: 'Claude’s program is not installed.' }])
+  })
+
+  it('downloads the program before it signs in, and then signs in', async () => {
+    let file: string | undefined
+    const { calls, download } = manual()
+    const login = new FakeLogin()
+    let started = false
+    const { h, account } = host({ program: () => file, download, login: () => ((started = true), login) })
+    const seen: { state: string }[] = []
+    const done = h.signIn((p) => seen.push(p))
+    await wait()
+    expect(started).toBe(false)
+    file = '/data/claude'
+    calls[0]?.resolve(file)
+    await done
+    expect(started).toBe(true)
+    account.current = { tokenSource: 'oauth', organization: 'Acme' }
+    login.finish(0)
+    await wait()
+    expect(seen.map((p) => p.state)).toEqual(['downloading', 'done'])
+  })
+
+  it('does not go on to sign in when the download was cancelled or failed', async () => {
+    const { calls, download } = manual()
+    let started = false
+    const { h } = host({ program: () => undefined, download, login: () => ((started = true), new FakeLogin()) })
+    const seen: { state: string }[] = []
+    const done = h.signIn((p) => seen.push(p))
+    await wait()
+    calls[0]?.reject(new Error('The download of the Claude program failed (500).'))
+    await done
+    expect(started).toBe(false)
+    expect(seen.map((p) => p.state)).toEqual(['downloading', 'failed'])
   })
 })

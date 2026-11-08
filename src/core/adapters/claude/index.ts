@@ -1,9 +1,8 @@
 import { spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
 import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { AdapterContext } from '../types'
 import { ClaudeHost, type Env, type Probe } from './host'
+import { downloadClaudeProgram, findProgram } from './program'
 import { ClaudeAgentSession, type ClaudeQuery, type StartQuery } from './session'
 
 export { ClaudeHost } from './host'
@@ -13,15 +12,11 @@ let sdk: Promise<Sdk> | undefined
 /** The SDK is a module that only loads with `import`, and only when Claude is first used. */
 const loadSdk = (): Promise<Sdk> => (sdk ??= import('@anthropic-ai/claude-agent-sdk'))
 
+export { PROGRAM_VERSION, downloadClaudeProgram, findProgram, programPlatform } from './program'
+
 /** Claude Code's program: the one that came beside the SDK (development), found by the platform package's name. */
-export function claudeProgram(resolvePaths: string[] = [], platform: string = process.platform, arch: string = process.arch): string | undefined {
-  const name = `@anthropic-ai/claude-agent-sdk-${platform}-${arch}`
-  for (const base of resolvePaths) {
-    const dir = join(base, name)
-    const file = join(dir, platform === 'win32' ? 'claude.exe' : 'claude')
-    if (existsSync(file)) return file
-  }
-  return undefined
+export function claudeProgram(resolvePaths: string[] = []): string | undefined {
+  return findProgram({ installedAt: resolvePaths })
 }
 
 /** Reads who Claude Code would be and which models it has, by starting it with nothing to say and stopping it. */
@@ -77,24 +72,32 @@ async function verifyKey(key: string, env: Env): Promise<'ok' | 'rejected' | 'un
 export interface ClaudeOptions {
   /** Where the program was found beside the SDK, as `require.resolve.paths` gives them. */
   installedAt?: string[]
+  /** Where Celeste keeps what it downloads. Without it the program is only looked for beside the SDK. */
+  dataDir?: string
+  /** An npm registry other than npmjs.org (a company mirror, or a stand-in for a check). */
+  registry?: string
   getKey: () => Promise<string | null>
   /** Claude Code's own settings folder for Celeste. Left out to use the person's own, for development. */
   configDir?: string
   allowSubscription?: boolean
 }
 
-export function createClaudeHost(options: ClaudeOptions): ClaudeHost & { program: string | undefined } {
-  const program = claudeProgram(options.installedAt)
+export function createClaudeHost(options: ClaudeOptions): ClaudeHost {
+  // Looked for each time, not once: the download can finish while Celeste is running.
+  const program = () => findProgram({ installedAt: options.installedAt, dataDir: options.dataDir })
   const host = new ClaudeHost({
-    probe: (env) => probe(env, program),
+    program,
+    ...(options.dataDir ? { download: (onProgress, signal) => downloadClaudeProgram({ dataDir: options.dataDir as string, onProgress, signal, ...(options.registry ? { registry: options.registry } : {}) }) } : {}),
+    probe: (env) => probe(env, program()),
     getKey: options.getKey,
     verifyKey,
     baseEnv: process.env,
     configDir: options.configDir,
     allowSubscription: options.allowSubscription,
     startLogin: (env) => {
-      if (!program) throw new Error('Claude’s program is not installed.')
-      const child = spawn(program, ['auth', 'login', '--console'], { env: env as NodeJS.ProcessEnv, stdio: ['pipe', 'ignore', 'ignore'], windowsHide: true })
+      const file = program()
+      if (!file) throw new Error('Claude’s program is not installed.')
+      const child = spawn(file, ['auth', 'login', '--console'], { env: env as NodeJS.ProcessEnv, stdio: ['pipe', 'ignore', 'ignore'], windowsHide: true })
       return {
         onExit: (cb) => {
           child.once('exit', cb)
@@ -106,11 +109,11 @@ export function createClaudeHost(options: ClaudeOptions): ClaudeHost & { program
       }
     }
   })
-  return Object.assign(host, { program })
+  return host
 }
 
 export function createClaudeSession(
-  host: ClaudeHost & { program: string | undefined },
+  host: ClaudeHost,
   ctx: AdapterContext,
   deviceServer?: (sessionId: string) => { url: string; token: string } | undefined
 ): ClaudeAgentSession {
@@ -136,7 +139,10 @@ export function createClaudeSession(
   return new ClaudeAgentSession({
     ctx,
     start,
-    launch: async () => ({ env: await host.env(), ...(host.program ? { executable: host.program } : {}) }),
+    launch: async () => {
+      const executable = host.programPath()
+      return { env: await host.env(), ...(executable ? { executable } : {}) }
+    },
     resolveModel: (model, effort) => host.resolve(model, effort),
     ...(deviceServer ? { deviceServer: () => deviceServer(ctx.sessionId) } : {})
   })

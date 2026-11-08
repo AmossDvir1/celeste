@@ -49,7 +49,13 @@ export interface ClaudeHostDeps {
   /** Development only: accept a Claude subscription login. */
   allowSubscription?: boolean
   startLogin: (env: Env) => LoginProcess
+  /** Claude Code's program, when it is on this computer. Left out where there is nothing to look for (tests with a stand-in probe). */
+  program?: () => string | undefined
+  /** Fetches the program. Left out where there is nowhere to keep one. */
+  download?: (onProgress: (fraction: number) => void, signal: AbortSignal) => Promise<string>
 }
+
+export const PROGRAM_MISSING = 'Claude’s program is not on this computer yet. Open Settings and choose Connect to download it.'
 
 const PREFIX = 'claude:'
 const LOGIN_LIMIT_MS = 10 * 60_000
@@ -77,6 +83,8 @@ export function toModels(models: SdkModel[]): ModelInfo[] {
 export class ClaudeHost {
   private cached: SdkModel[] = []
   private login: { proc: LoginProcess; timer: ReturnType<typeof setTimeout>; cancelled: boolean } | undefined
+  /** The download of Claude Code's program, while there is one. Everyone who asked for it hears how it goes. */
+  private fetching: { abort: AbortController; done: Promise<boolean>; listeners: Set<(p: VendorProgress) => void>; last: number } | undefined
 
   constructor(private readonly deps: ClaudeHostDeps) {}
 
@@ -94,7 +102,59 @@ export class ClaudeHost {
     }
   }
 
+  hasProgram(): boolean {
+    return !this.deps.program || this.deps.program() !== undefined
+  }
+
+  /**
+   * Makes sure Claude Code's program is on this computer, downloading it when it is not (progress goes to `on`).
+   * Resolves true when it is there. False when the download was cancelled or failed; a failure is reported through `on`.
+   */
+  async prepare(on: (p: VendorProgress) => void): Promise<boolean> {
+    if (this.hasProgram()) return true
+    if (!this.deps.download) {
+      on({ state: 'failed', message: 'Claude’s program is not installed.' })
+      return false
+    }
+    // A second caller (Connect pressed while the program is already coming in the background) joins the download under way.
+    if (this.fetching) {
+      this.fetching.listeners.add(on)
+      on({ state: 'downloading', progress: this.fetching.last })
+      return this.fetching.done
+    }
+    const download = this.deps.download
+    const abort = new AbortController()
+    const listeners = new Set([on])
+    const say = (p: VendorProgress) => listeners.forEach((l) => l(p))
+    const job: NonNullable<ClaudeHost['fetching']> = { abort, listeners, last: 0, done: Promise.resolve(false) }
+    job.done = (async () => {
+      say({ state: 'downloading', progress: 0 })
+      try {
+        await download((progress) => {
+          job.last = progress
+          say({ state: 'downloading', progress })
+        }, abort.signal)
+        return !abort.signal.aborted
+      } catch (err) {
+        if (!abort.signal.aborted) say({ state: 'failed', message: err instanceof Error ? err.message : String(err) })
+        return false
+      } finally {
+        if (this.fetching === job) this.fetching = undefined
+      }
+    })()
+    this.fetching = job
+    return job.done
+  }
+
+  /** The program to start. Throws a message fit to show when it has not been downloaded. */
+  programPath(): string | undefined {
+    const file = this.deps.program?.()
+    if (this.deps.program && !file) throw new Error(PROGRAM_MISSING)
+    return file
+  }
+
   async status(): Promise<VendorConnection> {
+    if (!this.hasProgram()) return { state: 'runtime-missing' }
     let probe: Probe
     try {
       probe = await this.deps.probe(await this.env())
@@ -139,6 +199,8 @@ export class ClaudeHost {
    */
   async signIn(on: (p: VendorProgress) => void): Promise<void> {
     if (this.login) throw new Error('Signing in is already under way.')
+    // The sign-in is one of Claude Code's own commands, so the program comes first.
+    if (!(await this.prepare(on))) return
     // Someone already signed in here has nothing to do: the card just connects.
     const current = await this.status()
     if (current.state === 'signed-in') return on({ state: 'done', account: current.account })
@@ -170,6 +232,7 @@ export class ClaudeHost {
   }
 
   async cancelSignIn(): Promise<void> {
+    this.fetching?.abort.abort()
     const login = this.login
     if (!login) return
     login.cancelled = true

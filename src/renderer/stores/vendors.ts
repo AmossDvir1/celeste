@@ -23,6 +23,8 @@ export interface VendorState {
   step?: SignInStep
   /** Why the last attempt did not work. Cleared by the next one. */
   error?: string
+  /** How much of the vendor's program has arrived (0 to 1) while it downloads in the background, for instance while a key is being pasted. */
+  getting?: number
 }
 
 interface VendorsState {
@@ -34,6 +36,8 @@ interface VendorsState {
   connectWithCode: (id: VendorId) => void
   cancel: (id: VendorId) => void
   applyPush: (push: CorePush) => void
+  /** Gets the vendor's program onto this computer without signing in (it downloads in the background). True once it is there. */
+  prepare: (id: VendorId) => Promise<boolean>
   /** Stores the key securely, then marks the vendor connected. False if it could not be stored. */
   saveKey: (id: VendorId, key: string) => Promise<boolean>
   disconnect: (id: VendorId) => Promise<void>
@@ -59,6 +63,8 @@ export function openExternal(url: string): void {
 export const useVendors = create<VendorsState>((set, get) => {
   const patch = (id: VendorId, p: Partial<VendorState>) =>
     set((s) => ({ vendors: { ...s.vendors, [id]: { ...s.vendors[id], ...p } } }))
+  /** Downloads under way for the program alone, so asking twice waits for the same one. */
+  const fetching = new Map<VendorId, Promise<boolean>>()
 
   return {
     vendors: { copilot: idle('copilot'), claude: idle('claude'), openai: idle('openai'), gemini: idle('gemini') },
@@ -91,13 +97,40 @@ export const useVendors = create<VendorsState>((set, get) => {
           }
         }, () => undefined)
       }
+      // A key connection has no sign-in to check, but its program must be there: if it was lost, it comes back by itself.
+      if (next.claude.status === 'connected' && next.claude.method === 'key') void get().prepare('claude')
+    },
+
+    prepare: (id) => {
+      const running = fetching.get(id)
+      if (running) return running
+      patch(id, { error: undefined })
+      const job = core
+        .call('vendor.prepare', id)
+        .catch((err: unknown) => {
+          patch(id, { error: err instanceof Error ? err.message : String(err) })
+          return false
+        })
+        .finally(() => {
+          fetching.delete(id)
+          patch(id, { getting: undefined })
+        })
+      fetching.set(id, job)
+      return job
     },
 
     applyPush: (push) => {
       if (push.type !== 'vendor') return
       const id = push.vendor
       const p = push.progress
-      if (get().vendors[id].status !== 'waiting' && get().vendors[id].status !== 'downloading') return // cancelled meanwhile
+      const now = get().vendors[id]
+      // The program coming in the background, with no sign-in under way: only its progress and its failure matter.
+      if (fetching.has(id) && now.status !== 'waiting' && now.status !== 'downloading') {
+        if (p.state === 'downloading') patch(id, { getting: p.progress })
+        else if (p.state === 'failed') patch(id, { getting: undefined, error: p.message })
+        return
+      }
+      if (now.status !== 'waiting' && now.status !== 'downloading') return // cancelled meanwhile
       if (p.state === 'downloading') patch(id, { status: 'downloading', progress: p.progress, error: undefined })
       else if (p.state === 'step') {
         patch(id, { status: 'waiting', progress: undefined, step: p.step })
@@ -129,6 +162,8 @@ export const useVendors = create<VendorsState>((set, get) => {
     saveKey: async (id, key) => {
       const value = key.trim()
       if (!value) return false
+      // The key is checked by Claude Code itself, so its program has to be here first (it may already be coming).
+      if (id === 'claude' && !(await get().prepare(id))) return false
       try {
         await secrets.set(secretName(id), value)
       } catch {

@@ -166,6 +166,11 @@ export interface CoreApi {
   /** Starts connecting: downloads the program if needed, then signs in. Answers at once; progress arrives as `vendor` pushes. */
   'vendor.signIn': (id: VendorId, method: 'web' | 'code') => Promise<void>
   'vendor.cancelSignIn': (id: VendorId) => Promise<void>
+  /**
+   * Makes sure the vendor's program is on this computer, downloading it if not. Progress arrives as `vendor` pushes; the call
+   * answers when it is there (true) or when the download was cancelled or failed (false, and a `failed` push says why).
+   */
+  'vendor.prepare': (id: VendorId) => Promise<boolean>
   /** The models this account can use, with the effort levels each takes. Empty when the vendor is not ready. */
   'vendor.models': (id: VendorId) => Promise<ModelInfo[]>
 

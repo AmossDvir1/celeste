@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { createPackage } from '@electron/asar'
 import { launch, root } from './lib/app.mjs'
+import { startRegistry } from './lib/registry.mjs'
+import { claudeReady, pasteClaudeKey, say, startStub } from './lib/stub.mjs'
 
 /**
  * The packages the main process and Core load at run time: what package.json lists as dependencies, and what those
@@ -23,8 +25,7 @@ function runtimePackages() {
   const visit = (name, from) => {
     // Copilot's program (about 180 MB) is not shipped: Celeste downloads it when someone connects Copilot.
     if (/^@github\/copilot-sdk-(darwin|linux|linuxmusl|win32)-/.test(name)) return
-    // Claude Code's program (about 330 MB) is left out the same way. Downloading it on first Connect is not built yet, so for now
-    // a Celeste laid out like this reports that it is missing, and the program has to come with the installer or be installed.
+    // Claude Code's program (about 330 MB) is left out the same way: Celeste downloads it the first time Claude is connected.
     if (/^@anthropic-ai\/claude-agent-sdk-(darwin|linux|win32)-/.test(name)) return
     const dir = lookup(name, from)
     if (!dir || found.has(dir)) return
@@ -47,6 +48,8 @@ const check = (label, ok) => {
 }
 
 let app
+let registry
+let stub
 try {
   mkdirSync(join(stage, 'resources'), { recursive: true })
   cpSync(join(root, 'package.json'), join(stage, 'package.json'))
@@ -91,12 +94,60 @@ try {
   check(`Copilot reports that its program has not been downloaded (${JSON.stringify(status)})`, status.state === 'runtime-missing')
   check('the SDK loads inside the archive: models come back empty, not as an error', JSON.stringify(await app.page.evaluate(() => window.celeste.core.call('vendor.models', ['copilot']))) === '[]')
   const claude = await app.page.evaluate(() => window.celeste.core.call('vendor.status', ['claude']))
-  check(`Claude's SDK loads inside the archive and says its program is missing, in words (${JSON.stringify(claude)})`, claude.state === 'unavailable' && /not installed/.test(claude.message))
+  check(`Claude reports that its program has not been downloaded (${JSON.stringify(claude)})`, claude.state === 'runtime-missing')
+  await app.close()
+
+  // The first Connect, end to end: a key is pasted, the program is downloaded (here from a stand-in for npm that serves the real
+  // program), checked, unpacked into the data folder, and then it really answers.
+  console.log('\n# Connecting Claude downloads its program')
+  registry = await startRegistry()
+  stub = await startStub()
+  app = await launch({ width: 1440, height: 900, theme: null, entry: archive, env: { ...stub.env, ...registry.env } })
+  let page2 = app.page
+  await page2.getByRole('dialog', { name: 'Set up Celeste' }).waitFor({ timeout: 20_000 })
+  await page2.getByLabel('What should we call you?').fill('Dana')
+  await page2.getByRole('button', { name: 'Continue' }).click()
+  await page2.getByRole('button', { name: 'Continue' }).click()
+  const folder = registry.downloadedIn(app.profile)
+  check('before connecting, the program is not on this computer', !existsSync(folder))
+  await pasteClaudeKey(page2)
+  check('the program was asked for from the registry, then downloaded', registry.requests.some((u) => /claude-agent-sdk/.test(u)) && registry.requests.includes('/program.tgz'))
+  check('it is unpacked into the data folder and marked complete', existsSync(join(folder, process.platform === 'win32' ? 'claude.exe' : 'claude')) && existsSync(join(folder, '.complete')))
+  const connected = await page2.evaluate(() => window.celeste.core.call('vendor.status', ['claude']))
+  check(`Claude then answers as connected (${JSON.stringify(connected)})`, connected.state === 'signed-in' && /1234/.test(connected.account))
+  const models = await page2.evaluate(() => window.celeste.core.call('vendor.models', ['claude']))
+  check('and lists its own models, so the downloaded program really runs', models.some((m) => m.id === 'claude:default'))
+  for (let i = 0; i < 2; i++) await page2.getByRole('button', { name: 'Continue' }).click()
+  await page2.getByRole('button', { name: 'Start chatting' }).click()
+  await claudeReady(page2)
+  await say(page2, 'Hello from the packaged app')
+  check('a conversation runs on the downloaded program', true)
+  await app.close()
+  await registry.stop()
+
+  // A download that does not match its checksum is thrown away, and the key is not kept.
+  registry = await startRegistry({ corrupt: true })
+  app = await launch({ width: 1440, height: 900, theme: null, entry: archive, env: { ...stub.env, ...registry.env } })
+  page2 = app.page
+  await page2.getByRole('dialog', { name: 'Set up Celeste' }).waitFor({ timeout: 20_000 })
+  await page2.getByLabel('What should we call you?').fill('Dana')
+  await page2.getByRole('button', { name: 'Continue' }).click()
+  await page2.getByRole('button', { name: 'Continue' }).click()
+  const card = page2.getByRole('heading', { name: 'Claude Agent', exact: true }).locator('xpath=ancestor::div[contains(@class,"rounded-xl")][1]')
+  await card.getByRole('button', { name: 'Paste an API key instead' }).click()
+  await card.getByLabel(/API key/).fill('sk-ant-api03-a-key-for-the-checks-1234')
+  await card.getByRole('button', { name: 'Save key' }).click()
+  await card.getByRole('alert').waitFor({ timeout: 60_000 })
+  check('a download with the wrong checksum is refused, in words', /checksum/.test(await card.getByRole('alert').innerText()))
+  check('Claude is not shown as connected', (await card.getByText(/Connected/).count()) === 0)
+  check('nothing was kept from it', !existsSync(registry.downloadedIn(app.profile)))
 } catch (err) {
   console.error(err)
   failures.push('the script itself failed')
 } finally {
   await app?.close().catch(() => undefined)
+  await registry?.stop().catch(() => undefined)
+  await stub?.stop().catch(() => undefined)
   try {
     rmSync(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 })
   } catch {

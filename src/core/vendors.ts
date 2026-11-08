@@ -39,8 +39,17 @@ export class VendorService {
       if (real === 'copilot') void this.hosts.copilot.signIn(method, report)
       else {
         if (method !== 'web') throw new Error('Claude signs in through the browser.')
-        await this.hosts.claude.signIn(report)
+        // Claude's program may have to be downloaded first, which takes a while, so this too reports through pushes.
+        void this.hosts.claude.signIn(report).catch((err: unknown) => report({ state: 'failed', message: err instanceof Error ? err.message : String(err) }))
       }
+    },
+
+    'vendor.prepare': async (id) => {
+      const real = this.real(this.id(id))
+      if (!real) throw new Error('Celeste cannot connect that vendor yet.')
+      // Copilot's program is fetched as part of its sign-in, and nothing else of it is needed first.
+      if (real === 'copilot') return true
+      return this.hosts.claude.prepare((progress) => this.push({ type: 'vendor', vendor: real, progress }))
     },
 
     'vendor.cancelSignIn': async (id) => {
