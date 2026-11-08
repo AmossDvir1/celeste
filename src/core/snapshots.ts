@@ -2,7 +2,9 @@ import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, rmSync, rmdirSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, parse, resolve, sep } from 'node:path'
-import type { CheckpointChanges, CheckpointFile } from '@shared/api'
+import type { FileDiff } from '@shared/agent'
+import type { CheckpointChanges, CheckpointFile, CheckpointReview } from '@shared/api'
+import { parseUnifiedDiff } from './adapters/copilot/diff'
 
 /*
  * Checkpoints: before each message in a Develop session, the project folder is saved, so that a turn that went wrong can be
@@ -26,6 +28,10 @@ export interface Snapshots {
   preview(sessionId: string, cwd: string, to: string): Promise<CheckpointChanges>
   /** Puts the folder back as it was at `to`, after saving how it is now (`undoId`). */
   restore(sessionId: string, cwd: string, to: string): Promise<{ restored: number; removed: number; undoId: string }>
+  /** The files that changed between two saves, with their lines. `to` null: up to the folder as it is now. */
+  diffs(sessionId: string, cwd: string, from: string, to: string | null): Promise<CheckpointReview>
+  /** Puts only these files back as they were at `to` (a file that did not exist then is removed), after saving how things are now. */
+  discard(sessionId: string, cwd: string, to: string, paths: string[]): Promise<{ restored: number; removed: number; undoId: string }>
   /** Deletes everything kept for a session. */
   forget(sessionId: string): void
 }
@@ -51,6 +57,13 @@ const ALWAYS_LEFT_OUT = ['node_modules/', '.venv/', '__pycache__/', '*.pyc', '.D
 
 const COMMIT = /^[0-9a-f]{40}$/
 const MAX_LISTED = 200
+/** A review shows the lines of at most this many files, and of no file with more changed lines than this. */
+const MAX_REVIEWED = 200
+const MAX_REVIEW_LINES = 3000
+/** The text of one batch of files in a review may not be larger than this; beyond it those files are listed without their lines. */
+const MAX_PATCH_BYTES = 8 * 1024 * 1024
+/** Paths given to git on its command line at once, to stay under the length Windows allows. */
+const PATHS_PER_COMMAND = 40
 
 /** Everything that must be the same on every computer, whatever the person has set up in git. */
 const GIT_SETTINGS = [
@@ -82,8 +95,13 @@ interface RunOptions {
   env?: Record<string, string>
   /** Do not fail on a non-zero exit (git add --ignore-errors still exits 1 when it skipped a file). */
   tolerant?: boolean
+  /** Stop and fail when git prints more than this many bytes. */
+  maxBytes?: number
   timeoutMs: number
 }
+
+/** A command printed more than it was allowed to. */
+class TooMuchOutput extends SnapshotError {}
 
 function git(gitDir: string, args: string[], options: RunOptions): Promise<Buffer> {
   return new Promise((resolvePromise, reject) => {
@@ -103,7 +121,16 @@ function git(gitDir: string, args: string[], options: RunOptions): Promise<Buffe
       if (e) reject(e)
       else resolvePromise(value ?? Buffer.alloc(0))
     }
-    child.stdout.on('data', (b: Buffer) => out.push(b))
+    let printed = 0
+    child.stdout.on('data', (b: Buffer) => {
+      printed += b.length
+      if (options.maxBytes !== undefined && printed > options.maxBytes) {
+        child.kill()
+        done(new TooMuchOutput('Git printed more than Celeste can show.'))
+        return
+      }
+      out.push(b)
+    })
     child.stderr.on('data', (b: Buffer) => (err += b.toString('utf8')))
     child.on('error', (e: NodeJS.ErrnoException) => done(new SnapshotError(e.code === 'ENOENT' ? 'Git was not found on this computer, and checkpoints need it.' : `Git could not start: ${e.message}`)))
     child.on('close', (code) => {
@@ -227,32 +254,67 @@ export class GitSnapshots implements Snapshots {
     return this.serial(sessionId, () => this.snap(sessionId, cwd, 'Before a message'))
   }
 
-  private async diff(gitDir: string, from: string, to: string): Promise<CheckpointFile[]> {
+  private async diff(gitDir: string, from: string, to: string): Promise<(CheckpointFile & { binary: boolean })[]> {
     if (!COMMIT.test(from) || !COMMIT.test(to)) throw new SnapshotError('Invalid checkpoint')
     const [names, numbers] = await Promise.all([
       this.run(gitDir, ['diff', '--no-renames', '--name-status', '-z', from, to]),
       this.run(gitDir, ['diff', '--no-renames', '--numstat', '-z', from, to])
     ])
-    const counts = new Map<string, { added: number; removed: number }>()
+    const counts = new Map<string, { added: number; removed: number; binary: boolean }>()
     for (const record of numbers.toString('utf8').split('\0')) {
       const [added, removed, ...path] = record.split('\t')
       if (path.length === 0) continue
       // A binary file shows "-" for both.
-      counts.set(path.join('\t'), { added: Number(added) || 0, removed: Number(removed) || 0 })
+      counts.set(path.join('\t'), { added: Number(added) || 0, removed: Number(removed) || 0, binary: added === '-' })
     }
     const tokens = names.toString('utf8').split('\0').filter((t) => t !== '')
-    const files: CheckpointFile[] = []
+    const files: (CheckpointFile & { binary: boolean })[] = []
     for (let i = 0; i + 1 < tokens.length; i += 2) {
       const code = tokens[i] as string
       const path = tokens[i + 1] as string
-      const n = counts.get(path) ?? { added: 0, removed: 0 }
+      const n = counts.get(path) ?? { added: 0, removed: 0, binary: false }
       files.push({ path, status: code.startsWith('A') ? 'added' : code.startsWith('D') ? 'deleted' : 'modified', ...n })
     }
     return files.sort((a, b) => a.path.localeCompare(b.path))
   }
 
   private listed(files: CheckpointFile[]): CheckpointChanges {
-    return { files: files.slice(0, MAX_LISTED), more: Math.max(0, files.length - MAX_LISTED) }
+    // Only what the log should hold: a flag used while working things out stays out of it.
+    const plain = files.slice(0, MAX_LISTED).map(({ path, status, added, removed }): CheckpointFile => ({ path, status, added, removed }))
+    return { files: plain, more: Math.max(0, files.length - MAX_LISTED) }
+  }
+
+  /** The lines of some files' changes, read from git's own patch text. Files it cannot give the lines of are left out of the map. */
+  private async patches(gitDir: string, from: string, to: string, paths: string[]): Promise<Map<string, FileDiff>> {
+    const found = new Map<string, FileDiff>()
+    for (let i = 0; i < paths.length; i += PATHS_PER_COMMAND) {
+      const batch = paths.slice(i, i + PATHS_PER_COMMAND)
+      let text: string
+      try {
+        text = (
+          await this.run(gitDir, ['diff', '--no-renames', '--unified=3', from, to, '--', ...batch], {
+            maxBytes: MAX_PATCH_BYTES,
+            // The names are file names, not patterns.
+            env: { GIT_LITERAL_PATHSPECS: '1' }
+          })
+        ).toString('utf8')
+      } catch (err) {
+        if (err instanceof TooMuchOutput) continue
+        throw err
+      }
+      // One block per file, each beginning "diff --git a/<path> b/<path>". The two paths are the same (no renames), so the
+      // path is the first half of what follows the prefix, which also works for names with spaces.
+      for (const block of text.split(/^diff --git /m).slice(1)) {
+        const header = block.slice(0, block.indexOf('\n'))
+        if (!header.startsWith('a/')) continue
+        const rest = header.slice(2)
+        const length = (rest.length - 3) / 2
+        if (!Number.isInteger(length) || rest.slice(length, length + 3) !== ' b/') continue
+        const path = rest.slice(0, length)
+        if (path === rest.slice(length + 3)) found.set(path, parseUnifiedDiff(block, path))
+      }
+    }
+    return found
   }
 
   changes(sessionId: string, _cwd: string, from: string, to: string): Promise<CheckpointChanges> {
@@ -282,43 +344,85 @@ export class GitSnapshots implements Snapshots {
       // How the folder is right now, so that this revert can be undone.
       const undoId = await this.snap(sessionId, folder, 'Before reverting')
 
-      const names = (await this.run(gitDir, ['diff', '--no-renames', '--name-status', '-z', to, undoId])).toString('utf8').split('\0').filter((t) => t !== '')
-      const restore: string[] = []
-      const remove: string[] = []
-      for (let i = 0; i + 1 < names.length; i += 2) {
-        const path = names[i + 1] as string
-        // Added since the checkpoint: it did not exist then, so it goes. Anything else comes back as it was.
-        if ((names[i] as string).startsWith('A')) remove.push(path)
-        else restore.push(path)
-      }
+      const changed = await this.diff(gitDir, to, undoId)
+      return { ...(await this.put(gitDir, folder, to, changed)), undoId }
+    })
+  }
 
-      if (restore.length) {
-        await this.run(gitDir, ['checkout', to, '--pathspec-from-file=-', '--pathspec-file-nul'], {
-          workTree: folder,
-          input: restore.join('\0'),
-          // The names are file names, not patterns.
-          env: { GIT_LITERAL_PATHSPECS: '1' }
-        })
-      }
+  /**
+   * Puts these files back to how they were at `to`: one that was added since did not exist then, so it goes, and anything else
+   * comes back as it was. Only files that really changed are touched, however the list was made.
+   */
+  private async put(gitDir: string, folder: string, to: string, changed: CheckpointFile[]): Promise<{ restored: number; removed: number }> {
+    const restore = changed.filter((f) => f.status !== 'added').map((f) => f.path)
+    const remove = changed.filter((f) => f.status === 'added').map((f) => f.path)
 
-      let removed = 0
-      for (const path of remove) {
-        const target = resolve(folder, path)
-        if (!target.startsWith(folder + sep)) continue
-        if (existsSync(target)) {
-          rmSync(target, { force: true })
-          removed++
-        }
-        // A folder the agent made and that is now empty goes too, but only as far as the project folder.
-        for (let d = dirname(target); d !== folder && d.startsWith(folder + sep); d = dirname(d)) {
-          try {
-            rmdirSync(d)
-          } catch {
-            break
-          }
+    if (restore.length) {
+      await this.run(gitDir, ['checkout', to, '--pathspec-from-file=-', '--pathspec-file-nul'], {
+        workTree: folder,
+        input: restore.join('\0'),
+        // The names are file names, not patterns.
+        env: { GIT_LITERAL_PATHSPECS: '1' }
+      })
+    }
+
+    let removed = 0
+    for (const path of remove) {
+      const target = resolve(folder, path)
+      if (!target.startsWith(folder + sep)) continue
+      if (existsSync(target)) {
+        rmSync(target, { force: true })
+        removed++
+      }
+      // A folder the agent made and that is now empty goes too, but only as far as the project folder.
+      for (let d = dirname(target); d !== folder && d.startsWith(folder + sep); d = dirname(d)) {
+        try {
+          rmdirSync(d)
+        } catch {
+          break
         }
       }
-      return { restored: restore.length, removed, undoId }
+    }
+    return { restored: restore.length, removed }
+  }
+
+  diffs(sessionId: string, cwd: string, from: string, to: string | null): Promise<CheckpointReview> {
+    return this.serial(sessionId, async () => {
+      const gitDir = this.gitDir(sessionId)
+      const end = to ?? (await this.snap(sessionId, cwd, 'Looking at the changes'))
+      const all = await this.diff(gitDir, from, end)
+      const shown = all.slice(0, MAX_REVIEWED)
+      // Lines are fetched only for text files of a size a person can read; the rest are listed, and say why they have none.
+      const readable = shown.filter((f) => !f.binary && f.added + f.removed <= MAX_REVIEW_LINES).map((f) => f.path)
+      const patches = await this.patches(gitDir, from, end, readable)
+      const files = shown.map((f): FileDiff => {
+        const base = { path: f.path, status: f.status, added: f.added, removed: f.removed }
+        if (f.binary) return { ...base, hunks: [], binary: true }
+        const patch = patches.get(f.path)
+        if (patch) return { ...base, hunks: patch.hunks }
+        // No lines for an empty file or a change of mode alone is normal; a big change is said to be too big.
+        return { ...base, hunks: [], ...(f.added + f.removed > 0 ? { truncated: true } : {}) }
+      })
+      return { files, more: Math.max(0, all.length - MAX_REVIEWED) }
+    })
+  }
+
+  discard(sessionId: string, cwd: string, to: string, paths: string[]): Promise<{ restored: number; removed: number; undoId: string }> {
+    return this.serial(sessionId, async () => {
+      if (!COMMIT.test(to)) throw new SnapshotError('Invalid checkpoint')
+      if (!Array.isArray(paths) || paths.length === 0 || paths.length > 1000 || paths.some((p) => typeof p !== 'string')) throw new SnapshotError('Invalid files')
+      const folder = this.checkFolder(cwd)
+      const gitDir = this.gitDir(sessionId)
+      if (!existsSync(join(gitDir, 'HEAD'))) throw new SnapshotError('This checkpoint is no longer kept.')
+      await this.run(gitDir, ['cat-file', '-e', `${to}^{commit}`]).catch(() => {
+        throw new SnapshotError('This checkpoint is no longer kept.')
+      })
+      const undoId = await this.snap(sessionId, folder, 'Before discarding changes')
+      // Only files that changed since the checkpoint can be discarded: a name in the request that did not change is ignored,
+      // so this cannot be used to reach any other file.
+      const wanted = new Set(paths)
+      const changed = (await this.diff(gitDir, to, undoId)).filter((f) => wanted.has(f.path))
+      return { ...(await this.put(gitDir, folder, to, changed)), undoId }
     })
   }
 

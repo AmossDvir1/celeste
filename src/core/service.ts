@@ -7,6 +7,7 @@ import {
   type Bootstrap,
   type SessionApi,
   type CheckpointChanges,
+  type CheckpointReview,
   type CorePush,
   type CreateSessionInput,
   type DraftState,
@@ -182,6 +183,8 @@ export class SessionService {
     'sessions.respondApproval': (id, requestId, answer) => this.respondApproval(id, requestId, answer),
     'sessions.respondAsk': (id, requestId, answers) => this.respondAsk(id, requestId, answers),
     'sessions.update': (id, patch) => this.update(id, patch),
+    'sessions.review': (id, from, to) => this.review(id, from, to),
+    'sessions.discardFiles': (id, checkpointId, paths) => this.discardFiles(id, checkpointId, paths),
     'sessions.revertPreview': (id, checkpointId) => this.revertPreview(id, checkpointId),
     'sessions.revert': (id, checkpointId) => this.revert(id, checkpointId),
     'sessions.remove': (id) => this.remove(id),
@@ -501,6 +504,27 @@ export class SessionService {
     const mine = this.store.events(id).some(({ event }) => (event.type === 'checkpoint.created' && event.id === checkpointId) || (event.type === 'checkpoint.reverted' && event.undoId === checkpointId))
     if (!mine) throw new Error('That checkpoint does not belong to this session.')
     return { cwd: row.cwd, snapshots, checkpoint: checkpointId, row }
+  }
+
+  /** The files that changed between two of this session's checkpoints (`to` null: up to now), with their lines. */
+  private async review(id: string, from: string, to: string | null): Promise<CheckpointReview> {
+    const start = this.checkpointTarget(id, from)
+    if (to !== null) this.checkpointTarget(id, to)
+    return start.snapshots.diffs(id, start.cwd, from, to)
+  }
+
+  /** Puts only some files back as they were at a checkpoint, the way a revert does for all of them, and can be undone the same way. */
+  private async discardFiles(id: string, checkpointId: string, paths: string[]): Promise<{ restored: number; removed: number; undoId: string }> {
+    if (!Array.isArray(paths) || paths.length === 0 || paths.length > 1000 || paths.some((p) => typeof p !== 'string' || p.length === 0 || p.length > 1000)) throw new Error('Invalid files')
+    const { cwd, snapshots, checkpoint, row } = this.checkpointTarget(id, checkpointId)
+    const live = this.live.get(id)
+    if (live?.open || row.status !== 'idle') throw new Error('Wait for the answer to finish, or stop it, before discarding changes.')
+    await live?.chain
+    const result = await snapshots.discard(id, cwd, checkpoint, paths)
+    // Logged as a revert: the timeline says what was put back, offers to undo it, and the agent is told its files moved.
+    this.record(id, { type: 'checkpoint.reverted', id: checkpoint, ...result }, live ?? { text: '' })
+    if (live) live.reverted = true
+    return result
   }
 
   private async revertPreview(id: string, checkpointId: string): Promise<CheckpointChanges> {

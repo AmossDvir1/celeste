@@ -21,6 +21,7 @@ import type {
   AskAnswers,
   AttachmentInfo,
   Effort,
+  FileDiff,
   ModelInfo,
   SessionMode,
   UserInput,
@@ -116,6 +117,13 @@ export interface CheckpointChanges {
   more: number
 }
 
+/** The files that changed between two points in a session, with the lines of each. */
+export interface CheckpointReview {
+  files: FileDiff[]
+  /** How many more files changed than are listed. */
+  more: number
+}
+
 export interface StoredEvent {
   seq: number
   at: number
@@ -204,6 +212,10 @@ export interface CoreApi {
   'sessions.update': (id: string, patch: SessionPatch) => SessionSummary
   /** What reverting to a checkpoint would change in the folder, as it would be after the revert. */
   'sessions.revertPreview': (id: string, checkpointId: string) => Promise<CheckpointChanges>
+  /** The files that changed between two checkpoints of a session (`to` null: up to now), with their lines, for review. */
+  'sessions.review': (id: string, from: string, to: string | null) => Promise<CheckpointReview>
+  /** Puts only these files back as they were at the checkpoint, after saving how things are now so it can be undone. */
+  'sessions.discardFiles': (id: string, checkpointId: string, paths: string[]) => Promise<{ restored: number; removed: number; undoId: string }>
   /** Puts the folder back as it was at the checkpoint, after saving how it is now so the revert can be undone. */
   'sessions.revert': (id: string, checkpointId: string) => Promise<{ restored: number; removed: number; undoId: string }>
   /** Hides the session. It is deleted for good a few seconds later, unless `restore` comes first. */

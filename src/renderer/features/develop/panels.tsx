@@ -1,10 +1,12 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { FileDiff, SquareTerminal } from 'lucide-react'
 import type { FileDiff as FileDiffData } from '@shared/agent'
 import { PanelCard } from '@/components/PanelCard'
 import { useSessions } from '@/stores/sessions'
 import { useUi } from '@/stores/ui'
+import { Button } from '@/components/ui'
 import { DiffList } from './DiffView'
+import { ReviewDialog } from './ReviewDialog'
 
 function useDevelopSession() {
   return useSessions((s) => {
@@ -23,6 +25,9 @@ export function ChangesPanel() {
   const setRight = useUi((s) => s.setRight)
   const session = useDevelopSession()
   const diffs = useMemo(() => (session ? allDiffs(session.items) : []), [session])
+  const [reviewing, setReviewing] = useState(false)
+  // The review reads the saved copies of the folder, so it needs at least one.
+  const canReview = session?.items.some((i) => i.kind === 'user' && i.checkpoint) ?? false
   const added = diffs.reduce((n, d) => n + d.added, 0)
   const removed = diffs.reduce((n, d) => n + d.removed, 0)
 
@@ -39,9 +44,17 @@ export function ChangesPanel() {
         </span>
       }
       onClose={() => setRight(null)}
+      actions={
+        canReview && (
+          <Button variant="soft" size="sm" onClick={() => setReviewing(true)}>
+            Review
+          </Button>
+        )
+      }
       className="h-full"
       bodyClassName="p-3"
     >
+      {reviewing && session && <ReviewDialog sessionId={session.id} scope="all" onClose={() => setReviewing(false)} />}
       {diffs.length === 0 ? (
         <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
           <FileDiff className="h-8 w-8 text-ink-faint" />

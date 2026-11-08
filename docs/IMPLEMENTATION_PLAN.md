@@ -951,7 +951,17 @@ A short test against each real CLI to settle the **Verify** items, starting with
 
 **Done when:** a real change can be made, reviewed and reverted in Develop, and a real internal MCP server works with every vendor.
 
-**Status: step 1 of 6 is built (checkpoints and revert, 8 November 2026).** Order of work: (1) per-turn checkpoints and revert, (2) a review screen for changes, (3) a real file tree, (4) git worktrees, (5) MCP configuration, (6) the terminal and Chat file cards.
+**Status: steps 1 and 2 of 6 are built (checkpoints and revert, then the review screen; 8 November 2026).** Order of work: (1) per-turn checkpoints and revert, (2) a review screen for changes, (3) a real file tree, (4) git worktrees, (5) MCP configuration, (6) the terminal and Chat file cards.
+
+*The review screen* (`ReviewDialog.tsx`, reading the saved copies from step 1):
+
+- **Where it opens.** From the "N files changed" line under any message (that turn), and from the Review button on the Changes panel (the whole session). A selector at the top switches between "Everything in this session" and each message's turn, which reaches from that message's checkpoint to the next one (the last, to now).
+- **What it shows.** A list of the changed files with +/− counts on the left, and the selected file's lines on the right with old and new line numbers. Because it reads the saved copies of the folder and not what the agent reported, it includes changes that commands made, and it shows files the agent created, deleted or changed through a shell. A binary file, a file with more than 3,000 changed lines, and an empty file each say why there are no lines. At most 200 files are listed, with a count of the rest.
+- **Reviewing.** Up and down (or J and K) move between files, V marks a file viewed (also a checkbox per file), and the header counts "Viewed 2 of 5". Viewed marks last while the screen is open.
+- **Discarding one file.** "Discard changes" asks first, then puts only that file back as it was before the session or before that message (and the screen says when later messages changed it too). It is logged and undone exactly like a revert (the notice in the conversation has Undo), the agent is told its files moved, and it only works on files that really changed since the checkpoint, so a name in the request cannot reach any other file. It is refused while the agent is answering.
+- **How the lines are read.** From git's own patch text of the private copy, in batches, with names treated as names; a very large result is dropped file by file instead of held in memory.
+- **Checks.** 9 more tests against real git (lines and numbers, a turn against the whole session, names with spaces and accents, binary, huge and empty files, the 200 limit, discarding some files, undo, names that did not change or point outside the folder), 3 service tests, and `verify:checkpoints` now also opens the review in the real app, switches between a turn and the whole session, marks a file viewed, discards the file the agent created, and undoes it.
+- **Not done.** Side by side lines (only the unified view), comments on lines, and staging parts of a file. The Changes panel on the right still shows what the agent reported while it works, and the review is the place for the saved copies.
 
 *Checkpoints and revert* (`src/core/snapshots.ts`, vendor-neutral, so it works the same for Copilot and Claude):
 

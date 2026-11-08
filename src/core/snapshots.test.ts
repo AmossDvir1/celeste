@@ -281,4 +281,153 @@ describe.skipIf(!hasGit)('checkpoints of a project folder', () => {
     put('a.txt', 'x')
     await expect(snaps.take('s1', project)).resolves.toMatch(/^[0-9a-f]{40}$/)
   })
+
+  describe('reviewing changes', () => {
+    it('gives the lines of every changed file, with their numbers, up to now', async () => {
+      put('a.txt', 'one\ntwo\nthree\nfour\n')
+      put('gone.txt', 'bye\nbye again\n')
+      const start = await snaps.take('s1', project)
+      put('a.txt', 'one\nTWO\nthree\nfour\nfive\n')
+      rmSync(join(project, 'gone.txt'))
+      put('new/made.txt', 'first\nsecond\n')
+
+      const { files, more } = await snaps.diffs('s1', project, start, null)
+      expect(more).toBe(0)
+      expect(files.map((f) => [f.path, f.status, f.added, f.removed])).toEqual([
+        ['a.txt', 'modified', 2, 1],
+        ['gone.txt', 'deleted', 0, 2],
+        ['new/made.txt', 'added', 2, 0]
+      ])
+      const a = files[0]
+      expect(a?.hunks).toHaveLength(1)
+      expect(a?.hunks[0]?.lines).toEqual([
+        { type: 'ctx', text: 'one', oldNo: 1, newNo: 1 },
+        { type: 'del', text: 'two', oldNo: 2 },
+        { type: 'add', text: 'TWO', newNo: 2 },
+        { type: 'ctx', text: 'three', oldNo: 3, newNo: 3 },
+        { type: 'ctx', text: 'four', oldNo: 4, newNo: 4 },
+        { type: 'add', text: 'five', newNo: 5 }
+      ])
+      expect(files[1]?.hunks[0]?.lines.map((l) => [l.type, l.text])).toEqual([
+        ['del', 'bye'],
+        ['del', 'bye again']
+      ])
+      expect(files[2]?.hunks[0]?.lines.map((l) => [l.type, l.text])).toEqual([
+        ['add', 'first'],
+        ['add', 'second']
+      ])
+    })
+
+    it('gives the lines between two saves, not up to now', async () => {
+      put('a.txt', 'v1\n')
+      const first = await snaps.take('s1', project)
+      put('a.txt', 'v2\n')
+      const second = await snaps.take('s1', project)
+      put('a.txt', 'v3\n')
+      const turn = await snaps.diffs('s1', project, first, second)
+      expect(turn.files[0]?.hunks[0]?.lines.map((l) => l.text)).toEqual(['v1', 'v2'])
+      const all = await snaps.diffs('s1', project, first, null)
+      expect(all.files[0]?.hunks[0]?.lines.map((l) => l.text)).toEqual(['v1', 'v3'])
+    })
+
+    it('reads file names with spaces and accents, and says plainly what it cannot show', async () => {
+      const start = await snaps.take('s1', project)
+      put('my file ünï.txt', 'unicode\n')
+      put('dir with space/a b.txt', 'spaces\n')
+      put('image.bin', Buffer.from([0, 1, 2, 3, 0, 255]))
+      put('empty.txt', '')
+      put('huge.txt', Array.from({ length: 3500 }, (_, i) => `line ${i}`).join('\n') + '\n')
+      const { files } = await snaps.diffs('s1', project, start, null)
+      const by = Object.fromEntries(files.map((f) => [f.path, f]))
+      expect(by['my file ünï.txt']?.hunks[0]?.lines[0]).toEqual({ type: 'add', text: 'unicode', newNo: 1 })
+      expect(by['dir with space/a b.txt']?.hunks[0]?.lines[0]?.text).toBe('spaces')
+      expect(by['image.bin']).toMatchObject({ binary: true, hunks: [] })
+      expect(by['empty.txt']).toMatchObject({ status: 'added', added: 0, removed: 0, hunks: [] })
+      expect(by['empty.txt']?.truncated).toBeUndefined()
+      // Too big to read in a review: the counts are right and the lines are left out.
+      expect(by['huge.txt']).toMatchObject({ status: 'added', added: 3500, truncated: true, hunks: [] })
+    })
+
+    it('lists at most 200 files, says how many more, and keeps the log’s file lists free of review-only fields', async () => {
+      const start = await snaps.take('s1', project)
+      for (let i = 0; i < 230; i++) put(`many/f${String(i).padStart(3, '0')}.txt`, 'x\n')
+      const { files, more } = await snaps.diffs('s1', project, start, null)
+      expect(files).toHaveLength(200)
+      expect(more).toBe(30)
+      const end = await snaps.take('s1', project)
+      const listed = await snaps.changes('s1', project, start, end)
+      expect(Object.keys(listed.files[0] ?? {}).sort()).toEqual(['added', 'path', 'removed', 'status'])
+    })
+
+    it('refuses a checkpoint it does not know', async () => {
+      put('a.txt', 'x')
+      await snaps.take('s1', project)
+      await expect(snaps.diffs('s1', project, 'nope', null)).rejects.toThrow(/Invalid checkpoint/)
+    })
+  })
+
+  describe('discarding some files', () => {
+    it('puts back only the files asked for and leaves the other changes alone', async () => {
+      put('a.txt', 'a original\n')
+      put('b.txt', 'b original\n')
+      put('c.txt', 'c original\n')
+      const start = await snaps.take('s1', project)
+      put('a.txt', 'a edited\n')
+      put('b.txt', 'b edited\n')
+      rmSync(join(project, 'c.txt'))
+      put('made.txt', 'made\n')
+      put('also-made.txt', 'also made\n')
+
+      const result = await snaps.discard('s1', project, start, ['a.txt', 'c.txt', 'made.txt'])
+      expect(result).toMatchObject({ restored: 2, removed: 1 })
+      expect(text('a.txt')).toBe('a original\n')
+      expect(text('c.txt')).toBe('c original\n')
+      expect(has('made.txt')).toBe(false)
+      // The ones that were not asked for keep their changes.
+      expect(text('b.txt')).toBe('b edited\n')
+      expect(text('also-made.txt')).toBe('also made\n')
+    })
+
+    it('can be undone with the save it made first', async () => {
+      put('a.txt', 'one\n')
+      const start = await snaps.take('s1', project)
+      put('a.txt', 'two\n')
+      const { undoId } = await snaps.discard('s1', project, start, ['a.txt'])
+      expect(text('a.txt')).toBe('one\n')
+      await snaps.restore('s1', project, undoId)
+      expect(text('a.txt')).toBe('two\n')
+    })
+
+    it('ignores a name that did not change, or that points outside the folder, and refuses a request that is not a list of names', async () => {
+      const outside = join(dirname(project), 'outside.txt')
+      writeFileSync(outside, 'not the project')
+      put('a.txt', 'one\n')
+      put('untouched.txt', 'same\n')
+      const start = await snaps.take('s1', project)
+      put('a.txt', 'two\n')
+      put('untouched.txt', 'same\n')
+
+      const result = await snaps.discard('s1', project, start, ['untouched.txt', '../outside.txt', '..\\outside.txt', '/etc/passwd', 'missing.txt'])
+      expect(result).toMatchObject({ restored: 0, removed: 0 })
+      expect(text('a.txt')).toBe('two\n')
+      expect(readFileSync(outside, 'utf8')).toBe('not the project')
+      rmSync(outside)
+
+      await expect(snaps.discard('s1', project, start, [])).rejects.toThrow(/Invalid files/)
+      await expect(snaps.discard('s1', project, start, [1 as unknown as string])).rejects.toThrow(/Invalid files/)
+      await expect(snaps.discard('s1', project, 'not-an-id', ['a.txt'])).rejects.toThrow(/Invalid checkpoint/)
+    })
+
+    it('treats pattern characters in a name as part of the name', async () => {
+      put('[x] file.txt', 'original\n')
+      put('x file.txt', 'decoy original\n')
+      const start = await snaps.take('s1', project)
+      put('[x] file.txt', 'edited\n')
+      put('x file.txt', 'decoy edited\n')
+      await snaps.discard('s1', project, start, ['[x] file.txt'])
+      expect(text('[x] file.txt')).toBe('original\n')
+      // As a pattern, [x] would have matched this one too.
+      expect(text('x file.txt')).toBe('decoy edited\n')
+    })
+  })
 })

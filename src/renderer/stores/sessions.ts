@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { ApprovalMode, AskAnswers, Effort, SessionMode, UserInput } from '@shared/agent'
-import type { CheckpointChanges, CorePush, SessionSummary, StoredEvent } from '@shared/api'
+import type { CheckpointChanges, CheckpointReview, CorePush, SessionSummary, StoredEvent } from '@shared/api'
 import { core } from '@/api'
 import { effortFor } from '@/lib/vendors'
 import { modelOf, useModels } from './models'
@@ -23,6 +23,10 @@ interface SessionsState {
   previewRevert: (id: string, checkpointId: string) => Promise<CheckpointChanges>
   /** Puts the project folder back as it was at a checkpoint. False, with a message shown, when it could not. */
   revert: (id: string, checkpointId: string) => Promise<boolean>
+  /** The files that changed between two checkpoints (`to` null: up to now), with their lines. Rejects with a message fit to show. */
+  review: (id: string, from: string, to: string | null) => Promise<CheckpointReview>
+  /** Puts only these files back as they were at a checkpoint. False, with a message shown, when it could not. */
+  discardFiles: (id: string, checkpointId: string, paths: string[]) => Promise<boolean>
   respondApproval: (id: string, requestId: string, allow: boolean, always?: boolean) => void
   respondAsk: (id: string, requestId: string, answers: AskAnswers) => void
   setPrefs: (id: string, patch: { model?: string; effort?: Effort | null; approval?: ApprovalMode }) => void
@@ -150,6 +154,18 @@ export const useSessions = create<SessionsState>((set, get) => {
     stop: (id) => fire(core.call('sessions.interrupt', id)),
 
     previewRevert: (id, checkpointId) => core.call('sessions.revertPreview', id, checkpointId),
+
+    review: (id, from, to) => core.call('sessions.review', id, from, to),
+
+    discardFiles: async (id, checkpointId, paths) => {
+      try {
+        await core.call('sessions.discardFiles', id, checkpointId, paths)
+        return true
+      } catch (err) {
+        report(err)
+        return false
+      }
+    },
 
     revert: async (id, checkpointId) => {
       try {

@@ -8,7 +8,7 @@ import { DEFAULT_SETTINGS } from '@shared/defaults'
 import { MemoryFileStore, MemoryStore } from './testing/memory-store'
 import { SessionService, type AdapterFactory } from './service'
 import type { Snapshots } from './snapshots'
-import type { CheckpointChanges } from '@shared/api'
+import type { CheckpointChanges, CheckpointReview } from '@shared/api'
 
 /** A scripted agent the tests drive by hand. */
 class FakeAgent implements AgentSession {
@@ -510,6 +510,16 @@ class FakeSnapshots implements Snapshots {
     this.restored.push(to)
     return { restored: 1, removed: 2, undoId: (1000 + this.restored.length).toString(16).padStart(40, '0') }
   }
+  reviews: [string, string | null][] = []
+  discarded: [string, string[]][] = []
+  async diffs(_s: string, _c: string, from: string, to: string | null): Promise<CheckpointReview> {
+    this.reviews.push([from, to])
+    return { files: [{ path: 'a.txt', status: 'modified', added: 2, removed: 1, hunks: [] }], more: 0 }
+  }
+  async discard(_s: string, _c: string, to: string, paths: string[]) {
+    this.discarded.push([to, paths])
+    return { restored: paths.length, removed: 0, undoId: (2000 + this.discarded.length).toString(16).padStart(40, '0') }
+  }
   forget(sessionId: string): void {
     this.forgotten.push(sessionId)
   }
@@ -692,6 +702,47 @@ describe('checkpoints', () => {
       const plain = setup()
       const dev = plain.api['sessions.create'](develop)
       await expect(plain.api['sessions.revert'](dev.id, 'a'.repeat(40))).rejects.toThrow(/not available/)
+    })
+
+    it('reviews what changed between two of the session’s checkpoints, or from one up to now', async () => {
+      const { api, snapshots, id, checkpoint } = await finished()
+      api['sessions.send'](id, { text: 'Next', attachments: [] })
+      await flush()
+      // The place the next message was saved at: where the first turn ends.
+      const later = (api['sessions.get'](id)?.events.map((e) => e.event).filter((e) => e.type === 'checkpoint.created')[1] as { id: string }).id
+      expect((await api['sessions.review'](id, checkpoint, later)).files[0]?.path).toBe('a.txt')
+      await api['sessions.review'](id, checkpoint, null)
+      expect(snapshots.reviews).toEqual([
+        [checkpoint, later],
+        [checkpoint, null]
+      ])
+      await expect(api['sessions.review'](id, 'f'.repeat(40), null)).rejects.toThrow(/does not belong/)
+      await expect(api['sessions.review'](id, checkpoint, 'f'.repeat(40))).rejects.toThrow(/does not belong/)
+    })
+
+    it('discards only the files asked for, logs it like a revert, tells the agent, and can be undone', async () => {
+      const { api, agents, snapshots, id, checkpoint } = await finished()
+      const result = await api['sessions.discardFiles'](id, checkpoint, ['a.txt', 'src/b.ts'])
+      expect(snapshots.discarded).toEqual([[checkpoint, ['a.txt', 'src/b.ts']]])
+      expect(result).toMatchObject({ restored: 2, removed: 0 })
+      expect((api['sessions.get'](id)?.events.at(-1) as { event: unknown }).event).toEqual({ type: 'checkpoint.reverted', id: checkpoint, ...result })
+
+      api['sessions.send'](id, { text: 'Go on', attachments: [] })
+      await flush()
+      expect(agents[0]?.sent.at(-1)?.text).toMatch(/reverted the project folder/)
+      // The save made before the discard is one of the session's own, so going back to it is allowed.
+      await expect(api['sessions.revert'](id, result.undoId)).rejects.toThrow(/Wait for the answer/)
+    })
+
+    it('refuses to discard while the agent is answering, nothing at all, a stranger’s checkpoint, or something that is not a list of names', async () => {
+      const { api, agents, id, checkpoint } = await finished()
+      await expect(api['sessions.discardFiles'](id, checkpoint, [])).rejects.toThrow(/Invalid files/)
+      await expect(api['sessions.discardFiles'](id, checkpoint, [42 as unknown as string])).rejects.toThrow(/Invalid files/)
+      await expect(api['sessions.discardFiles'](id, 'f'.repeat(40), ['a.txt'])).rejects.toThrow(/does not belong/)
+      api['sessions.send'](id, { text: 'Next', attachments: [] })
+      await flush()
+      agents[0]?.emit({ type: 'turn.started', turnId: 't2' })
+      await expect(api['sessions.discardFiles'](id, checkpoint, ['a.txt'])).rejects.toThrow(/Wait for the answer/)
     })
 
     it('forgets a session’s saved copies when the session is deleted for good', async () => {

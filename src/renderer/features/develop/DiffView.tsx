@@ -11,6 +11,33 @@ function FileIcon({ status }: { status: FileDiff['status'] }) {
   return <FileText className={cn(cls, 'text-ink-muted')} />
 }
 
+/** The lines of one file's change. A file that has none to show says why. */
+export function DiffLines({ diff, className }: { diff: FileDiff; className?: string }) {
+  if (diff.binary || diff.truncated || diff.hunks.length === 0) {
+    const why = diff.binary ? 'This file is not text, so there are no lines to show.' : diff.truncated ? 'This change is too large to show here.' : diff.status === 'added' ? 'An empty file.' : 'No lines changed (the file’s settings may have).'
+    return <div className={cn('px-4 py-3 text-[13px] text-ink-muted', className)}>{why}</div>
+  }
+  return (
+    <div className={cn('selectable overflow-x-auto font-mono text-[12.5px] leading-[1.65]', className)}>
+      {diff.hunks.map((h, n) => (
+        <div key={`${n}-${h.header}`}>
+          <div className="bg-raised/60 px-3 py-1 text-ink-faint">{h.header}</div>
+          {h.lines.map((l, i) => (
+            <div key={i} className={cn('grid min-w-max grid-cols-[40px_40px_1fr]', l.type === 'add' && 'bg-success/10', l.type === 'del' && 'bg-danger/10')}>
+              <span className="pr-2 text-right text-ink-faint/70 select-none">{l.oldNo ?? ''}</span>
+              <span className="pr-2 text-right text-ink-faint/70 select-none">{l.newNo ?? ''}</span>
+              <span className={cn('pr-4 whitespace-pre', l.type === 'add' && 'text-success', l.type === 'del' && 'text-danger', l.type === 'ctx' && 'text-ink-muted')}>
+                <span className="inline-block w-4 text-center select-none">{l.type === 'add' ? '+' : l.type === 'del' ? '−' : ' '}</span>
+                {l.text}
+              </span>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export function DiffFile({ diff, defaultOpen = true }: { diff: FileDiff; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen)
   const dir = diff.path.slice(0, diff.path.length - basename(diff.path).length)
@@ -33,32 +60,7 @@ export function DiffFile({ diff, defaultOpen = true }: { diff: FileDiff; default
           <span className="text-success">+{diff.added}</span> <span className="text-danger">−{diff.removed}</span>
         </span>
       </button>
-      {open && (
-        <div className="selectable overflow-x-auto border-t border-edge/70 font-mono text-[12.5px] leading-[1.65]">
-          {diff.hunks.map((h) => (
-            <div key={h.header}>
-              <div className="bg-raised/60 px-3 py-1 text-ink-faint">{h.header}</div>
-              {h.lines.map((l, i) => (
-                <div
-                  key={i}
-                  className={cn(
-                    'grid min-w-max grid-cols-[40px_40px_1fr]',
-                    l.type === 'add' && 'bg-success/10',
-                    l.type === 'del' && 'bg-danger/10'
-                  )}
-                >
-                  <span className="pr-2 text-right text-ink-faint/70 select-none">{l.oldNo ?? ''}</span>
-                  <span className="pr-2 text-right text-ink-faint/70 select-none">{l.newNo ?? ''}</span>
-                  <span className={cn('pr-4 whitespace-pre', l.type === 'add' && 'text-success', l.type === 'del' && 'text-danger', l.type === 'ctx' && 'text-ink-muted')}>
-                    <span className="inline-block w-4 text-center select-none">{l.type === 'add' ? '+' : l.type === 'del' ? '−' : ' '}</span>
-                    {l.text}
-                  </span>
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
+      {open && <DiffLines diff={diff} className="border-t border-edge/70" />}
     </div>
   )
 }

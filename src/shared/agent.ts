@@ -34,6 +34,10 @@ export interface FileDiff {
   added: number
   removed: number
   hunks: DiffHunk[]
+  /** The file is not text, so there are no lines to show. */
+  binary?: boolean
+  /** The change is too large to show here, so there are no lines to show. */
+  truncated?: boolean
 }
 
 export interface QuestionOption {
