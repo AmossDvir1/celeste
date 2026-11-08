@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent, AgentSession, ApprovalAnswer, AskAnswers, UserInput } from '@shared/agent'
 import type { CorePush, CreateSessionInput, SessionSummary, StoredEvent } from '@shared/api'
-import { DEFAULT_SETTINGS } from '@shared/defaults'
+import { DEFAULT_SETTINGS, SIDEBAR_WIDTH } from '@shared/defaults'
 import { MemoryFileStore, MemoryStore } from './testing/memory-store'
 import { SessionService, type AdapterFactory } from './service'
 import type { Snapshots } from './snapshots'
@@ -220,15 +220,20 @@ describe('sessions and their log', () => {
     expect(() => api['sessions.send'](id, { text: 'x', attachments: new Array(11).fill({ id: 'a' }) as never })).toThrow()
     expect(() => api['drafts.set']('../etc', { text: 'x', attachments: [] })).toThrow()
     expect(() => api['settings.patch']({ theme: 'neon' as never })).toThrow()
-    expect(() => api['settings.patch']({ motion: 'none' as never })).toThrow()
+    expect(() => api['settings.patch']({ sidebarWidth: '300' as never })).toThrow()
+    expect(() => api['settings.patch']({ sidebarWidth: Number.NaN })).toThrow()
   })
 
-  it('keeps the motion setting, which starts as normal', () => {
+  it('keeps the width of the session list, within the limits it can be dragged between', () => {
     const first = setup()
-    expect(first.api['app.bootstrap']().settings.motion).toBe('normal')
-    first.api['settings.patch']({ motion: 'reduced' })
+    expect(first.api['app.bootstrap']().settings.sidebarWidth).toBe(SIDEBAR_WIDTH.default)
+    expect(first.api['settings.patch']({ sidebarWidth: 301.4 }).sidebarWidth).toBe(301)
+    // Too wide or too narrow is brought back to the nearest limit, not refused: a drag can overshoot.
+    expect(first.api['settings.patch']({ sidebarWidth: 5000 }).sidebarWidth).toBe(SIDEBAR_WIDTH.max)
+    expect(first.api['settings.patch']({ sidebarWidth: 10 }).sidebarWidth).toBe(SIDEBAR_WIDTH.min)
+    first.api['settings.patch']({ sidebarWidth: 280 })
     first.service.close()
-    expect(setup(first.store).api['app.bootstrap']().settings.motion).toBe('reduced')
+    expect(setup(first.store).api['app.bootstrap']().settings.sidebarWidth).toBe(280)
   })
 })
 

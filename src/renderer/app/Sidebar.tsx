@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import {
   ChevronDown,
   Code,
@@ -12,6 +12,7 @@ import {
   Trash2
 } from 'lucide-react'
 import type { SessionMode } from '@shared/agent'
+import { SIDEBAR_WIDTH } from '@shared/defaults'
 import { cn } from '@/lib/cn'
 import { basename, formatDay, formatTime, sameDay } from '@/lib/format'
 import { Menu } from '@/components/menu'
@@ -78,6 +79,8 @@ function SessionRow({ session, active }: { session: Session; active: boolean }) 
           }}
           className={cn(
             'flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors',
+            // The menu button sits over the end of the row when it shows, so the title stops short of it instead of running under it.
+            'group-focus-within:pr-10 group-hover:pr-10 group-has-[[data-state=open]]:pr-10',
             active ? 'bg-select' : 'hover:bg-hover'
           )}
         >
@@ -198,11 +201,67 @@ function ChatList({ mode, query, limit }: { mode: SessionMode; query: string; li
   )
 }
 
+const clampWidth = (w: number) => Math.round(Math.min(SIDEBAR_WIDTH.max, Math.max(SIDEBAR_WIDTH.min, w)))
+
+/** The edge of the session list: drag it, use the arrow keys, or double-click to go back to the usual width. */
+function ResizeHandle({ width, onLive, onCommit }: { width: number; onLive: (w: number) => void; onCommit: (w: number) => void }) {
+  const drag = useRef<{ x: number; width: number; last: number } | null>(null)
+  const end = (e: PointerEvent<HTMLDivElement>) => {
+    const d = drag.current
+    if (!d) return
+    drag.current = null
+    document.body.style.userSelect = ''
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
+    onCommit(d.last)
+  }
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const next =
+      e.key === 'ArrowLeft' ? width - 16 : e.key === 'ArrowRight' ? width + 16 : e.key === 'Home' ? SIDEBAR_WIDTH.min : e.key === 'End' ? SIDEBAR_WIDTH.max : e.key === 'Enter' ? SIDEBAR_WIDTH.default : undefined
+    if (next === undefined) return
+    e.preventDefault()
+    onCommit(clampWidth(next))
+  }
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize the sidebar"
+      aria-valuemin={SIDEBAR_WIDTH.min}
+      aria-valuemax={SIDEBAR_WIDTH.max}
+      aria-valuenow={width}
+      tabIndex={0}
+      title="Drag to resize. Double-click for the usual width."
+      onPointerDown={(e) => {
+        e.currentTarget.setPointerCapture(e.pointerId)
+        document.body.style.userSelect = 'none'
+        drag.current = { x: e.clientX, width, last: width }
+      }}
+      onPointerMove={(e) => {
+        const d = drag.current
+        if (!d) return
+        d.last = clampWidth(d.width + e.clientX - d.x)
+        onLive(d.last)
+      }}
+      onPointerUp={end}
+      onPointerCancel={end}
+      onDoubleClick={() => onCommit(SIDEBAR_WIDTH.default)}
+      onKeyDown={onKeyDown}
+      className="group/handle absolute inset-y-0 -right-2 z-20 flex w-4 cursor-col-resize justify-center outline-none"
+    >
+      <span className="h-full w-px rounded-full bg-transparent transition-colors group-hover/handle:bg-accent-edge group-focus-visible/handle:bg-accent group-active/handle:bg-accent" />
+    </div>
+  )
+}
+
 export function Sidebar() {
   const mode = useUi((s) => s.mode)
   const openSettings = useUi((s) => s.openSettings)
   const settingsOpen = useUi((s) => s.settingsOpen)
   const set = useSettings((s) => s.set)
+  const saved = useSettings((s) => s.sidebarWidth)
+  // While it is being dragged the width follows the pointer at once; it is saved when the drag ends.
+  const [live, setLive] = useState<number | null>(null)
+  const width = live ?? saved
   const [query, setQuery] = useState('')
   const sessionMode: SessionMode = mode
 
@@ -212,7 +271,15 @@ export function Sidebar() {
   }
 
   return (
-    <aside aria-label="Sessions" className="flex w-[232px] shrink-0 flex-col pb-1">
+    <aside aria-label="Sessions" style={{ width }} className="relative flex shrink-0 flex-col pb-1">
+      <ResizeHandle
+        width={width}
+        onLive={setLive}
+        onCommit={(w) => {
+          set({ sidebarWidth: w })
+          setLive(null)
+        }}
+      />
       <div className="flex gap-2 px-0.5">
         <Button variant="secondary" className="h-10 flex-1 justify-start gap-2.5 px-3.5" onClick={startNew}>
           <Plus className="h-[18px] w-[18px]" />

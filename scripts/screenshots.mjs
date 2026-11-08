@@ -103,8 +103,8 @@ for (const theme of ['dark', 'light']) {
   await app.evaluate(({ dialog }, folder) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] })
   }, project)
+  // With no recent projects the button opens the folder window straight away: there is no menu to go through.
   await page.getByRole('button', { name: 'Choose a project folder' }).click()
-  await page.getByRole('menuitem', { name: /Choose another folder/ }).click()
   await page.getByRole('button', { name: /^Branch: main/ }).waitFor({ timeout: 10_000 }).catch(() => undefined)
   await snap('develop-home')
   await send('Fix the flaky checkout test', 'racing the pricing service')

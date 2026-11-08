@@ -30,15 +30,14 @@ import type {
 
 export type SessionStatus = 'idle' | 'working' | 'waiting'
 export type ThemePref = 'dark' | 'light' | 'system'
-/** Normal keeps the shimmer on a working label whatever the system says; reduced turns it and the other animations off. */
-export type MotionPref = 'normal' | 'reduced'
 
 export interface AppSettings {
   theme: ThemePref
   userName: string
   wizardDone: boolean
   sidebarCollapsed: boolean
-  motion: MotionPref
+  /** How wide the session list is, in pixels. */
+  sidebarWidth: number
   /** Models the person pinned to the top of the model menu, in the order they were pinned. */
   pinnedModels: string[]
   defaults: { model: string; approval: ApprovalMode; projectsFolder: string }

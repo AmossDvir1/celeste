@@ -6,6 +6,7 @@ import { mkdtempSync, readFileSync, existsSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import { PNG as Png } from 'pngjs'
 import { launch } from './lib/app.mjs'
 import { KEY, claudeReady, pasteClaudeKey, say, startStub } from './lib/stub.mjs'
 
@@ -16,6 +17,16 @@ const check = (label, ok, detail = '') => {
   if (!ok) failures.push(label)
 }
 
+/** How many pixels of a picture differ clearly from its top-left pixel, the background: a measure of how much text is showing. */
+function inkPixels(picture) {
+  const { data } = Png.sync.read(picture)
+  let count = 0
+  for (let i = 0; i < data.length; i += 4) {
+    if (Math.abs(data[i] - data[0]) + Math.abs(data[i + 1] - data[1]) + Math.abs(data[i + 2] - data[2]) > 60) count++
+  }
+  return count
+}
+
 // A valid 1x1 PNG.
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
 
@@ -24,6 +35,7 @@ const open = () => launch({ width: 1440, height: 900, theme: null, profile, env:
 const row = (page, name) => page.locator('div.group').filter({ has: page.getByRole('button', { name }) })
 const textbox = (page) => page.getByRole('textbox', { name: 'Message' })
 const sidebar = (page, name) => page.getByRole('button', { name })
+const sidebarWidth = async (page) => Math.round((await page.locator('aside[aria-label="Sessions"]').boundingBox()).width)
 const ready = async (page) => {
   await page.getByRole('heading', { level: 1 }).first().waitFor({ timeout: 20_000 })
   await claudeReady(page)
@@ -69,6 +81,28 @@ try {
   await page.getByRole('button', { name: /^Revenue chat/ }).waitFor()
   check('a session can be renamed', true)
 
+  // The session list can be dragged wider and narrower, but only between two limits, and the width is kept.
+  const handle = page.getByRole('separator', { name: 'Resize the sidebar' })
+  const drag = async (dx) => {
+    const box = await handle.boundingBox()
+    const x = box.x + box.width / 2
+    const y = box.y + box.height / 2
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x + dx / 2, y)
+    await page.mouse.move(x + dx, y)
+    await page.mouse.up()
+  }
+  check('the session list starts at its usual width', (await sidebarWidth(page)) === 232)
+  await drag(400)
+  check('dragged wider it stops at the limit, one and a half times the usual width', (await sidebarWidth(page)) === 348, String(await sidebarWidth(page)))
+  await drag(-800)
+  check('dragged narrower it stops at its limit too', (await sidebarWidth(page)) === 160, String(await sidebarWidth(page)))
+  await handle.focus()
+  for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowRight')
+  check('the arrow keys change it too, a step at a time', (await sidebarWidth(page)) === 240, String(await sidebarWidth(page)))
+  check('a long session title is cut short with an ellipsis, not run into the menu button', await page.locator('aside[aria-label="Sessions"] button span.truncate').first().evaluate((el) => getComputedStyle(el).textOverflow === 'ellipsis'))
+
   await page.getByRole('button', { name: /^Revenue chat/ }).click()
   await page.getByRole('button', { name: /Approval:/ }).click()
   await page.getByRole('menuitemradio', { name: /Ask first/ }).click()
@@ -101,6 +135,7 @@ try {
   page = app.page
   await ready(page)
   check('the wizard does not come back', (await page.getByRole('dialog', { name: 'Set up Celeste' }).count()) === 0)
+  check('the width of the session list is kept', (await sidebarWidth(page)) === 240, String(await sidebarWidth(page)))
   check('the theme is kept', (await page.evaluate(() => document.documentElement.dataset.theme)) === 'light')
   check('the name is kept', (await page.getByRole('heading', { level: 1 }).first().innerText()).includes('Dana'))
   check('the renamed session is there', (await sidebar(page, /^Revenue chat/).count()) > 0)
@@ -139,20 +174,27 @@ try {
   await textbox(page).press('Enter')
   await page.getByText('Working on it').first().waitFor({ timeout: 60_000 })
   check('a turn is running when the app is killed', (await page.getByRole('button', { name: 'Stop' }).count()) === 1)
-  // The working label shimmers even when the system has animations off, and only Celeste's own Motion setting turns it off.
-  const animation = () => page.locator('.shimmer').first().evaluate((el) => getComputedStyle(el).animationName)
-  const setMotion = async (name) => {
-    await page.getByRole('button', { name: 'Settings', exact: true }).click()
-    await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Appearance' }).click()
-    await page.getByRole('radio', { name }).click()
-    await page.keyboard.press('Escape')
-  }
+  // The working label shimmers whatever the system says about animations (Windows reports "reduce motion" when they are off), at the
+  // speed it was made for, and no letter of it is ever left without colour while the light moves across.
   await page.emulateMedia({ reducedMotion: 'reduce' })
-  check('the working label still shimmers when the system asks for less motion', (await animation()) === 'shimmer-sweep')
-  await setMotion('Reduced')
-  check('Reduced, in Celeste’s own settings, stops the shimmer', (await animation()) === 'none')
-  await setMotion('Normal')
-  check('and Normal brings it back', (await animation()) === 'shimmer-sweep')
+  const label = page.locator('.shimmer').first()
+  const style = await label.evaluate((el) => {
+    const s = getComputedStyle(el)
+    return { name: s.animationName, duration: s.animationDuration, layers: (s.backgroundImage.match(/linear-gradient/g) ?? []).length }
+  })
+  check('the working label shimmers even when the system asks for less motion', style.name === 'shimmer-sweep', JSON.stringify(style))
+  check('at its own speed, not slowed down', style.duration === '2.2s', style.duration)
+  check('with a plain layer of colour under the moving light', style.layers === 2, JSON.stringify(style))
+  // Looked at over a whole sweep: the amount of text that can be seen must not change, which is how a label that loses
+  // letters (and jumps when the sweep starts over) would show.
+  const seen = []
+  for (let i = 0; i < 14; i++) {
+    seen.push(inkPixels(await label.screenshot()))
+    await page.waitForTimeout(190)
+  }
+  const least = Math.min(...seen)
+  const most = Math.max(...seen)
+  check('the whole label stays visible all through the sweep', least > 0 && least / most > 0.88, `${least} to ${most} pixels of text`)
   await app.crash()
 
   // ---- After a crash -------------------------------------------------------------------------------

@@ -3,7 +3,7 @@ import { Bot, Database, Info, Monitor, Moon, Palette, Plug, Settings as Settings
 import { cn } from '@/lib/cn'
 import { Modal } from '@/components/Dialog'
 import { Field, SelectField } from '@/components/form'
-import { Button, IconButton, Kbd, Segmented, Switch, TextInput } from '@/components/ui'
+import { Button, IconButton, Kbd, Switch, TextInput } from '@/components/ui'
 import { APPROVAL_OPTIONS, VENDORS, VENDOR_ORDER } from '@/lib/vendors'
 import { useModels } from '@/stores/models'
 import { revealDataFolder } from '@/api'
@@ -189,17 +189,6 @@ function Content({ section }: { section: SettingsSection }) {
           <ThemeTiles value={settings.theme} onChange={(theme) => settings.set({ theme })} />
           <Row title="Show the sidebar" description="Your chats and sessions. Press Ctrl B to toggle.">
             <Switch label="Show the sidebar" checked={!settings.sidebarCollapsed} onCheckedChange={(v) => settings.set({ sidebarCollapsed: !v })} />
-          </Row>
-          <Row title="Motion" description="Normal keeps the shimmer on the line that says what the agent is doing, even if Windows has animations turned off, because it shows that work is going on. Reduced turns it and the other animations off.">
-            <Segmented
-              label="Motion"
-              value={settings.motion}
-              onChange={(motion) => settings.set({ motion })}
-              options={[
-                { value: 'normal', label: 'Normal' },
-                { value: 'reduced', label: 'Reduced' }
-              ]}
-            />
           </Row>
         </Section>
       )

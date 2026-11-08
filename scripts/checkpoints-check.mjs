@@ -89,8 +89,8 @@ try {
   await app.app.evaluate(({ dialog }, folder) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] })
   }, project)
+  // With no recent projects the button opens the folder window straight away: there is no menu to go through.
   await page.getByRole('button', { name: 'Choose a project folder' }).click()
-  await page.getByRole('menuitem', { name: /Choose another folder/ }).click()
   await page.getByText('main', { exact: true }).first().waitFor({ timeout: 10_000 })
 
   await say(page, 'Edit the file please', 'Finished that step.')

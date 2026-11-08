@@ -19,6 +19,7 @@ import {
   type VendorRecord,
   type VendorRecords
 } from '@shared/api'
+import { SIDEBAR_WIDTH } from '@shared/defaults'
 import { nextStatus } from '@shared/status'
 import type { AttachmentRow, FileStore, SessionRow, Store } from './store'
 import type { Snapshots } from './snapshots'
@@ -86,8 +87,7 @@ const APPROVALS: ApprovalMode[] = ['auto', 'edits', 'ask', 'plan']
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const THEMES = ['dark', 'light', 'system']
 const VENDOR_IDS: VendorId[] = ['copilot', 'claude', 'openai', 'gemini']
-const SETTINGS_KEYS = ['theme', 'userName', 'wizardDone', 'sidebarCollapsed', 'motion', 'pinnedModels', 'defaults'] as const
-const MOTIONS: AppSettings['motion'][] = ['normal', 'reduced']
+const SETTINGS_KEYS = ['theme', 'userName', 'wizardDone', 'sidebarCollapsed', 'sidebarWidth', 'pinnedModels', 'defaults'] as const
 const MAX_PINNED = 100
 const TRANSCRIPT_LIMIT = 24_000
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
@@ -216,7 +216,7 @@ export class SessionService {
       userName: (stored.userName as string) ?? d.userName,
       wizardDone: (stored.wizardDone as boolean) ?? d.wizardDone,
       sidebarCollapsed: (stored.sidebarCollapsed as boolean) ?? d.sidebarCollapsed,
-      motion: (stored.motion as AppSettings['motion'] | undefined) ?? d.motion,
+      sidebarWidth: (stored.sidebarWidth as number | undefined) ?? d.sidebarWidth,
       pinnedModels: (stored.pinnedModels as string[] | undefined) ?? d.pinnedModels,
       defaults: { ...d.defaults, ...(stored.defaults as Partial<AppSettings['defaults']> | undefined) }
     }
@@ -244,7 +244,10 @@ export class SessionService {
     if (patch.userName !== undefined) next.userName = text(patch.userName, 'name', 100)
     if (patch.wizardDone !== undefined) next.wizardDone = patch.wizardDone === true
     if (patch.sidebarCollapsed !== undefined) next.sidebarCollapsed = patch.sidebarCollapsed === true
-    if (patch.motion !== undefined) next.motion = oneOf(patch.motion, MOTIONS, 'motion setting')
+    if (patch.sidebarWidth !== undefined) {
+      if (typeof patch.sidebarWidth !== 'number' || !Number.isFinite(patch.sidebarWidth)) throw new Error('Invalid sidebar width')
+      next.sidebarWidth = Math.round(Math.min(SIDEBAR_WIDTH.max, Math.max(SIDEBAR_WIDTH.min, patch.sidebarWidth)))
+    }
     if (patch.pinnedModels !== undefined) {
       if (!Array.isArray(patch.pinnedModels) || patch.pinnedModels.length > MAX_PINNED) throw new Error('Invalid pinned models')
       next.pinnedModels = [...new Set(patch.pinnedModels.map((id) => text(id, 'model', 100)))]

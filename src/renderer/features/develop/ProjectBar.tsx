@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react'
-import { ChevronDown, Folder, FolderPlus, GitBranch } from 'lucide-react'
+import { ChevronDown, Folder, FolderPlus, GitBranch, Plus } from 'lucide-react'
 import { chooseFolder, core } from '@/api'
 import { Menu } from '@/components/menu'
 import { basename } from '@/lib/format'
@@ -55,35 +55,52 @@ export function ProjectBar() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const label = draft.project ? basename(draft.project) : 'Choose a project folder'
+
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-      <Menu.Root>
-        <Menu.Trigger asChild>
-          <button type="button" className={chip} aria-label={draft.project ? `Project: ${basename(draft.project)}` : 'Choose a project folder'}>
-            <Folder className="h-4 w-4 text-accent-text" />
-            <span className="max-w-[260px] truncate">{draft.project ? basename(draft.project) : 'Choose a project folder'}</span>
-            <ChevronDown className="h-4 w-4 text-ink-muted" />
-          </button>
-        </Menu.Trigger>
-        <Menu.Content className="w-[320px]">
-          {recent.length > 0 && (
-            <>
-              <Menu.Label>Recent projects</Menu.Label>
-              <Menu.RadioGroup value={draft.project} onValueChange={(path) => void choose(path)}>
-                {recent.map((path) => (
-                  <Menu.RadioItem key={path} value={path} description={path}>
-                    {basename(path)}
-                  </Menu.RadioItem>
-                ))}
-              </Menu.RadioGroup>
-              <Menu.Separator />
-            </>
-          )}
-          <Menu.Item onSelect={() => void pick()}>
-            <FolderPlus className="h-4 w-4 text-ink-muted" /> Choose another folder…
-          </Menu.Item>
-        </Menu.Content>
-      </Menu.Root>
+      {recent.length === 0 ? (
+        // Nothing to pick from, so a menu with one item would only be a step in the way: the button opens the folder window.
+        <button
+          type="button"
+          className={chip}
+          aria-label={draft.project ? `Project: ${label}. Choose another folder` : 'Choose a project folder'}
+          title={draft.project ? 'Choose another folder' : undefined}
+          onClick={() => void pick()}
+        >
+          <Folder className="h-4 w-4 text-accent-text" />
+          <span className="max-w-[260px] truncate">{label}</span>
+          <Plus className="h-4 w-4 text-ink-muted" />
+        </button>
+      ) : (
+        <Menu.Root>
+          <Menu.Trigger asChild>
+            <button type="button" className={chip} aria-label={draft.project ? `Project: ${basename(draft.project)}` : 'Choose a project folder'}>
+              <Folder className="h-4 w-4 text-accent-text" />
+              <span className="max-w-[260px] truncate">{draft.project ? basename(draft.project) : 'Choose a project folder'}</span>
+              <ChevronDown className="h-4 w-4 text-ink-muted" />
+            </button>
+          </Menu.Trigger>
+          <Menu.Content className="w-[320px]">
+            {recent.length > 0 && (
+              <>
+                <Menu.Label>Recent projects</Menu.Label>
+                <Menu.RadioGroup value={draft.project} onValueChange={(path) => void choose(path)}>
+                  {recent.map((path) => (
+                    <Menu.RadioItem key={path} value={path} description={path}>
+                      {basename(path)}
+                    </Menu.RadioItem>
+                  ))}
+                </Menu.RadioGroup>
+                <Menu.Separator />
+              </>
+            )}
+            <Menu.Item onSelect={() => void pick()}>
+              <FolderPlus className="h-4 w-4 text-ink-muted" /> Choose another folder…
+            </Menu.Item>
+          </Menu.Content>
+        </Menu.Root>
+      )}
 
       {draft.project && draft.branch && (
         <span className="inline-flex h-[34px] items-center gap-2 text-[14px] text-ink-muted" aria-label={`Branch: ${draft.branch}`}>

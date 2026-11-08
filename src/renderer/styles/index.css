@@ -119,32 +119,38 @@
 }
 
 /*
- * Shimmering working labels: a light sweep across the text. It is how a person can tell the agent is working, so it runs whatever
- * the system's animation setting says (Windows turns animations off for speed as often as for comfort). Only Celeste's own Motion
- * setting, set to Reduced, turns it off. Under the system's reduce-motion it is slower.
+ * Shimmering working labels: a light sweep across the text. It is how a person can tell the agent is working, so it always runs,
+ * whatever the system's animation setting says (Windows turns animations off for speed as often as for comfort). It is one line of
+ * text, so it costs next to nothing.
+ *
+ * Two layers, both painted only where the text is: a plain colour underneath, so every letter is always there, and a narrow
+ * band of light on top that travels across. (A single gradient that was moved past the text left part of the label with no colour
+ * at all, so letters vanished and came back with a jump each time the sweep started over.)
  */
 .shimmer {
-  background-image: linear-gradient(
-    100deg,
-    var(--c-ink-muted) 0%,
-    var(--c-ink-muted) 38%,
-    var(--c-shimmer-hi) 50%,
-    var(--c-ink-muted) 62%,
-    var(--c-ink-muted) 100%
-  );
-  background-size: 260% 100%;
+  color: transparent;
+  background-image:
+    linear-gradient(100deg, transparent 0%, transparent 40%, var(--c-shimmer-hi) 50%, transparent 60%, transparent 100%),
+    linear-gradient(var(--c-ink-muted), var(--c-ink-muted));
+  background-size:
+    250% 100%,
+    100% 100%;
   background-repeat: no-repeat;
   -webkit-background-clip: text;
   background-clip: text;
-  color: transparent;
   animation: shimmer-sweep 2.2s linear infinite;
 }
+/* The band starts just right of the text and ends just left of it, so the restart cannot be seen. */
 @keyframes shimmer-sweep {
   from {
-    background-position: 130% 0;
+    background-position:
+      -3% 0,
+      0 0;
   }
   to {
-    background-position: -30% 0;
+    background-position:
+      103% 0,
+      0 0;
   }
 }
 
@@ -203,11 +209,8 @@
   }
 }
 
-/* The system asks for less motion: the decoration stops, and the shimmer, which is information, slows down. */
+/* The system asks for less motion: the decoration stops. The shimmer does not: it is information, not decoration. */
 @media (prefers-reduced-motion: reduce) {
-  .shimmer {
-    animation-duration: 4s;
-  }
   .animate-fade-up,
   .pop-in,
   .animate-slide-in-right {
@@ -220,19 +223,3 @@
   }
 }
 
-/* Celeste's own Motion setting, set to Reduced: nothing moves, and the label is plain. */
-html[data-motion='reduced'] .shimmer {
-  animation: none;
-  background-image: none;
-  color: var(--c-ink-muted);
-}
-html[data-motion='reduced'] .animate-fade-up,
-html[data-motion='reduced'] .pop-in,
-html[data-motion='reduced'] .animate-slide-in-right {
-  animation: none;
-}
-html[data-motion='reduced'] *,
-html[data-motion='reduced'] *::before,
-html[data-motion='reduced'] *::after {
-  scroll-behavior: auto !important;
-}

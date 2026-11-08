@@ -4,14 +4,13 @@ import './styles/index.css'
 import { App } from './app/App'
 import { ErrorBoundary } from './app/ErrorBoundary'
 import { bootstrap } from './bootstrap'
-import { applyMotion, applyTheme, mirroredTheme, useSettings } from './stores/settings'
+import { applyTheme, mirroredTheme, useSettings } from './stores/settings'
 
 // Show the theme from the last run straight away, then the saved one once Core has answered.
 const mirrored = mirroredTheme()
 if (mirrored) applyTheme(mirrored)
 useSettings.subscribe((s, prev) => {
   if (s.theme !== prev.theme) applyTheme(s.theme)
-  if (s.motion !== prev.motion) applyMotion(s.motion)
 })
 window.matchMedia?.('(prefers-color-scheme: light)').addEventListener('change', () => {
   if (useSettings.getState().theme === 'system') applyTheme('system')
@@ -40,7 +39,6 @@ function StartupError({ message }: { message: string }) {
 bootstrap().then(
   () => {
     applyTheme(useSettings.getState().theme)
-    applyMotion(useSettings.getState().motion)
     root.render(
       <StrictMode>
         <ErrorBoundary>
