@@ -40,6 +40,9 @@ Each has a default that I'll use unless you say otherwise. The last column says 
 | 9 | How should Celeste run on iPhone, iPad and Android? | A companion app that controls your desktop Celeste, not the full app, which can't run on a phone (section 7.12). Built with Capacitor from the same React interface, after the first public release. It needs an Apple Developer account (US$99 a year **Verify**) and a macOS builder | Before Phase 9 |
 | 10 | Designs for the phone screens | Do you have designs, or want to make them? If not, I'll adapt the desktop design to a small screen and you review it | Phase 9 |
 | 11 | Push notifications to the phone | None in v1. Apple and Google need a provider key that can't ship inside open-source code, so push needs a small relay run by the project. Without it the phone shows what needs you when you open the app | Phase 9 |
+| 12 | **How do the vendors' programs reach the user: bundled in the installer, or downloaded?** | **Not decided.** Until you decide, Celeste downloads each vendor's program on first Connect (option A in section 6.4), started as soon as the vendor is picked in the wizard. The five options and what each costs are listed in section 6.4 | Before Phase 8; Claude's download is built under the default |
+| 13 | How is a workflow started from a chat? | One `/` menu in the composer that lists your workflows, Celeste's own commands and the vendor's commands, each tagged with where it comes from; plus a tool that lets the assistant run a workflow you have allowed it to. Details in section 7.10 | Phase 7 |
+| 14 | Should several people be able to share one session? | Not in v1, and not scheduled. Section 7.13 sets out what exists elsewhere, three ways to build it, what each needs, and the privacy and vendor-terms risks. The cheapest first step is handing a session to another person as a file | After Phase 9 |
 
 ## 3. Chat vs Develop
 
@@ -308,7 +311,19 @@ Bundling every vendor's CLI would add about 1 GB to the installer. Windows x64 u
 | Copilot | 172 MB | `@github/copilot-sdk-win32-x64` |
 | Gemini | 94 MB | `@google/gemini-cli` |
 
-**So runtimes download on demand.** The installer stays small, and Connect downloads only that vendor's runtime:
+**Options for getting the runtimes to the user (decision 12, open).** Sizes are Windows x64 compressed downloads (Claude 153 MB, Copilot 68, Codex 172, Gemini 19; about 412 MB for all four) on top of Electron itself, roughly 150 MB (**Verify** with a real installer).
+
+| Option | Installer | Works offline | Updates | Signing and licence | Main drawback |
+|---|---|---|---|---|---|
+| **A. Download on first Connect** (the current default) | Smallest, about 150 MB | Only after the first download, and sign-in needs the internet anyway | One vendor's runtime is replaced alone; the version is pinned and checked against an integrity hash | Celeste redistributes nothing, so the vendors' redistribution terms never come up. The downloaded programs are outside Celeste's signature (**Verify** they run on macOS and Linux; only Windows is tried) | Needs the internet and a few minutes at first Connect; company networks may block it (a mirror setting and option D soften this) |
+| **B. Bundle all four** | About 560 MB, and about 1.07 GB more on disk | Yes | Every vendor fix needs a new Celeste release, or the bundled versions go stale | Every program must be signed and notarized with Celeste's certificate, and re-signing a vendor's program can break it. Claude's terms don't clearly allow shipping its binary: **needs Anthropic's written OK**. Copilot's licence allows it; Codex and Gemini are Apache-2.0 | Size, and one installer per platform, twice that for a universal Mac build |
+| **C. Hybrid: bundle Copilot only** | About 220 MB | Copilot only | Copilot with Celeste, the rest on their own | Copilot's licence allows it under the conditions above; the rest as in A | Two ways to work, and Copilot is not the one most people will use |
+| **D. Use a program the user already has** | None | Yes | The user's own | Nothing shipped | Version drift (Celeste is tested against one version), the user must install it first, and Codex's protocol is still in preview. Kept as the Advanced setting below, not as the way in |
+| **E. Two installers: a small one (A) and a full "offline" one (B)** | 150 MB or 560 MB, the user chooses | The full one, yes | As in A and B | The full one has B's licence and signing problems, so it waits for Anthropic's OK | Two builds to test and publish. It is the answer for air-gapped companies, so it can come later than A |
+
+**Recommendation:** A now, with the download started during the wizard so it is ready when setup ends, and E later if companies ask for an offline build. B only if Anthropic agrees and the size is acceptable to you. This is your decision, and nothing built so far depends on it except that Claude's download is not written yet.
+
+**The default, A: runtimes download on demand.** The installer stays small, and Connect downloads only that vendor's runtime:
 
 - Versions are pinned to what Celeste was tested with and checked against the package's integrity hash. They're stored in `runtimes/<vendor>/<version>/` under Celeste's app data.
 - Users don't need to install Node or any CLI themselves. Gemini runs on Electron's built-in Node through `ELECTRON_RUN_AS_NODE`. **Verify** the Node version requirement.
@@ -412,6 +427,7 @@ Starting values are below, to be tuned at review:
 | Model dropdown | Grouped by vendor, showing connected vendors only. "Copilot Auto" from your picture maps to Copilot's `auto` model. Effort stops come from the selected model |
 | **Approval dropdown** | One small addition to your design. **Auto-approve** is the default; also Auto-approve edits, Ask first, and Plan only in Develop. It can change mid-session |
 | Send | Becomes Stop while the agent is working |
+| **`/` menu** (planned, Phase 7) | Typing `/` as the first character lists workflows, Celeste's commands and the vendor's commands, each tagged by source (section 7.10) |
 
 When a session runs on a ChatGPT plan, the composer also shows "Using ChatGPT plan" with a "Manage usage" link, as OpenAI's guidelines ask.
 
@@ -518,9 +534,38 @@ A workflow is saved as JSON and validated against a shared schema.
 - **Save:** creates a new version.
 - **Share:** exports a `.celeste-workflow.json` file without secrets.
 - **Run:** asks for inputs, then starts.
-- **Templates:** the five pictured ones ship as starter definitions.
+- **New workflow, Import, and "Make this a workflow":** a blank canvas, a `.celeste-workflow.json` file, or the current chat turned into a draft (the agent describes the steps it took as a workflow for you to review).
+
+**No example workflows ship (decided 8 November 2026).** The Workflows tab was removed while it held invented samples, and it comes back in Phase 7 when it can create, save and run real ones. A new profile sees an empty list with three ways in: New workflow, Build with AI, Import. The five pictured templates are not shipped; a template gallery can be added later if people ask for it.
 
 Scheduling isn't in v1.
+
+#### Running a workflow from a chat (decision 13)
+
+A workflow you made should be one step away from any conversation. The options considered:
+
+| Way to start it | Good | Problem |
+|---|---|---|
+| **`/` menu in the composer** | Familiar from Claude Code, Slack and Discord, fast from the keyboard, and `/test-app` is easy to remember | Slash is also wanted for other commands, and the vendor has its own |
+| `@` mention | Reads naturally | `@` fits things you refer to (files, devices) better than actions you run |
+| A button in the composer | Easy to find | Slower; best as a second way in, not the only one |
+| **A tool the assistant can call** | Works in plain words ("run test-app, then summarize the failures") on every vendor, the same way device tools do | Needs a card so a run never starts unseen |
+| The Workflows tab and Ctrl+K | Right for inputs and history | Leaves the conversation |
+
+**Proposal: use all but the mention, with `/` as the main one.** Slash being shared is solved by treating it as one menu, not one namespace:
+
+- **`/` opens the menu only as the first character of the message**, so a pasted path such as `/home/dev/app` or a URL is never caught. If nothing matches, the menu closes and the text sends as typed.
+- **The menu has sections, each row tagged with where it comes from:** *Workflows* (yours), *Celeste* (the built-ins: `/model`, `/effort`, `/approval`, `/device`, `/new`), and *Claude commands* (the vendor's own; Claude reports its list when a session starts, and a Develop session adds the project's own commands and skills). One menu means no clash is hidden: two entries with the same name both show, with their tags.
+- **Built-in names are reserved.** Saving a workflow whose name matches a built-in or a vendor command asks for another name. Names are made into a short form (`Test the app` becomes `/test-the-app`) and can be edited.
+- **Choosing a workflow inserts it as a chip, not text.** A vendor command is sent to the vendor as written. This keeps "run my workflow" and "send this text" from being confused.
+- **Inputs:** if the workflow's Start step has inputs, a small form opens in the composer, with defaults filled in. Enter runs it. Typing `/test-app env=staging` also works for people who prefer the keyboard.
+- **The run is a card in the conversation.** Steps light up as they go, approvals and `ask_user` questions appear in place, and the card collapses to a summary. The result is written into the session, so the next message ("now fix what failed") has it.
+- **It runs in the chat's folder and with the chat's attached devices**, under their approval rules. Started from the Workflows tab there is no chat, so you choose a folder and devices there.
+- **The assistant can run one only if you allow it.** Each workflow has an "Allow the assistant to run this" switch, off by default, in the same spirit as attaching a device. A run the assistant starts shows Celeste's own approval card first.
+
+#### Run history and safety
+
+Every run is saved with its inputs, step results and who or what started it (you, the menu, the assistant). A workflow's shell steps use the same device rules as anywhere else: a device that is Read only is refused.
 
 ### 7.11 Devices: remote machines and phones
 
@@ -666,6 +711,53 @@ A phone whose app is closed shows as asleep, and the assistant is told so instea
 - Everything the interface needs from Core keeps going through the one typed channel, never through anything Electron-only.
 - Each Core method gets a scope as it is added.
 - New screens avoid layouts that only work on a wide window where avoiding that costs nothing.
+
+### 7.13 Shared sessions: several people, one conversation (idea, not scheduled; decision 14)
+
+**What the idea is.** Two or more people work with the same agent in the same session, on the same project, and all see the same conversation, diffs and approvals.
+
+**Does it exist elsewhere?** In pieces, mostly hosted:
+
+- **ChatGPT group chats** (rolled out worldwide in November 2025): up to 20 people in one conversation with the assistant, who answers when mentioned. It is a chat, with no project folder and no commands run on anyone's machine ([Tom's Guide](https://www.tomsguide.com/ai/chatgpt/chatgpt-just-got-a-major-upgrade-now-you-can-invite-friends-into-the-same-ai-conversation)).
+- **Replit multiplayer** lets several people work in one project with the Replit agent; third-party pages disagree on plans and limits, so **Verify** before relying on any detail. The agent runs on Replit's servers, not on a person's computer.
+- **Agents inside Slack threads and GitHub issues or pull requests** are shared by nature, because the conversation lives in a shared tool. They run on the vendor's servers.
+- **VS Code Live Share and Zed** share editing between people; I found no source showing a person's own local agent session shared live. **Verify** before claiming Celeste would be first.
+
+What is unusual here is the agent running **on one person's computer, with that person's login, folder and devices**, with others steering it. That is also where the risk sits.
+
+**Three ways to build it**
+
+| Level | What it is | Needs a server? | Cost to build |
+|---|---|---|---|
+| **1. Hand a session over** | Export a session as a file (the event log, with no secrets and no attachments unless chosen) and open it in another Celeste, read only, or continue it: the receiving agent is seeded from the transcript, which the Claude and Copilot adapters already do when a vendor session is lost | No | Small: export, import, and a name on each message |
+| **2. Live, one host** | The session stays on the host's computer and the host's Core is the single source of truth. Guests connect to it and see the same live events the host's window sees, and can take part according to a role | No Celeste server. On one network it needs nothing. Across the internet the host needs a tunnel they already use (Tailscale, a Cloudflare tunnel) or a small relay run by the project that carries only end-to-end encrypted traffic, the same relay as push in decision 11 | Medium. It shares its foundation with the phone companion (Phase 9 step 1): an authenticated, encrypted channel, pairing, roles, revoking. Doing Phase 9 first makes this much cheaper |
+| **3. Hosted team service** | A central server holds accounts, sessions and permissions, and the agents run there | Yes, with accounts, billing, operations and compliance | Large, and it changes the product and breaks the "no Celeste server" promise. A company could self-host it, but I would not start here |
+
+The event-log design suits level 2: a window already rebuilds a session by replaying its log and then following live pushes, so a second window on another computer is the same thing over a network.
+
+**What level 2 needs**
+
+- **Who said it.** Messages and cards carry an author (a name and colour); a new migration adds the field, and older sessions show the host as author. The window shows who is typing and who sent each message.
+- **Roles, enforced in Core and not only hidden in the window:** *Viewer* (watch), *Contributor* (send messages), *Host* (everything else: approvals, model and approval mode, settings, devices, vendors, deleting, ending the share). Guests never see settings, devices or secrets.
+- **One agent, many senders.** The agent does one turn at a time, so messages queue in order and the card says whose it is. Stop is for the host and the sender of the running turn. A question card from the agent can be answered by the host or by the person it was asked of, and the first answer wins.
+- **Approvals stay with the host by default.** The commands run on the host's computer, with the host's rights.
+- **Sharing is explicit and per session:** a visible "Shared with Dana, Lee" bar, a one-click "Stop sharing" that cuts everyone off at once, and a per-person remove.
+- **Transport:** pairing by a short-lived code or link, end-to-end encryption between the computers so a relay cannot read content, and a record of what each guest did (the log already records every event).
+
+**Privacy and security, plainly**
+
+- **Guests see the host's work:** the whole transcript, file diffs (the project's code), command output and device output. Sharing a session means sharing all of that, and the share dialog says so.
+- **A guest's message is an instruction to an agent that has the host's permissions.** A guest, or text a guest pastes from a web page, could steer it to run commands. So a shared session cannot run on Auto-approve: it runs on Ask first, or each guest message waits for the host to let it through ("moderated"). Devices are never available to a guest unless the host attaches them for that share.
+- **The host's vendor login does the work.** Claude's terms say each person signs in with their own credentials and usage is not resold, and Copilot is licensed per person. Several people driving one login may break those terms. **This needs the vendors' confirmation before level 2 allows guests to send messages.** The safe fallback is guests who watch and suggest, with the host pressing Send.
+- **What a guest types goes to the host's vendor** and is stored on the host's computer. What a guest sees is stored on the guest's computer too, so ending a share does not take back what was already seen.
+- **With no server, nobody at Celeste can see a session**, which is good for privacy. The cost is that a company has no central audit or admin control; level 3 would give that and take the privacy away.
+- **A relay, if used, learns that two addresses talked and when**, and nothing else, because content is end-to-end encrypted. That is stated in the privacy policy.
+
+**Benefits.** Pair work where one person drives and another reviews diffs and answers the agent's questions; a senior steering a junior's agent live; an incident room where several people watch one agent work on a VM through the device tools; teaching; and handing a half-finished task to a colleague without re-explaining it. For the code itself, git remains the way to share changes; the new thing is a **shared conversation and supervised execution**.
+
+**Can it work?** Technically yes, and level 2 is not far from what the phone companion already needs. The hard parts are trust and vendor terms, not code.
+
+**Suggested order:** level 1 first (small, no network, useful on its own), level 2 after Phase 9 with Viewer and moderated Contributor only, and level 3 only if teams ask for it and someone will run it.
 
 ## 8. Phases
 
@@ -847,9 +939,9 @@ A short test against each real CLI to settle the **Verify** items, starting with
 
 ### Phase 7: Workflows (L)
 
-Schema, runner, Tool and Agent steps, inputs and outputs, error handling, live run view and history, Build with AI, versions, share and templates.
+Bring the Workflows tab back, empty and real: schema, runner, Tool and Agent steps, inputs and outputs, error handling, live run view and history, New workflow / Build with AI / Import / Make this a workflow, versions and share. Then the `/` menu, the run card in a conversation, and the "run a workflow" tool for the assistant (section 7.10). No example workflows ship.
 
-**Done when:** your "Update old KBs" example runs end to end from the canvas, including a pause for a question.
+**Done when:** a workflow you build yourself (the "Update old KBs" one, for example) runs end to end from the canvas, including a pause for a question, and the same workflow starts from `/` in a chat and from a plain-words request to the assistant.
 
 ### Phase 8: Public release (L)
 
@@ -907,6 +999,7 @@ After the first public release. It needs your decisions 9 to 11 and a design for
 | **Celeste can't run on iOS itself.** Electron is a desktop framework, and the vendor agents are desktop programs an iPhone can't run | The companion app controls your desktop Celeste instead (section 7.12), and the plan and the app say so plainly |
 | **A paired phone can steer a desktop agent that runs commands** | Mobile access is off by default, each phone is paired by QR code and can be revoked at once, its permissions are narrower than the desktop's (no settings, vendors, devices or deletion), and risky actions can require approval on the phone |
 | **No push notifications without a server.** Apple and Google need a provider key that can't ship inside open-source code | None in v1: the phone shows what needs you when opened. An optional small relay run by the project can come later and would carry no message content |
+| **Shared sessions would let other people steer an agent that runs as you, on your vendor login** (section 7.13) | Not built. If built: sharing is explicit and per session, approvals stay with the host, a shared session never runs on Auto-approve, guests get no settings, devices or secrets, and guest messages wait for the vendors' confirmation that this does not break their terms |
 | **Apple's rules and costs.** A paid developer account, builds on macOS, review, and TestFlight builds that expire | Planned in decision 9. Betas through TestFlight first, with a macOS cloud builder in CI |
 | **iOS and macOS ask permission before an app finds devices on the network**, and iOS suspends apps in the background | Celeste explains the prompt first and typing an address always works. A phone shows as asleep when its app is closed |
 
