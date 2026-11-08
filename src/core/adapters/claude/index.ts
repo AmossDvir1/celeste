@@ -76,6 +76,8 @@ export interface ClaudeOptions {
   installedAt?: string[]
   /** Where Celeste keeps what it downloads. Without it the program is only looked for beside the SDK. */
   dataDir?: string
+  /** The person's own copy of Claude Code, once it has passed the check, to use instead of downloading. */
+  own?: () => string | undefined
   /** An npm registry other than npmjs.org (a company mirror, or a stand-in for a check). */
   registry?: string
   getKey: () => Promise<string | null>
@@ -86,7 +88,7 @@ export interface ClaudeOptions {
 
 export function createClaudeHost(options: ClaudeOptions): ClaudeHost {
   // Looked for each time, not once: the download can finish while Celeste is running.
-  const program = () => findProgram({ installedAt: options.installedAt, dataDir: options.dataDir })
+  const program = () => findProgram({ installedAt: options.installedAt, dataDir: options.dataDir, own: options.own })
   const host = new ClaudeHost({
     program,
     ...(options.dataDir ? { download: (onProgress, signal) => downloadClaudeProgram({ dataDir: options.dataDir as string, onProgress, signal, ...(options.registry ? { registry: options.registry } : {}) }) } : {}),

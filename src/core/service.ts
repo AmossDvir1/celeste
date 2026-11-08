@@ -93,7 +93,7 @@ const APPROVALS: ApprovalMode[] = ['auto', 'edits', 'ask', 'plan']
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const THEMES = ['dark', 'light', 'system']
 const VENDOR_IDS: VendorId[] = ['copilot', 'claude', 'openai', 'gemini']
-const SETTINGS_KEYS = ['theme', 'userName', 'wizardDone', 'sidebarCollapsed', 'sidebarWidth', 'autoTitle', 'pinnedModels', 'defaults'] as const
+const SETTINGS_KEYS = ['theme', 'userName', 'wizardDone', 'sidebarCollapsed', 'sidebarWidth', 'autoTitle', 'ownPrograms', 'pinnedModels', 'defaults'] as const
 const MAX_PINNED = 100
 const TRANSCRIPT_LIMIT = 24_000
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
@@ -224,6 +224,7 @@ export class SessionService {
       sidebarCollapsed: (stored.sidebarCollapsed as boolean) ?? d.sidebarCollapsed,
       sidebarWidth: (stored.sidebarWidth as number | undefined) ?? d.sidebarWidth,
       autoTitle: (stored.autoTitle as boolean | undefined) ?? d.autoTitle,
+      ownPrograms: (stored.ownPrograms as boolean | undefined) ?? d.ownPrograms,
       pinnedModels: (stored.pinnedModels as string[] | undefined) ?? d.pinnedModels,
       defaults: { ...d.defaults, ...(stored.defaults as Partial<AppSettings['defaults']> | undefined) }
     }
@@ -252,6 +253,7 @@ export class SessionService {
     if (patch.wizardDone !== undefined) next.wizardDone = patch.wizardDone === true
     if (patch.sidebarCollapsed !== undefined) next.sidebarCollapsed = patch.sidebarCollapsed === true
     if (patch.autoTitle !== undefined) next.autoTitle = patch.autoTitle === true
+    if (patch.ownPrograms !== undefined) next.ownPrograms = patch.ownPrograms === true
     if (patch.sidebarWidth !== undefined) {
       if (typeof patch.sidebarWidth !== 'number' || !Number.isFinite(patch.sidebarWidth)) throw new Error('Invalid sidebar width')
       next.sidebarWidth = Math.round(Math.min(SIDEBAR_WIDTH.max, Math.max(SIDEBAR_WIDTH.min, patch.sidebarWidth)))

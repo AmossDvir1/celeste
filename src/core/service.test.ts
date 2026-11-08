@@ -969,6 +969,14 @@ describe('naming a session after its first message', () => {
     expect(api['app.bootstrap']().settings.autoTitle).toBe(true)
     expect(api['settings.patch']({ autoTitle: false }).autoTitle).toBe(false)
   })
+
+  it('keeps the switch for using programs already on the computer, which starts on', () => {
+    const { api } = setup()
+    expect(api['app.bootstrap']().settings.ownPrograms).toBe(true)
+    expect(api['settings.patch']({ ownPrograms: false }).ownPrograms).toBe(false)
+    expect(api['app.bootstrap']().settings.ownPrograms).toBe(false)
+    expect(api['settings.patch']({ ownPrograms: true }).ownPrograms).toBe(true)
+  })
 })
 
 describe('separate copies of a project', () => {

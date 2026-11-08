@@ -41,6 +41,8 @@ export interface AppSettings {
   sidebarWidth: number
   /** After a session's first message, a small model of its vendor writes a short title for the sidebar. */
   autoTitle: boolean
+  /** Use a vendor's program that is already on this computer when it passes Celeste's check, instead of downloading one. */
+  ownPrograms: boolean
   /** Models the person pinned to the top of the model menu, in the order they were pinned. */
   pinnedModels: string[]
   defaults: { model: string; approval: ApprovalMode; projectsFolder: string }
@@ -238,6 +240,17 @@ export type VendorConnection =
   /** Celeste has no adapter for this vendor yet. */
   | { state: 'unsupported' }
 
+/** Which copy of a vendor's program is in use. */
+export interface VendorProgram {
+  /** 'yours' is the person's own installed copy, 'celeste' the one Celeste downloads, 'none' that neither is on this computer yet. */
+  using: 'yours' | 'celeste' | 'none'
+  version?: string
+  /** Why a copy that was found is not used. */
+  why?: string
+  /** The switch for using the person's own copy. */
+  allowed: boolean
+}
+
 /** What the person is asked to do to finish signing in. */
 export type SignInStep =
   | { kind: 'open-url'; url: string }
@@ -271,6 +284,8 @@ export interface CoreApi {
   /** Starts connecting: downloads the program if needed, then signs in. Answers at once; progress arrives as `vendor` pushes. */
   'vendor.signIn': (id: VendorId, method: 'web' | 'code') => Promise<void>
   'vendor.cancelSignIn': (id: VendorId) => Promise<void>
+  /** Which copy of the vendor's program Celeste uses, and why not the person's own when it does not. Looks again at what is installed. */
+  'vendor.program': (id: VendorId) => Promise<VendorProgram>
   /**
    * Makes sure the vendor's program is on this computer, downloading it if not. Progress arrives as `vendor` pushes; the call
    * answers when it is there (true) or when the download was cancelled or failed (false, and a `failed` push says why).

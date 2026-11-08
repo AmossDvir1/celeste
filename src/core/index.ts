@@ -18,6 +18,9 @@ import { DeviceTools } from './devices/tools'
 import { GitSnapshots } from './snapshots'
 import { createClaudeHost, createClaudeSession, createClaudeTitler, type ClaudeHost } from './adapters/claude'
 import { copilotRuntime, createCopilotHost, createCopilotSession, createCopilotTitler, type CopilotHost } from './adapters/copilot'
+import { OwnPrograms } from './adapters/own-copy'
+import { OWN_CLAUDE } from './adapters/claude/program'
+import { OWN_COPILOT } from './adapters/copilot/runtime'
 import { createUnavailableSession } from './adapters/unavailable'
 import { createProjectApi } from './project'
 import { McpService } from './mcp'
@@ -95,8 +98,15 @@ async function start(): Promise<void> {
   // Copilot's program is beside the SDK when developing, and in the data folder once it has been downloaded.
   // CELESTE_COPILOT_ISOLATED=1 gives Copilot a data folder of its own that knows no one, so the sign-in screens can be tried
   // without touching the GitHub sign-in on this computer. For app checks.
+  // Programs the person already has are used when they pass a check (see adapters/own-copy.ts). CELESTE_NO_OWN_PROGRAMS=1 turns that
+  // off, so the app checks always run the same program.
+  const ownPrograms = new OwnPrograms(
+    { claude: OWN_CLAUDE, copilot: OWN_COPILOT },
+    () => process.env['CELESTE_NO_OWN_PROGRAMS'] !== '1' && (db.settings().ownPrograms as boolean | undefined) !== false
+  )
+  void ownPrograms.refresh().catch(() => undefined)
   const host = createCopilotHost(
-    copilotRuntime(dataDir, require.resolve.paths('@github/copilot-sdk') ?? []),
+    copilotRuntime(dataDir, require.resolve.paths('@github/copilot-sdk') ?? [], () => ownPrograms.file('copilot')),
     process.env['CELESTE_COPILOT_ISOLATED'] === '1' ? { isolatedDir: join(dataDir, 'copilot-isolated') } : {}
   )
   copilot = host
@@ -108,6 +118,7 @@ async function start(): Promise<void> {
     // CELESTE_NPM_REGISTRY points the download at another npm registry (a company mirror; a stand-in for the app checks).
     installedAt: process.env['CELESTE_CLAUDE_NO_INSTALLED'] === '1' ? [] : (require.resolve.paths('@anthropic-ai/claude-agent-sdk') ?? []),
     dataDir,
+    own: () => ownPrograms.file('claude'),
     ...(process.env['CELESTE_NPM_REGISTRY'] ? { registry: process.env['CELESTE_NPM_REGISTRY'] } : {}),
     getKey: () => getSecret('vendor.claude.key'),
     ...(ownLogin ? { allowSubscription: true } : { configDir: join(dataDir, 'claude-config') })
@@ -148,7 +159,7 @@ async function start(): Promise<void> {
   api = {
     ...service.api,
     ...devices.api,
-    ...new VendorService({ copilot: host, claude: claudeHost }, push).api,
+    ...new VendorService({ copilot: host, claude: claudeHost }, push, ownPrograms).api,
     ...mcp.api,
     ...createProjectApi(worktrees, (path) => {
       const s = db.listSessions().find((x) => x.cwd === path)

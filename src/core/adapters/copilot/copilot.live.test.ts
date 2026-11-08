@@ -13,9 +13,11 @@ import { DeviceTools } from '../../devices/tools'
 import { DiskFileStore } from '../../disk-files'
 import { MemoryStore } from '../../testing/memory-store'
 import { SessionService } from '../../service'
+import type { ResolvedMcpServer } from '../../mcp'
 import { copilotRuntime, createCopilotHost, createCopilotSession, createCopilotTitler } from './index'
 import { cheapest, cleanTitle } from '../../titles'
-import { downloadedRuntime, runtimePlatform } from './runtime'
+import { checkOwn, hereNow } from '../own-copy'
+import { OWN_COPILOT, downloadedRuntime, runtimePlatform } from './runtime'
 import { RESUME_NOTICE } from './session'
 
 /*
@@ -35,7 +37,10 @@ const noDisk = (): FileOps => ({ join: (...p) => p.join('/'), dirname: (p) => p.
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 describe.skipIf(!live)('Copilot, for real', () => {
-  const host = createCopilotHost()
+  // CELESTE_LIVE_COPILOT_OWN=1 runs everything below with the Copilot CLI already installed on this computer in place of the SDK's runtime.
+  let ownFile: string | undefined
+  const useOwn = process.env['CELESTE_LIVE_COPILOT_OWN'] === '1'
+  const host = createCopilotHost(useOwn ? { find: () => ownFile, download: async () => Promise.reject(new Error('no copy of the Copilot CLI to use')) } : undefined)
   const store = new MemoryStore()
   const connectors = fakeConnectorFactory()
   let dir: string
@@ -43,19 +48,26 @@ describe.skipIf(!live)('Copilot, for real', () => {
   let sessions: SessionService
   let tools: DeviceTools
   let devices: DeviceService
+  // The tools the person added, as Celeste would hand them over at the start of a session.
+  let mcp: ResolvedMcpServer[] = []
 
   const build = () =>
     new SessionService({
       store,
       files: new DiskFileStore(join(dir, '.attachments')),
       dataDir: '/data',
-      adapter: (ctx) => createCopilotSession(host, ctx, (id) => server.info(id)),
+      adapter: (ctx) => createCopilotSession(host, ctx, (id) => server.info(id), async () => mcp),
       push: () => undefined,
       defaults: DEFAULT_SETTINGS,
       onSessionStopped: (id) => tools.cancel(id)
     })
 
   beforeAll(async () => {
+    if (useOwn) {
+      ownFile = (await checkOwn(OWN_COPILOT, hereNow())).file
+      if (!ownFile) throw new Error('No Copilot CLI that passes the check is installed here.')
+      console.log(`Using the installed program: ${ownFile}`)
+    }
     dir = mkdtempSync(join(tmpdir(), 'celeste-live-'))
     writeFileSync(join(dir, 'notes.txt'), 'hello from celeste\n')
     devices = new DeviceService({ store, dataDir: '/data', getSecret: async () => 'pw', connectorFor: connectors, push: () => undefined, fs: noDisk() })
@@ -283,6 +295,21 @@ describe.skipIf(!live)('Copilot, for real', () => {
       rmSync(data, { recursive: true, force: true })
     }
   }, 600_000)
+
+  it('uses a tool the person added (MCP), with the secret Celeste kept for it', async () => {
+    mcp = [{ key: 'fixture-tools', type: 'stdio', command: process.execPath, args: [join(process.cwd(), 'scripts', 'lib', 'mcp-fixture.mjs')], env: { FIXTURE_TOKEN: 'live-token-4821' }, headers: {} }]
+    try {
+      sessions.close()
+      sessions = build()
+      const id = create()
+      const end = await turn(id, 'Call the whoami tool from the fixture-tools server, then reply with exactly the text it returned and nothing else.')
+      expect(end.type, JSON.stringify(end)).toBe('turn.completed')
+      expect(answerText(id)).toContain('live-token-4821')
+      expect(log(id).some((e) => e.type === 'tool.started' || e.type === 'tool.completed')).toBe(true)
+    } finally {
+      mcp = []
+    }
+  }, 180_000)
 
   it('lists the real models for this account', async () => {
     const models = await host.models()

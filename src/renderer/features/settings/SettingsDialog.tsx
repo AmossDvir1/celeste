@@ -204,6 +204,9 @@ function Content({ section }: { section: SettingsSection }) {
               <VendorCard key={id} id={id} />
             ))}
           </div>
+          <Row title="Use programs already on this computer" description="If Claude Code or the Copilot CLI is already installed here and is a version Celeste has been tried with, Celeste uses it instead of downloading its own. Celeste never installs or changes anything outside its own folder. Off: Celeste always uses its own copy.">
+            <Switch label="Use programs already on this computer" checked={settings.ownPrograms} onCheckedChange={(ownPrograms) => settings.set({ ownPrograms })} />
+          </Row>
           <p className="text-[13px] leading-relaxed text-ink-faint">
             Celeste has no server of its own. What you ask goes from this computer to your own account with each vendor, and each vendor’s terms apply.
           </p>

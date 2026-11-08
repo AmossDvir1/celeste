@@ -13,9 +13,9 @@ export { CopilotHost } from './host'
  * Where Copilot's program comes from: one installed beside the SDK (development), or the one Celeste downloads
  * into its own data folder the first time someone connects.
  */
-export function copilotRuntime(dataDir: string, installedAt: string[] = []): RuntimeSource {
+export function copilotRuntime(dataDir: string, installedAt: string[] = [], own?: () => string | undefined): RuntimeSource {
   return {
-    find: () => findRuntime({ dataDir, installedAt }),
+    find: () => findRuntime({ dataDir, installedAt, own }),
     download: (onProgress, signal) => downloadRuntime({ dataDir, onProgress, signal })
   }
 }

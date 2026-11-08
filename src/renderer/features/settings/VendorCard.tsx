@@ -1,11 +1,25 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Check, KeyRound } from 'lucide-react'
 import type { VendorId } from '@shared/agent'
+import type { VendorProgram } from '@shared/api'
+import { core } from '@/api'
 import { cn } from '@/lib/cn'
 import { Badge, Button, Spinner, TextInput } from '@/components/ui'
 import { VendorTile } from '@/components/VendorLogo'
 import { VENDORS } from '@/lib/vendors'
+import { useSettings } from '@/stores/settings'
 import { openExternal, useVendors } from '@/stores/vendors'
+
+const PROGRAM_NAME: Partial<Record<VendorId, string>> = { claude: 'Claude Code', copilot: 'Copilot CLI' }
+
+/** Which copy of the vendor's program is in use, in a sentence. Nothing when there is nothing to say yet. */
+function programLine(id: VendorId, p: VendorProgram | undefined): string | undefined {
+  const name = PROGRAM_NAME[id]
+  if (!p || !name) return undefined
+  if (p.using === 'yours') return `Using the ${name} already on this computer${p.version ? ` (${p.version})` : ''}.`
+  // The reason already says that Celeste's own copy is the one in use.
+  return p.why ?? (p.using === 'celeste' ? 'Using Celeste’s own copy.' : undefined)
+}
 
 /** One Connect button per vendor. It opens the browser, you authorize there, and the card turns to Connected. */
 export function VendorCard({ id, compact }: { id: VendorId; compact?: boolean }) {
@@ -20,6 +34,17 @@ export function VendorCard({ id, compact }: { id: VendorId; compact?: boolean })
   const [keyOpen, setKeyOpen] = useState(false)
   const [key, setKey] = useState('')
   const [saving, setSaving] = useState(false)
+  const useOwn = useSettings((s) => s.ownPrograms)
+  const [program, setProgram] = useState<VendorProgram>()
+  useEffect(() => {
+    if (!meta.available || id === 'openai' || id === 'gemini') return
+    let alive = true
+    core.call('vendor.program', id).then((p) => alive && setProgram(p), () => undefined)
+    return () => {
+      alive = false
+    }
+  }, [id, meta.available, v.status, useOwn])
+  const programText = programLine(id, program)
   const getting = v.getting !== undefined && v.status !== 'downloading' ? v.getting : undefined
 
   const status = {
@@ -51,6 +76,7 @@ export function VendorCard({ id, compact }: { id: VendorId; compact?: boolean })
           <p role="status" className={cn('mt-0.5 text-[13px] leading-snug', v.status === 'waiting' ? 'text-accent-text' : 'text-ink-muted')}>
             {status}
           </p>
+          {!compact && programText && <p className="mt-1 text-xs text-ink-faint">{programText}</p>}
           {v.error && (
             <p role="alert" className="mt-1 text-[13px] leading-snug text-danger">
               {v.error}

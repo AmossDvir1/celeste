@@ -196,6 +196,11 @@ export class CopilotHost {
     return this.catalog
   }
 
+  /** Whether the program is on this computer, so connecting needs no download. */
+  hasProgram(): boolean {
+    return !this.runtime || Boolean(this.runtime.find())
+  }
+
   forgetModels(): void {
     this.catalog = undefined
   }
