@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -26,3 +26,31 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+  # The real app, started and driven (Playwright for Electron) on a Mac. None of these needs an account or spends anything: Claude is
+  # the real program talking to a stand-in for Anthropic's API on the runner. This is how Celeste is tried on macOS, since nobody
+  # working on it has a Mac. It reports problems without blocking a merge (continue-on-error) until it has been green for a while.
+  app-checks-mac:
+    name: App check ${{ matrix.check }} (macOS)
+    runs-on: macos-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        check: [persistence, ui, checkpoints, worktrees, mcp, terminal, files, claude]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: git config --global user.name "CI" && git config --global user.email "ci@example.com" && git config --global init.defaultBranch main
+      - run: npm run verify:${{ matrix.check }}
+      - name: Keep the pictures the check made
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pictures-${{ matrix.check }}
+          path: scripts/.output/
+          if-no-files-found: ignore
