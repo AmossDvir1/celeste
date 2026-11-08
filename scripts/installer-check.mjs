@@ -103,7 +103,15 @@ try {
     for (let i = 0; i < 120 && existsSync(exe); i++) await new Promise((r) => setTimeout(r, 500))
     await new Promise((r) => setTimeout(r, 1500))
     check('it takes Celeste away', !existsSync(exe) && !existsSync(join(home, 'resources', 'app.asar')))
-    const records = execFileSync('reg', ['query', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall', '/s', '/f', 'Celeste', '/d'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).toString().split('\n').filter((l) => /DisplayName\s+REG_SZ\s+Celeste/.test(l))
+    // `reg query` exits with an error when it finds nothing, which here is the good answer.
+    const regQuery = (...a) => {
+      try {
+        return execFileSync(...a)
+      } catch (err) {
+        return String(err.stdout ?? '')
+      }
+    }
+    const records = regQuery('reg', ['query', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall', '/s', '/f', 'Celeste', '/d'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).toString().split('\n').filter((l) => /DisplayName\s+REG_SZ\s+Celeste/.test(l))
     check('the system no longer lists it as installed', records.length === 0, records.join(' '))
     check('and leaves the person’s data alone', existsSync(join(profile, 'celeste.db')) && existsSync(join(profile, 'marker.txt')))
   }
