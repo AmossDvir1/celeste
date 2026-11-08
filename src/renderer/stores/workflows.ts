@@ -60,6 +60,12 @@ interface WorkflowsState {
   share: () => Promise<void>
   /** Opens a shared file as a new workflow that is not saved yet. */
   importFile: () => void
+  /** True while an assistant is drafting a workflow. */
+  building: boolean
+  /** Asks an assistant to draft a workflow from a description, or from a conversation, and opens it unsaved. Returns whether it did. */
+  build: (source: { kind: 'text'; text: string } | { kind: 'conversation'; sessionId: string }) => Promise<boolean>
+  /** Lets the assistant run the open workflow, or stops it. */
+  setAssistant: (allow: boolean) => Promise<void>
 }
 
 const draftFrom = (w: WorkflowFull): Draft => ({
@@ -80,6 +86,7 @@ export const useWorkflows = create<WorkflowsState>()((set, get) => ({
   draft: null,
   selectedNode: null,
   leaving: null,
+  building: false,
 
   refresh: async () => {
     try {
@@ -196,6 +203,40 @@ export const useWorkflows = create<WorkflowsState>()((set, get) => ({
         }
       })()
     }),
+
+  build: async (source) => {
+    if (get().building) return false
+    set({ building: true })
+    try {
+      const read = await core.call('workflows.draft', source)
+      const taken = new Set(get().list.map((w) => w.name.trim().toLowerCase()))
+      let name = read.name
+      for (let n = 2; taken.has(name.trim().toLowerCase()); n++) name = `${read.name} (${n})`
+      // Replaces what is on the canvas, so unsaved changes there are asked about first.
+      const open = () => set({ draft: { name, description: read.description, definition: read.definition, version: 0, saved: '' }, selectedNode: null })
+      get().guard(open)
+      say('Here is a draft. Look it over and change what you like, then save it. Nothing runs until you say so.')
+      for (const note of read.notes.slice(0, 3)) say(note)
+      return true
+    } catch (err) {
+      say(sentence(err, 'Could not make a workflow.'))
+      return false
+    } finally {
+      set({ building: false })
+    }
+  },
+
+  setAssistant: async (allow) => {
+    const id = get().draft?.id
+    if (!id) return
+    try {
+      await core.call('workflows.setAssistant', id, allow)
+      await get().refresh()
+      say(allow ? 'The assistant may now run this workflow. It still shows you what it will do first.' : 'The assistant may not run this workflow.')
+    } catch (err) {
+      say(sentence(err, 'Could not change that.'))
+    }
+  },
 
   remove: async (id) => {
     try {

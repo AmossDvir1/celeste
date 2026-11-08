@@ -1,9 +1,11 @@
-import { FileDown, Plus, Workflow as WorkflowIcon } from 'lucide-react'
+import { useState } from 'react'
+import { FileDown, Plus, Sparkles, Workflow as WorkflowIcon } from 'lucide-react'
 import type { WorkflowSummary } from '@shared/workflow'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { Button } from '@/components/ui'
 import { formatDay, formatTime, sameDay } from '@/lib/format'
 import { useWorkflows } from '@/stores/workflows'
+import { BuildDialog } from './BuildDialog'
 import { WorkflowEditor } from './WorkflowEditor'
 
 const STATUS: Record<string, string> = { running: 'Running now', waiting: 'Waiting for you', completed: 'Last run finished', failed: 'Last run failed', cancelled: 'Last run was stopped' }
@@ -42,6 +44,7 @@ function Home() {
   const loaded = useWorkflows((s) => s.loaded)
   const create = useWorkflows((s) => s.newWorkflow)
   const importFile = useWorkflows((s) => s.importFile)
+  const [building, setBuilding] = useState(false)
   return (
     <div className="mx-auto flex h-full max-w-[860px] flex-col px-8 py-10">
       <div className="flex items-start justify-between gap-6">
@@ -51,6 +54,9 @@ function Home() {
         </div>
         {list.length > 0 && (
           <div className="flex shrink-0 gap-2">
+            <Button variant="secondary" onClick={() => setBuilding(true)}>
+              <Sparkles className="h-4 w-4" /> Build with AI
+            </Button>
             <Button variant="secondary" onClick={importFile}>
               <FileDown className="h-4 w-4" /> Import
             </Button>
@@ -72,6 +78,9 @@ function Home() {
             <Button variant="primary" onClick={create}>
               <Plus className="h-4 w-4" /> New workflow
             </Button>
+            <Button variant="secondary" onClick={() => setBuilding(true)}>
+              <Sparkles className="h-4 w-4" /> Build with AI
+            </Button>
             <Button variant="secondary" onClick={importFile}>
               <FileDown className="h-4 w-4" /> Import a file
             </Button>
@@ -84,6 +93,7 @@ function Home() {
           ))}
         </ul>
       )}
+      {building && <BuildDialog onClose={() => setBuilding(false)} />}
     </div>
   )
 }

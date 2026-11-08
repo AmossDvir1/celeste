@@ -570,6 +570,12 @@ export class SessionService {
     })
   }
 
+  /** The conversation so far as plain text, for an assistant to read. */
+  transcriptOf(id: string): string {
+    this.requireSession(id)
+    return this.transcript(id)
+  }
+
   /** The folder a workflow started from this conversation works in: the project of a Develop session, the private folder of a chat. */
   workFolder(id: string): string {
     const row = this.requireSession(id)
@@ -589,7 +595,8 @@ export class SessionService {
     for (let i = events.length - 1; i >= 0; i--) {
       const event = (events[i] as { event: LogEvent }).event
       if (event.type === 'user.message') break
-      if (event.type !== 'workflow.finished') continue
+      // A run the assistant started handed its result to the assistant itself, when it ended.
+      if (event.type !== 'workflow.finished' || event.startedBy === 'assistant') continue
       const result = event.status === 'completed' ? `finished. Its result:\n${(event.output ?? '').slice(0, 4000) || '(nothing)'}` : event.status === 'failed' ? `failed: ${event.error ?? 'it did not say why'}` : 'was stopped before it finished'
       notes.unshift(`[The workflow “${event.name}” that the user started from this conversation ${result}]`)
     }

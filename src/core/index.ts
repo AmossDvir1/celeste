@@ -26,8 +26,10 @@ import { createProjectApi } from './project'
 import { callTool, McpService } from './mcp'
 import { serverKey } from '@shared/mcp'
 import { createAgentStepRunner } from './workflows/agent-step'
+import { draftWorkflow } from './workflows/draft'
 import { WorkflowRunner } from './workflows/runner'
 import { WorkflowService } from './workflows/service'
+import { WorkflowTools } from './workflows/tools'
 import type { AdapterFactory } from './adapters/types'
 import { TerminalService } from './terminal'
 import { Worktrees } from './worktrees'
@@ -173,7 +175,7 @@ async function start(): Promise<void> {
     const { run } = p
     if (!noted.has(run.id)) {
       noted.add(run.id)
-      ;(service as SessionService).recordWorkflow(run.sessionId as string, { type: 'workflow.started', runId: run.id, workflowId: run.workflowId, name: run.workflowName })
+      ;(service as SessionService).recordWorkflow(run.sessionId as string, { type: 'workflow.started', runId: run.id, workflowId: run.workflowId, name: run.workflowName, startedBy: run.startedBy })
     }
     if (run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled') {
       if (noted.has(`done:${run.id}`)) return
@@ -182,16 +184,14 @@ async function start(): Promise<void> {
         type: 'workflow.finished',
         runId: run.id,
         name: run.workflowName,
+        startedBy: run.startedBy,
         status: run.status,
         ...(run.output !== undefined ? { output: run.output } : {}),
         ...(run.error ? { error: run.error } : {})
       })
     }
   }
-  const runner = new WorkflowRunner({
-    store: db,
-    push: runPush,
-    agent: createAgentStepRunner({
+  const agentSteps = createAgentStepRunner({
       adapter: adapterFor,
       // A step that names no model uses the first vendor that is ready, with the model that vendor calls automatic or lists first.
       defaults: async () => {
@@ -204,7 +204,11 @@ async function start(): Promise<void> {
         }
         throw new Error('No assistant is connected. Connect one in Settings, AI vendors.')
       }
-    }),
+    })
+  const runner = new WorkflowRunner({
+    store: db,
+    push: runPush,
+    agent: agentSteps,
     mcp: {
       find: async (name) => (await mcp.resolved()).find((s) => s.key === serverKey(name) || s.key === name),
       call: (server, tool, args, timeoutMs, signal) => callTool(server, tool, args, timeoutMs, signal)
@@ -221,7 +225,19 @@ async function start(): Promise<void> {
     }
   })
   runner.markAbandoned()
-  const workflows = new WorkflowService(db, runner, undefined, () => push({ type: 'workflows' }), dataDir, async () => (await mcp.resolved()).map((s) => s.key), (sessionId) => (service as SessionService).workFolder(sessionId))
+  // The workflows the person allowed the assistant to run are tools of Celeste's own tool server.
+  servers.setExtraTools(new WorkflowTools(db, runner, (sessionId) => (service as SessionService).workFolder(sessionId)))
+  const workflows = new WorkflowService(db, runner, undefined, () => push({ type: 'workflows' }), dataDir, async () => (await mcp.resolved()).map((s) => s.key), (sessionId) => (service as SessionService).workFolder(sessionId), (source) =>
+    // The assistant only has to write; it is in plan mode, so anything it asks to do is refused, and it has three minutes.
+    draftWorkflow(source.kind === 'text' ? source : { kind: 'conversation', transcript: (service as SessionService).transcriptOf(source.sessionId) }, {
+      tools: async () => (await mcp.resolved()).map((s) => s.key),
+      ask: (prompt) => {
+        const stop = new AbortController()
+        const timer = setTimeout(() => stop.abort(), 180_000)
+        return agentSteps.run({ prompt, approval: 'plan', cwd: dataDir, signal: stop.signal, askApproval: async () => false, askQuestions: async () => ({}) }).finally(() => clearTimeout(timer))
+      }
+    })
+  )
   const terminals = new TerminalService({ folderOf: (id) => (service as SessionService).projectFolder(id), push })
   terminalsRef = terminals
   api = {

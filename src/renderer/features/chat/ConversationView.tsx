@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDown, FileDiff, Folder, FolderTree, GitBranch, Plug, SquareTerminal } from 'lucide-react'
+import { ArrowDown, FileDiff, Folder, FolderTree, GitBranch, Plug, SquareTerminal, Workflow } from 'lucide-react'
 import type { ContextRef, UserInput } from '@shared/agent'
 import { cn } from '@/lib/cn'
 import { basename } from '@/lib/format'
@@ -11,6 +11,7 @@ import { useChanges } from '@/stores/changes'
 import { useSessions } from '@/stores/sessions'
 import { useUi, type RightPanel } from '@/stores/ui'
 import { useVendors } from '@/stores/vendors'
+import { useWorkflows } from '@/stores/workflows'
 import { DeviceGlyph } from '@/features/devices/parts'
 import { useDevices } from '@/stores/devices'
 import { Composer } from './Composer'
@@ -18,6 +19,26 @@ import { Timeline } from './Timeline'
 import { DropZone, useAttachments } from './attachments'
 
 const NO_CONTEXT: ContextRef[] = []
+
+/** Has an assistant turn this conversation into a workflow draft, which opens in the Workflows tab for the person to look over. */
+function MakeWorkflow({ sessionId, enabled }: { sessionId: string; enabled: boolean }) {
+  const build = useWorkflows((s) => s.build)
+  const building = useWorkflows((s) => s.building)
+  const setMode = useUi((s) => s.setMode)
+  return (
+    <IconButton
+      label={building ? 'Making a workflow…' : 'Make this a workflow'}
+      disabled={!enabled || building}
+      onClick={() =>
+        void build({ kind: 'conversation', sessionId }).then((ok) => {
+          if (ok) setMode('workflows')
+        })
+      }
+    >
+      <Workflow className="h-[18px] w-[18px]" />
+    </IconButton>
+  )
+}
 
 function PanelToggle({ panel, label, icon: Icon, badge }: { panel: Exclude<RightPanel, null>; label: string; icon: typeof Plug; badge?: number }) {
   const current = useUi((s) => s.rightPanel)
@@ -161,6 +182,7 @@ export function ConversationView({ sessionId }: { sessionId: string }) {
                 <PanelToggle panel="terminal" label="Terminal" icon={SquareTerminal} />
               </>
             )}
+            <MakeWorkflow sessionId={sessionId} enabled={session.items.some((i) => i.kind === 'assistant') && session.status === 'idle'} />
             <PanelToggle panel="tools" label="Tools & Integrations" icon={Plug} />
           </div>
         </header>

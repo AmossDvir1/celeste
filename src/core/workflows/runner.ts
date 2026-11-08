@@ -87,11 +87,14 @@ export interface StartRequest {
   sessionId?: string
   /** A saved version other than the newest. */
   version?: number
+  /** Show the card that asks first even when there is nothing to list on it, as for a run the assistant started. */
+  forceApproval?: boolean
 }
 
 class Stopped extends Error {}
 
 interface Active {
+  forceApproval: boolean
   run: RunSummary
   abort: AbortController
   /** Cards the run is waiting on, so that cancelling can answer them. */
@@ -164,7 +167,7 @@ export class WorkflowRunner {
       startedAt: this.now()
     }
     store.insertRun(run)
-    const active: Active = { run, abort: new AbortController(), waiting: new Map(), finished: Promise.resolve() }
+    const active: Active = { run, forceApproval: req.forceApproval === true, abort: new AbortController(), waiting: new Map(), finished: Promise.resolve() }
     this.active.set(id, active)
     this.deps.push({ type: 'run', run })
     this.record(id, { type: 'run.started', inputs })
@@ -186,6 +189,20 @@ export class WorkflowRunner {
         if (d.accessLevel === 'read') throw new Error(`“${node.name}” runs on ${d.name}, which is read only. Change its access in Settings, Devices.`)
       }
     }
+  }
+
+  /** Resolves with the run once it has ended, or undefined if it is still going after `ms`. */
+  async whenFinished(runId: string, ms: number): Promise<RunSummary | undefined> {
+    const a = this.active.get(runId)
+    if (a) {
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const late = new Promise<'late'>((resolve) => (timer = setTimeout(() => resolve('late'), ms)))
+      const done = await Promise.race([a.finished.then(() => 'done' as const), late])
+      clearTimeout(timer)
+      if (done === 'late') return undefined
+    }
+    const run = this.deps.store.getRun(runId)
+    return run && run.status !== 'running' && run.status !== 'waiting' ? run : undefined
   }
 
   async cancel(runId: string): Promise<void> {
@@ -229,7 +246,7 @@ export class WorkflowRunner {
     const ctx: TemplateContext = { inputs, nodes: {}, run: { folder: a.run.folder } }
     try {
       const actions = this.plan(order, ctx)
-      if (actions.length) {
+      if (actions.length || a.forceApproval) {
         const requestId = `approve-${crypto.randomUUID()}`
         this.record(a.run.id, { type: 'approval.requested', requestId, actions })
         const allow = await this.waitFor<boolean>(a, requestId)

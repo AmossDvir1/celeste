@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Clock, FileText, Globe, History, MoreHorizontal, Play, Plug, Plus, Save, Share2, Sparkles, Terminal, Trash2 } from 'lucide-react'
+import { ArrowLeft, Bot, Clock, FileText, Globe, History, MoreHorizontal, Play, Plug, Plus, Save, Share2, Sparkles, Terminal, Trash2 } from 'lucide-react'
 import { Background, Controls, MarkerType, ReactFlow, ReactFlowProvider, useReactFlow, type Edge, type Node, type NodeChange } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { core } from '@/api'
@@ -14,6 +14,7 @@ import { formatDay, formatTime, sameDay } from '@/lib/format'
 import { useRuns } from '@/stores/runs'
 import { isDirty, problemsOf, useWorkflows } from '@/stores/workflows'
 import { NodeDetails } from './NodeDetails'
+import { BuildDialog } from './BuildDialog'
 import { RunDialog } from './RunDialog'
 import { RunPanel } from './RunPanel'
 import { metaOf, StepNode, type StepData } from './steps'
@@ -239,6 +240,9 @@ export function WorkflowEditor() {
   const save = useWorkflows((s) => s.save)
   const remove = useWorkflows((s) => s.remove)
   const share = useWorkflows((s) => s.share)
+  const setAssistant = useWorkflows((s) => s.setAssistant)
+  const assistantMay = useWorkflows((s) => s.list.find((w) => w.id === s.draft?.id)?.allowAssistant === true)
+  const [building, setBuilding] = useState(false)
   const [versions, setVersions] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -271,6 +275,7 @@ export function WorkflowEditor() {
                 className="h-9 max-w-[420px] border-transparent bg-transparent px-1 text-[22px] font-semibold hover:border-edge focus:border-accent-edge"
               />
               {draft.version > 0 && <Badge>{`v${draft.version}`}</Badge>}
+              {assistantMay && <Badge tone="accent">Assistant may run this</Badge>}
               {dirty && <span className="text-xs text-accent-text">Unsaved changes</span>}
             </div>
             <TextInput
@@ -290,6 +295,9 @@ export function WorkflowEditor() {
                   </IconButton>
                 </Menu.Trigger>
                 <Menu.Content align="end" className="w-[220px]">
+                  <Menu.Item onSelect={() => void setAssistant(!assistantMay)}>
+                    <Bot className="h-4 w-4 text-ink-muted" /> {assistantMay ? 'Do not let the assistant run this' : 'Allow the assistant to run this'}
+                  </Menu.Item>
                   <Menu.Item onSelect={() => setHistory(true)}>
                     <Clock className="h-4 w-4 text-ink-muted" /> Run history
                   </Menu.Item>
@@ -354,6 +362,11 @@ export function WorkflowEditor() {
           <div className="absolute top-3 left-3 z-10">
             <AddStep />
           </div>
+          <div className="absolute right-4 bottom-8 z-10">
+            <Button variant="secondary" size="lg" onClick={() => setBuilding(true)} className="border-accent-edge">
+              <Sparkles className="h-4 w-4 text-accent-text" /> Build with AI
+            </Button>
+          </div>
         </div>
       </section>
 
@@ -368,6 +381,7 @@ export function WorkflowEditor() {
           onClose={() => setRunning(false)}
         />
       )}
+      {building && <BuildDialog onClose={() => setBuilding(false)} />}
       {history && draft.id && <RunHistory id={draft.id} onClose={() => setHistory(false)} />}
       {versions && draft.id && <Versions id={draft.id} current={draft.version} onClose={() => setVersions(false)} />}
       <ConfirmDialog

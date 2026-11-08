@@ -163,9 +163,9 @@ export type LogEvent =
   /** Celeste could not save the folder before this message, so it cannot be reverted. */
   | { type: 'checkpoint.skipped'; reason: string }
   /** A workflow was started from this conversation (the `/` menu, or the assistant). The run's own log is read with `runs.get`. */
-  | { type: 'workflow.started'; runId: string; workflowId: string; name: string }
+  | { type: 'workflow.started'; runId: string; workflowId: string; name: string; startedBy?: 'you' | 'menu' | 'assistant' }
   /** That run ended. `output` is its result, which the assistant is told with the person's next message. */
-  | { type: 'workflow.finished'; runId: string; name: string; status: 'completed' | 'failed' | 'cancelled'; output?: string; error?: string }
+  | { type: 'workflow.finished'; runId: string; name: string; status: 'completed' | 'failed' | 'cancelled'; output?: string; error?: string; startedBy?: 'you' | 'menu' | 'assistant' }
   /** Chat: files the agent wrote in its private folder during the turn that just ended. `more` is how many further files are not listed. */
   | { type: 'files.produced'; files: ProducedFile[]; more: number }
   /** The folder was put back as it was at checkpoint `id`. `undoId` goes back to how it was just before. */
@@ -333,6 +333,8 @@ export interface CoreApi {
   'workflows.export': (id: string) => { filename: string; text: string; notes: string[] }
   /** Reads a shared file into a workflow that is not saved yet. Throws a sentence when it is not one, or is not valid. */
   'workflows.import': (text: string) => Promise<{ name: string; description: string; definition: WorkflowDefinition; notes: string[] }>
+  /** Asks an assistant to draft a workflow, from a description or from a conversation. Not saved: it opens for the person to look over. */
+  'workflows.draft': (source: { kind: 'text'; text: string } | { kind: 'conversation'; sessionId: string }) => Promise<{ name: string; description: string; definition: WorkflowDefinition; notes: string[] }>
   /** Lets the assistant start this workflow (after Celeste asks), or stops it. */
   'workflows.setAssistant': (id: string, allow: boolean) => WorkflowSummary
   /** Deletes the workflow, its versions and its runs. A run in progress is stopped first. */

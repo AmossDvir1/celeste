@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import type { AskAnswers } from '@shared/agent'
 import type { WorkflowApi } from '@shared/api'
 import { fromFile, toFile } from '@shared/workflow-file'
+import type { Drafted } from './draft'
 import { validateWorkflow, type RunSummary, type WorkflowDefinition, type WorkflowFull, type WorkflowSummary } from '@shared/workflow'
 import type { Store, WorkflowRow } from '../store'
 import type { WorkflowRunner } from './runner'
@@ -31,7 +32,9 @@ export class WorkflowService {
     /** The names of the tool servers the person has, so an imported workflow can say which of its tools are missing. */
     private readonly toolNames?: () => Promise<string[]>,
     /** The folder a conversation works in, for a run started from it. */
-    private readonly folderOfSession?: (sessionId: string) => string
+    private readonly folderOfSession?: (sessionId: string) => string,
+    /** Asks an assistant to draft a workflow. */
+    private readonly drafter?: (source: { kind: 'text'; text: string } | { kind: 'conversation'; sessionId: string }) => Promise<Drafted>
   ) {}
 
   private summary(w: WorkflowRow): WorkflowSummary {
@@ -108,6 +111,17 @@ export class WorkflowService {
       if (typeof text !== 'string') throw new Error('That is not a workflow file.')
       const read = fromFile(text, { mcpServers: this.toolNames ? await this.toolNames() : undefined })
       return read
+    },
+
+    'workflows.draft': async (source) => {
+      if (!this.drafter) throw new Error('No assistant is connected. Connect one in Settings, AI vendors.')
+      if (source?.kind === 'text') {
+        const wanted = text(source.text, 'description', 8000).trim()
+        if (wanted.length < 8) throw new Error('Say a little more about what the workflow should do.')
+        return this.drafter({ kind: 'text', text: wanted })
+      }
+      if (source?.kind === 'conversation') return this.drafter({ kind: 'conversation', sessionId: text(source.sessionId, 'conversation', 100) })
+      throw new Error('Say what to make the workflow from.')
     },
 
     'workflows.setAssistant': (id, allow) => {

@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from 'node:net'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
+import type { ExtraTools } from '../workflows/tools'
 import { TOOLS, type DeviceTools, type ToolName } from './tools'
 
 const MAX_BODY = 2 * 1024 * 1024
@@ -19,7 +20,14 @@ export class DeviceToolServer {
   private readonly sessionByToken = new Map<string, string>()
   private readonly tokenBySession = new Map<string, string>()
 
+  private extra: ExtraTools | undefined
+
   constructor(private readonly tools: DeviceTools) {}
+
+  /** More tools for every session's agent, such as the workflows it may run. */
+  setExtraTools(extra: ExtraTools): void {
+    this.extra = extra
+  }
 
   async start(): Promise<void> {
     if (this.http) return
@@ -88,6 +96,12 @@ export class DeviceToolServer {
           ],
           isError: out.isError
         }
+      })
+    }
+    for (const tool of this.extra?.list() ?? []) {
+      server.registerTool(tool.name, { title: tool.title, description: tool.description, inputSchema: tool.shape, annotations: { readOnlyHint: tool.readOnly } }, async (args: unknown) => {
+        const out = await (this.extra as ExtraTools).call(sessionId, tool.name, args)
+        return { content: [{ type: 'text' as const, text: out.text }], isError: out.isError }
       })
     }
     return server

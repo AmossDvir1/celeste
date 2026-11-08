@@ -132,6 +132,8 @@ scripts/       end-to-end checks that drive the built app, screenshot tools
 | `npm run verify:terminal` | Drive the real integrated terminal in the real app: a shell in the project folder, typing, the same shell after closing the panel (no account, no cost) |
 | `npm run verify:files` | Drive a Chat that makes files in the real app: the cards, Open, Show in folder, Save a copy, and what is refused (no account, no cost) |
 | `npm run verify:workflows` | Drive the Workflows tab in the real app: the empty start, building a workflow on the canvas, saving, versions, unsaved changes, deleting (no account, no cost) |
+| `npm run verify:workflows-chat` | Start a workflow from a conversation with `/`: the menu, the card that asks first, the result, and the assistant being told (no account, no cost) |
+| `npm run verify:workflows-ai` | Build with AI, Make this a workflow, and the assistant running a workflow only when allowed (no account, no cost) |
 | `npm run verify:copilot` | Drive the real app with your real Copilot account (spends a few premium requests) |
 | `npm run shots` | Screenshots of the key screens in both themes. They are the real app; Claude's answers come from a stand-in for the API, so the pictures cost nothing |
 
