@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import { join } from 'node:path'
 import { registerAttachmentScheme, serveAttachments } from './attachments-protocol'
 import { CoreProcess } from './core-process'
@@ -127,6 +127,14 @@ ipcMain.handle('celeste:secrets', (event, op: string, name: unknown, value: unkn
 ipcMain.handle('celeste:reveal-data', (event) => {
   if (!fromOurWindow(event)) throw new Error('Not allowed')
   shell.showItemInFolder(join(app.getPath('userData'), 'celeste.db'))
+})
+
+ipcMain.handle('celeste:choose-folder', async (event) => {
+  if (!fromOurWindow(event)) throw new Error('Not allowed')
+  const win = BrowserWindow.fromWebContents(event.sender)
+  const options = { properties: ['openDirectory' as const] }
+  const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
+  return result.canceled ? null : (result.filePaths[0] ?? null)
 })
 
 if (!app.requestSingleInstanceLock()) {

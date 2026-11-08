@@ -1,4 +1,4 @@
-import { Code, Laptop, MessageSquare, Moon, Search, Settings, Sparkles, Sun, Workflow } from 'lucide-react'
+import { Code, Laptop, MessageSquare, Moon, Search, Settings, Sparkles, Sun } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Logo } from '@/components/Logo'
 import { Menu } from '@/components/menu'
@@ -8,8 +8,7 @@ import { useUi, type AppMode } from '@/stores/ui'
 
 const TABS: { id: AppMode; label: string; icon: typeof Code }[] = [
   { id: 'chat', label: 'Chat', icon: MessageSquare },
-  { id: 'develop', label: 'Develop', icon: Code },
-  { id: 'workflows', label: 'Workflows', icon: Workflow }
+  { id: 'develop', label: 'Develop', icon: Code }
 ]
 
 export function TopBar() {

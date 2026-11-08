@@ -1,4 +1,4 @@
-import type { AppSettings, VendorRecords } from './api'
+import type { AppSettings } from './api'
 
 /** What a new installation starts with. Core fills in the user name and projects folder from the operating system. */
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -10,8 +10,3 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaults: { model: 'copilot-auto', approval: 'auto', projectsFolder: '' }
 }
 
-/** The preview starts with two vendors shown as connected so every screen has something to show. */
-export const DEFAULT_VENDORS: VendorRecords = {
-  copilot: { account: 'alex on GitHub', method: 'browser' },
-  claude: { account: 'Console · Acme Labs', method: 'browser' }
-}

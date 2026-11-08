@@ -1,11 +1,10 @@
 import { create } from 'zustand'
 import type { ModelInfo, VendorId } from '@shared/agent'
 import { core } from '@/api'
-import { MODELS as SCRIPTED } from '@/mocks/models'
 
 /*
- * The models a person can pick. A real vendor's come from the vendor itself once it is connected: its own names, the
- * effort levels each takes, and whether it reads images. A vendor that has no adapter yet uses the scripted catalog.
+ * The models a person can pick. They come from the vendors themselves once connected: their own names, the effort
+ * levels each takes, and whether it reads images. Nothing is listed for a vendor that is not connected.
  */
 
 /** The vendors Celeste can really talk to. Asking about one that is not connected gives an empty list. */
@@ -16,8 +15,6 @@ const index = (list: ModelInfo[]): Record<string, ModelInfo> => Object.fromEntri
 interface ModelsState {
   list: ModelInfo[]
   byId: Record<string, ModelInfo>
-  /** The vendors that have reported their own list, so their scripted models are gone. */
-  real: VendorId[]
   /** Asks the given vendors for their own lists. Asking starts a vendor's program, so only ask the ones that are connected. */
   refresh: (vendors?: VendorId[]) => Promise<void>
 }
@@ -25,9 +22,8 @@ interface ModelsState {
 const reported: Partial<Record<VendorId, ModelInfo[]>> = {}
 
 export const useModels = create<ModelsState>((set) => ({
-  list: SCRIPTED,
-  byId: index(SCRIPTED),
-  real: [],
+  list: [],
+  byId: {},
 
   refresh: async (vendors = REAL) => {
     await Promise.all(
@@ -37,21 +33,25 @@ export const useModels = create<ModelsState>((set) => ({
         else delete reported[v]
       })
     )
-    const real = REAL.filter((v) => reported[v])
-    const list = [...real.flatMap((v) => reported[v] as ModelInfo[]), ...SCRIPTED.filter((m) => !real.includes(m.vendor))]
-    set({ list, byId: index(list), real })
+    const list = REAL.flatMap((v) => reported[v] ?? [])
+    set({ list, byId: index(list) })
   }
 }))
 
-/**
- * The model for a saved name. A scripted Copilot name (`copilot-auto`, `copilot-gpt`) from before Copilot was real
- * stands for Copilot's own Auto, and a name that is gone falls back to the first model there is.
- */
-export function lookupModel(byId: Record<string, ModelInfo>, id: string): ModelInfo {
-  const found = byId[id] ?? (id.startsWith('copilot-') ? byId['auto'] : undefined)
-  if (found) return found
-  const any = Object.values(byId)
-  return any.find((m) => m.vendor === 'copilot') ?? (any[0] as ModelInfo)
+/** A name to show for a model that is not in the list: the vendor is not connected, or has not answered yet. */
+function labelOf(id: string): string {
+  const bare = id.replace(/^claude:/, '').replace(/^copilot-/, '')
+  return bare ? bare.charAt(0).toUpperCase() + bare.slice(1) : 'Model'
 }
 
-export const modelOf = (id: string): ModelInfo => lookupModel(useModels.getState().byId, id)
+/**
+ * The model for a saved name. A name from before Copilot was real (`copilot-auto`) stands for Copilot's own Auto. A name that is
+ * not in the list gets a plain stand-in that shows its name, so a conversation still opens when its vendor is not connected.
+ */
+export function lookupModel(byId: Record<string, ModelInfo>, id: string, vendor?: VendorId): ModelInfo {
+  const found = byId[id] ?? (id.startsWith('copilot-') ? byId['auto'] : undefined)
+  if (found) return found
+  return { id, vendor: vendor ?? (id.startsWith('claude:') ? 'claude' : 'copilot'), label: labelOf(id), efforts: [], images: true }
+}
+
+export const modelOf = (id: string, vendor?: VendorId): ModelInfo => lookupModel(useModels.getState().byId, id, vendor)

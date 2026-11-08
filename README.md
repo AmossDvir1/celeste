@@ -46,16 +46,16 @@ action under your control. No Celeste server, no account with us: your usage goe
 
 ## Status
 
-Celeste is in early development and not released yet. Here is what is real today and what is still a design preview:
+Celeste is in early development and not released yet. Nothing in the app is pretended: a vendor is there only if it is connected, and what is not built yet says so.
 
 | Area | State |
 |---|---|
 | GitHub Copilot | **Working.** Streaming, tools, approvals, `ask_user` questions, image attachments, model and effort switching, resuming a conversation after a restart |
 | Claude | **Built.** Same features as Copilot. Checked against the real Claude Code program with a stand-in for Anthropic's API, not yet against a real account |
-| OpenAI, Gemini | Design preview (a scripted assistant). Real adapters are next |
+| OpenAI, Gemini | Not available yet: their cards say "Coming soon". Adapters are next |
 | Sessions, settings, drafts, attachments | **Working.** Saved locally, and they survive a crash |
 | Devices (SSH, Hyper-V, Android) | **Working against test fixtures**, not yet tried on a wide range of real hardware. Read-only by default, with approvals |
-| Workflows and Tools & Integrations | Design preview |
+| Workflows, and the shared tool list (Tools & Integrations) | Not built yet. Devices attached to a chat are available |
 | Installers and auto-update | Not yet |
 
 The full plan, with the reasoning behind each decision, is in [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md).
@@ -76,16 +76,13 @@ this computer it connects at once. Otherwise Celeste opens GitHub's sign-in page
 github.com/login/device. The first time, Celeste downloads Copilot's runtime (about 180 MB) from npm and checks its
 checksum. Disconnecting only makes Celeste stop using Copilot: it never signs you out of GitHub.
 
-`npm run dev:web` runs only the interface in a browser at http://localhost:5199 with the data in memory, which is handy for
-quick visual checks.
-
 ## Keyboard shortcuts
 
 | Shortcut | Action |
 |---|---|
-| Ctrl K | Search chats and workflows |
+| Ctrl K | Search chats and sessions |
 | Ctrl N | New chat |
-| Ctrl 1 / 2 / 3 | Chat / Develop / Workflows |
+| Ctrl 1 / 2 | Chat / Develop |
 | Ctrl B | Show or hide the sidebar |
 | Ctrl , | Settings |
 
@@ -111,7 +108,7 @@ src/
   main/        the Electron window, the Core launcher, secrets
   core/        the Core process: SQLite, sessions, vendor adapters, devices, the tool server
   preload/     the bridge the interface calls
-  renderer/    the React interface: app shell, chat, develop, workflows, settings, stores
+  renderer/    the React interface: app shell, chat, develop, settings, stores
 docs/          the implementation plan and images
 scripts/       end-to-end checks that drive the built app, screenshot tools
 ```
@@ -129,7 +126,7 @@ scripts/       end-to-end checks that drive the built app, screenshot tools
 | `npm run verify:devices` | Run the built app against an in-process SSH server that stands in for a VM |
 | `npm run verify:claude` | Drive the real app with the real Claude Code program against a stand-in for Anthropic's API on this computer (no account, no cost) |
 | `npm run verify:copilot` | Drive the real app with your real Copilot account (spends a few premium requests) |
-| `npm run shots` | Screenshots of the key screens in both themes |
+| `npm run shots` | Screenshots of the key screens in both themes. They are the real app; Claude's answers come from a stand-in for the API, so the pictures cost nothing |
 
 The Copilot live tests are opt-in (`CELESTE_LIVE_COPILOT=1`) because they use a real account. See
 [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.

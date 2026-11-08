@@ -19,6 +19,8 @@ export interface CelesteBridge {
     hint(name: string): Promise<string | null>
   }
   revealDataFolder(): Promise<void>
+  /** Asks the person to choose a folder. Null when they cancel. */
+  chooseFolder(): Promise<string | null>
   /** Called when the window or app is closing: save anything unsaved and resolve. */
   onBeforeQuit(handler: () => Promise<void> | void): void
 }

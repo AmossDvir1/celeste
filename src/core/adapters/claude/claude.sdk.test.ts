@@ -77,7 +77,6 @@ describe.skipIf(!program)('the Claude adapter with the real Claude Code', () => 
       remember: (id) => remembered.push(id),
       transcript: () => over.transcript ?? '',
       attachmentPath: over.attachmentPath ?? (() => undefined),
-      takeForcedScenario: () => undefined
     }
     const session = createClaudeSession(host(), ctx)
     open.push(session)

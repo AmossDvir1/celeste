@@ -4,6 +4,8 @@ import type { SessionMode, UserInput } from '@shared/agent'
 import { cn } from '@/lib/cn'
 import { IconButton } from '@/components/ui'
 import { lookupModel, useModels } from '@/stores/models'
+import { useUi } from '@/stores/ui'
+import { connectedVendors, useVendors } from '@/stores/vendors'
 import { AttachmentStrip, type AttachmentsApi } from './attachments'
 import { ApprovalPicker, ModelControls, type Prefs } from './controls'
 
@@ -41,7 +43,9 @@ export function Composer({
   const home = variant === 'home'
   const byId = useModels((s) => s.byId)
   const model = lookupModel(byId, prefs.model)
-  const canSend = text.trim().length > 0 || attachments.items.length > 0
+  const noVendor = useVendors((s) => connectedVendors(s.vendors).length === 0)
+  const openSettings = useUi((s) => s.openSettings)
+  const canSend = !noVendor && (text.trim().length > 0 || attachments.items.length > 0)
   const imageBlocked = model?.images === false && attachments.items.some((a) => a.mime.startsWith('image/'))
 
   // Grow with the text, up to a limit.
@@ -89,6 +93,15 @@ export function Composer({
     >
       {attachments.items.length > 0 && (
         <AttachmentStrip items={attachments.items} onRemove={attachments.remove} className="mb-3" />
+      )}
+
+      {noVendor && (
+        <div className="mb-2 flex items-center gap-2 rounded-lg bg-accent-soft px-3 py-2 text-[13px] text-accent-text">
+          Connect an AI vendor to start chatting.
+          <button type="button" onClick={() => openSettings('vendors')} className="ml-auto font-medium underline underline-offset-2 hover:brightness-110">
+            Connect…
+          </button>
+        </div>
       )}
 
       {imageBlocked && (

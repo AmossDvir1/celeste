@@ -340,7 +340,6 @@ function setup(script: SessionEvent[], over: { approval?: ApprovalMode; vendorSe
     remember: (id) => remembered.push(id),
     transcript: () => over.transcript ?? '',
     attachmentPath: (id) => (id === 'att-1' ? 'D:\\attachments\\att-1.png' : undefined),
-    takeForcedScenario: () => undefined
   }
   const session = new CopilotAgentSession({
     ctx,

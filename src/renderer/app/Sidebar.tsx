@@ -1,20 +1,15 @@
 import { useMemo, useState } from 'react'
 import {
-  Activity,
   ChevronDown,
   Code,
-  FileText,
   Folder,
   MessageSquare,
   MoreHorizontal,
-  Package,
   PanelLeft,
   Pencil,
   Plus,
   Settings,
-  SquareTerminal,
-  Trash2,
-  Workflow
+  Trash2
 } from 'lucide-react'
 import type { SessionMode } from '@shared/agent'
 import { cn } from '@/lib/cn'
@@ -25,7 +20,6 @@ import { useSessions, needsYou } from '@/stores/sessions'
 import type { Session } from '@/stores/types'
 import { useSettings } from '@/stores/settings'
 import { useUi } from '@/stores/ui'
-import { TEMPLATES, useWorkflows, type WorkflowSummary } from '@/stores/workflows'
 
 const DAY = 86_400_000
 
@@ -44,9 +38,9 @@ function groupByDay(list: Session[]): { label: string; items: Session[] }[] {
 
 function SessionRow({ session, active }: { session: Session; active: boolean }) {
   const open = useSessions((s) => s.open)
+  const setMode = useUi((s) => s.setMode)
   const remove = useSessions((s) => s.remove)
   const rename = useSessions((s) => s.rename)
-  const setMode = useUi((s) => s.setMode)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(session.title)
   const Icon = session.mode === 'develop' ? Code : MessageSquare
@@ -204,68 +198,15 @@ function ChatList({ mode, query, limit }: { mode: SessionMode; query: string; li
   )
 }
 
-const WF_ICON = { workflow: Workflow, package: Package, activity: Activity, file: FileText, terminal: SquareTerminal }
-
-function WorkflowRow({ wf, active }: { wf: WorkflowSummary; active: boolean }) {
-  const open = useWorkflows((s) => s.open)
-  const Icon = WF_ICON[wf.icon]
-  return (
-    <button
-      type="button"
-      aria-current={active ? 'true' : undefined}
-      onClick={() => open(wf.id)}
-      className={cn(
-        'flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[13px] transition-colors',
-        active ? 'bg-select text-ink' : 'text-ink hover:bg-hover'
-      )}
-    >
-      <Icon className={cn('h-[18px] w-[18px] shrink-0', active ? 'text-accent-text' : 'text-ink-muted')} />
-      <span className="truncate">{wf.name}</span>
-    </button>
-  )
-}
-
-function WorkflowsBlock() {
-  const activeId = useWorkflows((s) => s.activeId)
-  const all = useWorkflows((s) => s.mine)
-  const createFrom = useWorkflows((s) => s.createFrom)
-  const [query, setQuery] = useState('')
-  const [showAllTemplates, setShowAllTemplates] = useState(false)
-  const q = query.trim().toLowerCase()
-  const mine = all.filter((w) => !q || w.name.toLowerCase().includes(q))
-  const templates = TEMPLATES.filter((w) => !q || w.name.toLowerCase().includes(q))
-
-  return (
-    <div className="mt-3 border-t border-edge pt-3">
-      <SectionLabel className="pb-2 text-[15px] font-semibold text-ink">Workflows</SectionLabel>
-      <Button variant="secondary" className="mb-2 w-full justify-start" onClick={() => createFrom(null)}>
-        <Plus className="h-4 w-4" /> New workflow
-      </Button>
-      <SearchInput value={query} onChange={setQuery} placeholder="Search workflows…" className="mb-2" />
-      <SectionLabel className="pt-1 pb-1">My workflows</SectionLabel>
-      {mine.map((w) => (
-        <WorkflowRow key={w.id} wf={w} active={w.id === activeId} />
-      ))}
-      <SectionLabel className="pt-3 pb-1">Templates</SectionLabel>
-      {(showAllTemplates || q ? templates : templates.slice(0, 5)).map((w) => (
-        <WorkflowRow key={w.id} wf={w} active={w.id === activeId} />
-      ))}
-      {templates.length > 5 && !q && <ShowMore open={showAllTemplates} onToggle={() => setShowAllTemplates((v) => !v)} />}
-    </div>
-  )
-}
-
 export function Sidebar() {
   const mode = useUi((s) => s.mode)
-  const setMode = useUi((s) => s.setMode)
   const openSettings = useUi((s) => s.openSettings)
   const settingsOpen = useUi((s) => s.settingsOpen)
   const set = useSettings((s) => s.set)
   const [query, setQuery] = useState('')
-  const sessionMode: SessionMode = mode === 'develop' ? 'develop' : 'chat'
+  const sessionMode: SessionMode = mode
 
   const startNew = () => {
-    if (mode === 'workflows') setMode('chat')
     useSessions.getState().home(sessionMode)
     useUi.getState().resetDraft()
   }
@@ -290,8 +231,7 @@ export function Sidebar() {
       />
 
       <div className="mt-1 min-h-0 flex-1 overflow-y-auto pr-1">
-        <ChatList mode={sessionMode} query={query} limit={mode === 'workflows' ? 3 : 6} />
-        {mode === 'workflows' && <WorkflowsBlock />}
+        <ChatList mode={sessionMode} query={query} limit={6} />
       </div>
 
       <div className="mt-2 border-t border-edge pt-2">

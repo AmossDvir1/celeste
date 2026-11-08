@@ -1,5 +1,7 @@
 import type { ApprovalMode, Effort, ModelInfo, VendorId } from '@shared/agent'
 
+// What the screens say about each vendor and each approval mode. The models themselves come from the vendors.
+
 export const VENDOR_ORDER: VendorId[] = ['copilot', 'claude', 'openai', 'gemini']
 
 export interface VendorMeta {
@@ -12,7 +14,10 @@ export interface VendorMeta {
   /** What Connect does, in plain words, for the card. */
   connectHint: string
   billedTo: string
-  keyHint: string
+  /** The link under Connect that offers a pasted API key instead. Absent when the vendor takes none (Copilot signs in with GitHub only). */
+  keyHint?: string
+  /** False while Celeste has no adapter for the vendor: its card says "Coming soon" and offers nothing. */
+  available: boolean
 }
 
 export const VENDORS: Record<VendorId, VendorMeta> = {
@@ -23,7 +28,7 @@ export const VENDORS: Record<VendorId, VendorMeta> = {
     blurb: 'Free and paid Copilot plans, including Business and Enterprise.',
     connectHint: 'Opens GitHub in your browser to authorize.',
     billedTo: 'Your Copilot plan',
-    keyHint: 'Use your own provider key instead'
+    available: true
   },
   claude: {
     id: 'claude',
@@ -32,7 +37,8 @@ export const VENDORS: Record<VendorId, VendorMeta> = {
     blurb: 'Anthropic’s agent, billed as API usage on your Claude Console account.',
     connectHint: 'Opens the Claude Console in your browser to authorize.',
     billedTo: 'Your Claude Console account',
-    keyHint: 'Paste an API key instead'
+    keyHint: 'Paste an API key instead',
+    available: true
   },
   openai: {
     id: 'openai',
@@ -41,7 +47,8 @@ export const VENDORS: Record<VendorId, VendorMeta> = {
     blurb: 'Use your ChatGPT plan, or an OpenAI API key.',
     connectHint: 'Continue with ChatGPT in your browser.',
     billedTo: 'Your ChatGPT plan',
-    keyHint: 'Paste an API key instead'
+    keyHint: 'Paste an API key instead',
+    available: false
   },
   gemini: {
     id: 'gemini',
@@ -50,27 +57,10 @@ export const VENDORS: Record<VendorId, VendorMeta> = {
     blurb: 'Gemini through an API key, or Vertex AI for teams.',
     connectHint: 'Opens Google AI Studio so you can create a key.',
     billedTo: 'Your Gemini API account',
-    keyHint: 'Use Vertex AI instead'
+    keyHint: 'Use Vertex AI instead',
+    available: false
   }
 }
-
-const FULL: Effort[] = ['low', 'medium', 'high', 'xhigh', 'max']
-
-// Mock catalog. Real adapters report their own models and effort levels.
-export const MODELS: ModelInfo[] = [
-  { id: 'copilot-auto', vendor: 'copilot', label: 'Copilot Auto', efforts: [], images: true },
-  { id: 'copilot-gpt', vendor: 'copilot', label: 'GPT-5', efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'medium', images: true },
-  { id: 'copilot-sonnet', vendor: 'copilot', label: 'Claude Sonnet', efforts: ['low', 'medium', 'high', 'max'], defaultEffort: 'medium', images: true },
-  { id: 'claude-opus', vendor: 'claude', label: 'Claude Opus', efforts: FULL, defaultEffort: 'high', images: true },
-  { id: 'claude-sonnet', vendor: 'claude', label: 'Claude Sonnet', efforts: FULL, defaultEffort: 'medium', images: true },
-  { id: 'claude-haiku', vendor: 'claude', label: 'Claude Haiku', efforts: [], images: true },
-  { id: 'openai-gpt5', vendor: 'openai', label: 'GPT-5', efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'medium', images: true },
-  { id: 'openai-mini', vendor: 'openai', label: 'GPT-5 mini', efforts: ['low', 'medium', 'high'], defaultEffort: 'medium', images: true },
-  { id: 'gemini-pro', vendor: 'gemini', label: 'Gemini Pro', efforts: [], images: true },
-  { id: 'gemini-flash', vendor: 'gemini', label: 'Gemini Flash', efforts: [], images: false }
-]
-
-export const MODEL_BY_ID: Record<string, ModelInfo> = Object.fromEntries(MODELS.map((m) => [m.id, m]))
 
 export const EFFORT_LABEL: Record<Effort, string> = {
   low: 'Low',

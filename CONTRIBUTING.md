@@ -28,7 +28,7 @@ talks to a stand-in for Anthropic's API on your own computer.
 
 - Keep a change focused, and explain what it fixes or adds and how you checked it.
 - Match the style of the code around your change: naming, comments, and how much of each.
-- Add a test with a behavior change. Vendor adapters are tested against recorded or scripted events, so no account is needed.
+- Add a test with a behavior change. Vendor adapters are tested against recorded or hand-written events, and the app checks run Claude against a stand-in for Anthropic's API, so no account is needed. Test stand-ins live in `src/core/testing`, never in the app.
 - Never log or commit keys, tokens, passwords or recordings that contain account details.
 - A change to the database is a new migration in `src/core/migrations.ts`, never an edit to a shipped one.
 - A device must never run a command without the approval rules in `src/core/devices`. Changes there get extra review.

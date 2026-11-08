@@ -1,12 +1,12 @@
 import type { DraftState, LogEvent, SearchHit, StoredEvent } from '@shared/api'
 import type { DeviceActivity, DeviceFolder, DeviceRecord } from '@shared/devices'
-import type { AttachmentRow, FileStore, IndexKind, SessionRow, StoredFolder, Store } from './store'
+import type { AttachmentRow, FileStore, IndexKind, SessionRow, StoredFolder, Store } from '../store'
 
 const fold = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
 
 /**
- * The same contract as SqliteStore, held in memory. It backs the browser preview (`npm run dev:web`),
- * where there is no database, and the service tests. Values are copied in and out, as a database would.
+ * The same contract as SqliteStore, held in memory. It backs the service tests,
+ * which need no database. Values are copied in and out, as a database would.
  */
 export class MemoryStore implements Store {
   private sessions = new Map<string, SessionRow>()
@@ -210,7 +210,7 @@ export class MemoryStore implements Store {
   close(): void {}
 }
 
-/** Attachment bytes in memory, shown through object URLs. Browser preview and tests only. */
+/** Attachment bytes in memory, shown through object URLs. Tests only. */
 export class MemoryFileStore implements FileStore {
   private blobs = new Map<string, { url: string }>()
 

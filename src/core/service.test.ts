@@ -1,9 +1,11 @@
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent, AgentSession, ApprovalAnswer, AskAnswers, UserInput } from '@shared/agent'
 import type { CorePush, CreateSessionInput, SessionSummary, StoredEvent } from '@shared/api'
-import { DEFAULT_SETTINGS, DEFAULT_VENDORS } from '@shared/defaults'
-import { MemoryFileStore, MemoryStore } from './memory-store'
-import { sampleSessions } from './mock/samples'
+import { DEFAULT_SETTINGS } from '@shared/defaults'
+import { MemoryFileStore, MemoryStore } from './testing/memory-store'
 import { SessionService, type AdapterFactory } from './service'
 
 /** A scripted agent the tests drive by hand. */
@@ -52,9 +54,10 @@ class FakeAgent implements AgentSession {
 const input: CreateSessionInput = { vendor: 'claude', mode: 'chat', title: 'Plan the rollout', model: 'copilot-auto', effort: null, approval: 'ask' }
 const flush = () => new Promise<void>((r) => setImmediate(r))
 
-function setup(store = new MemoryStore(), opts: { samples?: boolean } = {}) {
+function setup(store = new MemoryStore(), dataDir = '/data') {
   const pushes: CorePush[] = []
   const agents: FakeAgent[] = []
+  const contexts: Parameters<AdapterFactory>[0][] = []
   const files = new MemoryFileStore()
   const removed: string[] = []
   const realRemove = files.remove.bind(files)
@@ -63,7 +66,8 @@ function setup(store = new MemoryStore(), opts: { samples?: boolean } = {}) {
     realRemove(f)
   }
   let clock = 1_000_000
-  const adapter: AdapterFactory = () => {
+  const adapter: AdapterFactory = (ctx) => {
+    contexts.push(ctx)
     const a = new FakeAgent()
     agents.push(a)
     return a
@@ -71,17 +75,15 @@ function setup(store = new MemoryStore(), opts: { samples?: boolean } = {}) {
   const service = new SessionService({
     store,
     files,
-    dataDir: '/data',
+    dataDir,
     adapter,
     push: (p) => pushes.push(p),
     defaults: { ...DEFAULT_SETTINGS, userName: 'Sam' },
-    defaultVendors: DEFAULT_VENDORS,
-    samples: opts.samples ? sampleSessions : undefined,
     now: () => (clock += 10),
     undoMs: 5000
   })
   service.init()
-  return { service, api: service.api, store, pushes, agents, removed }
+  return { service, api: service.api, store, pushes, agents, removed, contexts }
 }
 
 const pushedEvents = (pushes: CorePush[], id: string): StoredEvent[] =>
@@ -89,6 +91,35 @@ const pushedEvents = (pushes: CorePush[], id: string): StoredEvent[] =>
 
 beforeEach(() => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }))
 afterEach(() => vi.useRealTimers())
+
+describe('the folder an agent works in', () => {
+  it('gives a chat with no project folder a private folder of its own, and removes it with the session', async () => {
+    const data = mkdtempSync(join(tmpdir(), 'celeste-svc-'))
+    try {
+      const { api, contexts } = setup(new MemoryStore(), data)
+      const { id } = api['sessions.create'](input)
+      expect(api['sessions.get'](id)?.summary.cwd).toBeUndefined()
+      api['sessions.send'](id, { text: 'Write me a file', attachments: [] })
+      const cwd = contexts[0].options().cwd
+      expect(cwd).toBe(join(data, 'chats', id))
+      expect(existsSync(cwd as string)).toBe(true)
+
+      api['sessions.remove'](id)
+      vi.advanceTimersByTime(6000)
+      expect(existsSync(cwd as string)).toBe(false)
+    } finally {
+      rmSync(data, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps a project folder when the session has one', () => {
+    const { api, agents, contexts } = setup()
+    const { id } = api['sessions.create']({ ...input, mode: 'develop', cwd: '/work/shop-web' })
+    api['sessions.send'](id, { text: 'Go', attachments: [] })
+    expect(agents).toHaveLength(1)
+    expect(contexts[0].options().cwd).toBe('/work/shop-web')
+  })
+})
 
 describe('sessions and their log', () => {
   it('writes every event to the log before pushing it, in order', async () => {
@@ -331,7 +362,7 @@ describe('restarting', () => {
     expect(boot.settings).toMatchObject({ theme: 'light', userName: 'Dana', wizardDone: false })
     expect(boot.settings.defaults).toMatchObject({ approval: 'ask', model: 'copilot-auto' })
     expect(boot.settingsStored).toBe(true)
-    expect(boot.vendors).toEqual({ copilot: DEFAULT_VENDORS.copilot, openai: { account: 'API key ending 4f2a', method: 'key' } })
+    expect(boot.vendors).toEqual({ openai: { account: 'API key ending 4f2a', method: 'key' } })
     expect(boot.drafts['home:chat'].text).toBe('half a thought')
   })
 })
@@ -342,7 +373,7 @@ describe('first start', () => {
     const boot = api['app.bootstrap']()
     expect(boot.settingsStored).toBe(false)
     expect(boot.settings.userName).toBe('Sam')
-    expect(boot.vendors).toEqual(DEFAULT_VENDORS)
+    expect(boot.vendors).toEqual({})
     expect(boot.sessions).toEqual([])
     expect(boot.dataDir).toBe('/data')
   })
@@ -412,34 +443,38 @@ describe('search', () => {
   })
 })
 
-describe('sample sessions (preview)', () => {
-  it('adds the samples on the first start only', () => {
-    const first = setup(new MemoryStore(), { samples: true })
-    const sessions = first.api['app.bootstrap']().sessions
-    expect(sessions).toHaveLength(sampleSessions().length)
-    expect(sessions.every((s) => s.status === 'idle')).toBe(true)
+describe('sample sessions from older builds', () => {
+  const row = (id: string) => ({
+    id,
+    vendor: 'copilot' as const,
+    mode: 'chat' as const,
+    title: id,
+    model: 'copilot-auto',
+    effort: null,
+    approval: 'auto' as const,
+    status: 'idle' as const,
+    createdAt: 1,
+    updatedAt: 1,
+    lastSeq: 0,
+    deletedAt: null
+  })
 
-    first.api['sessions.removeAll']()
+  it('removes them once, and keeps the conversations that are really the person’s', () => {
+    const store = new MemoryStore()
+    store.insertSession(row('seed-wfo'))
+    store.insertSession(row('seed-kb'))
+    store.insertSession(row('8f1c2d3e-real'))
+    store.setSetting('samplesSeeded', true)
+    store.index('seed-wfo', 'title', 'Analyze WFO logs')
+
+    const first = setup(store)
+    expect(first.api['app.bootstrap']().sessions.map((x) => x.id)).toEqual(['8f1c2d3e-real'])
+    expect(first.api['sessions.search']('WFO')).toEqual([])
+    expect(store.settings().samplesSeeded).toBe(false)
+
+    // A conversation that merely starts with the same letters later is not touched: the flag is off now.
     first.service.close()
-    expect(setup(first.store, { samples: true }).api['app.bootstrap']().sessions).toEqual([])
-  })
-
-  it('replays a sample as a finished conversation', () => {
-    const { api } = setup(new MemoryStore(), { samples: true })
-    const wfo = api['sessions.get']('seed-wfo')
-    expect(wfo?.summary).toMatchObject({ title: 'Analyze WFO logs', mode: 'chat', status: 'idle' })
-    const types = wfo?.events.map((e) => e.event.type)
-    expect(types?.[0]).toBe('user.message')
-    expect(types?.at(-1)).toBe('turn.completed')
-    expect(wfo?.events.every((e, i, all) => i === 0 || e.at >= all[i - 1].at)).toBe(true)
-    expect(api['sessions.search']('KbInstallTimeout').map((h) => h.sessionId)).toContain('seed-wfo')
-  })
-
-  it('brings back deleted samples on request', () => {
-    const { api } = setup(new MemoryStore(), { samples: true })
-    api['sessions.removeAll']()
-    const back = api['dev.restoreSamples']() as SessionSummary[]
-    expect(back).toHaveLength(sampleSessions().length)
-    expect(api['dev.restoreSamples']()).toEqual([])
+    store.insertSession(row('seed-later'))
+    expect(setup(store).api['app.bootstrap']().sessions.map((x) => x.id).sort()).toEqual(['8f1c2d3e-real', 'seed-later'])
   })
 })

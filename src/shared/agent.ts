@@ -1,5 +1,5 @@
 // The vendor boundary. The UI knows only these types, never a vendor's own format.
-// Phase 1 plays scripted scenarios through them (renderer/mocks); real adapters arrive in Phase 3.
+// Each vendor's adapter turns that vendor's own format into these (src/core/adapters).
 
 export type VendorId = 'copilot' | 'claude' | 'openai' | 'gemini'
 export type SessionMode = 'chat' | 'develop'

@@ -7,7 +7,7 @@ import { explainError, type DeviceService } from './device-service'
 
 /*
  * The tools an assistant uses on a device. They are the same whether the assistant is a vendor's agent, reaching
- * them through the MCP server, or the scripted one. Every rule that matters lives here and not in the caller:
+ * them through the MCP server, or the assistant the tests use. Every rule that matters lives here and not in the caller:
  * a session sees only the devices attached to it, Read only devices have no command or write tool, and Ask first
  * devices show an approval card with the exact command before anything runs.
  */

@@ -216,22 +216,3 @@
     scroll-behavior: auto !important;
   }
 }
-
-/* React Flow, skinned to the tokens. */
-.react-flow {
-  --xy-background-color: transparent;
-  --xy-edge-stroke: var(--c-accent);
-  --xy-attribution-background-color: transparent;
-}
-.react-flow__attribution {
-  display: none;
-}
-.react-flow__edge-path {
-  stroke-width: 1.6;
-}
-.react-flow__handle {
-  width: 9px;
-  height: 9px;
-  background: var(--c-accent);
-  border: 2px solid var(--c-canvas);
-}

@@ -238,7 +238,6 @@ function setup(respond: Respond, over: { approval?: ApprovalMode; vendorSessionI
     remember: (id) => remembered.push(id),
     transcript: () => over.transcript ?? '',
     attachmentPath: () => undefined,
-    takeForcedScenario: () => undefined
   }
   const start: StartQuery = ({ prompt, options: o }) => {
     const q = new FakeQuery(o, prompt, respond)

@@ -26,7 +26,7 @@ export type IndexKind = 'title' | 'user' | 'assistant'
 
 /**
  * Everything Core persists. The methods are synchronous: SQLite (node:sqlite) is, and so is the in-memory copy
- * that the browser preview uses. One contract test runs against both.
+ * that the tests use. One contract test runs against both.
  */
 export interface Store {
   insertSession(row: SessionRow): void
@@ -81,11 +81,11 @@ export interface Store {
 /** A folder as stored: with where its snapshot copy lives on this computer, which the window never sees. */
 export type StoredFolder = DeviceFolder & { snapshotPath: string | null }
 
-/** Where attachment bytes live: a folder on disk in the app, in memory in the browser preview. */
+/** Where attachment bytes live: a folder on disk in the app, in memory in tests. */
 export interface FileStore {
   save(id: string, ext: string, mime: string, data: ArrayBuffer): { file: string; url: string }
   remove(file: string): void
-  /** Where the file is on disk, for agents that read attachments by path. Absent in the browser preview. */
+  /** Where the file is on disk, for agents that read attachments by path. Absent in tests that keep files in memory. */
   pathOf?(file: string): string
 }
 

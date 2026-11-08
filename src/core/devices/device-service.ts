@@ -17,7 +17,7 @@ import {
 import type { Store, StoredFolder } from '../store'
 import { HostKeyError, type Connector, type ConnectorHooks, type Credentials, type DeviceTarget } from './connector'
 
-/** Folder and file operations the service needs. The app uses the disk; the browser preview does nothing. */
+/** Folder and file operations the service needs. The app uses the disk; tests use a stand-in. */
 export interface FileOps {
   join(...parts: string[]): string
   dirname(path: string): string

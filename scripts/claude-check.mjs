@@ -23,7 +23,7 @@ const api = new FakeAnthropic((r) => {
 await api.start()
 
 let app
-const open = () => launch({ width: 1440, height: 900, theme: null, profile, scripted: false, env: { ANTHROPIC_BASE_URL: api.url } })
+const open = () => launch({ width: 1440, height: 900, theme: null, profile, env: { ANTHROPIC_BASE_URL: api.url } })
 const textbox = (page) => page.getByRole('textbox', { name: 'Message' })
 const idle = (page) => page.getByRole('button', { name: 'Stop' }).waitFor({ state: 'detached', timeout: 90_000 })
 const settingsNav = (page, name) => page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name })
@@ -37,7 +37,7 @@ try {
   await page.getByRole('dialog', { name: 'Set up Celeste' }).waitFor({ timeout: 20_000 })
   await saveSettings(page, { wizardDone: true, userName: 'Dana' })
   await page.reload()
-  await page.getByRole('button', { name: /Analyze WFO logs/ }).first().waitFor({ timeout: 20_000 })
+  await page.getByRole('heading', { level: 1 }).first().waitFor({ timeout: 20_000 })
 
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await settingsNav(page, 'AI vendors').click()
@@ -59,7 +59,6 @@ try {
   for (let i = 0; i < 60 && (await page.getByRole('menuitemradio', { name: /^Haiku/ }).count()) === 0; i++) await page.waitForTimeout(300)
   const names = await items.allInnerTexts()
   check(`the model menu lists Claude's own models (${names.filter((n) => /Haiku|Sonnet|Opus|Default/.test(n)).length} of ${names.length})`, names.some((n) => /^Haiku/.test(n)) && names.some((n) => /^Sonnet/.test(n)))
-  check('and no longer the scripted Claude names', (await page.getByRole('menuitemradio', { name: 'Claude Sonnet', exact: true }).count()) === 0)
   await page.getByRole('menuitemradio', { name: /^Haiku/ }).first().click()
 
   console.log('\n# A conversation')

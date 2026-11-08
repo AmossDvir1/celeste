@@ -4,14 +4,14 @@ import { join } from 'node:path'
 import type { AskAnswers, AttachmentInfo } from '@shared/agent'
 import type { LogEvent, StoredEvent } from '@shared/api'
 import { Resvg } from '@resvg/resvg-js'
-import { DEFAULT_SETTINGS, DEFAULT_VENDORS } from '@shared/defaults'
+import { DEFAULT_SETTINGS } from '@shared/defaults'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { fakeConnectorFactory } from '../../devices/fake-connector'
+import { fakeConnectorFactory } from '../../testing/fake-connector'
 import { DeviceService, type FileOps } from '../../devices/device-service'
 import { DeviceToolServer } from '../../devices/mcp-server'
 import { DeviceTools } from '../../devices/tools'
 import { DiskFileStore } from '../../disk-files'
-import { MemoryStore } from '../../memory-store'
+import { MemoryStore } from '../../testing/memory-store'
 import { SessionService } from '../../service'
 import { createClaudeHost, createClaudeSession } from './index'
 import { RESUME_NOTICE } from './session'
@@ -51,7 +51,6 @@ describe.skipIf(!live)('Claude, for real', () => {
       adapter: (ctx) => createClaudeSession(host, ctx, (id) => server.info(id)),
       push: () => undefined,
       defaults: DEFAULT_SETTINGS,
-      defaultVendors: DEFAULT_VENDORS,
       onSessionStopped: (id) => tools.cancel(id)
     })
 

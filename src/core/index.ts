@@ -5,7 +5,7 @@ import { homedir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import type { MessagePortMain } from 'electron'
 import type { CoreApi, CoreMessage, CorePush, CoreRequest } from '@shared/api'
-import { DEFAULT_SETTINGS, DEFAULT_VENDORS } from '@shared/defaults'
+import { DEFAULT_SETTINGS } from '@shared/defaults'
 import { DiskFileStore } from './disk-files'
 import { AdbPairing } from './devices/adb-pairing'
 import { findAdb } from './devices/adb-connector'
@@ -17,8 +17,8 @@ import { nodeFileOps } from './devices/node-fs'
 import { DeviceTools } from './devices/tools'
 import { createClaudeHost, createClaudeSession, type ClaudeHost } from './adapters/claude'
 import { copilotRuntime, createCopilotHost, createCopilotSession, type CopilotHost } from './adapters/copilot'
-import { createMockSession } from './mock/engine'
-import { sampleSessions } from './mock/samples'
+import { createUnavailableSession } from './adapters/unavailable'
+import { projectApi } from './project'
 import { SessionService } from './service'
 import { VendorService } from './vendors'
 import { SqliteStore } from './sqlite-store'
@@ -106,20 +106,18 @@ async function start(): Promise<void> {
     ...(ownLogin ? { allowSubscription: true } : { configDir: join(dataDir, 'claude-config') })
   })
   claude = claudeHost
-  const scripted = process.env['CELESTE_SCRIPTED'] === '1'
 
   service = new SessionService({
     store,
     files: new DiskFileStore(join(dataDir, 'attachments')),
     dataDir,
-    // Copilot and Claude are real. The other vendors still play the scripted assistant until their adapters arrive.
-    // CELESTE_SCRIPTED=1 plays it for all of them, so the app checks that run without accounts still work.
+    // Copilot and Claude are real. OpenAI and Gemini have no adapter yet, and the window does not offer them.
     adapter: (ctx) =>
-      ctx.vendor === 'copilot' && !scripted
+      ctx.vendor === 'copilot'
         ? createCopilotSession(host, ctx, (id) => servers.info(id))
-        : ctx.vendor === 'claude' && !scripted
+        : ctx.vendor === 'claude'
           ? createClaudeSession(claudeHost, ctx, (id) => servers.info(id))
-          : createMockSession({ ...ctx, devices: { call: (name, args, hooks) => tools.call(ctx.sessionId, name, args, hooks) } }),
+          : createUnavailableSession(ctx.vendor),
     onSessionStopped: (id) => tools.cancel(id),
     push,
     defaults: {
@@ -127,15 +125,13 @@ async function start(): Promise<void> {
       userName: friendlyName(),
       defaults: { ...DEFAULT_SETTINGS.defaults, projectsFolder: join(homedir(), 'Projects') }
     },
-    // The design preview starts with two vendors pretending to be connected. A real start has nobody connected.
-    defaultVendors: scripted ? DEFAULT_VENDORS : {},
-    samples: sampleSessions
   })
   service.init()
   api = {
     ...service.api,
     ...devices.api,
-    ...new VendorService({ copilot: host, claude: claudeHost }, push, scripted).api,
+    ...new VendorService({ copilot: host, claude: claudeHost }, push).api,
+    ...projectApi,
     'devices.toolServer': async (sessionId) => servers.info(sessionId)
   }
   parent.postMessage({ type: 'ready' })

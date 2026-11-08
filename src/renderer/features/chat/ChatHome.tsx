@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { ArrowRight, Code, MessageSquare, Workflow } from 'lucide-react'
+import { ArrowRight, Code, FileText, Lightbulb, MessageSquare, TestTube } from 'lucide-react'
 import type { SessionMode, UserInput } from '@shared/agent'
 import { greetingFor } from '@/lib/format'
 import { GlowArc } from '@/glow/GlowArc'
@@ -11,14 +11,14 @@ import { DropZone, useAttachments } from './attachments'
 
 const SUGGESTIONS: Record<SessionMode, { icon: typeof Code; text: string }[]> = {
   chat: [
-    { icon: MessageSquare, text: 'Review PR #3421' },
-    { icon: Code, text: 'Analyze Jira SC-1234' },
-    { icon: Workflow, text: 'Create deployment workflow' }
+    { icon: Lightbulb, text: 'Help me think through a decision' },
+    { icon: FileText, text: 'Summarize a document for me' },
+    { icon: MessageSquare, text: 'Draft a reply to an email' }
   ],
   develop: [
     { icon: Code, text: 'Explain how this project is organized' },
-    { icon: MessageSquare, text: 'Find and fix the failing tests' },
-    { icon: Workflow, text: 'Add input validation to the login form' }
+    { icon: TestTube, text: 'Find and fix the failing tests' },
+    { icon: MessageSquare, text: 'Review my latest changes' }
   ]
 }
 

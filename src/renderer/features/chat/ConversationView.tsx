@@ -80,7 +80,7 @@ export function ConversationView({ sessionId }: { sessionId: string }) {
   }, [])
 
   if (!session) return null
-  const model = lookupModel(byId, session.model)
+  const model = lookupModel(byId, session.model, session.vendor)
   const busy = session.status !== 'idle'
   const lastUser = [...session.items].reverse().find((i) => i.kind === 'user')
   const develop = session.mode === 'develop'
@@ -125,7 +125,6 @@ export function ConversationView({ sessionId }: { sessionId: string }) {
             {develop && (
               <>
                 <PanelToggle panel="changes" label="Changes" icon={FileDiff} badge={changedFiles} />
-                <PanelToggle panel="files" label="Files" icon={Folder} />
                 <PanelToggle panel="terminal" label="Terminal" icon={SquareTerminal} />
               </>
             )}

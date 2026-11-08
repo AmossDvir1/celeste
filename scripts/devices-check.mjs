@@ -1,11 +1,23 @@
 // Phase 3 acceptance test, in the real built app, against an in-process SSH server that stands in for a VM:
 // add a device, confirm its key, attach it to a chat, run a command through the approval card, take a snapshot,
 // refuse a changed host key, and check that nothing is lost across a restart.   npm run verify:devices
+// The assistant is Claude, for real (the real SDK and program), reaching the device tools through Celeste's own tool server;
+// what it says is chosen by a stand-in for Anthropic's API (scripts/lib/stub.mjs), so no account is needed.
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { launch, saveSettings } from './lib/app.mjs'
 import { startSshFixture } from './lib/ssh-fixture.mjs'
+import { claudeReady, echo, pasteClaudeKey, startStub } from './lib/stub.mjs'
+
+const TOOL = (name) => `mcp__celeste-devices__${name}`
+/** What the stand-in's Claude does: runs a command on the device when asked about disk space, looks at a folder when asked what is there, and reports the tool's answer. */
+const script = (r) => {
+  if (r.last.kind === 'tool_result') return [{ type: 'text', text: r.last.isError ? `That did not work: ${r.last.text}` : `Here is what the device reported:\n\n${r.last.text}` }]
+  if (/disk space/i.test(r.last.text)) return [{ type: 'tool_use', name: TOOL('device_run'), input: { device: 'fixture-vm', command: 'uname -a; df -h /' } }]
+  if (/What is on my device/.test(r.last.text)) return [{ type: 'tool_use', name: TOOL('device_list_dir'), input: { device: 'fixture-vm', path: '/' } }]
+  return echo(r)
+}
 
 const profile = mkdtempSync(join(tmpdir(), 'celeste-devices-'))
 const failures = []
@@ -16,18 +28,28 @@ const check = (label, ok, detail = '') => {
 
 let fixture
 let app
-const open = () => launch({ width: 1440, height: 900, theme: null, profile })
+let stub
+const open = () => launch({ width: 1440, height: 900, theme: null, profile, env: stub.env })
 const textbox = (page) => page.getByRole('textbox', { name: 'Message' })
 const settingsNav = (page, name) => page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name })
 const openDevices = async (page) => {
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await settingsNav(page, 'Devices').click()
 }
-const closeSettings = (page) => page.keyboard.press('Escape')
+/** Escape closes the top-most dialog only, so it is pressed until Settings itself is gone. */
+const closeSettings = async (page) => {
+  for (let i = 0; i < 3; i++) {
+    await page.keyboard.press('Escape')
+    const gone = await page.getByRole('navigation', { name: 'Settings sections' }).waitFor({ state: 'detached', timeout: 1500 }).then(() => true, () => false)
+    if (gone) return
+  }
+  throw new Error('Settings did not close')
+}
 /** The assistant finished its turn: the Stop button is gone. */
 const idle = (page) => page.getByRole('button', { name: 'Stop' }).waitFor({ state: 'detached', timeout: 30_000 })
 
 try {
+  stub = await startStub(script)
   fixture = await startSshFixture({ os: 'linux' })
   const app1 = join(fixture.root, 'home', 'dev', 'app')
   mkdirSync(join(app1, 'src'), { recursive: true })
@@ -43,7 +65,12 @@ try {
   await page.getByRole('dialog', { name: 'Set up Celeste' }).waitFor({ timeout: 20_000 })
   await saveSettings(page, { wizardDone: true, userName: 'Dana' })
   await page.reload()
-  await page.getByRole('button', { name: /Analyze WFO logs/ }).first().waitFor({ timeout: 20_000 })
+  await page.getByRole('heading', { level: 1 }).first().waitFor({ timeout: 20_000 })
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await settingsNav(page, 'AI vendors').click()
+  await pasteClaudeKey(page)
+  await closeSettings(page)
+  await claudeReady(page)
 
   await openDevices(page)
   check('Settings has a Devices section, empty at first', (await page.getByText('No devices yet').count()) > 0)
@@ -72,7 +99,7 @@ try {
   console.log('\n# Using it from a chat')
   await textbox(page).fill('Hello there')
   await textbox(page).press('Enter')
-  await page.getByText('go through the plan first', { exact: false }).waitFor({ timeout: 30_000 })
+  await page.getByText('Echo: Hello there', { exact: false }).first().waitFor({ timeout: 60_000 })
   await idle(page)
   await page.getByRole('button', { name: 'Tools & Integrations' }).first().click()
   const toggle = page.getByRole('switch', { name: 'fixture-vm attached to this chat' })
@@ -91,7 +118,7 @@ try {
   check('there is no way to allow it for the whole session', (await card.getByRole('button', { name: 'Allow for this session' }).count()) === 0)
   check('nothing ran before approval', fixture.commands.every((c) => !c.includes('df -h')))
   await card.getByRole('button', { name: 'Allow', exact: true }).click()
-  await page.getByText('Here is what', { exact: false }).waitFor({ timeout: 30_000 })
+  await page.getByText('Here is what the device reported', { exact: false }).first().waitFor({ timeout: 60_000 })
   check('the command ran on the device after approval', fixture.commands.includes('uname -a; df -h /'))
   await idle(page)
   check('the assistant reports what it found', (await page.getByText('Filesystem', { exact: false }).count()) > 0)
@@ -102,7 +129,7 @@ try {
   await textbox(page).press('Enter')
   await card.waitFor({ timeout: 30_000 })
   await card.getByRole('button', { name: 'Deny' }).click()
-  await page.getByText('The user declined', { exact: false }).waitFor({ timeout: 30_000 })
+  await page.getByText('The user declined', { exact: false }).first().waitFor({ timeout: 60_000 })
   await idle(page)
   check('a declined command is not run', fixture.commands.length === before)
 
@@ -114,7 +141,7 @@ try {
   const afterDecline = fixture.commands.length
   await textbox(page).fill('What is on my device?')
   await textbox(page).press('Enter')
-  await page.getByText('is read only, so I only looked', { exact: false }).waitFor({ timeout: 30_000 })
+  await page.getByText('Here is what the device reported', { exact: false }).nth(1).waitFor({ timeout: 60_000 })
   await idle(page)
   check('a read only device is looked at, never run on', fixture.commands.length === afterDecline && (await card.count()) === 0)
 
@@ -156,7 +183,7 @@ try {
   console.log('\n# After a restart')
   app = await open()
   page = app.page
-  await page.getByRole('button', { name: /Analyze WFO logs/ }).first().waitFor({ timeout: 20_000 })
+  await page.getByRole('button', { name: /^Hello there/ }).first().waitFor({ timeout: 20_000 })
   await openDevices(page)
   await page.getByRole('heading', { name: 'fixture-vm' }).waitFor({ timeout: 10_000 })
   check('the device is still there, as read only', (await page.getByText('Read only').count()) > 0)
@@ -183,13 +210,20 @@ try {
 } catch (err) {
   console.error(err)
   failures.push('the script itself failed')
+  // What the window looked like when it went wrong. scripts/.output is not tracked.
+  await app?.page.screenshot({ path: join(import.meta.dirname, '.output', 'devices-failure.png') }).catch(() => undefined)
 } finally {
   await app?.close().catch(() => undefined)
   await fixture?.close().catch(() => undefined)
-  try {
-    rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 })
-  } catch {
-    console.warn(`Could not remove ${profile}`)
+  await stub?.stop().catch(() => undefined)
+  for (let i = 0; i < 20; i++) {
+    try {
+      rmSync(profile, { recursive: true, force: true })
+      break
+    } catch {
+      if (i === 19) console.warn(`Could not remove ${profile}`)
+      await new Promise((r) => setTimeout(r, 500))
+    }
   }
 }
 

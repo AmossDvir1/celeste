@@ -6,18 +6,18 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import type { CorePush } from '@shared/api'
-import { DEFAULT_SETTINGS, DEFAULT_VENDORS } from '@shared/defaults'
+import { DEFAULT_SETTINGS } from '@shared/defaults'
 import type { AccessLevel, DeviceRecord } from '@shared/devices'
 import { startSshFixture, type SshFixture } from '../../../scripts/lib/ssh-fixture.mjs'
-import { MemoryFileStore, MemoryStore } from '../memory-store'
-import { createMockSession } from '../mock/engine'
+import { MemoryFileStore, MemoryStore } from '../testing/memory-store'
+import { createMockSession } from '../testing/engine'
 import { SessionService } from '../service'
-import { fakeConnectorFactory } from './fake-connector'
+import { fakeConnectorFactory } from '../testing/fake-connector'
 import { DeviceService, type FileOps } from './device-service'
 import { DeviceToolServer } from './mcp-server'
 import { nodeFileOps } from './node-fs'
 import { SshConnector } from './ssh-connector'
-import { DeviceTools, normalizePath } from './tools'
+import { DeviceTools, TOOLS, normalizePath } from './tools'
 
 const idle = { vendorSessionId: 'x', events: { [Symbol.asyncIterator]: () => ({ next: () => new Promise<never>(() => undefined) }) }, send() {}, respond() {}, async setModel() {}, async setApprovalMode() {}, async interrupt() {}, async close() {} }
 
@@ -41,7 +41,6 @@ function world(useMock = false) {
     adapter: useMock ? (ctx) => createMockSession({ ...ctx, devices: { call: (n, a, h) => tools.call(ctx.sessionId, n, a, h) } }) : () => idle as never,
     push: (p) => pushes.push(p),
     defaults: DEFAULT_SETTINGS,
-    defaultVendors: DEFAULT_VENDORS,
     onSessionStopped: (id) => tools.cancel(id)
   })
   const devices = new DeviceService({ store, dataDir: '/data', getSecret: async () => 'pw', connectorFor: connectors, push: (p) => pushes.push(p), fs: noDisk(removed) })
@@ -370,7 +369,7 @@ describe('folders from a device', () => {
     const { devices, fixture, device, store } = await sshWorld()
     mkdirSync(join(fixture.root, 'docs'))
     writeFileSync(join(fixture.root, 'docs', 'a.md'), '# a')
-    const session = new SessionService({ store, files: new MemoryFileStore(), dataDir: '/x', adapter: () => idle as never, push: () => undefined, defaults: DEFAULT_SETTINGS, defaultVendors: DEFAULT_VENDORS })
+    const session = new SessionService({ store, files: new MemoryFileStore(), dataDir: '/x', adapter: () => idle as never, push: () => undefined, defaults: DEFAULT_SETTINGS })
     const s = session.api['sessions.create']({ vendor: 'claude', mode: 'chat', title: 't', model: 'm', effort: null, approval: 'auto' }).id
     const snap = await devices.api['devices.addFolder'](device.id, '/docs', 'snapshot')
     await devices.api['devices.addFolder'](device.id, '/docs', 'live')
@@ -399,18 +398,24 @@ describe('the device tool server', () => {
     return { ...w, server, connect }
   }
 
-  it('lists the tools a session may use, which follow the device’s access level', async () => {
+  it('lists every tool, so a device attached after the agent connected is still usable, and refuses what the device’s access level does not allow', async () => {
     const w = await serverWorld()
     const s = w.newSession()
+    const client = await w.connect(w.server.info(s).token)
+    const all = Object.keys(TOOLS)
+    // Nothing is attached yet when the agent first asks for the list.
+    expect((await client.listTools()).tools.map((t) => t.name)).toEqual(all)
+    expect(await client.callTool({ name: 'device_run', arguments: { device: 'build-vm', command: 'ls' } })).toMatchObject({ isError: true })
+
     const d = await w.addDevice('build-vm', 'read')
     await w.devices.api['devices.attach'](s, d.id, true)
-    const client = await w.connect(w.server.info(s).token)
-    expect((await client.listTools()).tools.map((t) => t.name)).toEqual(['devices_list', 'device_read_file', 'device_list_dir', 'device_pull'])
+    const refused = await client.callTool({ name: 'device_run', arguments: { device: 'build-vm', command: 'ls' } })
+    expect(refused).toMatchObject({ isError: true })
+    expect(JSON.stringify(refused.content)).toMatch(/read only/)
+    expect(await client.callTool({ name: 'device_list_dir', arguments: { device: 'build-vm', path: '/' } })).toMatchObject({ isError: false })
 
     await w.devices.api['devices.update'](d.id, { accessLevel: 'full' })
-    const names = (await client.listTools()).tools.map((t) => t.name)
-    expect(names).toContain('device_run')
-    expect(names).not.toContain('device_screenshot')
+    expect(await client.callTool({ name: 'device_run', arguments: { device: 'build-vm', command: 'echo ok' } })).toMatchObject({ isError: false })
   })
 
   it('runs a tool for the session its token belongs to, and no other', async () => {
@@ -425,7 +430,8 @@ describe('the device tool server', () => {
     expect(ran).toMatchObject({ isError: false, content: [{ type: 'text', text: 'from mcp\n[exit code 0]' }] })
 
     const stranger = await w.connect(w.server.info(other).token)
-    expect((await stranger.listTools()).tools.map((t) => t.name)).toEqual(['devices_list'])
+    const strangerList = await stranger.callTool({ name: 'devices_list', arguments: {} })
+    expect(JSON.stringify(strangerList.content)).toMatch(/No device is attached/)
   })
 
   it('holds a tool call open while the approval card waits for an answer', async () => {

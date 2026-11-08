@@ -73,9 +73,11 @@ export class DeviceToolServer {
 
   private serverFor(sessionId: string): McpServer {
     const server = new McpServer({ name: 'celeste-devices', version: '1.0.0' })
-    // The list is worked out for each request, so a device set to Read only stops offering commands at once.
-    for (const name of this.tools.available(sessionId)) {
-      const def = TOOLS[name as ToolName]
+    // Every tool is always listed. An agent asks for the list once, when it connects, so a list that followed the attached devices
+    // would show a device attached later as no tools at all. What a tool may do is decided when it is called (DeviceTools.call):
+    // a read only device refuses commands and writes there, with a message that says why.
+    for (const name of Object.keys(TOOLS) as ToolName[]) {
+      const def = TOOLS[name]
       // `readOnlyHint` is what lets an agent in plan mode use the tools that change nothing on the device.
       server.registerTool(name, { title: def.title, description: def.description, inputSchema: def.shape, annotations: { readOnlyHint: def.needs === 'any' } }, async (args: unknown) => {
         const out = await this.tools.call(sessionId, name, args)

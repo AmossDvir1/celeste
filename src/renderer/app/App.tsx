@@ -5,27 +5,24 @@ import { AddDeviceDialog } from '@/features/devices/AddDeviceDialog'
 import { FolderPicker } from '@/features/devices/FolderPicker'
 import { ConversationView } from '@/features/chat/ConversationView'
 import { ProjectBar } from '@/features/develop/ProjectBar'
-import { ChangesPanel, FilesPanel, TerminalPanel } from '@/features/develop/panels'
+import { ChangesPanel, TerminalPanel } from '@/features/develop/panels'
 import { SearchDialog } from '@/features/search/SearchDialog'
 import { SettingsDialog } from '@/features/settings/SettingsDialog'
 import { ToolsPanel } from '@/features/tools/ToolsPanel'
 import { Wizard } from '@/features/wizard/Wizard'
-import { WorkflowsScreen } from '@/features/workflows/WorkflowsScreen'
 import { Toasts } from '@/components/Toasts'
 import { IconButton, TooltipProvider } from '@/components/ui'
 import { useSessions } from '@/stores/sessions'
 import { useSettings } from '@/stores/settings'
 import { useUi } from '@/stores/ui'
-import { DevMenu } from './DevMenu'
 import { Sidebar } from './Sidebar'
 import { TopBar } from './TopBar'
 
 function MainPanel() {
   const mode = useUi((s) => s.mode)
-  const activeId = useSessions((s) => (mode === 'workflows' ? null : s.active[mode]))
+  const activeId = useSessions((s) => s.active[mode])
   const send = useSessions((s) => s.send)
 
-  if (mode === 'workflows') return null
   if (activeId) return <ConversationView key={activeId} sessionId={activeId} />
   return (
     <ChatHome
@@ -40,14 +37,13 @@ function MainPanel() {
 function RightPanel() {
   const panel = useUi((s) => s.rightPanel)
   const mode = useUi((s) => s.mode)
-  if (!panel || mode === 'workflows') return null
+  if (!panel) return null
   // Develop panels only make sense in Develop.
   if (panel !== 'tools' && mode !== 'develop') return null
   return (
     <div className="animate-slide-in-right h-full w-[400px] shrink-0">
       {panel === 'tools' && <ToolsPanel />}
       {panel === 'changes' && <ChangesPanel />}
-      {panel === 'files' && <FilesPanel />}
       {panel === 'terminal' && <TerminalPanel />}
     </div>
   )
@@ -71,18 +67,13 @@ function useShortcuts() {
       } else if (key === 'b') {
         e.preventDefault()
         settings.set({ sidebarCollapsed: !settings.sidebarCollapsed })
-      } else if (key === '1' || key === '2' || key === '3') {
+      } else if (key === '1' || key === '2') {
         e.preventDefault()
-        ui.setMode((['chat', 'develop', 'workflows'] as const)[Number(key) - 1])
+        ui.setMode((['chat', 'develop'] as const)[Number(key) - 1])
       } else if (key === 'n') {
         e.preventDefault()
-        const m = ui.mode === 'develop' ? 'develop' : 'chat'
-        if (ui.mode === 'workflows') ui.setMode('chat')
-        useSessions.getState().home(m)
+        useSessions.getState().home(ui.mode)
         ui.resetDraft()
-      } else if (key === 'd' && e.shiftKey && import.meta.env.DEV) {
-        e.preventDefault()
-        ui.setDevMenuOpen(!ui.devMenuOpen)
       }
     }
     // Dropping a file outside a drop zone must not make the window navigate to it.
@@ -102,7 +93,6 @@ export function App() {
   const bare = new URLSearchParams(window.location.search).get('bare')
   const collapsed = useSettings((s) => s.sidebarCollapsed)
   const set = useSettings((s) => s.set)
-  const mode = useUi((s) => s.mode)
   const wizardOpen = useUi((s) => s.wizardOpen)
   useShortcuts()
 
@@ -136,16 +126,10 @@ export function App() {
                 </IconButton>
               </div>
             )}
-            {mode === 'workflows' ? (
-              <WorkflowsScreen />
-            ) : (
-              <>
-                <div className="relative min-w-0 flex-1 overflow-hidden rounded-2xl border border-edge bg-panel">
-                  <MainPanel />
-                </div>
-                <RightPanel />
-              </>
-            )}
+            <div className="relative min-w-0 flex-1 overflow-hidden rounded-2xl border border-edge bg-panel">
+              <MainPanel />
+            </div>
+            <RightPanel />
           </main>
         </div>
         {wizardOpen && <Wizard />}
@@ -154,7 +138,6 @@ export function App() {
         <AddDeviceDialog />
         <FolderPicker />
         <Toasts />
-        {import.meta.env.DEV && <DevMenu />}
       </div>
     </TooltipProvider>
   )

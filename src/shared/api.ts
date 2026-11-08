@@ -215,15 +215,15 @@ export interface CoreApi {
   /** The loopback address and token an agent uses to reach this session's device tools. */
   'devices.toolServer': (sessionId: string) => Promise<{ url: string; token: string } | null>
 
-  // Preview only: the scripted assistant and its sample sessions.
-  'dev.forceScenario': (scenario: string | null) => void
-  'dev.restoreSamples': () => SessionSummary[]
+  /** Whether a folder exists, and which git branch it is on. For Develop's project picker. */
+  'project.inspect': (path: string) => Promise<{ exists: boolean; branch: string | null }>
 }
 
 export type DeviceApi = { [K in keyof CoreApi as K extends `devices.${string}` ? K : never]: CoreApi[K] }
 export type VendorLinkApi = { [K in keyof CoreApi as K extends `vendor.${string}` ? K : never]: CoreApi[K] }
+export type ProjectApi = { [K in keyof CoreApi as K extends `project.${string}` ? K : never]: CoreApi[K] }
 /** The methods the session service answers. The device service and the vendor service answer the rest. */
-export type SessionApi = Omit<CoreApi, keyof DeviceApi | keyof VendorLinkApi>
+export type SessionApi = Omit<CoreApi, keyof DeviceApi | keyof VendorLinkApi | keyof ProjectApi>
 
 export type CoreMethod = keyof CoreApi
 export type CoreParams<M extends CoreMethod> = Parameters<CoreApi[M]>

@@ -16,8 +16,6 @@ export interface AdapterContext {
   transcript: () => string
   /** Where an attachment's file is on disk, when the app keeps them on disk. */
   attachmentPath: (id: string) => string | undefined
-  /** Dev menu: force a scripted scenario for the next message. */
-  takeForcedScenario: () => string | undefined
 }
 
 export type AdapterFactory = (ctx: AdapterContext) => AgentSession

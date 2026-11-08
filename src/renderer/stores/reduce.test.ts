@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent } from '@shared/agent'
 import type { LogEvent, SessionStatus, StoredEvent } from '@shared/api'
 import { nextStatus } from '@shared/status'
-import { createMockSession } from '@core/mock/engine'
+import { createMockSession } from '@core/testing/engine'
 import { foldEvents, reduceEvent } from './reduce'
 import type { Session } from './types'
 

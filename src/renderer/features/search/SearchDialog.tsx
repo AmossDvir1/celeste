@@ -1,31 +1,28 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Code, MessageSquare, Search, Workflow } from 'lucide-react'
+import { Code, MessageSquare, Search } from 'lucide-react'
 import type { SearchHit } from '@shared/api'
 import { core } from '@/api'
 import { cn } from '@/lib/cn'
 import { Modal } from '@/components/Dialog'
 import { useSessions } from '@/stores/sessions'
 import { useUi } from '@/stores/ui'
-import { TEMPLATES, useWorkflows } from '@/stores/workflows'
 
 interface Result {
   key: string
   label: string
-  kind: 'Chat' | 'Develop' | 'Workflow' | 'Template'
+  kind: 'Chat' | 'Develop'
   /** The part of the conversation that matched, when it was not the title. */
   snippet?: string
   run: () => void
 }
 
-/** Ctrl+K: jump to any chat, Develop session or workflow. */
+/** Ctrl+K: jump to any chat or Develop session. */
 export function SearchDialog() {
   const open = useUi((s) => s.searchOpen)
   const setOpen = useUi((s) => s.setSearchOpen)
   const setMode = useUi((s) => s.setMode)
   const sessions = useSessions((s) => s.sessions)
   const openSession = useSessions((s) => s.open)
-  const mine = useWorkflows((s) => s.mine)
-  const openWorkflow = useWorkflows((s) => s.open)
   const [q, setQ] = useState('')
   const [idx, setIdx] = useState(0)
   const [hits, setHits] = useState<SearchHit[]>([])
@@ -52,7 +49,6 @@ export function SearchDialog() {
 
   const results = useMemo<Result[]>(() => {
     const needle = q.trim().toLowerCase()
-    const hit = (t: string) => !needle || t.toLowerCase().includes(needle)
     const out: Result[] = []
     const open = (id: string, mode: 'chat' | 'develop') => () => {
       setMode(mode)
@@ -68,10 +64,8 @@ export function SearchDialog() {
         .slice(0, 8)
         .forEach((s) => out.push({ key: s.id, label: s.title, kind: s.mode === 'develop' ? 'Develop' : 'Chat', run: open(s.id, s.mode) }))
     }
-    mine.filter((w) => hit(w.name)).forEach((w) => out.push({ key: w.id, label: w.name, kind: 'Workflow', run: () => { setMode('workflows'); openWorkflow(w.id) } }))
-    TEMPLATES.filter((w) => hit(w.name)).forEach((w) => out.push({ key: w.id, label: w.name, kind: 'Template', run: () => { setMode('workflows'); openWorkflow(w.id) } }))
     return out.slice(0, 12)
-  }, [q, hits, sessions, mine, setMode, openSession, openWorkflow])
+  }, [q, hits, sessions, setMode, openSession])
 
   const choose = (r?: Result) => {
     if (!r) return
@@ -90,7 +84,7 @@ export function SearchDialog() {
         }
       }}
       title="Search"
-      description="Find a chat, a Develop session or a workflow"
+      description="Find a chat or a Develop session"
       hideTitle
       className="w-[min(600px,calc(100vw-48px))]"
     >
@@ -103,8 +97,8 @@ export function SearchDialog() {
           aria-expanded="true"
           aria-controls="search-results"
           aria-activedescendant={results[idx] ? `sr-${results[idx].key}` : undefined}
-          aria-label="Search chats and workflows"
-          placeholder="Search chats, sessions and workflows…"
+          aria-label="Search chats and sessions"
+          placeholder="Search chats and sessions…"
           onChange={(e) => {
             setQ(e.target.value)
             setIdx(0)
@@ -125,7 +119,7 @@ export function SearchDialog() {
       </div>
       <ul id="search-results" role="listbox" aria-label="Results" className="max-h-[360px] overflow-y-auto p-2">
         {results.map((r, i) => {
-          const Icon = r.kind === 'Chat' ? MessageSquare : r.kind === 'Develop' ? Code : Workflow
+          const Icon = r.kind === 'Chat' ? MessageSquare : Code
           return (
             <li
               key={r.key}

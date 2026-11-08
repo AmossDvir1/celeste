@@ -7,14 +7,12 @@ const VENDORS: VendorId[] = ['copilot', 'claude', 'openai', 'gemini']
 
 /**
  * Connecting vendors and listing their models. Copilot and Claude are real so far; the others answer "unsupported"
- * and the window keeps playing its scripted connection for them until their adapters arrive.
+ * and the window offers them as coming soon until their adapters arrive.
  */
 export class VendorService {
   constructor(
     private readonly hosts: { copilot: CopilotHost; claude: ClaudeHost },
-    private readonly push: (p: CorePush) => void,
-    /** Every vendor answers "unsupported", so the window plays its scripted connection. For app checks without accounts. */
-    private readonly scripted = false
+    private readonly push: (p: CorePush) => void
   ) {}
 
   private id(value: unknown): VendorId {
@@ -23,7 +21,7 @@ export class VendorService {
   }
 
   private real(id: VendorId): 'copilot' | 'claude' | undefined {
-    return !this.scripted && (id === 'copilot' || id === 'claude') ? id : undefined
+    return id === 'copilot' || id === 'claude' ? id : undefined
   }
 
   readonly api: VendorLinkApi = {

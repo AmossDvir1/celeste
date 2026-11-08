@@ -68,6 +68,7 @@ const bridge: CelesteBridge = {
     hint: (name) => secret('hint', name)
   },
   revealDataFolder: () => ipcRenderer.invoke('celeste:reveal-data'),
+  chooseFolder: () => ipcRenderer.invoke('celeste:choose-folder'),
   onBeforeQuit: (handler) => {
     beforeQuit = handler
   }

@@ -809,6 +809,15 @@ A short test against each real CLI to settle the **Verify** items, starting with
 
 **Status: Claude is built; OpenAI and Gemini are not started.**
 
+*Mocks removed from the app (8 November 2026).* Nothing in the app is pretended any more:
+
+- The scripted assistant, the sample sessions, the scenario switcher (Ctrl+Shift+D), the made-up model catalog, the pretend-connected vendors and the scripted Connect steps are gone. A real start has no vendor connected, an empty sidebar, and a composer that says "Connect an AI vendor to start chatting". OpenAI and Gemini cards say "Coming soon". Sample sessions that older builds added to someone's database are deleted once, on the next start.
+- Workflows are gone from the app (the screen, its sample workflows, the canvas library and the tab) until Phase 7 builds them for real. Tools & Integrations no longer lists ten invented integrations; it shows the devices attached to the chat and says the shared tool list is not built. The Develop project picker now chooses a real folder and shows its real git branch (read only); the worktree switch, the made-up branch list, the invented file tree and the fake terminal prompt are gone.
+- The in-memory copy of Core and `npm run dev:web` (browser preview) are gone: the app needs its desktop shell.
+- Test stand-ins now live in `src/core/testing` (the scripted engine, sample sessions, the in-memory store, the fake device connector) and are never imported by the app. The app checks (`verify:persistence`, `verify:devices`, `verify:package`, `shots`) run Claude for real against the stand-in for Anthropic's API instead of the scripted assistant.
+- **A chat's working folder.** A Chat session with no project folder used to run in whatever folder Celeste was started from, so a file the agent wrote landed in the project root. Each such session now works in its own folder, `<data folder>/chats/<session id>`, made when the agent first starts and deleted with the session. The session itself still shows no folder.
+- One real bug found on the way: the device tool server listed only the tools the attached devices allowed at the moment an agent connected, and agents ask once, so a device attached later was invisible. It now lists every tool and refuses at call time, with a reason.
+
 *Claude* (`src/core/adapters/claude`), on `@anthropic-ai/claude-agent-sdk` 0.3.319 (exact):
 
 - **What it does**, with the same shape as the Copilot adapter: streams the answer and the thinking; shows each tool with a readable title and, for edits, a diff (from the patch Claude reports, or worked out from the call); asks for approval by the session's mode (auto, approve edits, ask first, plan only); shows `AskUserQuestion` as the question card and hands the answers back; sends images as image blocks and other files by their place on disk; changes model and effort from the next message; stops cleanly (a stopped answer ends as stopped, a waiting card is let go); resumes the conversation after a restart or a crash; and, if Claude no longer has the conversation, starts a new one from Celeste's log and says so in one line.

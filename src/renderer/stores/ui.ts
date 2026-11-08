@@ -1,10 +1,11 @@
 import { create } from 'zustand'
-import type { ApprovalMode, Effort } from '@shared/agent'
-import { modelOf } from './models'
+import type { ApprovalMode, Effort, ModelInfo } from '@shared/agent'
+import { effortFor } from '@/lib/vendors'
+import { lookupModel, modelOf, useModels } from './models'
 import { useSettings } from '@/stores/settings'
 
-export type AppMode = 'chat' | 'develop' | 'workflows'
-export type RightPanel = null | 'tools' | 'changes' | 'files' | 'terminal'
+export type AppMode = 'chat' | 'develop'
+export type RightPanel = null | 'tools' | 'changes' | 'terminal'
 export type SettingsSection = 'general' | 'appearance' | 'vendors' | 'agent' | 'tools' | 'devices' | 'data' | 'about'
 
 /** Settings of the composer before a session exists. A new session copies them. */
@@ -12,9 +13,10 @@ export interface Draft {
   model: string
   effort: Effort | null
   approval: ApprovalMode
+  /** The folder Develop works in. Empty until one is chosen. */
   project: string
+  /** Its git branch, read from the folder. Empty when it has none. */
   branch: string
-  worktree: boolean
 }
 
 export interface Toast {
@@ -31,7 +33,6 @@ interface UiState {
   settingsSection: SettingsSection
   wizardOpen: boolean
   searchOpen: boolean
-  devMenuOpen: boolean
   draft: Draft
   toasts: Toast[]
   /** Where Celeste keeps its data, for the Data section of Settings. */
@@ -44,9 +45,10 @@ interface UiState {
   closeSettings: () => void
   setWizardOpen: (open: boolean) => void
   setSearchOpen: (open: boolean) => void
-  setDevMenuOpen: (open: boolean) => void
   setDraft: (patch: Partial<Draft>) => void
   resetDraft: () => void
+  /** After the model list changes: if the draft's model is not on it, use one that is. */
+  fitDraftToModels: () => void
   pushToast: (toast: Omit<Toast, 'id'>) => void
   dismissToast: (id: number) => void
   setDataDir: (dir: string) => void
@@ -59,9 +61,8 @@ function freshDraft(): Draft {
     model: model.id,
     effort: model.efforts.length ? (model.defaultEffort ?? model.efforts[0]) : null,
     approval: defaults.approval,
-    project: 'D:\\Work\\wfo-tools',
-    branch: 'main',
-    worktree: false
+    project: '',
+    branch: ''
   }
 }
 
@@ -74,7 +75,6 @@ export const useUi = create<UiState>((set, get) => ({
   settingsSection: 'general',
   wizardOpen: false,
   searchOpen: false,
-  devMenuOpen: false,
   draft: freshDraft(),
   toasts: [],
   dataDir: '',
@@ -86,9 +86,19 @@ export const useUi = create<UiState>((set, get) => ({
   closeSettings: () => set({ settingsOpen: false }),
   setWizardOpen: (wizardOpen) => set({ wizardOpen }),
   setSearchOpen: (searchOpen) => set({ searchOpen }),
-  setDevMenuOpen: (devMenuOpen) => set({ devMenuOpen }),
   setDraft: (patch) => set({ draft: { ...get().draft, ...patch } }),
-  resetDraft: () => set({ draft: { ...freshDraft(), project: get().draft.project, branch: get().draft.branch } }),
+  resetDraft: () => {
+    set({ draft: { ...freshDraft(), project: get().draft.project, branch: get().draft.branch } })
+    get().fitDraftToModels()
+  },
+  fitDraftToModels: () => {
+    const { list, byId } = useModels.getState()
+    const d = get().draft
+    if (list.length === 0 || byId[d.model]) return
+    const wanted = lookupModel(byId, useSettings.getState().defaults.model)
+    const model = byId[wanted.id] ?? (list[0] as ModelInfo)
+    set({ draft: { ...d, model: model.id, effort: effortFor(model, null) } })
+  },
   pushToast: (toast) => {
     const id = toastId++
     set({ toasts: [...get().toasts, { ...toast, id }] })

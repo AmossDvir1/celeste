@@ -1,3 +1,5 @@
+import { mkdirSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
 import type { AgentSession, ApprovalAnswer, ApprovalMode, AskAnswers, AttachmentInfo, SessionMode, ToolKind, UserInput, VendorId } from '@shared/agent'
 import {
   UNDO_WINDOW_MS,
@@ -16,12 +18,11 @@ import {
   type VendorRecords
 } from '@shared/api'
 import { nextStatus } from '@shared/status'
-import type { SampleSession } from './mock/samples'
 import type { AttachmentRow, FileStore, SessionRow, Store } from './store'
 
 /*
  * The session logic, independent of where data is kept. The app runs it on SQLite inside the Core process;
- * the browser preview and the tests run the same code on an in-memory store.
+ * the tests run the same code on an in-memory store.
  *
  * Every event is written to the log first and only then pushed to the window, so what the window shows
  * can always be rebuilt from the log.
@@ -37,8 +38,6 @@ export interface ServiceOptions {
   adapter: AdapterFactory
   push: (p: CorePush) => void
   defaults: AppSettings
-  defaultVendors: VendorRecords
-  samples?: () => SampleSession[]
   /** Called when a session is stopped or deleted, so work started on its behalf (device commands) can be cancelled. */
   onSessionStopped?: (sessionId: string) => void
   now?: () => number
@@ -92,7 +91,6 @@ export class SessionService {
   private readonly store: Store
   private readonly live = new Map<string, Live>()
   private readonly undoTimers = new Map<string, ReturnType<typeof setTimeout>>()
-  private forced: string | undefined
   private readonly undoMs: number
   /** Approval cards raised for tool calls that are not the agent's own (device commands), waiting for an answer. */
   private readonly toolApprovals = new Map<string, { sessionId: string; resolve: (allow: boolean) => void }>()
@@ -122,9 +120,10 @@ export class SessionService {
       if (!inDrafts.has(a.id)) this.dropAttachment(a)
     }
 
-    if (this.opts.samples && this.store.settings().samplesSeeded !== true) {
-      this.restoreSamples()
-      this.store.setSetting('samplesSeeded', true)
+    // Earlier builds added sample sessions to the sidebar. They were never the person's conversations, so they are removed, once.
+    if (this.store.settings().samplesSeeded === true) {
+      for (const row of this.store.listSessions()) if (row.id.startsWith('seed-')) this.purge(row.id)
+      this.store.setSetting('samplesSeeded', false)
     }
   }
 
@@ -168,11 +167,6 @@ export class SessionService {
       const row = this.store.attachment(text(id, 'attachment', 80))
       if (row && row.sessionId === null) this.dropAttachment(row)
     },
-
-    'dev.forceScenario': (scenario) => {
-      this.forced = scenario ?? undefined
-    },
-    'dev.restoreSamples': () => this.restoreSamples()
   }
 
   // --- start-up data ---------------------------------------------------------------------------------
@@ -191,7 +185,7 @@ export class SessionService {
   }
 
   private currentVendors(): VendorRecords {
-    return (this.store.settings().vendors as VendorRecords | undefined) ?? this.opts.defaultVendors
+    return (this.store.settings().vendors as VendorRecords | undefined) ?? {}
   }
 
   private bootstrap(): Bootstrap {
@@ -303,7 +297,7 @@ export class SessionService {
       mode: row.mode,
       options: () => {
         const now = this.store.getSession(id) ?? row
-        return { model: now.model, effort: now.effort, approval: now.approval, ...(now.cwd ? { cwd: now.cwd } : {}) }
+        return { model: now.model, effort: now.effort, approval: now.approval, cwd: now.cwd ?? this.scratchDir(id) }
       },
       getApproval: () => this.store.getSession(id)?.approval ?? 'auto',
       ...(row.vendorSessionId ? { vendorSessionId: row.vendorSessionId } : {}),
@@ -312,11 +306,6 @@ export class SessionService {
       attachmentPath: (attachmentId) => {
         const file = this.store.attachment(attachmentId)?.file
         return file ? this.opts.files.pathOf?.(file) : undefined
-      },
-      takeForcedScenario: () => {
-        const s = this.forced
-        this.forced = undefined
-        return s
       }
     })
     const live: Live = { session, pending: new Set(), text: '' }
@@ -500,11 +489,26 @@ export class SessionService {
     return this.emitSummary(id) ?? null
   }
 
+  /**
+   * A chat with no project folder still gives its agent somewhere to work: a private folder of its own, so a file it writes
+   * lands there and not in whatever folder Celeste was started from. It is made when first needed and removed with the session.
+   */
+  private scratchDir(id: string): string {
+    const dir = join(this.opts.dataDir, 'chats', id)
+    mkdirSync(dir, { recursive: true })
+    return dir
+  }
+
   private purge(id: string): void {
     this.stopRuntime(id)
     clearTimeout(this.undoTimers.get(id))
     this.undoTimers.delete(id)
     for (const row of this.store.purgeSession(id)) this.opts.files.remove(row.file)
+    try {
+      rmSync(join(this.opts.dataDir, 'chats', id), { recursive: true, force: true, maxRetries: 3, retryDelay: 200 })
+    } catch {
+      // A program may still hold the folder on Windows; what is left is a few files in Celeste's own data folder.
+    }
   }
 
   private removeAll(): string[] {
@@ -556,43 +560,5 @@ export class SessionService {
   private dropAttachment(row: AttachmentRow): void {
     this.store.deleteAttachment(row.id)
     this.opts.files.remove(row.file)
-  }
-
-  // --- sample sessions (preview) -------------------------------------------------------------------
-
-  /** Adds the sample sessions that are missing, replaying each as it would have been recorded. */
-  private restoreSamples(): SessionSummary[] {
-    const added: SessionSummary[] = []
-    for (const sample of this.opts.samples?.() ?? []) {
-      if (this.store.getSession(sample.id)) continue
-      const last = sample.events[sample.events.length - 1]?.at ?? sample.createdAt
-      this.store.insertSession({
-        id: sample.id,
-        vendor: sample.vendor,
-        mode: sample.mode,
-        title: sample.title,
-        model: sample.model,
-        effort: sample.effort,
-        approval: sample.approval,
-        ...(sample.cwd ? { cwd: sample.cwd } : {}),
-        ...(sample.branch ? { branch: sample.branch } : {}),
-        status: 'idle',
-        createdAt: sample.createdAt,
-        updatedAt: last,
-        lastSeq: 0,
-        deletedAt: null
-      })
-      this.store.index(sample.id, 'title', sample.title)
-      let assistant = ''
-      for (const { at, event } of sample.events) {
-        this.store.appendEvent(sample.id, at, event)
-        if (event.type === 'user.message') this.store.index(sample.id, 'user', event.text)
-        if (event.type === 'message.delta') assistant += event.text
-      }
-      if (assistant) this.store.index(sample.id, 'assistant', assistant)
-      const summary = this.emitSummary(sample.id)
-      if (summary) added.push(summary)
-    }
-    return added
   }
 }

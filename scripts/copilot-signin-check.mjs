@@ -19,7 +19,7 @@ const settingsNav = (page, name) => page.getByRole('navigation', { name: 'Settin
 let app
 try {
   console.log('\n# Signing in (with a Copilot that knows no one)')
-  app = await launch({ width: 1440, height: 900, theme: null, profile, scripted: false, copilotKnowsNoOne: true })
+  app = await launch({ width: 1440, height: 900, theme: null, profile, copilotKnowsNoOne: true })
   const { page } = app
   // The browser is never really opened: the app's attempts to open an address are written down instead.
   await app.app.evaluate(({ shell }) => {
@@ -31,7 +31,7 @@ try {
   await page.getByRole('dialog', { name: 'Set up Celeste' }).waitFor({ timeout: 20_000 })
   await saveSettings(page, { wizardDone: true })
   await page.reload()
-  await page.getByRole('button', { name: /Analyze WFO logs/ }).first().waitFor({ timeout: 20_000 })
+  await page.getByRole('heading', { level: 1 }).first().waitFor({ timeout: 20_000 })
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await settingsNav(page, 'AI vendors').click()
   check('Core says nobody is signed in', (await page.evaluate(() => window.celeste.core.call('vendor.status', ['copilot']))).state === 'signed-out')

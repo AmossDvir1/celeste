@@ -22,7 +22,7 @@ import {
   VENDORS,
   VENDOR_ORDER,
   effortFor
-} from '@/mocks/models'
+} from '@/lib/vendors'
 import { lookupModel, useModels } from '@/stores/models'
 import { useSettings } from '@/stores/settings'
 import { useVendors } from '@/stores/vendors'
@@ -76,10 +76,10 @@ function ModelPicker({ prefs, onPrefs }: { prefs: Prefs; onPrefs: (p: Partial<Pr
         <button
           type="button"
           className={cn(control, 'gap-1.5 rounded-l-[7px] pr-2 pl-2.5')}
-          aria-label={`Model: ${VENDORS[current.vendor].menuLabel} ${current.label}`}
+          aria-label={connected.length === 0 ? 'Model: none, no vendor is connected' : `Model: ${VENDORS[current.vendor].menuLabel} ${current.label}`}
         >
-          <VendorLogo id={current.vendor} className="h-4 w-4" />
-          <span>{current.label}</span>
+          {connected.length === 0 ? null : <VendorLogo id={current.vendor} className="h-4 w-4" />}
+          <span>{connected.length === 0 ? 'No model' : current.label}</span>
           <ChevronDown className={chevron} />
         </button>
       </Menu.Trigger>
@@ -119,7 +119,7 @@ function ModelPicker({ prefs, onPrefs }: { prefs: Prefs; onPrefs: (p: Partial<Pr
         <Menu.Separator />
         <Menu.Item onSelect={() => openSettings('vendors')} className="text-ink-muted">
           <Plug className="h-3.5 w-3.5" />
-          Connect another vendor…
+          {connected.length === 0 ? 'Connect a vendor…' : 'Connect another vendor…'}
         </Menu.Item>
       </Menu.Content>
     </Menu.Root>

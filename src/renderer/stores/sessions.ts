@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type { ApprovalMode, AskAnswers, Effort, SessionMode, UserInput } from '@shared/agent'
 import type { CorePush, SessionSummary, StoredEvent } from '@shared/api'
 import { core } from '@/api'
-import { effortFor } from '@/mocks/models'
+import { effortFor } from '@/lib/vendors'
 import { modelOf, useModels } from './models'
 import { foldEvents } from './reduce'
 import type { Session } from './types'
@@ -25,10 +25,6 @@ interface SessionsState {
   rename: (id: string, title: string) => void
   remove: (id: string) => void
   removeAll: () => Promise<void>
-  /** Preview menu: forces the scripted assistant's next scenario. */
-  setForcedScenario: (scenario: string | undefined) => void
-  /** Preview menu: opens a sample session, bringing it back first if it was deleted. */
-  openSample: (id: string) => Promise<void>
 }
 
 function titleFrom(text: string): string {
@@ -127,6 +123,7 @@ export const useSessions = create<SessionsState>((set, get) => {
         if (!id) {
           // The first message creates the session, with the settings chosen on the home screen.
           const d = useUi.getState().draft
+          if (mode === 'develop' && !d.project) throw new Error('Choose a project folder first.')
           const created = await core.call('sessions.create', {
             vendor: modelOf(d.model).vendor,
             mode,
@@ -134,7 +131,7 @@ export const useSessions = create<SessionsState>((set, get) => {
             model: d.model,
             effort: d.effort,
             approval: d.approval,
-            ...(mode === 'develop' ? { cwd: d.project, branch: d.branch } : {})
+            ...(mode === 'develop' ? { cwd: d.project, ...(d.branch ? { branch: d.branch } : {}) } : {})
           })
           id = created.id
           const sid = created.id
@@ -198,17 +195,6 @@ export const useSessions = create<SessionsState>((set, get) => {
         report(err)
       }
     },
-
-    setForcedScenario: (scenario) => fire(core.call('dev.forceScenario', scenario ?? null)),
-
-    openSample: async (id) => {
-      try {
-        if (!get().sessions[id]) await core.call('dev.restoreSamples')
-        get().open(id)
-      } catch (err) {
-        report(err)
-      }
-    }
   }
 })
 

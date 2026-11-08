@@ -25,8 +25,8 @@ const READ_KINDS = new Set(['read'])
 const WRITE_KINDS = new Set(['write'])
 
 /**
- * What to do with a request, given the session's approval mode. The modes mean what the scripted assistant
- * taught the screens they mean: auto never asks, edits asks for commands and other tools, ask asks for
+ * What to do with a request, given the session's approval mode. The modes mean what the approval picker
+ * says they mean: auto never asks, edits asks for commands and other tools, ask asks for
  * everything but reading, plan allows only what leaves things as they are.
  */
 export function decide(request: PermissionLike, mode: ApprovalMode): Decision {

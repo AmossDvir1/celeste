@@ -1,74 +1,96 @@
+import { useEffect, useMemo } from 'react'
 import { ChevronDown, Folder, FolderPlus, GitBranch } from 'lucide-react'
+import { chooseFolder, core } from '@/api'
 import { Menu } from '@/components/menu'
-import { Switch } from '@/components/ui'
 import { basename } from '@/lib/format'
-import { PROJECTS } from '@/mocks/tools'
+import { useSessions } from '@/stores/sessions'
 import { useUi } from '@/stores/ui'
-
-const BRANCHES = ['main', 'develop', 'fix/flaky-checkout', 'feature/export-csv']
 
 const chip =
   'inline-flex h-[34px] items-center gap-2 rounded-control border border-edge-strong bg-pill px-3 text-[14px] text-ink-soft transition-colors hover:bg-raised-2 data-[state=open]:bg-raised-2'
 
-/** Develop works in a folder you choose before the first message, optionally in its own git worktree. */
+/** The folders earlier Develop sessions worked in, most recent first. */
+function useRecentProjects(): string[] {
+  const sessions = useSessions((s) => s.sessions)
+  return useMemo(() => {
+    const seen = new Set<string>()
+    return Object.values(sessions)
+      .filter((s) => s.mode === 'develop' && s.cwd)
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .flatMap((s) => (seen.has(s.cwd as string) ? [] : (seen.add(s.cwd as string), [s.cwd as string])))
+      .slice(0, 6)
+  }, [sessions])
+}
+
+/** Develop works in a folder you choose before the first message. Its git branch is shown, read only. */
 export function ProjectBar() {
   const draft = useUi((s) => s.draft)
   const setDraft = useUi((s) => s.setDraft)
   const pushToast = useUi((s) => s.pushToast)
+  const recent = useRecentProjects()
+
+  /** Looks at the folder (is it there, which branch) and makes it the project. */
+  const choose = async (path: string) => {
+    try {
+      const info = await core.call('project.inspect', path)
+      if (!info.exists) {
+        pushToast({ text: 'That folder is not there any more.' })
+        return
+      }
+      setDraft({ project: path, branch: info.branch ?? '' })
+    } catch {
+      pushToast({ text: 'Could not open that folder.' })
+    }
+  }
+
+  const pick = async () => {
+    const path = await chooseFolder()
+    if (path) await choose(path)
+  }
+
+  // The branch can change outside Celeste between sessions, so it is read again when the screen opens.
+  useEffect(() => {
+    const path = useUi.getState().draft.project
+    if (path) void choose(path)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
       <Menu.Root>
         <Menu.Trigger asChild>
-          <button type="button" className={chip} aria-label={`Project: ${basename(draft.project)}`}>
+          <button type="button" className={chip} aria-label={draft.project ? `Project: ${basename(draft.project)}` : 'Choose a project folder'}>
             <Folder className="h-4 w-4 text-accent-text" />
-            <span className="max-w-[220px] truncate">{basename(draft.project)}</span>
+            <span className="max-w-[260px] truncate">{draft.project ? basename(draft.project) : 'Choose a project folder'}</span>
             <ChevronDown className="h-4 w-4 text-ink-muted" />
           </button>
         </Menu.Trigger>
         <Menu.Content className="w-[320px]">
-          <Menu.Label>Recent projects</Menu.Label>
-          <Menu.RadioGroup
-            value={draft.project}
-            onValueChange={(path) => setDraft({ project: path, branch: PROJECTS.find((p) => p.path === path)?.branch ?? 'main' })}
-          >
-            {PROJECTS.map((p) => (
-              <Menu.RadioItem key={p.path} value={p.path} description={p.path}>
-                {basename(p.path)}
-              </Menu.RadioItem>
-            ))}
-          </Menu.RadioGroup>
-          <Menu.Separator />
-          <Menu.Item onSelect={() => pushToast({ text: 'The folder picker arrives with the real app. For now, choose a recent project.' })}>
+          {recent.length > 0 && (
+            <>
+              <Menu.Label>Recent projects</Menu.Label>
+              <Menu.RadioGroup value={draft.project} onValueChange={(path) => void choose(path)}>
+                {recent.map((path) => (
+                  <Menu.RadioItem key={path} value={path} description={path}>
+                    {basename(path)}
+                  </Menu.RadioItem>
+                ))}
+              </Menu.RadioGroup>
+              <Menu.Separator />
+            </>
+          )}
+          <Menu.Item onSelect={() => void pick()}>
             <FolderPlus className="h-4 w-4 text-ink-muted" /> Choose another folder…
           </Menu.Item>
         </Menu.Content>
       </Menu.Root>
 
-      <Menu.Root>
-        <Menu.Trigger asChild>
-          <button type="button" className={chip} aria-label={`Branch: ${draft.branch}`}>
-            <GitBranch className="h-4 w-4 text-ink-muted" />
-            <span className="max-w-[180px] truncate">{draft.branch}</span>
-            <ChevronDown className="h-4 w-4 text-ink-muted" />
-          </button>
-        </Menu.Trigger>
-        <Menu.Content className="w-[240px]">
-          <Menu.Label>Branch</Menu.Label>
-          <Menu.RadioGroup value={draft.branch} onValueChange={(branch) => setDraft({ branch })}>
-            {BRANCHES.map((b) => (
-              <Menu.RadioItem key={b} value={b}>
-                {b}
-              </Menu.RadioItem>
-            ))}
-          </Menu.RadioGroup>
-        </Menu.Content>
-      </Menu.Root>
-
-      <label className="ml-1 inline-flex cursor-pointer items-center gap-2.5 text-[14px] text-ink-muted">
-        <Switch label="Use a git worktree" checked={draft.worktree} onCheckedChange={(worktree) => setDraft({ worktree })} />
-        Work in a separate worktree
-      </label>
+      {draft.project && draft.branch && (
+        <span className="inline-flex h-[34px] items-center gap-2 text-[14px] text-ink-muted" aria-label={`Branch: ${draft.branch}`}>
+          <GitBranch className="h-4 w-4" />
+          <span className="max-w-[200px] truncate">{draft.branch}</span>
+        </span>
+      )}
     </div>
   )
 }

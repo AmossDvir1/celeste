@@ -2,14 +2,14 @@ import { create } from 'zustand'
 import type { VendorId } from '@shared/agent'
 import type { CorePush, SignInStep, VendorRecord, VendorRecords } from '@shared/api'
 import { core, secrets } from '@/api'
+import { VENDORS } from '@/lib/vendors'
 import { useModels } from './models'
 import { useUi } from './ui'
 
 /*
  * Vendor connections. Which vendors are connected is saved, and a pasted API key goes to the secret store
  * (see src/main/secrets.ts). Copilot and Claude connect for real: Core downloads or finds the program, then walks the
- * vendor's sign-in and reports each step. The other vendors still play the steps their real flow will have (download,
- * wait for the browser, Connected) until their adapters arrive.
+ * vendor's sign-in and reports each step. The other vendors cannot be connected until their adapters arrive.
  */
 export type VendorStatus = 'not-installed' | 'ready' | 'downloading' | 'waiting' | 'connected'
 export type ConnectMethod = 'browser' | 'key'
@@ -29,7 +29,7 @@ interface VendorsState {
   vendors: Record<VendorId, VendorState>
   /** Applies the saved connections. A key connection whose key has gone missing is dropped. */
   init: (records: VendorRecords) => Promise<void>
-  connect: (id: VendorId, method?: ConnectMethod) => void
+  connect: (id: VendorId) => void
   /** Real vendors: signs in with a code to type on GitHub, for when the browser step does not work. */
   connectWithCode: (id: VendorId) => void
   cancel: (id: VendorId) => void
@@ -42,21 +42,10 @@ interface VendorsState {
 const secretName = (id: VendorId) => `vendor.${id}.key`
 
 /** Where a vendor starts when nothing is saved for it. */
-const idle = (id: VendorId): VendorState => ({ status: id === 'gemini' ? 'not-installed' : 'ready' })
+const idle = (_id: VendorId): VendorState => ({ status: 'ready' })
 
 const store = (id: VendorId, record: VendorRecord | null): Promise<void> =>
   core.call('vendors.set', id, record).catch(() => useUi.getState().pushToast({ text: 'Could not save that connection.' }))
-
-const timers = new Map<VendorId, ReturnType<typeof setTimeout>[]>()
-
-function clearTimers(id: VendorId): void {
-  timers.get(id)?.forEach(clearTimeout)
-  timers.delete(id)
-}
-function later(id: VendorId, ms: number, fn: () => void): void {
-  const t = setTimeout(fn, ms)
-  timers.set(id, [...(timers.get(id) ?? []), t])
-}
 
 /** Opens a sign-in page in the person's browser. The app sends https addresses on to it. */
 export function openExternal(url: string): void {
@@ -67,38 +56,9 @@ export function openExternal(url: string): void {
   }
 }
 
-// What the mock browser sign-in reports. The real flow reads the account from the vendor.
-const ACCOUNT: Record<VendorId, string> = {
-  copilot: 'alex on GitHub',
-  claude: 'Console · Acme Labs',
-  openai: 'ChatGPT Plus',
-  gemini: 'Google account'
-}
-
 export const useVendors = create<VendorsState>((set, get) => {
   const patch = (id: VendorId, p: Partial<VendorState>) =>
     set((s) => ({ vendors: { ...s.vendors, [id]: { ...s.vendors[id], ...p } } }))
-
-  /** The steps a real connection will have, played on a timer, for vendors that have no adapter yet. */
-  function scripted(id: VendorId, method: ConnectMethod): void {
-    clearTimers(id)
-    const waitForBrowser = () => {
-      patch(id, { status: 'waiting', progress: undefined })
-      later(id, 2800, () => {
-        patch(id, { status: 'connected', account: ACCOUNT[id], method })
-        void store(id, { account: ACCOUNT[id], method })
-      })
-    }
-    if (get().vendors[id].status === 'not-installed') {
-      patch(id, { status: 'downloading', progress: 0 })
-      for (let i = 1; i <= 10; i++) {
-        later(id, i * 220, () => patch(id, { progress: i / 10 }))
-      }
-      later(id, 2400, waitForBrowser)
-    } else {
-      waitForBrowser()
-    }
-  }
 
   return {
     vendors: { copilot: idle('copilot'), claude: idle('claude'), openai: idle('openai'), gemini: idle('gemini') },
@@ -108,6 +68,11 @@ export const useVendors = create<VendorsState>((set, get) => {
       for (const id of Object.keys(next) as VendorId[]) {
         const record = records[id]
         if (!record) continue
+        // A vendor Celeste cannot talk to yet cannot be connected: a record of it is left over from an older build.
+        if (!VENDORS[id].available) {
+          void store(id, null)
+          continue
+        }
         if (record.method === 'key' && !(await secrets.has(secretName(id)).catch(() => false))) {
           void store(id, null)
           continue
@@ -150,40 +115,18 @@ export const useVendors = create<VendorsState>((set, get) => {
       void core.call('vendor.signIn', id, 'code').catch((err: unknown) => patch(id, { status: 'ready', error: err instanceof Error ? err.message : String(err) }))
     },
 
-    connect: (id, method = 'browser') => {
-      clearTimers(id)
-      patch(id, { error: undefined, step: undefined })
-      // Ask Core first: a real vendor signs in for real, anything else plays the scripted steps below.
-      if (method === 'browser') {
-        patch(id, { status: 'waiting', progress: undefined })
-        void core.call('vendor.status', id).then(
-          (c) => {
-            if (get().vendors[id].status !== 'waiting') return // cancelled meanwhile
-            if (c.state !== 'unsupported') {
-              void core.call('vendor.signIn', id, 'web').catch((err: unknown) => patch(id, { status: 'ready', error: err instanceof Error ? err.message : String(err) }))
-              return
-            }
-            patch(id, { status: idle(id).status })
-            scripted(id, method)
-          },
-          () => {
-            patch(id, { status: idle(id).status })
-            scripted(id, method)
-          }
-        )
-        return
-      }
-      scripted(id, method)
+    connect: (id) => {
+      if (!VENDORS[id].available) return
+      patch(id, { status: 'waiting', progress: undefined, step: undefined, error: undefined })
+      void core.call('vendor.signIn', id, 'web').catch((err: unknown) => patch(id, { status: 'ready', error: err instanceof Error ? err.message : String(err) }))
     },
 
     cancel: (id) => {
-      clearTimers(id)
       void core.call('vendor.cancelSignIn', id).catch(() => undefined)
       patch(id, { status: idle(id).status, progress: undefined, step: undefined })
     },
 
     saveKey: async (id, key) => {
-      clearTimers(id)
       const value = key.trim()
       if (!value) return false
       try {
@@ -210,7 +153,6 @@ export const useVendors = create<VendorsState>((set, get) => {
     },
 
     disconnect: async (id) => {
-      clearTimers(id)
       const wasKey = get().vendors[id].method === 'key'
       patch(id, { status: 'ready', account: undefined, method: undefined })
       await store(id, null)

@@ -17,7 +17,7 @@ const check = (label, ok, detail = '') => {
 }
 
 let app
-const open = () => launch({ width: 1440, height: 900, theme: null, profile, scripted: false })
+const open = () => launch({ width: 1440, height: 900, theme: null, profile })
 const textbox = (page) => page.getByRole('textbox', { name: 'Message' })
 const idle = (page) => page.getByRole('button', { name: 'Stop' }).waitFor({ state: 'detached', timeout: 120_000 })
 const settingsNav = (page, name) => page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name })
@@ -30,7 +30,7 @@ try {
   await page.getByRole('dialog', { name: 'Set up Celeste' }).waitFor({ timeout: 20_000 })
   await saveSettings(page, { wizardDone: true, userName: 'Dana' })
   await page.reload()
-  await page.getByRole('button', { name: /Analyze WFO logs/ }).first().waitFor({ timeout: 20_000 })
+  await page.getByRole('heading', { level: 1 }).first().waitFor({ timeout: 20_000 })
 
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await settingsNav(page, 'AI vendors').click()
@@ -53,7 +53,7 @@ try {
   for (let i = 0; i < 50 && (await items.count()) <= 5; i++) await page.waitForTimeout(300)
   const count = await items.count()
   check(`the model menu lists Copilot's own models (${count})`, count > 5)
-  check('it no longer lists the scripted Copilot names', (await page.getByRole('menuitemradio', { name: 'Copilot Auto', exact: true }).count()) === 0 && (await page.getByRole('menuitemradio', { name: 'Auto', exact: true }).count()) === 1)
+  check('it lists Copilot’s own Auto', (await page.getByRole('menuitemradio', { name: 'Auto', exact: true }).count()) === 1)
   const cheap = page.getByRole('menuitemradio', { name: new RegExp(MODEL) }).first()
   check(`the model for this check is offered (${MODEL})`, (await cheap.count()) > 0)
   await cheap.click()

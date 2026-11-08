@@ -9,7 +9,7 @@ import {
   type ReadResult,
   type RunOptions,
   type RunResult
-} from './connector'
+} from '../devices/connector'
 
 /**
  * A pretend device, for the browser preview (which has no sockets) and for tests of the layers above the

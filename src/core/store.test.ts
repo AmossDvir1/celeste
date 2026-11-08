@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { MemoryStore } from './memory-store'
+import { MemoryStore } from './testing/memory-store'
 import { SqliteStore } from './sqlite-store'
 import type { AttachmentRow, SessionRow, Store } from './store'
 

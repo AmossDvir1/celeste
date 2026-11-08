@@ -4,7 +4,7 @@ import { cn } from '@/lib/cn'
 import { Modal } from '@/components/Dialog'
 import { Field, SelectField } from '@/components/form'
 import { Button, IconButton, Kbd, Switch, TextInput } from '@/components/ui'
-import { APPROVAL_OPTIONS, VENDORS, VENDOR_ORDER } from '@/mocks/models'
+import { APPROVAL_OPTIONS, VENDORS, VENDOR_ORDER } from '@/lib/vendors'
 import { useModels } from '@/stores/models'
 import { revealDataFolder } from '@/api'
 import { useSessions } from '@/stores/sessions'
@@ -132,9 +132,9 @@ export function ModelSelect({ value, onChange, id }: { value: string; onChange: 
 }
 
 const SHORTCUTS: [string, string][] = [
-  ['Search chats and workflows', 'Ctrl K'],
+  ['Search chats and sessions', 'Ctrl K'],
   ['New chat', 'Ctrl N'],
-  ['Switch to Chat, Develop, Workflows', 'Ctrl 1 · 2 · 3'],
+  ['Switch between Chat and Develop', 'Ctrl 1 · 2'],
   ['Show or hide the sidebar', 'Ctrl B'],
   ['Open settings', 'Ctrl ,'],
   ['New line in a message', 'Shift Enter']
@@ -187,7 +187,7 @@ function Content({ section }: { section: SettingsSection }) {
       return (
         <Section title="Appearance" description="Changes apply right away.">
           <ThemeTiles value={settings.theme} onChange={(theme) => settings.set({ theme })} />
-          <Row title="Show the sidebar" description="Your chats and workflows. Press Ctrl B to toggle.">
+          <Row title="Show the sidebar" description="Your chats and sessions. Press Ctrl B to toggle.">
             <Switch label="Show the sidebar" checked={!settings.sidebarCollapsed} onCheckedChange={(v) => settings.set({ sidebarCollapsed: !v })} />
           </Row>
           <p className="text-[13px] text-ink-faint">Motion follows your system’s “reduce motion” setting.</p>
@@ -255,7 +255,7 @@ function Content({ section }: { section: SettingsSection }) {
           >
             <Plug className="h-4 w-4" /> Open Tools &amp; Integrations
           </Button>
-          <p className="text-[13px] text-ink-faint">In this preview the list is sample data.</p>
+          <p className="text-[13px] text-ink-faint">The shared tool list is not built yet. Devices you attach to a chat are available now.</p>
         </Section>
       )
     case 'devices':
@@ -322,7 +322,7 @@ function Content({ section }: { section: SettingsSection }) {
       )
     case 'about':
       return (
-        <Section title="About Celeste" description="Version 0.1.0 · design preview. Your sessions and settings are saved, but the assistants are still scripted samples.">
+        <Section title="About Celeste" description="Version 0.1.0 · early development. GitHub Copilot and Claude are connected for real; OpenAI and Gemini are not available yet.">
           <div>
             <h3 className="text-[14px] text-ink">Open-source software in this app</h3>
             <ul className="mt-3 divide-y divide-edge/70 rounded-xl border border-edge">

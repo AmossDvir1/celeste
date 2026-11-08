@@ -47,8 +47,8 @@ function deviceToolReads(toolName: string): boolean {
 }
 
 /**
- * What to do with a tool call, given the session's approval mode. The modes mean what the scripted assistant taught
- * the screens they mean: auto never asks, edits asks for commands and other tools, ask asks for everything but
+ * What to do with a tool call, given the session's approval mode. The modes mean what the approval picker says
+ * they mean: auto never asks, edits asks for commands and other tools, ask asks for everything but
  * looking, plan allows only what leaves things as they are.
  */
 export function decide(toolName: string, mode: ApprovalMode): Decision {

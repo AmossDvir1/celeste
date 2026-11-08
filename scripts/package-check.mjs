@@ -63,13 +63,19 @@ try {
   await page.getByRole('dialog', { name: 'Set up Celeste' }).waitFor({ timeout: 20_000 })
   check('the window and Core start from inside the archive', true)
   await page.getByRole('button', { name: 'Skip setup' }).click()
-  await page.getByRole('button', { name: /Analyze WFO logs/ }).first().waitFor({ timeout: 20_000 })
-  check('the database is created and the sample sessions are stored', true)
+  await page.getByRole('heading', { level: 1 }).first().waitFor({ timeout: 20_000 })
+  const boot = await page.evaluate(() => window.celeste.core.call('app.bootstrap', []))
+  check('the database is created, empty: nothing is pretended', Array.isArray(boot.sessions) && boot.sessions.length === 0 && Object.keys(boot.vendors).length === 0)
 
-  await page.getByRole('textbox', { name: 'Message' }).fill('Plan the rollout')
-  await page.getByRole('textbox', { name: 'Message' }).press('Enter')
-  await page.getByText('go through the plan first', { exact: false }).waitFor({ timeout: 30_000 })
-  check('a conversation runs and is stored', true)
+  // Claude's program is not in this archive, so a message to Claude ends at once with the reason. It is stored like any conversation.
+  const made = await page.evaluate(() => window.celeste.core.call('sessions.create', [{ vendor: 'claude', mode: 'chat', title: 'Plan the rollout', model: 'claude:default', effort: null, approval: 'auto' }]))
+  await page.evaluate((id) => window.celeste.core.call('sessions.send', [id, { text: 'Plan the rollout', attachments: [] }]), made.id)
+  let types = []
+  for (let i = 0; i < 100 && !types.includes('turn.failed'); i++) {
+    await page.waitForTimeout(200)
+    types = (await page.evaluate((id) => window.celeste.core.call('sessions.get', [id]), made.id)).events.map((e) => e.event.type)
+  }
+  check('a conversation is stored, with the reason it could not be answered', types.includes('user.message') && types.includes('turn.failed'), types.join(', '))
 
   await page.getByRole('button', { name: 'New chat' }).click()
   await page.locator('input[type=file]').first().setInputFiles({ name: 'p.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64') })
@@ -79,7 +85,7 @@ try {
   await app.close()
 
   // The real Copilot, in the same layout: its program is not in the archive, so it must say so and offer to download it.
-  app = await launch({ width: 1440, height: 900, theme: null, entry: archive, scripted: false })
+  app = await launch({ width: 1440, height: 900, theme: null, entry: archive })
   await app.page.getByRole('dialog', { name: 'Set up Celeste' }).waitFor({ timeout: 20_000 })
   const status = await app.page.evaluate(() => window.celeste.core.call('vendor.status', ['copilot']))
   check(`Copilot reports that its program has not been downloaded (${JSON.stringify(status)})`, status.state === 'runtime-missing')

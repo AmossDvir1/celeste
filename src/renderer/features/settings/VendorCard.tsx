@@ -4,7 +4,7 @@ import type { VendorId } from '@shared/agent'
 import { cn } from '@/lib/cn'
 import { Badge, Button, Spinner, TextInput } from '@/components/ui'
 import { VendorTile } from '@/components/VendorLogo'
-import { VENDORS } from '@/mocks/models'
+import { VENDORS } from '@/lib/vendors'
 import { openExternal, useVendors } from '@/stores/vendors'
 
 /** One Connect button per vendor. It opens the browser, you authorize there, and the card turns to Connected. */
@@ -21,7 +21,7 @@ export function VendorCard({ id, compact }: { id: VendorId; compact?: boolean })
 
   const status = {
     'not-installed': 'Not on this computer yet. Celeste downloads it when you connect.',
-    ready: meta.blurb,
+    ready: meta.available ? meta.blurb : 'Coming soon. Celeste cannot talk to this vendor yet.',
     downloading: `Downloading… ${Math.round((v.progress ?? 0) * 100)}%`,
     waiting: v.step?.kind === 'device-code' ? 'Type this code on GitHub to finish.' : v.step ? 'Finish signing in in your browser…' : 'Waiting for you in your browser…',
     connected: v.account ? `Connected · ${v.account}` : 'Connected'
@@ -73,7 +73,7 @@ export function VendorCard({ id, compact }: { id: VendorId; compact?: boolean })
               </button>
             </p>
           )}
-          {!compact && v.status !== 'connected' && v.status !== 'waiting' && v.status !== 'downloading' && !v.error && (
+          {!compact && meta.available && v.status !== 'connected' && v.status !== 'waiting' && v.status !== 'downloading' && !v.error && (
             <p className="mt-1 text-xs text-ink-faint">
               {meta.connectHint} Billed to {meta.billedTo.replace(/^Your/, 'your')}.
             </p>
@@ -86,7 +86,7 @@ export function VendorCard({ id, compact }: { id: VendorId; compact?: boolean })
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          {(v.status === 'ready' || v.status === 'not-installed') && (
+          {meta.available && (v.status === 'ready' || v.status === 'not-installed') && (
             <Button variant="soft" size="md" onClick={() => connect(id)}>
               Connect
             </Button>
@@ -107,7 +107,7 @@ export function VendorCard({ id, compact }: { id: VendorId; compact?: boolean })
         </div>
       </div>
 
-      {(v.status === 'ready' || v.status === 'not-installed') && (
+      {meta.available && meta.keyHint && (v.status === 'ready' || v.status === 'not-installed') && (
         <div className="mt-3 pl-[58px]">
           {!keyOpen ? (
             <button type="button" onClick={() => setKeyOpen(true)} className="inline-flex items-center gap-1.5 text-[13px] text-ink-muted underline decoration-edge-strong underline-offset-2 hover:text-ink">
