@@ -15,6 +15,7 @@ import { discoverAll } from './devices/discovery'
 import { DeviceToolServer } from './devices/mcp-server'
 import { nodeFileOps } from './devices/node-fs'
 import { DeviceTools } from './devices/tools'
+import { GitSnapshots } from './snapshots'
 import { createClaudeHost, createClaudeSession, type ClaudeHost } from './adapters/claude'
 import { copilotRuntime, createCopilotHost, createCopilotSession, type CopilotHost } from './adapters/copilot'
 import { createUnavailableSession } from './adapters/unavailable'
@@ -122,6 +123,8 @@ async function start(): Promise<void> {
         : ctx.vendor === 'claude'
           ? createClaudeSession(claudeHost, ctx, (id) => servers.info(id))
           : createUnavailableSession(ctx.vendor),
+    // Develop sessions save their project folder before each message, in a private copy under the data folder.
+    snapshots: new GitSnapshots(join(dataDir, 'snapshots')),
     onSessionStopped: (id) => tools.cancel(id),
     push,
     defaults: {

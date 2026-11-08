@@ -150,3 +150,57 @@ describe('the scripted assistant, end to end', () => {
     await agent.close()
   })
 })
+
+describe('checkpoints in the log', () => {
+  const ID = 'a'.repeat(40)
+  const files = [{ path: 'a.txt', status: 'modified' as const, added: 2, removed: 1 }]
+
+  it('puts a checkpoint on the message it came right after, and what the turn changed under it', () => {
+    const s = foldEvents(
+      blank({ mode: 'develop' }),
+      log(
+        [1000, { type: 'user.message', text: 'one', attachments: [] }],
+        [1010, { type: 'checkpoint.created', id: ID }],
+        [1020, { type: 'turn.completed', turnId: 't' }],
+        [1030, { type: 'checkpoint.summary', id: ID, files, more: 3 }],
+        [2000, { type: 'user.message', text: 'two', attachments: [] }]
+      )
+    )
+    const [one, two] = s.items
+    expect(one).toMatchObject({ kind: 'user', text: 'one', checkpoint: { id: ID, files, more: 3 } })
+    expect(two).toMatchObject({ kind: 'user', text: 'two' })
+    expect((two as { checkpoint?: unknown }).checkpoint).toBeUndefined()
+  })
+
+  it('shows a skipped checkpoint as a notice, and a revert as its own item with what to undo it with', () => {
+    const s = foldEvents(
+      blank({ mode: 'develop' }),
+      log(
+        [1000, { type: 'user.message', text: 'one', attachments: [] }],
+        [1010, { type: 'checkpoint.skipped', reason: 'Git was not found.' }],
+        [2000, { type: 'checkpoint.reverted', id: ID, restored: 2, removed: 1, undoId: 'b'.repeat(40) }]
+      )
+    )
+    expect(s.items[1]).toMatchObject({ kind: 'notice' })
+    expect((s.items[1] as { text: string }).text).toMatch(/cannot be reverted. Git was not found/)
+    expect(s.items[2]).toMatchObject({ kind: 'reverted', restored: 2, removed: 1, undoId: 'b'.repeat(40) })
+  })
+
+  it('does not change the session’s status, which the sidebar keeps from the same events', () => {
+    const events: LogEvent[] = [
+      { type: 'checkpoint.created', id: ID },
+      { type: 'checkpoint.summary', id: ID, files: [], more: 0 },
+      { type: 'checkpoint.skipped', reason: 'x' },
+      { type: 'checkpoint.reverted', id: ID, restored: 0, removed: 0, undoId: ID }
+    ]
+    for (const status of ['idle', 'working', 'waiting'] as SessionStatus[]) {
+      for (const e of events) expect(nextStatus(status, e)).toBe(status)
+      expect(reduceEvent(blank({ status, activity: null }), events[1] as LogEvent, 1).status).toBe(status)
+    }
+  })
+
+  it('ignores a summary for a checkpoint it has never seen', () => {
+    const s = foldEvents(blank(), log([1000, { type: 'checkpoint.summary', id: ID, files, more: 0 }]))
+    expect(s.items).toEqual([])
+  })
+})

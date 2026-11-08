@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { ApprovalMode, AskAnswers, Effort, SessionMode, UserInput } from '@shared/agent'
-import type { CorePush, SessionSummary, StoredEvent } from '@shared/api'
+import type { CheckpointChanges, CorePush, SessionSummary, StoredEvent } from '@shared/api'
 import { core } from '@/api'
 import { effortFor } from '@/lib/vendors'
 import { modelOf, useModels } from './models'
@@ -19,6 +19,10 @@ interface SessionsState {
   home: (mode: SessionMode) => void
   send: (mode: SessionMode, input: UserInput) => Promise<void>
   stop: (id: string) => void
+  /** What reverting to a checkpoint would change. Rejects with a message fit to show. */
+  previewRevert: (id: string, checkpointId: string) => Promise<CheckpointChanges>
+  /** Puts the project folder back as it was at a checkpoint. False, with a message shown, when it could not. */
+  revert: (id: string, checkpointId: string) => Promise<boolean>
   respondApproval: (id: string, requestId: string, allow: boolean, always?: boolean) => void
   respondAsk: (id: string, requestId: string, answers: AskAnswers) => void
   setPrefs: (id: string, patch: { model?: string; effort?: Effort | null; approval?: ApprovalMode }) => void
@@ -144,6 +148,18 @@ export const useSessions = create<SessionsState>((set, get) => {
     },
 
     stop: (id) => fire(core.call('sessions.interrupt', id)),
+
+    previewRevert: (id, checkpointId) => core.call('sessions.revertPreview', id, checkpointId),
+
+    revert: async (id, checkpointId) => {
+      try {
+        await core.call('sessions.revert', id, checkpointId)
+        return true
+      } catch (err) {
+        report(err)
+        return false
+      }
+    },
 
     respondApproval: (id, requestId, allow, always) => fire(core.call('sessions.respondApproval', id, requestId, { allow, always })),
 

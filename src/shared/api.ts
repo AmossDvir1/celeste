@@ -94,6 +94,27 @@ export type LogEvent =
   | { type: 'ask.answered'; requestId: string; answers: AskAnswers }
   /** Celeste was closed while a turn was running. Written the next time it starts. */
   | { type: 'turn.abandoned' }
+  /** The project folder was saved just before the message above reached the agent. `id` is what to go back to. */
+  | { type: 'checkpoint.created'; id: string }
+  /** What the turn that began at checkpoint `id` changed in the folder, written when the turn ends. */
+  | ({ type: 'checkpoint.summary'; id: string } & CheckpointChanges)
+  /** Celeste could not save the folder before this message, so it cannot be reverted. */
+  | { type: 'checkpoint.skipped'; reason: string }
+  /** The folder was put back as it was at checkpoint `id`. `undoId` goes back to how it was just before. */
+  | { type: 'checkpoint.reverted'; id: string; restored: number; removed: number; undoId: string }
+
+/** One file that a turn changed, or that a revert would change. */
+export interface CheckpointFile {
+  path: string
+  status: 'modified' | 'added' | 'deleted'
+  added: number
+  removed: number
+}
+export interface CheckpointChanges {
+  files: CheckpointFile[]
+  /** How many more files changed than are listed. */
+  more: number
+}
 
 export interface StoredEvent {
   seq: number
@@ -181,6 +202,10 @@ export interface CoreApi {
   'sessions.respondApproval': (id: string, requestId: string, answer: ApprovalAnswer) => void
   'sessions.respondAsk': (id: string, requestId: string, answers: AskAnswers) => void
   'sessions.update': (id: string, patch: SessionPatch) => SessionSummary
+  /** What reverting to a checkpoint would change in the folder, as it would be after the revert. */
+  'sessions.revertPreview': (id: string, checkpointId: string) => Promise<CheckpointChanges>
+  /** Puts the folder back as it was at the checkpoint, after saving how it is now so the revert can be undone. */
+  'sessions.revert': (id: string, checkpointId: string) => Promise<{ restored: number; removed: number; undoId: string }>
   /** Hides the session. It is deleted for good a few seconds later, unless `restore` comes first. */
   'sessions.remove': (id: string) => void
   'sessions.restore': (id: string) => SessionSummary | null

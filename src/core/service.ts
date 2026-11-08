@@ -6,6 +6,7 @@ import {
   type AppSettings,
   type Bootstrap,
   type SessionApi,
+  type CheckpointChanges,
   type CorePush,
   type CreateSessionInput,
   type DraftState,
@@ -19,6 +20,7 @@ import {
 } from '@shared/api'
 import { nextStatus } from '@shared/status'
 import type { AttachmentRow, FileStore, SessionRow, Store } from './store'
+import type { Snapshots } from './snapshots'
 
 /*
  * The session logic, independent of where data is kept. The app runs it on SQLite inside the Core process;
@@ -40,6 +42,8 @@ export interface ServiceOptions {
   defaults: AppSettings
   /** Called when a session is stopped or deleted, so work started on its behalf (device commands) can be cancelled. */
   onSessionStopped?: (sessionId: string) => void
+  /** Saves a Develop session's project folder before each message, so a turn can be reverted. Without it there are no checkpoints. */
+  snapshots?: Snapshots
   now?: () => number
   undoMs?: number
 }
@@ -50,6 +54,29 @@ interface Live {
   pending: Set<string>
   /** The assistant's text so far this turn, indexed for search when the turn ends. */
   text: string
+  /** True from the moment a message is sent until its turn ends. A message sent in the middle of a turn is not a checkpoint. */
+  open: boolean
+  /** Saving the folder, and the messages that wait behind it, one after the other so the agent hears them in order. */
+  chain: Promise<void>
+  /** The checkpoint taken before the current turn. */
+  checkpoint?: string
+  /** The folder was reverted since the agent last heard from the person, so the next message says so. */
+  reverted: boolean
+}
+
+/** How long Celeste waits for a folder to be saved before it sends the message anyway, without a checkpoint. */
+const CHECKPOINT_TIMEOUT_MS = 90_000
+const CHECKPOINT_ID = /^[0-9a-f]{40}$/
+/** Added to the first message after a revert: the agent remembers edits that are no longer there. */
+const REVERT_NOTE =
+  '[Celeste: before this message the person reverted the project folder to an earlier point, which undid changes made since. Files you changed may be back to older contents or gone. Read a file again before relying on what you remember of it.]'
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms)
+  })
+  return Promise.race([promise, late]).finally(() => clearTimeout(timer))
 }
 
 const MODES: SessionMode[] = ['chat', 'develop']
@@ -155,6 +182,8 @@ export class SessionService {
     'sessions.respondApproval': (id, requestId, answer) => this.respondApproval(id, requestId, answer),
     'sessions.respondAsk': (id, requestId, answers) => this.respondAsk(id, requestId, answers),
     'sessions.update': (id, patch) => this.update(id, patch),
+    'sessions.revertPreview': (id, checkpointId) => this.revertPreview(id, checkpointId),
+    'sessions.revert': (id, checkpointId) => this.revert(id, checkpointId),
     'sessions.remove': (id) => this.remove(id),
     'sessions.restore': (id) => this.restore(id),
     'sessions.removeAll': () => this.removeAll(),
@@ -308,7 +337,7 @@ export class SessionService {
         return file ? this.opts.files.pathOf?.(file) : undefined
       }
     })
-    const live: Live = { session, pending: new Set(), text: '' }
+    const live: Live = { session, pending: new Set(), text: '', open: false, chain: Promise.resolve(), reverted: row.mode === 'develop' && this.revertedSince(id) }
     this.live.set(id, live)
     void (async () => {
       try {
@@ -362,6 +391,7 @@ export class SessionService {
       case 'turn.abandoned':
         if (live.text) this.store.index(id, 'assistant', live.text)
         live.text = ''
+        this.finishCheckpoint(id)
         break
     }
 
@@ -376,10 +406,119 @@ export class SessionService {
     if (typeof input?.text !== 'string' || input.text.length > 200_000 || !Array.isArray(input.attachments) || input.attachments.length > MAX_ATTACHMENTS) {
       throw new Error('Invalid message')
     }
+    const row = this.requireSession(id)
     const live = this.runtime(id)
     this.store.linkAttachments(input.attachments.map((a) => a.id), id)
     this.record(id, { type: 'user.message', text: input.text, attachments: input.attachments }, live)
-    live.session.send(input)
+
+    // After a revert the agent still remembers edits that are gone, so its next message says so.
+    const outgoing: UserInput = live.reverted ? { ...input, text: input.text ? `${input.text}\n\n${REVERT_NOTE}` : REVERT_NOTE } : input
+    live.reverted = false
+
+    const cwd = row.cwd
+    if (!this.opts.snapshots || row.mode !== 'develop' || !cwd) {
+      live.session.send(outgoing)
+      return
+    }
+    // A Develop message saves the folder first, so every message goes through one queue and the agent hears them in order.
+    // A message sent while the previous answer is still running is not a place to go back to.
+    const checkpoint = !live.open
+    live.open = true
+    live.chain = live.chain.then(async () => {
+      if (checkpoint) await this.checkpointBefore(id, cwd, live)
+      if (this.live.get(id) === live) live.session.send(outgoing)
+    })
+  }
+
+  /** Saves the folder before a message. If it cannot be saved the message still goes, and the log says there is no checkpoint. */
+  private async checkpointBefore(id: string, cwd: string, live: Live): Promise<void> {
+    const snapshots = this.opts.snapshots
+    if (!snapshots) return
+    try {
+      const checkpoint = await withTimeout(snapshots.take(id, cwd), CHECKPOINT_TIMEOUT_MS, 'Saving the folder took too long.')
+      live.checkpoint = checkpoint
+      this.record(id, { type: 'checkpoint.created', id: checkpoint }, live)
+    } catch (err) {
+      live.checkpoint = undefined
+      const reason = err instanceof Error ? err.message : String(err)
+      // The same reason on every message would be noise.
+      if (this.lastCheckpointSkip(id) !== reason) this.record(id, { type: 'checkpoint.skipped', reason }, live)
+    }
+  }
+
+  private lastCheckpointSkip(id: string): string | undefined {
+    const events = this.store.events(id)
+    for (let i = events.length - 1; i >= 0; i--) {
+      const event = (events[i] as { event: LogEvent }).event
+      if (event.type === 'checkpoint.skipped') return event.reason
+      if (event.type === 'checkpoint.created') return undefined
+    }
+    return undefined
+  }
+
+  /** When a turn ends, what it changed in the folder is worked out and logged, behind any message that is waiting. */
+  private finishCheckpoint(id: string): void {
+    const live = this.live.get(id)
+    if (!live) return
+    live.open = false
+    const from = live.checkpoint
+    live.checkpoint = undefined
+    const snapshots = this.opts.snapshots
+    const cwd = this.store.getSession(id)?.cwd
+    if (!from || !snapshots || !cwd) return
+    live.chain = live.chain.then(async () => {
+      try {
+        const to = await withTimeout(snapshots.take(id, cwd), CHECKPOINT_TIMEOUT_MS, 'Saving the folder took too long.')
+        const changes = await snapshots.changes(id, cwd, from, to)
+        this.record(id, { type: 'checkpoint.summary', id: from, ...changes }, live)
+      } catch (err) {
+        // The summary is a convenience: without it the message simply shows no list of files.
+        console.error('[core] could not summarise a turn', err)
+      }
+    })
+  }
+
+  /** True when the folder was reverted after the person's latest message. Read from the log, so it survives a restart. */
+  private revertedSince(id: string): boolean {
+    const events = this.store.events(id)
+    for (let i = events.length - 1; i >= 0; i--) {
+      const type = (events[i] as { event: LogEvent }).event.type
+      if (type === 'user.message') return false
+      if (type === 'checkpoint.reverted') return true
+    }
+    return false
+  }
+
+  // --- checkpoints -----------------------------------------------------------------------------------
+
+  /** The session's folder and snapshots, after checking that the checkpoint is one of this session's own. */
+  private checkpointTarget(id: string, checkpointId: unknown): { cwd: string; snapshots: Snapshots; checkpoint: string; row: SessionRow } {
+    const row = this.requireSession(id)
+    const snapshots = this.opts.snapshots
+    if (!snapshots) throw new Error('Checkpoints are not available.')
+    if (row.mode !== 'develop' || !row.cwd) throw new Error('Only Develop sessions have checkpoints.')
+    if (typeof checkpointId !== 'string' || !CHECKPOINT_ID.test(checkpointId)) throw new Error('Invalid checkpoint')
+    const mine = this.store.events(id).some(({ event }) => (event.type === 'checkpoint.created' && event.id === checkpointId) || (event.type === 'checkpoint.reverted' && event.undoId === checkpointId))
+    if (!mine) throw new Error('That checkpoint does not belong to this session.')
+    return { cwd: row.cwd, snapshots, checkpoint: checkpointId, row }
+  }
+
+  private async revertPreview(id: string, checkpointId: string): Promise<CheckpointChanges> {
+    const { cwd, snapshots, checkpoint } = this.checkpointTarget(id, checkpointId)
+    return snapshots.preview(id, cwd, checkpoint)
+  }
+
+  private async revert(id: string, checkpointId: string): Promise<{ restored: number; removed: number; undoId: string }> {
+    const { cwd, snapshots, checkpoint, row } = this.checkpointTarget(id, checkpointId)
+    const live = this.live.get(id)
+    if (live?.open || row.status !== 'idle') throw new Error('Wait for the answer to finish, or stop it, before reverting.')
+    // A summary that is still being worked out must not run against the folder as it is being put back.
+    await live?.chain
+    const result = await snapshots.restore(id, cwd, checkpoint)
+    this.record(id, { type: 'checkpoint.reverted', id: checkpoint, ...result }, live ?? { text: '' })
+    // With no agent running yet, the log says it: the next one to start reads it (see `revertedSince`).
+    if (live) live.reverted = true
+    return result
   }
 
   /**
@@ -504,6 +643,7 @@ export class SessionService {
     clearTimeout(this.undoTimers.get(id))
     this.undoTimers.delete(id)
     for (const row of this.store.purgeSession(id)) this.opts.files.remove(row.file)
+    this.opts.snapshots?.forget(id)
     try {
       rmSync(join(this.opts.dataDir, 'chats', id), { recursive: true, force: true, maxRetries: 3, retryDelay: 200 })
     } catch {

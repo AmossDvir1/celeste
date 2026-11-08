@@ -7,6 +7,8 @@ import type { CorePush, CreateSessionInput, SessionSummary, StoredEvent } from '
 import { DEFAULT_SETTINGS } from '@shared/defaults'
 import { MemoryFileStore, MemoryStore } from './testing/memory-store'
 import { SessionService, type AdapterFactory } from './service'
+import type { Snapshots } from './snapshots'
+import type { CheckpointChanges } from '@shared/api'
 
 /** A scripted agent the tests drive by hand. */
 class FakeAgent implements AgentSession {
@@ -54,7 +56,7 @@ class FakeAgent implements AgentSession {
 const input: CreateSessionInput = { vendor: 'claude', mode: 'chat', title: 'Plan the rollout', model: 'copilot-auto', effort: null, approval: 'ask' }
 const flush = () => new Promise<void>((r) => setImmediate(r))
 
-function setup(store = new MemoryStore(), dataDir = '/data') {
+function setup(store = new MemoryStore(), dataDir = '/data', extra: Partial<ConstructorParameters<typeof SessionService>[0]> = {}) {
   const pushes: CorePush[] = []
   const agents: FakeAgent[] = []
   const contexts: Parameters<AdapterFactory>[0][] = []
@@ -80,7 +82,8 @@ function setup(store = new MemoryStore(), dataDir = '/data') {
     push: (p) => pushes.push(p),
     defaults: { ...DEFAULT_SETTINGS, userName: 'Sam' },
     now: () => (clock += 10),
-    undoMs: 5000
+    undoMs: 5000,
+    ...extra
   })
   service.init()
   return { service, api: service.api, store, pushes, agents, removed, contexts }
@@ -476,5 +479,226 @@ describe('sample sessions from older builds', () => {
     first.service.close()
     store.insertSession(row('seed-later'))
     expect(setup(store).api['app.bootstrap']().sessions.map((x) => x.id).sort()).toEqual(['8f1c2d3e-real', 'seed-later'])
+  })
+})
+
+// --- checkpoints ----------------------------------------------------------------------------------------
+
+/** Stands in for the saved copies of the project folder, so the service's own behaviour can be tested without git. */
+class FakeSnapshots implements Snapshots {
+  taken: string[] = []
+  restored: string[] = []
+  forgotten: string[] = []
+  previews: string[] = []
+  failWith: string | null = null
+  changesOut: CheckpointChanges = { files: [{ path: 'a.txt', status: 'modified', added: 2, removed: 1 }], more: 0 }
+  private n = 0
+  async take(): Promise<string> {
+    if (this.failWith) throw new Error(this.failWith)
+    const id = (++this.n).toString(16).padStart(40, '0')
+    this.taken.push(id)
+    return id
+  }
+  async changes(): Promise<CheckpointChanges> {
+    return this.changesOut
+  }
+  async preview(_s: string, _c: string, to: string): Promise<CheckpointChanges> {
+    this.previews.push(to)
+    return this.changesOut
+  }
+  async restore(_s: string, _c: string, to: string) {
+    this.restored.push(to)
+    return { restored: 1, removed: 2, undoId: (1000 + this.restored.length).toString(16).padStart(40, '0') }
+  }
+  forget(sessionId: string): void {
+    this.forgotten.push(sessionId)
+  }
+}
+
+const develop: CreateSessionInput = { ...input, mode: 'develop', cwd: '/work/shop-web' }
+const typesOf = (api: ReturnType<typeof setup>['api'], id: string) => (api['sessions.get'](id)?.events ?? []).map((e) => e.event.type)
+
+describe('checkpoints', () => {
+  it('saves the folder before a Develop message reaches the agent, and logs where to go back to', async () => {
+    const snapshots = new FakeSnapshots()
+    const { api, agents } = setup(new MemoryStore(), '/data', { snapshots })
+    const { id } = api['sessions.create'](develop)
+    api['sessions.send'](id, { text: 'Fix the test', attachments: [] })
+    expect(agents[0]?.sent).toEqual([])
+    await flush()
+    expect(agents[0]?.sent).toEqual([{ text: 'Fix the test', attachments: [] }])
+    expect(typesOf(api, id)).toEqual(['user.message', 'checkpoint.created'])
+    expect(api['sessions.get'](id)?.events[1]?.event).toEqual({ type: 'checkpoint.created', id: snapshots.taken[0] })
+  })
+
+  it('does not save anything for a chat, or when there is nothing to save with', async () => {
+    const snapshots = new FakeSnapshots()
+    const a = setup(new MemoryStore(), '/data', { snapshots })
+    const chat = a.api['sessions.create'](input)
+    a.api['sessions.send'](chat.id, { text: 'Hello', attachments: [] })
+    // A chat is sent at once, with no queue.
+    expect(a.agents[0]?.sent).toHaveLength(1)
+    expect(snapshots.taken).toEqual([])
+
+    const b = setup()
+    const dev = b.api['sessions.create'](develop)
+    b.api['sessions.send'](dev.id, { text: 'Hello', attachments: [] })
+    expect(b.agents[0]?.sent).toHaveLength(1)
+    expect(typesOf(b.api, dev.id)).toEqual(['user.message'])
+  })
+
+  it('writes what the turn changed when it ends, under the checkpoint it began at', async () => {
+    const snapshots = new FakeSnapshots()
+    const { api, agents } = setup(new MemoryStore(), '/data', { snapshots })
+    const { id } = api['sessions.create'](develop)
+    api['sessions.send'](id, { text: 'Fix the test', attachments: [] })
+    await flush()
+    agents[0]?.emit({ type: 'turn.started', turnId: 't1' })
+    agents[0]?.emit({ type: 'turn.completed', turnId: 't1' })
+    await flush()
+    const events = api['sessions.get'](id)?.events.map((e) => e.event) ?? []
+    expect(events.at(-1)).toEqual({ type: 'checkpoint.summary', id: snapshots.taken[0], ...snapshots.changesOut })
+    // A second save, after the turn: the one before the message and the one after.
+    expect(snapshots.taken).toHaveLength(2)
+  })
+
+  it('saves again for the next message, but not for one sent in the middle of an answer, and keeps the order', async () => {
+    const snapshots = new FakeSnapshots()
+    const { api, agents } = setup(new MemoryStore(), '/data', { snapshots })
+    const { id } = api['sessions.create'](develop)
+    api['sessions.send'](id, { text: 'one', attachments: [] })
+    api['sessions.send'](id, { text: 'two, while one is running', attachments: [] })
+    await flush()
+    expect(agents[0]?.sent.map((m) => m.text)).toEqual(['one', 'two, while one is running'])
+    expect(snapshots.taken).toHaveLength(1)
+
+    agents[0]?.emit({ type: 'turn.completed', turnId: 't1' })
+    await flush()
+    api['sessions.send'](id, { text: 'three', attachments: [] })
+    await flush()
+    expect(agents[0]?.sent.map((m) => m.text)).toEqual(['one', 'two, while one is running', 'three'])
+    // Before one, after the turn, and before three.
+    expect(snapshots.taken).toHaveLength(3)
+  })
+
+  it('still sends the message when the folder cannot be saved, says so once, and says it again only for a new reason', async () => {
+    const snapshots = new FakeSnapshots()
+    snapshots.failWith = 'Git was not found on this computer, and checkpoints need it.'
+    const { api, agents } = setup(new MemoryStore(), '/data', { snapshots })
+    const { id } = api['sessions.create'](develop)
+    api['sessions.send'](id, { text: 'one', attachments: [] })
+    await flush()
+    agents[0]?.emit({ type: 'turn.completed', turnId: 't1' })
+    await flush()
+    api['sessions.send'](id, { text: 'two', attachments: [] })
+    await flush()
+    expect(agents[0]?.sent.map((m) => m.text)).toEqual(['one', 'two'])
+    expect(typesOf(api, id).filter((t) => t === 'checkpoint.skipped')).toHaveLength(1)
+
+    agents[0]?.emit({ type: 'turn.completed', turnId: 't2' })
+    await flush()
+    snapshots.failWith = 'This folder is too large to checkpoint.'
+    api['sessions.send'](id, { text: 'three', attachments: [] })
+    await flush()
+    expect(typesOf(api, id).filter((t) => t === 'checkpoint.skipped')).toHaveLength(2)
+    expect(agents[0]?.sent).toHaveLength(3)
+  })
+
+  describe('reverting', () => {
+    async function finished() {
+      const snapshots = new FakeSnapshots()
+      const t = setup(new MemoryStore(), '/data', { snapshots })
+      const { id } = t.api['sessions.create'](develop)
+      t.api['sessions.send'](id, { text: 'Fix the test', attachments: [] })
+      await flush()
+      t.agents[0]?.emit({ type: 'turn.completed', turnId: 't1' })
+      await flush()
+      return { ...t, snapshots, id, checkpoint: snapshots.taken[0] as string }
+    }
+
+    it('previews and then reverts, writing what happened to the log', async () => {
+      const { api, snapshots, id, checkpoint } = await finished()
+      expect(await api['sessions.revertPreview'](id, checkpoint)).toEqual(snapshots.changesOut)
+      expect(snapshots.previews).toEqual([checkpoint])
+
+      const result = await api['sessions.revert'](id, checkpoint)
+      expect(result).toMatchObject({ restored: 1, removed: 2 })
+      expect(snapshots.restored).toEqual([checkpoint])
+      expect((api['sessions.get'](id)?.events.at(-1) as { event: unknown }).event).toEqual({ type: 'checkpoint.reverted', id: checkpoint, ...result })
+    })
+
+    it('can go back to the save made just before a revert, which is how a revert is undone', async () => {
+      const { api, snapshots, id, checkpoint } = await finished()
+      const first = await api['sessions.revert'](id, checkpoint)
+      await api['sessions.revert'](id, first.undoId)
+      expect(snapshots.restored).toEqual([checkpoint, first.undoId])
+    })
+
+    it('tells the agent about it with the next message, once, without changing what the person wrote', async () => {
+      const { api, agents, id, checkpoint } = await finished()
+      await api['sessions.revert'](id, checkpoint)
+      api['sessions.send'](id, { text: 'Try again', attachments: [] })
+      await flush()
+      const sent = agents[0]?.sent.at(-1)?.text ?? ''
+      expect(sent.startsWith('Try again')).toBe(true)
+      expect(sent).toMatch(/reverted the project folder/)
+      const logged = api['sessions.get'](id)?.events.find((e) => e.event.type === 'user.message' && e.event.text.startsWith('Try again'))?.event
+      expect(logged).toMatchObject({ text: 'Try again' })
+
+      agents[0]?.emit({ type: 'turn.completed', turnId: 't2' })
+      await flush()
+      api['sessions.send'](id, { text: 'And again', attachments: [] })
+      await flush()
+      expect(agents[0]?.sent.at(-1)?.text).toBe('And again')
+    })
+
+    it('still tells the agent after Celeste was restarted in between', async () => {
+      const snapshots = new FakeSnapshots()
+      const store = new MemoryStore()
+      const first = setup(store, '/data', { snapshots })
+      const { id } = first.api['sessions.create'](develop)
+      first.api['sessions.send'](id, { text: 'Fix the test', attachments: [] })
+      await flush()
+      first.agents[0]?.emit({ type: 'turn.completed', turnId: 't1' })
+      await flush()
+      await first.api['sessions.revert'](id, snapshots.taken[0] as string)
+      first.service.close()
+
+      const second = setup(store, '/data', { snapshots })
+      second.api['sessions.send'](id, { text: 'Carry on', attachments: [] })
+      await flush()
+      expect(second.agents[0]?.sent.at(-1)?.text).toMatch(/reverted the project folder/)
+    })
+
+    it('refuses while the agent is answering, until it is stopped', async () => {
+      const { api, agents, id, checkpoint } = await finished()
+      api['sessions.send'](id, { text: 'Next', attachments: [] })
+      await flush()
+      agents[0]?.emit({ type: 'turn.started', turnId: 't2' })
+      await expect(api['sessions.revert'](id, checkpoint)).rejects.toThrow(/Wait for the answer/)
+      agents[0]?.emit({ type: 'turn.interrupted', turnId: 't2' })
+      await flush()
+      await expect(api['sessions.revert'](id, checkpoint)).resolves.toMatchObject({ restored: 1 })
+    })
+
+    it('refuses a checkpoint that is not this session’s, not an id, a chat, or when there are no checkpoints', async () => {
+      const { api, id } = await finished()
+      await expect(api['sessions.revert'](id, 'f'.repeat(40))).rejects.toThrow(/does not belong to this session/)
+      await expect(api['sessions.revert'](id, '../../x')).rejects.toThrow(/Invalid checkpoint/)
+      await expect(api['sessions.revertPreview'](id, 'f'.repeat(40))).rejects.toThrow(/does not belong/)
+
+      const chat = api['sessions.create'](input)
+      await expect(api['sessions.revert'](chat.id, 'a'.repeat(40))).rejects.toThrow(/Only Develop sessions/)
+      const plain = setup()
+      const dev = plain.api['sessions.create'](develop)
+      await expect(plain.api['sessions.revert'](dev.id, 'a'.repeat(40))).rejects.toThrow(/not available/)
+    })
+
+    it('forgets a session’s saved copies when the session is deleted for good', async () => {
+      const { api, snapshots, id } = await finished()
+      api['sessions.remove'](id)
+      vi.advanceTimersByTime(6000)
+      expect(snapshots.forgotten).toEqual([id])
+    })
   })
 })

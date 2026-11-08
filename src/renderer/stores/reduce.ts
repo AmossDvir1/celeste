@@ -52,6 +52,25 @@ export function reduceEvent(s: Session, e: LogEvent, at: number): Session {
     case 'user.message':
       return { ...s, items: [...s.items, { kind: 'user', id: itemId(), text: e.text, attachments: e.attachments, at: now }], updatedAt: now }
 
+    case 'checkpoint.created': {
+      // It is written right after the message it belongs to.
+      const at = s.items.map((it) => it.kind).lastIndexOf('user')
+      if (at < 0) return s
+      return { ...s, items: s.items.map((it, i) => (i === at && it.kind === 'user' ? { ...it, checkpoint: { id: e.id } } : it)) }
+    }
+
+    case 'checkpoint.summary':
+      return {
+        ...s,
+        items: s.items.map((it) => (it.kind === 'user' && it.checkpoint?.id === e.id ? { ...it, checkpoint: { id: e.id, files: e.files, more: e.more } } : it))
+      }
+
+    case 'checkpoint.skipped':
+      return { ...s, items: [...s.items, { kind: 'notice', id: itemId(), text: `Celeste could not save the folder before this message, so it cannot be reverted. ${e.reason}` }] }
+
+    case 'checkpoint.reverted':
+      return { ...s, items: [...s.items, { kind: 'reverted', id: itemId(), restored: e.restored, removed: e.removed, undoId: e.undoId }], updatedAt: now }
+
     case 'approval.resolved':
       return resolveApproval(s, e.requestId, e.allow)
 

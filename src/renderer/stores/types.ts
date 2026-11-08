@@ -6,13 +6,21 @@ import type {
   Question,
   ToolKind
 } from '@shared/agent'
-import type { SessionStatus, SessionSummary } from '@shared/api'
+import type { CheckpointFile, SessionStatus, SessionSummary } from '@shared/api'
 
 export type { SessionStatus }
 
 /** What the conversation shows, built by replaying the session's log of events. */
 export type TimelineItem =
-  | { kind: 'user'; id: string; text: string; attachments: AttachmentInfo[]; at: number }
+  | {
+      kind: 'user'
+      id: string
+      text: string
+      attachments: AttachmentInfo[]
+      at: number
+      /** Develop: the folder was saved just before this message. `files` is what the turn changed, known once it ends. */
+      checkpoint?: { id: string; files?: CheckpointFile[]; more?: number }
+    }
   | { kind: 'assistant'; id: string; text: string }
   | { kind: 'thinking'; id: string; text: string; startedAt: number; endedAt?: number }
   | {
@@ -39,6 +47,8 @@ export type TimelineItem =
   | { kind: 'ask'; id: string; requestId: string; questions: Question[]; answers?: AskAnswers; status: 'pending' | 'answered' }
   | { kind: 'error'; id: string; error: AgentError }
   | { kind: 'notice'; id: string; text: string }
+  /** The folder was put back to a checkpoint. `undoId` goes back to how it was just before. */
+  | { kind: 'reverted'; id: string; restored: number; removed: number; undoId: string }
 
 /** The line shown under the conversation while the agent works. */
 export interface Activity {

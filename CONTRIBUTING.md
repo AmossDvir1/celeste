@@ -20,7 +20,7 @@ npm test
 ```
 
 Both must pass. If you changed something the running app depends on, also run the matching check against the built app
-(`npm run verify:persistence`, `verify:package`, `verify:devices`). Please do not run `npm run verify:copilot` or the
+(`npm run verify:persistence`, `verify:package`, `verify:devices`, `verify:checkpoints`). Please do not run `npm run verify:copilot` or the
 Copilot and Claude live tests unless you mean to: they use your own accounts and spend your quota. `npm run verify:claude` is safe: it
 talks to a stand-in for Anthropic's API on your own computer.
 

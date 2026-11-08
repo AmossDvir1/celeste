@@ -9,6 +9,7 @@ import {
   FileText,
   Globe,
   Plug,
+  RotateCcw,
   Search,
   ShieldQuestion,
   SquareTerminal,
@@ -22,6 +23,8 @@ import { Markdown } from '@/components/Markdown'
 import { ShimmerText } from '@/components/ShimmerText'
 import { Button, Spinner } from '@/components/ui'
 import { DiffList } from '@/features/develop/DiffView'
+import { RevertDialog } from '@/features/develop/RevertDialog'
+import { useSessions } from '@/stores/sessions'
 import { AttachmentStrip } from './attachments'
 import type { Session, TimelineItem } from '@/stores/types'
 
@@ -42,7 +45,19 @@ const TOOL_ICON: Record<ToolKind, typeof Wrench> = {
 
 /* ---------- user and assistant messages ---------- */
 
-function UserMessage({ item }: { item: Extract<TimelineItem, { kind: 'user' }> }) {
+function UserMessage({
+  item,
+  canRevert,
+  onRevert
+}: {
+  item: Extract<TimelineItem, { kind: 'user' }>
+  canRevert: boolean
+  onRevert: (checkpointId: string) => void
+}) {
+  const checkpoint = item.checkpoint
+  const files = checkpoint?.files
+  const added = files?.reduce((n, f) => n + f.added, 0) ?? 0
+  const removed = files?.reduce((n, f) => n + f.removed, 0) ?? 0
   return (
     <div className="animate-fade-up flex flex-col items-end gap-2">
       {item.attachments.length > 0 && <AttachmentStrip items={item.attachments} className="max-w-[78%] justify-end" />}
@@ -50,6 +65,49 @@ function UserMessage({ item }: { item: Extract<TimelineItem, { kind: 'user' }> }
         <div className="selectable max-w-[78%] rounded-2xl rounded-br-md border border-edge bg-raised px-4 py-2.5 text-[15px] leading-[1.6] whitespace-pre-wrap text-ink">
           {item.text}
         </div>
+      )}
+      {checkpoint && (
+        <div className="flex items-center gap-2 text-xs text-ink-faint">
+          {files && (
+            <span>
+              {files.length === 0 ? (
+                'No files changed'
+              ) : (
+                <>
+                  {files.length}
+                  {checkpoint.more ? `+${checkpoint.more}` : ''} {files.length === 1 && !checkpoint.more ? 'file' : 'files'} changed{' '}
+                  <span className="font-mono">
+                    <span className="text-success">+{added}</span> <span className="text-danger">−{removed}</span>
+                  </span>
+                </>
+              )}
+            </span>
+          )}
+          <button
+            type="button"
+            disabled={!canRevert}
+            onClick={() => onRevert(checkpoint.id)}
+            aria-label="Revert the project to before this message"
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <RotateCcw className="h-3 w-3" /> Revert to before this
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function RevertedNotice({ item, canUndo, onUndo }: { item: Extract<TimelineItem, { kind: 'reverted' }>; canUndo: boolean; onUndo: () => void }) {
+  const parts = [item.restored > 0 && `${item.restored} ${item.restored === 1 ? 'file' : 'files'} put back`, item.removed > 0 && `${item.removed} removed`].filter(Boolean)
+  return (
+    <div className="flex items-center justify-center gap-2 text-xs text-ink-faint">
+      <RotateCcw className="h-3 w-3" />
+      <span>{parts.length ? `Reverted: ${parts.join(', ')}.` : 'Reverted: nothing needed to change.'}</span>
+      {canUndo && (
+        <button type="button" onClick={onUndo} className="rounded-md px-1.5 py-0.5 underline decoration-edge-strong underline-offset-2 hover:bg-hover hover:text-ink">
+          Undo
+        </button>
       )}
     </div>
   )
@@ -482,14 +540,25 @@ export function Timeline({
   onRetry: () => void
 }) {
   const blocks = useMemo(() => toBlocks(session.items, session.mode), [session.items, session.mode])
+  const revert = useSessions((s) => s.revert)
+  const [target, setTarget] = useState<string | null>(null)
+  // Only the newest revert can be undone, and only until the person says something else: after that, files have moved on.
+  const lastReverted = useMemo(() => {
+    const last = session.items.map((it) => it.kind).lastIndexOf('reverted')
+    return last >= 0 && !session.items.slice(last).some((it) => it.kind === 'user') ? session.items[last]?.id : undefined
+  }, [session.items])
+  const idle = session.status === 'idle'
   return (
     <div className="space-y-4">
+      {target && <RevertDialog sessionId={session.id} checkpointId={target} onClose={() => setTarget(null)} />}
       {blocks.map((b) => {
         if (b.kind === 'group') return <ActivityGroup key={b.id} items={b.items} />
         const it = b.item
         switch (it.kind) {
           case 'user':
-            return <UserMessage key={it.id} item={it} />
+            return <UserMessage key={it.id} item={it} canRevert={idle} onRevert={setTarget} />
+          case 'reverted':
+            return <RevertedNotice key={it.id} item={it} canUndo={idle && it.id === lastReverted} onUndo={() => void revert(session.id, it.undoId)} />
           case 'assistant':
             return <AssistantMessage key={it.id} item={it} />
           case 'thinking':
