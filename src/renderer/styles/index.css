@@ -112,6 +112,39 @@
   }
 }
 
+/* The workflow canvas (React Flow), in the window's colours in both themes. */
+.react-flow {
+  --xy-background-color: transparent;
+  --xy-background-pattern-dots-color: var(--c-edge-strong);
+  --xy-controls-button-background-color: var(--c-raised);
+  --xy-controls-button-background-color-hover: var(--c-hover);
+  --xy-controls-button-color: var(--c-ink);
+  --xy-controls-button-color-hover: var(--c-ink);
+  --xy-controls-button-border-color: var(--c-edge);
+  --xy-node-background-color: transparent;
+  --xy-node-border: none;
+  --xy-node-boxshadow-selected: none;
+  --xy-edge-stroke: var(--c-accent);
+}
+.react-flow__attribution {
+  background: transparent;
+  font-size: 10px;
+}
+.react-flow__attribution a {
+  color: var(--c-ink-muted);
+}
+.react-flow__controls {
+  box-shadow: none;
+  border: 1px solid var(--c-edge);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.react-flow__node:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 3px;
+  border-radius: 14px;
+}
+
 /* The active top-level tab: a pink-tinted fill with a pink edge. */
 .tab-active {
   background: var(--tab-active-bg);

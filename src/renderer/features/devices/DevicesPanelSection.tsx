@@ -10,7 +10,7 @@ import { AccessBadge, DeviceGlyph, VENDOR_NOTICE } from './parts'
 export function DevicesPanelSection() {
   const mode = useUi((s) => s.mode)
   const openSettings = useUi((s) => s.openSettings)
-  const sessionId = useSessions((s) => s.active[mode])
+  const sessionId = useSessions((s) => (mode === 'workflows' ? null : s.active[mode]))
   const devices = useDevices((s) => s.devices)
   const folders = useDevices((s) => s.folders)
   const attached = useDevices((s) => (sessionId ? s.attached[sessionId] : undefined))

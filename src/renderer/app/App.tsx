@@ -12,6 +12,7 @@ import { SearchDialog } from '@/features/search/SearchDialog'
 import { SettingsDialog } from '@/features/settings/SettingsDialog'
 import { ToolsPanel } from '@/features/tools/ToolsPanel'
 import { Wizard } from '@/features/wizard/Wizard'
+import { WorkflowsScreen } from '@/features/workflows/WorkflowsScreen'
 import { Toasts } from '@/components/Toasts'
 import { IconButton, TooltipProvider } from '@/components/ui'
 import { useSessions } from '@/stores/sessions'
@@ -22,9 +23,10 @@ import { TopBar } from './TopBar'
 
 function MainPanel() {
   const mode = useUi((s) => s.mode)
-  const activeId = useSessions((s) => s.active[mode])
+  const activeId = useSessions((s) => (mode === 'workflows' ? null : s.active[mode]))
   const send = useSessions((s) => s.send)
 
+  if (mode === 'workflows') return <WorkflowsScreen />
   if (activeId) return <ConversationView key={activeId} sessionId={activeId} />
   return (
     <ChatHome
@@ -41,6 +43,7 @@ function RightPanel() {
   const mode = useUi((s) => s.mode)
   if (!panel) return null
   // Develop panels only make sense in Develop.
+  if (mode === 'workflows') return null
   if (panel !== 'tools' && mode !== 'develop') return null
   return (
     <div className="animate-slide-in-right h-full w-[400px] shrink-0">
@@ -70,12 +73,14 @@ function useShortcuts() {
       } else if (key === 'b') {
         e.preventDefault()
         settings.set({ sidebarCollapsed: !settings.sidebarCollapsed })
-      } else if (key === '1' || key === '2') {
+      } else if (key === '1' || key === '2' || key === '3') {
         e.preventDefault()
-        ui.setMode((['chat', 'develop'] as const)[Number(key) - 1])
+        ui.setMode((['chat', 'develop', 'workflows'] as const)[Number(key) - 1])
       } else if (key === 'n') {
         e.preventDefault()
-        useSessions.getState().home(ui.mode)
+        // From the Workflows tab a new session is a chat.
+        if (ui.mode === 'workflows') ui.setMode('chat')
+        useSessions.getState().home(ui.mode === 'workflows' ? 'chat' : ui.mode)
         ui.resetDraft()
       }
     }

@@ -118,6 +118,30 @@ try {
   await page.getByRole('button', { name: 'Stop' }).waitFor({ state: 'detached', timeout: 60_000 })
   await audit(page, 'Chat, with files the agent made')
 
+  // The Workflows tab: the empty start, then the editor with a step of each kind open.
+  await page.getByRole('navigation', { name: 'Modes' }).getByRole('button', { name: 'Workflows' }).click()
+  await page.getByRole('heading', { name: 'No workflows yet' }).waitFor()
+  await audit(page, 'Workflows, none yet')
+  await page.getByRole('region', { name: 'Workflows' }).getByRole('button', { name: 'New workflow' }).click()
+  await page.getByRole('textbox', { name: 'Workflow name' }).waitFor()
+  await audit(page, 'Workflows, a new workflow')
+  for (const [menuItem, filled] of [['Run a command', 'Command'], ['Ask the assistant', 'Prompt'], ['Call a web address', 'Web address'], ['Read or write a file', 'File'], ['Use a tool from your tools', 'Tool name']]) {
+    await page.getByRole('button', { name: 'Add a step' }).click()
+    await page.getByRole('menuitem', { name: menuItem }).click()
+    await page.getByRole('region', { name: 'Step details' }).waitFor()
+    await page.waitForTimeout(150)
+    await audit(page, `Workflows, the ${menuItem.toLowerCase()} step open (${filled})`)
+  }
+  await page.getByRole('region', { name: 'Step details' }).getByRole('button', { name: 'Error handling' }).click()
+  await page.getByRole('region', { name: 'Step details' }).getByRole('button', { name: 'Advanced settings' }).click()
+  await audit(page, 'Workflows, error handling and advanced settings open')
+  await page.getByRole('textbox', { name: 'Workflow name' }).fill('For the audit')
+  await page.getByRole('region', { name: 'Step details' }).getByRole('button', { name: 'Close panel' }).click()
+  await page.getByRole('button', { name: 'Back to all workflows' }).click()
+  await page.getByRole('dialog', { name: 'Leave without saving?' }).getByRole('button', { name: 'Leave without saving' }).click()
+  await audit(page, 'Workflows, leaving with unsaved changes closed again')
+  await page.getByRole('navigation', { name: 'Modes' }).getByRole('button', { name: 'Chat' }).click()
+
   console.log('\n# Keyboard')
   const insideDialog = () => page.evaluate(() => Boolean(document.querySelector('[role="dialog"]')?.contains(document.activeElement)))
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
@@ -223,7 +247,7 @@ try {
   await page.keyboard.press('Escape')
 
   await page.getByRole('button', { name: 'Tools & Integrations' }).first().click()
-  await page.getByRole('region', { name: 'Tools' }).waitFor()
+  await page.getByRole('region', { name: 'Tools', exact: true }).waitFor()
   await audit(page, 'the Tools panel')
   await page.getByRole('button', { name: 'Add a tool' }).first().click()
   await page.getByRole('dialog', { name: 'Add a tool' }).waitFor()

@@ -39,6 +39,8 @@ export interface NodeBase {
   /** Short and stable: letters, digits and underscores. `{{nodes.find_kbs.output}}` uses it. */
   id: string
   name: string
+  /** One or two lines under the name on the canvas. */
+  description?: string
   position?: { x: number; y: number }
 }
 
@@ -86,6 +88,17 @@ export interface WorkflowEdge {
 export interface WorkflowDefinition {
   nodes: WorkflowNode[]
   edges: WorkflowEdge[]
+}
+
+/** A workflow with only Start and End, which is what "New workflow" opens. */
+export function emptyDefinition(): WorkflowDefinition {
+  return {
+    nodes: [
+      { id: 'start', type: 'start', name: 'Start', inputs: [], position: { x: 0, y: 0 } },
+      { id: 'end', type: 'end', name: 'End', position: { x: 260, y: 0 } }
+    ],
+    edges: [{ from: 'start', to: 'end' }]
+  }
 }
 
 /** An id for a step, from its name: "Find old KBs" becomes `find_old_kbs`. */
@@ -183,6 +196,7 @@ export function validateWorkflow(input: unknown): string[] {
     ids.add(raw.id)
     if (!str(raw.name) || !raw.name.trim()) problems.push(`The step “${raw.id}” has no name.`)
     else if (raw.name.length > 100) problems.push(`${label}: the name is too long.`)
+    if (raw.description !== undefined && (!str(raw.description) || raw.description.length > 300)) problems.push(`${label}: the description must be text of at most 300 characters.`)
     if (raw.onError !== undefined && !['stop', 'retry', 'continue'].includes(raw.onError as string)) problems.push(`${label}: “${String(raw.onError)}” is not a way to handle errors.`)
     if (raw.retries !== undefined && !(Number.isInteger(raw.retries) && (raw.retries as number) >= 1 && (raw.retries as number) <= 5)) problems.push(`${label}: retries must be a whole number from 1 to 5.`)
     if (raw.timeoutSec !== undefined && !(typeof raw.timeoutSec === 'number' && raw.timeoutSec >= 1 && raw.timeoutSec <= 24 * 3600)) problems.push(`${label}: the time limit must be between 1 second and 24 hours.`)

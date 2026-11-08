@@ -4,7 +4,7 @@ import { effortFor } from '@/lib/vendors'
 import { lookupModel, modelOf, useModels } from './models'
 import { useSettings } from '@/stores/settings'
 
-export type AppMode = 'chat' | 'develop'
+export type AppMode = 'chat' | 'develop' | 'workflows'
 export type RightPanel = null | 'tools' | 'changes' | 'terminal' | 'files'
 export type SettingsSection = 'general' | 'appearance' | 'vendors' | 'agent' | 'tools' | 'devices' | 'data' | 'about'
 

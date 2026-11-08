@@ -136,7 +136,7 @@ export function ModelSelect({ value, onChange, id }: { value: string; onChange: 
 const SHORTCUTS: [string, string][] = [
   ['Search chats and sessions', 'Ctrl K'],
   ['New chat', 'Ctrl N'],
-  ['Switch between Chat and Develop', 'Ctrl 1 · 2'],
+  ['Switch between Chat, Develop and Workflows', 'Ctrl 1 · 2 · 3'],
   ['Show or hide the sidebar', 'Ctrl B'],
   ['Open settings', 'Ctrl ,'],
   ['New line in a message', 'Shift Enter']

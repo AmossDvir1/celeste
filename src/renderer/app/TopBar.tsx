@@ -1,4 +1,4 @@
-import { Code, Laptop, MessageSquare, Moon, Search, Settings, Sparkles, Sun } from 'lucide-react'
+import { Code, Laptop, MessageSquare, Moon, Search, Settings, Sparkles, Sun, Workflow } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Logo } from '@/components/Logo'
 import { Menu } from '@/components/menu'
@@ -8,7 +8,8 @@ import { useUi, type AppMode } from '@/stores/ui'
 
 const TABS: { id: AppMode; label: string; icon: typeof Code }[] = [
   { id: 'chat', label: 'Chat', icon: MessageSquare },
-  { id: 'develop', label: 'Develop', icon: Code }
+  { id: 'develop', label: 'Develop', icon: Code },
+  { id: 'workflows', label: 'Workflows', icon: Workflow }
 ]
 
 export function TopBar() {
@@ -52,7 +53,7 @@ export function TopBar() {
               aria-current={active ? 'page' : undefined}
               onClick={() => setMode(id)}
               className={cn(
-                'flex h-10 min-w-[118px] items-center justify-center gap-2.5 rounded-[10px] border border-transparent px-5 text-[15px] transition-colors',
+                'flex h-10 min-w-[112px] items-center justify-center gap-2.5 rounded-[10px] border border-transparent px-5 text-[15px] transition-colors',
                 active ? 'tab-active' : 'text-ink-muted hover:text-ink'
               )}
             >

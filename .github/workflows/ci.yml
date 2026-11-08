@@ -37,7 +37,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        check: [persistence, ui, checkpoints, worktrees, mcp, terminal, files, claude]
+        check: [persistence, ui, checkpoints, worktrees, mcp, terminal, files, claude, workflows]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

@@ -39,6 +39,7 @@
     "verify:worktrees": "electron-vite build && node scripts/worktrees-check.mjs",
     "verify:terminal": "electron-vite build && node scripts/terminal-check.mjs",
     "verify:files": "electron-vite build && node scripts/files-check.mjs",
+    "verify:workflows": "electron-vite build && node scripts/workflows-check.mjs",
     "verify:mcp": "electron-vite build && node scripts/mcp-check.mjs",
     "verify:ui": "electron-vite build && node scripts/ui-check.mjs",
     "verify:claude": "electron-vite build && node scripts/claude-check.mjs",
@@ -88,6 +89,7 @@
     "@modelcontextprotocol/sdk": "^1.32.2",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
+    "@xyflow/react": "12.10.2",
     "bonjour-service": "^1.4.4",
     "ssh2": "^1.17.0"
   }

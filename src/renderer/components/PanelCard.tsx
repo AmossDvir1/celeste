@@ -20,7 +20,7 @@ export function PanelCard({
   bodyClassName?: string
 }) {
   return (
-    <section className={cn('flex min-h-0 flex-col overflow-hidden rounded-2xl border border-edge bg-panel', className)}>
+    <section aria-label={typeof title === 'string' ? title : undefined} className={cn('flex min-h-0 flex-col overflow-hidden rounded-2xl border border-edge bg-panel', className)}>
       <header className="flex h-14 shrink-0 items-center gap-2 border-b border-edge/70 pr-2 pl-5">
         <h2 className="min-w-0 flex-1 truncate text-[15px] font-medium text-ink">{title}</h2>
         {actions}

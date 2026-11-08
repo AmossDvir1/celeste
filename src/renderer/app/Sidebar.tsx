@@ -9,7 +9,8 @@ import {
   Pencil,
   Plus,
   Settings,
-  Trash2
+  Trash2,
+  Workflow
 } from 'lucide-react'
 import type { SessionMode } from '@shared/agent'
 import { SIDEBAR_WIDTH } from '@shared/defaults'
@@ -22,6 +23,7 @@ import { useSessions, needsYou } from '@/stores/sessions'
 import type { Session } from '@/stores/types'
 import { useSettings } from '@/stores/settings'
 import { useUi } from '@/stores/ui'
+import { useWorkflows } from '@/stores/workflows'
 
 const DAY = 86_400_000
 
@@ -217,6 +219,41 @@ function ChatList({ mode, query, limit }: { mode: SessionMode; query: string; li
   )
 }
 
+/** On the Workflows tab, under the chats: the person's workflows, with a way to make one. */
+function WorkflowsSection() {
+  const list = useWorkflows((s) => s.list)
+  const openId = useWorkflows((s) => s.draft?.id)
+  const open = useWorkflows((s) => s.open)
+  const create = useWorkflows((s) => s.newWorkflow)
+  const [query, setQuery] = useState('')
+  const shown = list.filter((w) => !query.trim() || w.name.toLowerCase().includes(query.trim().toLowerCase()))
+  return (
+    <section aria-label="Workflows" className="mt-2 flex min-h-0 flex-1 flex-col border-t border-edge pt-2">
+      <SectionLabel className="pb-1.5">Workflows</SectionLabel>
+      <Button variant="secondary" className="h-10 justify-start gap-2.5 px-3.5" onClick={create}>
+        <Plus className="h-[18px] w-[18px]" /> New workflow
+      </Button>
+      <SearchInput value={query} onChange={setQuery} placeholder="Search workflows…" className="mt-2 h-10" />
+      <div className="mt-1 min-h-0 flex-1 overflow-y-auto pr-1">
+        <SectionLabel className="pt-2 pb-1">My workflows</SectionLabel>
+        {shown.length === 0 && <div className="px-3 py-4 text-center text-[13px] text-ink-faint">{query ? 'No matches' : 'None yet'}</div>}
+        {shown.map((w) => (
+          <button
+            key={w.id}
+            type="button"
+            onClick={() => void open(w.id)}
+            aria-current={w.id === openId ? 'true' : undefined}
+            className={cn('flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13.5px] transition-colors hover:bg-hover', w.id === openId ? 'bg-select text-ink' : 'text-ink-soft')}
+          >
+            <Workflow className="h-4 w-4 shrink-0 text-ink-muted" />
+            <span className="truncate">{w.name}</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 const clampWidth = (w: number) => Math.round(Math.min(SIDEBAR_WIDTH.max, Math.max(SIDEBAR_WIDTH.min, w)))
 
 /** The edge of the session list: drag it, use the arrow keys, or double-click to go back to the usual width. */
@@ -280,9 +317,12 @@ export function Sidebar() {
   const [live, setLive] = useState<number | null>(null)
   const width = live ?? saved
   const [query, setQuery] = useState('')
-  const sessionMode: SessionMode = mode
+  // On the Workflows tab the list above is of chats, and the workflows are under it.
+  const sessionMode: SessionMode = mode === 'develop' ? 'develop' : 'chat'
+  const setMode = useUi((s) => s.setMode)
 
   const startNew = () => {
+    if (mode === 'workflows') setMode('chat')
     useSessions.getState().home(sessionMode)
     useUi.getState().resetDraft()
   }
@@ -314,9 +354,10 @@ export function Sidebar() {
         className="mt-2.5 h-10"
       />
 
-      <div className="mt-1 min-h-0 flex-1 overflow-y-auto pr-1">
-        <ChatList mode={sessionMode} query={query} limit={6} />
+      <div className={cn('mt-1 min-h-0 overflow-y-auto pr-1', mode === 'workflows' ? 'max-h-[36%] shrink-0' : 'flex-1')}>
+        <ChatList mode={sessionMode} query={query} limit={mode === 'workflows' ? 3 : 6} />
       </div>
+      {mode === 'workflows' && <WorkflowsSection />}
 
       <div className="mt-2 border-t border-edge pt-2">
         <button
