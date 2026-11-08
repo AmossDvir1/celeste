@@ -27,7 +27,7 @@ function StartupError({ message }: { message: string }) {
         <button
           type="button"
           onClick={() => window.location.reload()}
-          className="mt-6 h-10 rounded-lg bg-accent px-5 text-[14px] font-medium text-accent-ink hover:brightness-110"
+          className="mt-6 h-10 rounded-lg bg-accent-fill px-5 text-[14px] font-medium text-accent-ink hover:brightness-110"
         >
           Try again
         </button>

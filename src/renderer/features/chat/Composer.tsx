@@ -84,7 +84,7 @@ export function Composer({
       className={cn(
         'flex shrink-0 items-center justify-center rounded-full transition-colors',
         home ? 'absolute right-[22px] bottom-[18px] h-[50px] w-[50px]' : 'ml-auto h-10 w-10',
-        busy || canSend ? 'bg-accent text-accent-ink hover:brightness-110' : 'bg-send text-send-ink',
+        busy || canSend ? 'bg-accent-fill text-accent-ink hover:brightness-110' : 'bg-send text-send-ink',
         !busy && !canSend && 'cursor-default'
       )}
     >

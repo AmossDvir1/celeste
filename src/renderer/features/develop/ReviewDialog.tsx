@@ -224,7 +224,7 @@ export function ReviewDialog({
                         aria-checked={seen}
                         aria-label={`Mark ${f.path} as viewed`}
                         onClick={() => toggleViewed(f.path)}
-                        className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded border', seen ? 'border-accent bg-accent text-accent-ink' : 'border-edge-strong text-transparent hover:text-ink-faint')}
+                        className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded border', seen ? 'border-accent-fill bg-accent-fill text-accent-ink' : 'border-edge-strong text-transparent hover:text-ink-faint')}
                       >
                         <Check className="h-3.5 w-3.5" strokeWidth={3} />
                       </button>

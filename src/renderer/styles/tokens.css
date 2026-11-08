@@ -19,10 +19,12 @@
   --c-ink: #f7f8fc;
   --c-ink-soft: #cfd8ee;
   --c-ink-muted: #aeb8d1;
-  --c-ink-faint: #6f7b98;
+  --c-ink-faint: #8590ab;
 
   --c-accent: #f5487f;
   --c-accent-ink: #ffffff;
+  /* The pink to put under white text (buttons): the brighter accent does not reach 4.5:1 with white. */
+  --c-accent-fill: #c9285e;
   --c-accent-text: #ff7aa3;
   --c-accent-soft: rgb(245 72 127 / 0.14);
   --c-accent-edge: rgb(245 72 127 / 0.45);
@@ -93,13 +95,14 @@
   --c-edge-strong: #c8d0e3;
 
   --c-ink: #111b4c;
-  --c-ink-soft: #3b4672;
-  --c-ink-muted: #526080;
-  --c-ink-faint: #8a94b0;
+  --c-ink-soft: #2f3a66;
+  --c-ink-muted: #424e6e;
+  --c-ink-faint: #5a6482;
 
   --c-accent: #f5487f;
   --c-accent-ink: #ffffff;
-  --c-accent-text: #c7417b;
+  --c-accent-fill: #c9285e;
+  --c-accent-text: #a82c63;
   --c-accent-soft: rgb(245 72 127 / 0.1);
   --c-accent-edge: rgb(245 72 127 / 0.4);
   --c-select: #f7e2ee;
@@ -109,17 +112,17 @@
   --c-composer-edge: #c9bff0;
   --c-pill: #ffffff;
   --c-send: #f7d4e6;
-  --c-send-ink: #c7417b;
+  --c-send-ink: #a82c63;
 
-  --c-success: #12a66a;
-  --c-warning: #b9760f;
-  --c-danger: #d93f5e;
+  --c-success: #0b7d50;
+  --c-warning: #8f5a06;
+  --c-danger: #c12c4b;
   --c-info: #315dce;
 
   --c-shimmer-hi: #f5487f;
   --tab-active-bg: #f9dcec;
   --tab-active-edge: #f3a6c9;
-  --tab-active-ink: #c7417b;
+  --tab-active-ink: #a82c63;
   --shadow-pop: 0 12px 32px rgb(31 48 110 / 0.16);
   --shadow-card: 0 2px 8px rgb(31 48 110 / 0.06);
 

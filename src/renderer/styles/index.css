@@ -20,6 +20,7 @@
   --color-ink-faint: var(--c-ink-faint);
   --color-accent: var(--c-accent);
   --color-accent-ink: var(--c-accent-ink);
+  --color-accent-fill: var(--c-accent-fill);
   --color-accent-text: var(--c-accent-text);
   --color-accent-soft: var(--c-accent-soft);
   --color-accent-edge: var(--c-accent-edge);

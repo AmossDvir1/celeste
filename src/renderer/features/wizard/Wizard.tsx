@@ -44,7 +44,8 @@ export function Wizard() {
   return (
     <div role="dialog" aria-modal="true" aria-label="Set up Celeste" className="fixed inset-0 z-[80] flex flex-col bg-canvas text-ink">
       <GlowArc />
-      <header
+      {/* Plain boxes, not header and main: the page already has those landmarks, and a page has only one of each. */}
+      <div
         className="app-drag relative z-10 flex h-14 shrink-0 items-center px-6"
         style={{ paddingRight: 'calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 24px)' }}
       >
@@ -55,9 +56,9 @@ export function Wizard() {
         <button type="button" onClick={finish} className="app-no-drag ml-auto rounded-md px-2 py-1 text-[13px] text-ink-muted hover:text-ink">
           Skip setup
         </button>
-      </header>
+      </div>
 
-      <main className="relative z-10 flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 py-6">
+      <div className="relative z-10 flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 py-6">
         <div className="w-[min(640px,100%)]">
           <div className="mb-8 flex items-center gap-3" aria-label={`Step ${step + 1} of ${STEPS.length}: ${STEPS[step]}`}>
             <div className="flex gap-1.5">
@@ -197,7 +198,7 @@ export function Wizard() {
             </Button>
           </div>
         </div>
-      </main>
+      </div>
     </div>
   )
 }

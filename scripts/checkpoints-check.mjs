@@ -52,7 +52,7 @@ let app
 const textbox = (page) => page.getByRole('textbox', { name: 'Message' })
 const settingsNav = (page, name) => page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name })
 const open = () => launch({ width: 1440, height: 900, theme: null, profile, env: stub.env })
-const revertButtons = (page) => page.getByRole('button', { name: 'Revert the project to before this message' })
+const revertButtons = (page) => page.getByRole('button', { name: 'Revert to before this message' })
 const idle = (page) => page.getByRole('button', { name: 'Stop' }).waitFor({ state: 'detached', timeout: 60_000 })
 const say = async (page, text, answer) => {
   await textbox(page).fill(text)

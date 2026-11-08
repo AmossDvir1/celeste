@@ -76,7 +76,7 @@ function ModelPicker({ prefs, onPrefs }: { prefs: Prefs; onPrefs: (p: Partial<Pr
         <button
           type="button"
           className={cn(control, 'gap-1.5 rounded-l-[7px] pr-2 pl-2.5')}
-          aria-label={connected.length === 0 ? 'Model: none, no vendor is connected' : `Model: ${VENDORS[current.vendor].menuLabel} ${current.label}`}
+          aria-label={connected.length === 0 ? 'No model: no vendor is connected' : `Model: ${VENDORS[current.vendor].menuLabel} ${current.label}`}
         >
           {connected.length === 0 ? null : <VendorLogo id={current.vendor} className="h-4 w-4" />}
           <span>{connected.length === 0 ? 'No model' : current.label}</span>

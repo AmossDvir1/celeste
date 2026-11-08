@@ -263,7 +263,7 @@ function ResizeHandle({ width, onLive, onCommit }: { width: number; onLive: (w: 
       onDoubleClick={() => onCommit(SIDEBAR_WIDTH.default)}
       onKeyDown={onKeyDown}
       // The list and the page are 12 pixels apart: the handle is 20 wide, centred in that gap, so the line is in the middle of it.
-      className="group/handle absolute inset-y-0 -right-4 z-20 flex w-5 cursor-col-resize justify-center outline-none"
+      className="group/handle absolute inset-y-0 -right-4 z-20 flex w-5 cursor-col-resize justify-center focus-visible:outline-offset-0"
     >
       <span className="h-full w-px rounded-full bg-transparent transition-colors group-hover/handle:bg-accent-edge group-focus-visible/handle:bg-accent group-active/handle:bg-accent" />
     </div>

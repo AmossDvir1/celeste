@@ -78,7 +78,6 @@ function UserMessage({
             <button
               type="button"
               onClick={() => onReview(checkpoint.id)}
-              aria-label="Review the changes this message made"
               className="rounded-md px-1.5 py-0.5 hover:bg-hover hover:text-ink"
             >
               {files.length}
@@ -86,13 +85,15 @@ function UserMessage({
               <span className="font-mono">
                 <span className="text-success">+{added}</span> <span className="text-danger">−{removed}</span>
               </span>
+              {/* The name starts with the words on the button, then says what pressing it does. */}
+              <span className="sr-only">. Review the changes this message made</span>
             </button>
           )}
           <button
             type="button"
             disabled={!canRevert}
             onClick={() => onRevert(checkpoint.id)}
-            aria-label="Revert the project to before this message"
+            aria-label="Revert to before this message"
             className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
           >
             <RotateCcw className="h-3 w-3" /> Revert to before this

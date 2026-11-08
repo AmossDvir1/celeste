@@ -72,10 +72,11 @@ export function TopBar() {
           <Menu.Trigger asChild>
             <button
               type="button"
-              aria-label={`Account menu for ${userName}`}
               className="ml-1 rounded-full outline-offset-2 transition-opacity hover:opacity-85"
             >
+              {/* The picture holds the initials, which a screen reader would read as a word; the name is said in full instead. */}
               <Avatar name={userName} size={38} />
+              <span className="sr-only">Account menu for {userName}</span>
             </button>
           </Menu.Trigger>
           <Menu.Content align="end" className="w-[230px]">

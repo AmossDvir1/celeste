@@ -118,22 +118,25 @@ export function App() {
   return (
     <TooltipProvider>
       <div className="flex h-screen w-screen flex-col bg-canvas text-ink">
-        <TopBar />
-        <div className="flex min-h-0 flex-1 gap-3 px-3 pb-3">
-          {!collapsed && <Sidebar />}
-          <main className="relative flex min-w-0 flex-1 gap-3">
-            {collapsed && (
-              <div className="absolute top-3 left-3 z-30">
-                <IconButton label="Show sidebar (Ctrl+B)" onClick={() => set({ sidebarCollapsed: false })}>
-                  <PanelLeft className="h-[18px] w-[18px]" />
-                </IconButton>
+        {/* While the setup wizard is open it is all there is: nothing behind it can be reached with the keyboard or a screen reader. */}
+        <div inert={wizardOpen} className="flex min-h-0 flex-1 flex-col">
+          <TopBar />
+          <div className="flex min-h-0 flex-1 gap-3 px-3 pb-3">
+            {!collapsed && <Sidebar />}
+            <main className="relative flex min-w-0 flex-1 gap-3">
+              {collapsed && (
+                <div className="absolute top-3 left-3 z-30">
+                  <IconButton label="Show sidebar (Ctrl+B)" onClick={() => set({ sidebarCollapsed: false })}>
+                    <PanelLeft className="h-[18px] w-[18px]" />
+                  </IconButton>
+                </div>
+              )}
+              <div className="relative min-w-0 flex-1 overflow-hidden rounded-2xl border border-edge bg-panel">
+                <MainPanel />
               </div>
-            )}
-            <div className="relative min-w-0 flex-1 overflow-hidden rounded-2xl border border-edge bg-panel">
-              <MainPanel />
-            </div>
-            <RightPanel />
-          </main>
+              <RightPanel />
+            </main>
+          </div>
         </div>
         {wizardOpen && <Wizard />}
         <SettingsDialog />

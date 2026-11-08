@@ -94,7 +94,7 @@ try {
   await page.getByRole('button', { name: 'Changes', exact: true }).click()
   await page.getByRole('button', { name: 'Discard changes to a.txt' }).waitFor({ timeout: 30_000 })
   check('the Changes panel lists what the agent did in the copy', (await page.getByRole('button', { name: /^Discard changes to/ }).count()) === 2)
-  await page.getByRole('button', { name: 'Revert the project to before this message' }).click()
+  await page.getByRole('button', { name: 'Revert to before this message' }).click()
   await page.getByRole('dialog', { name: 'Revert to before this message?' }).getByRole('list', { name: 'Files that will change' }).waitFor({ timeout: 30_000 })
   await page.getByRole('dialog').getByRole('button', { name: 'Revert 2 files' }).click()
   await until('the revert in the copy', () => readFileSync(join(copy, 'a.txt'), 'utf8').replace(/\r\n/g, '\n') === 'original\n' && !existsSync(join(copy, 'agent-wrote-this.txt')))

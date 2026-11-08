@@ -104,8 +104,8 @@ export const useUi = create<UiState>((set, get) => ({
   },
   pushToast: (toast) => {
     const id = toastId++
-    set({ toasts: [...get().toasts, { ...toast, id }] })
-    setTimeout(() => get().dismissToast(id), 7000)
+    // The newest few only, so a burst of messages cannot fill the window. How long each stays is the pile's business (Toasts.tsx).
+    set({ toasts: [...get().toasts, { ...toast, id }].slice(-6) })
   },
   dismissToast: (id) => set({ toasts: get().toasts.filter((t) => t.id !== id) }),
   setDataDir: (dataDir) => set({ dataDir })
