@@ -30,12 +30,15 @@ import type {
 
 export type SessionStatus = 'idle' | 'working' | 'waiting'
 export type ThemePref = 'dark' | 'light' | 'system'
+/** Normal keeps the shimmer on a working label whatever the system says; reduced turns it and the other animations off. */
+export type MotionPref = 'normal' | 'reduced'
 
 export interface AppSettings {
   theme: ThemePref
   userName: string
   wizardDone: boolean
   sidebarCollapsed: boolean
+  motion: MotionPref
   /** Models the person pinned to the top of the model menu, in the order they were pinned. */
   pinnedModels: string[]
   defaults: { model: string; approval: ApprovalMode; projectsFolder: string }
@@ -230,6 +233,8 @@ export interface CoreApi {
   'sessions.update': (id: string, patch: SessionPatch) => SessionSummary
   /** What reverting to a checkpoint would change in the folder, as it would be after the revert. */
   'sessions.revertPreview': (id: string, checkpointId: string) => Promise<CheckpointChanges>
+  /** Every file that differs now from how the folder was before the session's first message, without the lines. Empty when nothing was saved. */
+  'sessions.netChanges': (id: string) => Promise<CheckpointChanges>
   /** What is in a folder of the session's project (`path` is relative to the project, empty for the top). Develop sessions only. */
   'sessions.listFiles': (id: string, path: string) => Promise<FileListing>
   /** A file of the session's project, for a preview. Nothing outside the project folder, and nothing inside its `.git`. */

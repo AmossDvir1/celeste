@@ -139,6 +139,20 @@ try {
   await textbox(page).press('Enter')
   await page.getByText('Working on it').first().waitFor({ timeout: 60_000 })
   check('a turn is running when the app is killed', (await page.getByRole('button', { name: 'Stop' }).count()) === 1)
+  // The working label shimmers even when the system has animations off, and only Celeste's own Motion setting turns it off.
+  const animation = () => page.locator('.shimmer').first().evaluate((el) => getComputedStyle(el).animationName)
+  const setMotion = async (name) => {
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Appearance' }).click()
+    await page.getByRole('radio', { name }).click()
+    await page.keyboard.press('Escape')
+  }
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  check('the working label still shimmers when the system asks for less motion', (await animation()) === 'shimmer-sweep')
+  await setMotion('Reduced')
+  check('Reduced, in Celeste’s own settings, stops the shimmer', (await animation()) === 'none')
+  await setMotion('Normal')
+  check('and Normal brings it back', (await animation()) === 'shimmer-sweep')
   await app.crash()
 
   // ---- After a crash -------------------------------------------------------------------------------

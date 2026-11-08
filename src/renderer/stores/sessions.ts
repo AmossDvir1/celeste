@@ -3,6 +3,7 @@ import type { ApprovalMode, AskAnswers, Effort, SessionMode, UserInput } from '@
 import type { CheckpointChanges, CheckpointReview, CorePush, SessionSummary, StoredEvent } from '@shared/api'
 import { core } from '@/api'
 import { effortFor } from '@/lib/vendors'
+import { useChanges } from './changes'
 import { modelOf, useModels } from './models'
 import { foldEvents } from './reduce'
 import type { Session } from './types'
@@ -160,6 +161,8 @@ export const useSessions = create<SessionsState>((set, get) => {
     discardFiles: async (id, checkpointId, paths) => {
       try {
         await core.call('sessions.discardFiles', id, checkpointId, paths)
+        // What differs from the start of the session has just changed.
+        void useChanges.getState().refresh(id)
         return true
       } catch (err) {
         report(err)
@@ -170,6 +173,7 @@ export const useSessions = create<SessionsState>((set, get) => {
     revert: async (id, checkpointId) => {
       try {
         await core.call('sessions.revert', id, checkpointId)
+        void useChanges.getState().refresh(id)
         return true
       } catch (err) {
         report(err)

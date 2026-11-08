@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AppSettings, SettingsPatch, ThemePref } from '@shared/api'
+import type { AppSettings, MotionPref, SettingsPatch, ThemePref } from '@shared/api'
 import { DEFAULT_SETTINGS } from '@shared/defaults'
 import { core } from '@/api'
 
@@ -62,6 +62,14 @@ export function mirroredTheme(): ThemePref | null {
   } catch {
     return null
   }
+}
+
+/**
+ * `data-motion` on the page is what the styles read. Normal keeps the shimmer on a working label even when the system has
+ * animations turned off (it is how you can tell the agent is working); reduced turns it and the other animations off.
+ */
+export function applyMotion(pref: MotionPref): void {
+  document.documentElement.dataset.motion = pref
 }
 
 export function applyTheme(pref: ThemePref): void {

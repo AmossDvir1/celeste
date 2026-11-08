@@ -118,7 +118,11 @@
   color: var(--tab-active-ink);
 }
 
-/* Shimmering working labels: a light sweep across the text. Quiet when motion is reduced. */
+/*
+ * Shimmering working labels: a light sweep across the text. It is how a person can tell the agent is working, so it runs whatever
+ * the system's animation setting says (Windows turns animations off for speed as often as for comfort). Only Celeste's own Motion
+ * setting, set to Reduced, turns it off. Under the system's reduce-motion it is slower.
+ */
 .shimmer {
   background-image: linear-gradient(
     100deg,
@@ -199,11 +203,10 @@
   }
 }
 
+/* The system asks for less motion: the decoration stops, and the shimmer, which is information, slows down. */
 @media (prefers-reduced-motion: reduce) {
   .shimmer {
-    animation: none;
-    background-image: none;
-    color: var(--c-ink-muted);
+    animation-duration: 4s;
   }
   .animate-fade-up,
   .pop-in,
@@ -215,4 +218,21 @@
   *::after {
     scroll-behavior: auto !important;
   }
+}
+
+/* Celeste's own Motion setting, set to Reduced: nothing moves, and the label is plain. */
+html[data-motion='reduced'] .shimmer {
+  animation: none;
+  background-image: none;
+  color: var(--c-ink-muted);
+}
+html[data-motion='reduced'] .animate-fade-up,
+html[data-motion='reduced'] .pop-in,
+html[data-motion='reduced'] .animate-slide-in-right {
+  animation: none;
+}
+html[data-motion='reduced'] *,
+html[data-motion='reduced'] *::before,
+html[data-motion='reduced'] *::after {
+  scroll-behavior: auto !important;
 }

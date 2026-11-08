@@ -6,6 +6,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   userName: 'there',
   wizardDone: false,
   sidebarCollapsed: false,
+  motion: 'normal',
   pinnedModels: [],
   defaults: { model: 'copilot-auto', approval: 'auto', projectsFolder: '' }
 }

@@ -35,6 +35,9 @@ const script = (r) => {
   if (r.last.kind === 'tool_result') return [{ type: 'text', text: r.last.isError ? `That did not work: ${r.last.text}` : 'Finished that step.' }]
   if (/Edit the file/.test(r.last.text)) return [{ type: 'tool_use', name: 'Edit', input: { file_path: A, old_string: 'original', new_string: 'edited by the agent' } }]
   if (/Create a file/.test(r.last.text)) return [{ type: 'tool_use', name: 'Write', input: { file_path: NEW, content: 'created by the agent\n' } }]
+  if (/Run the long command/.test(r.last.text)) return [{ type: 'tool_use', name: 'Bash', input: { command: 'node -e "for(let i=1;i<=120;i++)console.log(\'output line \'+i)"', description: 'Print a long output' } }]
+  if (/Temporarily change keep/.test(r.last.text)) return [{ type: 'tool_use', name: 'Edit', input: { file_path: join(project, 'keep.txt'), old_string: 'never touched', new_string: 'temporarily changed' } }]
+  if (/Put keep back/.test(r.last.text)) return [{ type: 'tool_use', name: 'Edit', input: { file_path: join(project, 'keep.txt'), old_string: 'temporarily changed', new_string: 'never touched' } }]
   if (/Carry on/.test(r.last.text)) return [{ type: 'text', text: /reverted the project folder/.test(r.last.text) ? 'Noted: the folder was reverted.' : 'Nothing was reverted.' }]
   return [{ type: 'text', text: 'Okay.' }]
 }
@@ -176,6 +179,56 @@ try {
   await page.getByRole('button', { name: 'Undo', exact: true }).click()
   await until('the discard to be undone', () => existsSync(NEW))
   check('a discard is undone like a revert', read('made/new.txt') === 'created by the agent\n')
+
+  console.log('\n# The Changes panel')
+  // The agent changes a file and then changes it back, in two messages: the net result has no change in it.
+  await textbox(page).fill('Temporarily change keep please')
+  await textbox(page).press('Enter')
+  await until('the temporary change', () => read('keep.txt') === 'temporarily changed\n')
+  await idle(page)
+  await textbox(page).fill('Put keep back please')
+  await textbox(page).press('Enter')
+  await until('the change to be undone by the agent', () => read('keep.txt') === 'never touched\n')
+  await idle(page)
+
+  await page.getByRole('button', { name: 'Changes', exact: true }).click()
+  const changes = page.locator('section', { has: page.getByRole('heading', { name: /^Changes/ }) })
+  await changes.getByRole('button', { name: 'Discard changes to a.txt' }).waitFor({ timeout: 30_000 })
+  check('the panel lists what differs now, from the saved copies', (await changes.getByRole('button', { name: /^Discard changes to/ }).count()) === 2)
+  check('a file the agent changed and then changed back is not in it', (await changes.getByRole('button', { name: 'Discard changes to keep.txt' }).count()) === 0)
+  await page.screenshot({ path: join(import.meta.dirname, '.output', 'checkpoints-changes.png') })
+
+  await changes.getByRole('button', { name: 'Discard changes to made/new.txt' }).click()
+  await changes.getByRole('button', { name: 'Put back' }).click()
+  await until('the file to be put back', () => !existsSync(NEW))
+  await page.waitForFunction(() => document.querySelectorAll('button[aria-label^="Discard changes to"]').length === 1, undefined, { timeout: 30_000 })
+  check('discarding a file from the panel removes it from the list', read('a.txt') === 'edited by the agent\n')
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
+  await until('the discard to be undone', () => existsSync(NEW))
+  await page.waitForFunction(() => document.querySelectorAll('button[aria-label^="Discard changes to"]').length === 2, undefined, { timeout: 30_000 })
+  check('and undoing it from the conversation brings it back into the list', true)
+
+  await changes.getByRole('button', { name: 'Revert all' }).click()
+  const all = page.getByRole('dialog', { name: 'Revert everything in this session?' })
+  await all.getByRole('list', { name: 'Files that will change' }).waitFor({ timeout: 30_000 })
+  check('Revert all lists every file and asks first', (await all.getByRole('listitem').count()) === 2 && existsSync(NEW))
+  await all.getByRole('button', { name: 'Cancel' }).click()
+
+  console.log('\n# The terminal')
+  await page.getByRole('button', { name: 'Terminal', exact: true }).click()
+  await textbox(page).fill('Run the long command please')
+  await textbox(page).press('Enter')
+  const terminal = page.getByLabel('Terminal output')
+  await terminal.getByText('output line 120', { exact: false }).waitFor({ timeout: 60_000 })
+  await idle(page)
+  const atEnd = () => terminal.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight < 5)
+  check('long output is more than the panel shows at once', await terminal.evaluate((el) => el.scrollHeight > el.clientHeight * 1.5))
+  check('the terminal is scrolled to the newest output', await atEnd())
+  await terminal.evaluate((el) => (el.scrollTop = 0))
+  await page.getByRole('button', { name: 'Jump to latest' }).waitFor({ timeout: 5000 })
+  check('scrolling up to read stays put, and offers a way back to the end', !(await atEnd()))
+  await page.getByRole('button', { name: 'Jump to latest' }).click()
+  check('Jump to latest goes back to the end', await atEnd())
 
   console.log('\n# The file tree')
   await page.getByRole('button', { name: 'Files', exact: true }).click()

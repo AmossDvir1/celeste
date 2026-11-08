@@ -42,6 +42,7 @@ Each has a default that I'll use unless you say otherwise. The last column says 
 | 11 | Push notifications to the phone | None in v1. Apple and Google need a provider key that can't ship inside open-source code, so push needs a small relay run by the project. Without it the phone shows what needs you when you open the app | Phase 9 |
 | 12 | **How do the vendors' programs reach the user: bundled in the installer, or downloaded?** | **Not decided.** Until you decide, Celeste downloads each vendor's program on first Connect (option A in section 6.4), started as soon as the vendor is picked in the wizard. The five options and what each costs are listed in section 6.4 | Before Phase 8; Claude's download is built under the default |
 | 13 | How is a workflow started from a chat? | One `/` menu in the composer that lists your workflows, Celeste's own commands and the vendor's commands, each tagged with where it comes from; plus a tool that lets the assistant run a workflow you have allowed it to. Details in section 7.10 | Phase 7 |
+| 15 | Should the agent be able to use this computer's mouse and keyboard, after asking? | A separate plan, [DESKTOP_CONTROL_PLAN.md](DESKTOP_CONTROL_PLAN.md): a tool the agent calls to ask, Celeste's own consent card, then control for one chat for a limited time with a visible bar and a stop the agent cannot press. Off by default. Proposed after the first public release, starting with a Windows spike. Eight smaller decisions are listed in that file | After Phase 7 |
 | 14 | Should several people be able to share one session? | Not in v1, and not scheduled. Section 7.13 sets out what exists elsewhere, three ways to build it, what each needs, and the privacy and vendor-terms risks. The cheapest first step is handing a session to another person as a file | After Phase 9 |
 
 ## 3. Chat vs Develop
@@ -761,6 +762,17 @@ The event-log design suits level 2: a window already rebuilds a session by repla
 
 **Suggested order:** level 1 first (small, no network, useful on its own), level 2 after Phase 9 with Viewer and moderated Contributor only, and level 3 only if teams ask for it and someone will run it.
 
+### 7.14 Desktop control: the agent uses this computer's mouse and keyboard (idea, not scheduled; decision 15)
+
+The full plan is in **[DESKTOP_CONTROL_PLAN.md](DESKTOP_CONTROL_PLAN.md)**. In short:
+
+- **What it is.** Tools the agent can call to see the screen and to move the mouse, click, drag, scroll, type and press keys. They are served by Celeste's own tool server, so every vendor gets them, and Celeste checks every call.
+- **How it is granted.** The agent calls `desktop_request_control` with a reason; Celeste shows its own consent card (this chat, 15 minutes, or until stopped, or not now). Auto-approve never grants it. The feature is off until switched on in Settings.
+- **What keeps it safe.** One chat and a time limit; a control bar and a screen border while it is active; a global hotkey and a Stop button the agent cannot reach; the person moving the mouse pauses it; Celeste's own windows are untouchable and left out of screenshots (so the agent cannot approve itself); no typing into password fields where they can be detected; confirmation before consequential clicks; scope by window, app or monitor; every action logged.
+- **What it cannot do.** Control elevated Windows programs (UIPI), the UAC prompt or lock screen, or anything on Linux Wayland in the first version; on macOS it needs the Accessibility and Screen Recording permissions.
+- **Not removable.** Prompt injection through what is on the screen cannot be eliminated, only reduced. The plan says so, and recommends a separate account or a virtual machine for anything sensitive.
+- **Where it sits.** Proposed as its own phase after Phase 7, starting with a one-day Windows spike to choose between the nut.js fork and a small native helper. Nothing in the app depends on it.
+
 ## 8. Phases
 
 Sizes are relative: S, M or L.
@@ -953,6 +965,14 @@ A short test against each real CLI to settle the **Verify** items, starting with
 
 **Status: steps 1 to 3 of 6 are built (checkpoints and revert, the review screen, the file tree; 8 November 2026).** CI on GitHub passes on Ubuntu and Windows for steps 1 and 2. Order of work: (1) per-turn checkpoints and revert, (2) a review screen for changes, (3) a real file tree, (4) git worktrees, (5) MCP configuration, (6) the terminal and Chat file cards.
 
+*Found by using it on Celeste's own repository (8 November 2026), and fixed:*
+
+- **The Changes panel was stale.** It listed the last diff the agent reported for each file, so after the agent undid its own edits with `git` in a shell, or after a revert, the panel still showed them. It now shows the **net result** from the saved copies: what differs now from before the session's first message, read again when an answer ends, after a revert or a discard, and on Refresh. A file changed and then changed back is not in it. The badge on the Changes button and the markers in the file tree use the same result (`sessions.netChanges`, kept in `stores/changes.ts`). A session from before Phase 6, which has no saved copies, still shows what the agent reported, with a note saying it cannot be reverted.
+- **No revert in the Changes panel.** The panel now has, on every file, Discard (asks first, puts that file back, is undone like a revert), and in its header Review and **Revert all** (the whole folder back to before the first message, with the same list-then-confirm dialog).
+- **The Terminal did not follow the output.** It now opens at the newest output, stays there as more arrives, lets you scroll up to read without being pulled back, and shows "Jump to latest" when you are not at the end.
+- **The shimmer was off whenever Windows had animations off.** The style sheet turned the working label's shimmer off for the system's "reduce motion", which Windows sets when "Show animations in Windows" is off (often for speed or on a remote desktop, not only for comfort). The shimmer is how a person can tell the agent is working, so it now always runs, only slower under the system's setting. A **Motion** setting in Settings, Appearance (Normal or Reduced) is the one switch: Reduced stops the shimmer and the other animations. The decoration (fade, slide, pop) still follows the system. Checked in the real app by asking the page for reduced motion and reading the label's animation.
+- **A running copy of Celeste does not pick up new Core code.** The checkpoint controls (the "Revert to before this" row, the review) only appear in a session started by a build that has them; a copy started earlier keeps running the old Core until it is restarted. The profile of the copy that was in use had no `snapshots` folder, which is how this was recognised.
+
 *The file tree* (`FilesPanel.tsx`, `src/core/files.ts`): the earlier fake tree is replaced by the real folder.
 
 - **What it shows.** A Files button in a Develop session's header opens a panel with the project folder as a tree: folders first, then files, by name (numbers in order), opened folder by folder when you click, so a big project costs nothing until you look. Arrow keys move, Right and Left open and close folders, Enter opens a file. `.git` is never shown. `node_modules` is shown faded and can be opened. A folder lists at most 2,000 things and counts the rest.
@@ -1047,6 +1067,7 @@ After the first public release. It needs your decisions 9 to 11 and a design for
 | **A paired phone can steer a desktop agent that runs commands** | Mobile access is off by default, each phone is paired by QR code and can be revoked at once, its permissions are narrower than the desktop's (no settings, vendors, devices or deletion), and risky actions can require approval on the phone |
 | **No push notifications without a server.** Apple and Google need a provider key that can't ship inside open-source code | None in v1: the phone shows what needs you when opened. An optional small relay run by the project can come later and would carry no message content |
 | **Shared sessions would let other people steer an agent that runs as you, on your vendor login** (section 7.13) | Not built. If built: sharing is explicit and per session, approvals stay with the host, a shared session never runs on Auto-approve, guests get no settings, devices or secrets, and guest messages wait for the vendors' confirmation that this does not break their terms |
+| **Desktop control would let an agent click and type as the person, steered by whatever is on the screen** ([DESKTOP_CONTROL_PLAN.md](DESKTOP_CONTROL_PLAN.md)) | Not built. If built: off by default, a consent card of its own, time-limited and per chat, always visible, a stop the agent cannot press, Celeste's windows untouchable, scope by window, confirmations for consequential clicks, and a plain statement that screen content can steer the agent |
 | **Apple's rules and costs.** A paid developer account, builds on macOS, review, and TestFlight builds that expire | Planned in decision 9. Betas through TestFlight first, with a macOS cloud builder in CI |
 | **iOS and macOS ask permission before an app finds devices on the network**, and iOS suspends apps in the background | Celeste explains the prompt first and typing an address always works. A phone shows as asleep when its app is closed |
 

@@ -6,9 +6,9 @@ import { PanelCard } from '@/components/PanelCard'
 import { Button, IconButton, Spinner } from '@/components/ui'
 import { cn } from '@/lib/cn'
 import { basename } from '@/lib/format'
+import { useChanges } from '@/stores/changes'
 import { useSessions } from '@/stores/sessions'
 import { useUi } from '@/stores/ui'
-import { changedFiles } from './changes'
 import { ReviewDialog } from './ReviewDialog'
 
 type Listing = { state: 'loading'; data?: FileListing } | { state: 'ok'; data: FileListing } | { state: 'error'; message: string }
@@ -31,7 +31,9 @@ export function FilesPanel() {
   const session = useSessions((s) => (s.active.develop ? s.sessions[s.active.develop] : undefined))
   const sessionId = session?.id
   const status = session?.status
-  const changes = useMemo(() => changedFiles(session?.items ?? []), [session?.items])
+  // What differs now from before the first message (the net result, kept up to date by the conversation view).
+  const net = useChanges((s) => (sessionId ? s.net[sessionId] : undefined))
+  const changes = useMemo(() => new Map((net?.files ?? []).map((f) => [f.path, f.status] as const)), [net])
 
   const [listings, setListings] = useState<Record<string, Listing>>({})
   const [open, setOpen] = useState<Set<string>>(new Set())

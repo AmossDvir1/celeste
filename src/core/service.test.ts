@@ -220,6 +220,15 @@ describe('sessions and their log', () => {
     expect(() => api['sessions.send'](id, { text: 'x', attachments: new Array(11).fill({ id: 'a' }) as never })).toThrow()
     expect(() => api['drafts.set']('../etc', { text: 'x', attachments: [] })).toThrow()
     expect(() => api['settings.patch']({ theme: 'neon' as never })).toThrow()
+    expect(() => api['settings.patch']({ motion: 'none' as never })).toThrow()
+  })
+
+  it('keeps the motion setting, which starts as normal', () => {
+    const first = setup()
+    expect(first.api['app.bootstrap']().settings.motion).toBe('normal')
+    first.api['settings.patch']({ motion: 'reduced' })
+    first.service.close()
+    expect(setup(first.store).api['app.bootstrap']().settings.motion).toBe('reduced')
   })
 })
 
@@ -702,6 +711,25 @@ describe('checkpoints', () => {
       const plain = setup()
       const dev = plain.api['sessions.create'](develop)
       await expect(plain.api['sessions.revert'](dev.id, 'a'.repeat(40))).rejects.toThrow(/not available/)
+    })
+
+    it('says what differs now from before the first message, and nothing for a session that has no checkpoint', async () => {
+      const { api, snapshots, id } = await finished()
+      const before = snapshots.taken.length
+      expect(await api['sessions.netChanges'](id)).toEqual(snapshots.changesOut)
+      // It looked at the folder as it is now.
+      expect(snapshots.taken).toHaveLength(before + 1)
+
+      const plain = setup()
+      const dev = plain.api['sessions.create'](develop)
+      expect(await plain.api['sessions.netChanges'](dev.id)).toEqual({ files: [], more: 0 })
+      const s = new FakeSnapshots()
+      const other = setup(new MemoryStore(), '/data', { snapshots: s })
+      const fresh = other.api['sessions.create'](develop)
+      expect(await other.api['sessions.netChanges'](fresh.id)).toEqual({ files: [], more: 0 })
+      expect(s.taken).toEqual([])
+      const chat = other.api['sessions.create'](input)
+      expect(await other.api['sessions.netChanges'](chat.id)).toEqual({ files: [], more: 0 })
     })
 
     it('reviews what changed between two of the session’s checkpoints, or from one up to now', async () => {

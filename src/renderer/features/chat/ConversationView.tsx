@@ -7,6 +7,7 @@ import { Badge, IconButton } from '@/components/ui'
 import { GlowArc } from '@/glow/GlowArc'
 import { lookupModel, useModels } from '@/stores/models'
 import { useDrafts } from '@/stores/drafts'
+import { useChanges } from '@/stores/changes'
 import { useSessions } from '@/stores/sessions'
 import { useUi, type RightPanel } from '@/stores/ui'
 import { useVendors } from '@/stores/vendors'
@@ -55,11 +56,22 @@ export function ConversationView({ sessionId }: { sessionId: string }) {
   }, [sessionId, loadAttached])
   const [following, setFollowing] = useState(true)
 
+  // What differs now from before the first message. It is looked at when the session opens and whenever an answer ends, so the
+  // badge, the Changes panel and the file tree all show the same net result.
+  const net = useChanges((s) => s.net[sessionId])
+  const refreshNet = useChanges((s) => s.refresh)
+  const saved = session?.mode === 'develop' && (session.items.some((i) => i.kind === 'user' && i.checkpoint) ?? false)
+  const status = session?.status
+  useEffect(() => {
+    if (saved && status === 'idle') void refreshNet(sessionId)
+  }, [saved, status, sessionId, refreshNet])
   const changedFiles = useMemo(() => {
+    // A session from before folders were saved has no net result: it counts what the agent reported.
+    if (saved) return net ? net.files.length + net.more : 0
     const paths = new Set<string>()
     for (const it of session?.items ?? []) if (it.kind === 'tool') it.diff?.forEach((d) => paths.add(d.path))
     return paths.size
-  }, [session?.items])
+  }, [saved, net, session?.items])
 
   // Start at the end when a session opens.
   useLayoutEffect(() => {

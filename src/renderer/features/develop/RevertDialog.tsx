@@ -14,7 +14,7 @@ const WHAT: Record<CheckpointFile['status'], { label: string; tone: string; icon
 }
 
 /** Asks before putting a project folder back to an earlier point, and shows exactly which files that touches. */
-export function RevertDialog({ sessionId, checkpointId, onClose }: { sessionId: string; checkpointId: string; onClose: () => void }) {
+export function RevertDialog({ sessionId, checkpointId, whole, onClose }: { sessionId: string; checkpointId: string; /** Reverting the whole session, to before its first message. */ whole?: boolean; onClose: () => void }) {
   const previewRevert = useSessions((s) => s.previewRevert)
   const revert = useSessions((s) => s.revert)
   const [changes, setChanges] = useState<CheckpointChanges | null>(null)
@@ -39,8 +39,12 @@ export function RevertDialog({ sessionId, checkpointId, onClose }: { sessionId: 
     <Modal
       open
       onOpenChange={(open) => !open && !busy && onClose()}
-      title="Revert to before this message?"
-      description="The project folder goes back to how it was when you sent it. Everything the agent changed since is undone."
+      title={whole ? 'Revert everything in this session?' : 'Revert to before this message?'}
+      description={
+        whole
+          ? 'The project folder goes back to how it was before your first message. Everything the agent changed in this session is undone.'
+          : 'The project folder goes back to how it was when you sent it. Everything the agent changed since is undone.'
+      }
       className="w-[min(560px,calc(100vw-48px))]"
     >
       <div className="px-6 pt-4 pb-5">

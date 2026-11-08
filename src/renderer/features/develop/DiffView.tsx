@@ -38,16 +38,17 @@ export function DiffLines({ diff, className }: { diff: FileDiff; className?: str
   )
 }
 
-export function DiffFile({ diff, defaultOpen = true }: { diff: FileDiff; defaultOpen?: boolean }) {
+export function DiffFile({ diff, defaultOpen = true, actions }: { diff: FileDiff; defaultOpen?: boolean; /** Buttons at the end of the file's title bar. */ actions?: React.ReactNode }) {
   const [open, setOpen] = useState(defaultOpen)
   const dir = diff.path.slice(0, diff.path.length - basename(diff.path).length)
   return (
     <div className="overflow-hidden rounded-xl border border-edge bg-field">
+      <div className="flex items-center">
       <button
         type="button"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        className="flex h-10 w-full items-center gap-2.5 px-3 text-left hover:bg-hover"
+        className="flex h-10 min-w-0 flex-1 items-center gap-2.5 px-3 text-left hover:bg-hover"
       >
         <ChevronRight className={cn('h-4 w-4 shrink-0 text-ink-faint transition-transform', open && 'rotate-90')} />
         <FileIcon status={diff.status} />
@@ -60,6 +61,8 @@ export function DiffFile({ diff, defaultOpen = true }: { diff: FileDiff; default
           <span className="text-success">+{diff.added}</span> <span className="text-danger">−{diff.removed}</span>
         </span>
       </button>
+      {actions && <div className="flex shrink-0 items-center gap-1 pr-2">{actions}</div>}
+      </div>
       {open && <DiffLines diff={diff} className="border-t border-edge/70" />}
     </div>
   )

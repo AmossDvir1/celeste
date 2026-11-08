@@ -86,7 +86,8 @@ const APPROVALS: ApprovalMode[] = ['auto', 'edits', 'ask', 'plan']
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const THEMES = ['dark', 'light', 'system']
 const VENDOR_IDS: VendorId[] = ['copilot', 'claude', 'openai', 'gemini']
-const SETTINGS_KEYS = ['theme', 'userName', 'wizardDone', 'sidebarCollapsed', 'pinnedModels', 'defaults'] as const
+const SETTINGS_KEYS = ['theme', 'userName', 'wizardDone', 'sidebarCollapsed', 'motion', 'pinnedModels', 'defaults'] as const
+const MOTIONS: AppSettings['motion'][] = ['normal', 'reduced']
 const MAX_PINNED = 100
 const TRANSCRIPT_LIMIT = 24_000
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
@@ -184,6 +185,7 @@ export class SessionService {
     'sessions.respondApproval': (id, requestId, answer) => this.respondApproval(id, requestId, answer),
     'sessions.respondAsk': (id, requestId, answers) => this.respondAsk(id, requestId, answers),
     'sessions.update': (id, patch) => this.update(id, patch),
+    'sessions.netChanges': (id) => this.netChanges(id),
     'sessions.listFiles': async (id, path) => listFolder(this.projectOf(id), path),
     'sessions.readFile': async (id, path) => readPreview(this.projectOf(id), path),
     'sessions.review': (id, from, to) => this.review(id, from, to),
@@ -214,6 +216,7 @@ export class SessionService {
       userName: (stored.userName as string) ?? d.userName,
       wizardDone: (stored.wizardDone as boolean) ?? d.wizardDone,
       sidebarCollapsed: (stored.sidebarCollapsed as boolean) ?? d.sidebarCollapsed,
+      motion: (stored.motion as AppSettings['motion'] | undefined) ?? d.motion,
       pinnedModels: (stored.pinnedModels as string[] | undefined) ?? d.pinnedModels,
       defaults: { ...d.defaults, ...(stored.defaults as Partial<AppSettings['defaults']> | undefined) }
     }
@@ -241,6 +244,7 @@ export class SessionService {
     if (patch.userName !== undefined) next.userName = text(patch.userName, 'name', 100)
     if (patch.wizardDone !== undefined) next.wizardDone = patch.wizardDone === true
     if (patch.sidebarCollapsed !== undefined) next.sidebarCollapsed = patch.sidebarCollapsed === true
+    if (patch.motion !== undefined) next.motion = oneOf(patch.motion, MOTIONS, 'motion setting')
     if (patch.pinnedModels !== undefined) {
       if (!Array.isArray(patch.pinnedModels) || patch.pinnedModels.length > MAX_PINNED) throw new Error('Invalid pinned models')
       next.pinnedModels = [...new Set(patch.pinnedModels.map((id) => text(id, 'model', 100)))]
@@ -514,6 +518,27 @@ export class SessionService {
     const row = this.requireSession(id)
     if (row.mode !== 'develop' || !row.cwd) throw new Error('Only Develop sessions have a project folder.')
     return row.cwd
+  }
+
+  /** The first place this session's folder was saved: how it was before the person's first message. */
+  private firstCheckpoint(id: string): string | undefined {
+    for (const { event } of this.store.events(id)) if (event.type === 'checkpoint.created') return event.id
+    return undefined
+  }
+
+  /**
+   * What differs now from before the session's first message. This is the net result, so a file the agent changed and then changed
+   * back (or that a revert undid) is not in it, and what a command did is. It looks at the folder as it is, which is why it is asked
+   * for when an answer ends and not while one is running.
+   */
+  private async netChanges(id: string): Promise<CheckpointChanges> {
+    const row = this.requireSession(id)
+    const snapshots = this.opts.snapshots
+    if (!snapshots || row.mode !== 'develop' || !row.cwd) return { files: [], more: 0 }
+    const first = this.firstCheckpoint(id)
+    if (!first) return { files: [], more: 0 }
+    const now = await withTimeout(snapshots.take(id, row.cwd), CHECKPOINT_TIMEOUT_MS, 'Saving the folder took too long.')
+    return snapshots.changes(id, row.cwd, first, now)
   }
 
   /** The files that changed between two of this session's checkpoints (`to` null: up to now), with their lines. */

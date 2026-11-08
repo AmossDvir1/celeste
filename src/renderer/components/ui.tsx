@@ -97,6 +97,8 @@ export function Tip({
         <RTooltip.Content
           side={side}
           sideOffset={6}
+          // The window's title bar overlay covers the top 56px, so tooltips must flip below it.
+          collisionPadding={{ top: 60, right: 8, bottom: 8, left: 8 }}
           className="pop-in z-[70] max-w-[260px] rounded-md border border-edge-strong bg-raised-2 px-2.5 py-1.5 text-xs text-ink shadow-pop"
         >
           {label}
