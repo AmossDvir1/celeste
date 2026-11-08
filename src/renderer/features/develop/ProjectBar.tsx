@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react'
 import { ChevronDown, Folder, FolderPlus, GitBranch, Plus } from 'lucide-react'
 import { chooseFolder, core } from '@/api'
 import { Menu } from '@/components/menu'
+import { Switch } from '@/components/ui'
 import { basename } from '@/lib/format'
 import { useSessions } from '@/stores/sessions'
 import { useUi } from '@/stores/ui'
@@ -102,6 +103,16 @@ export function ProjectBar() {
         <span className="inline-flex h-[34px] items-center gap-2 text-[14px] text-ink-muted" aria-label={`Branch: ${draft.branch}`}>
           <GitBranch className="h-4 w-4" />
           <span className="max-w-[200px] truncate">{draft.branch}</span>
+        </span>
+      )}
+
+      {draft.project && draft.branch && (
+        <span
+          className="inline-flex h-[34px] items-center gap-2 text-[14px] text-ink-muted"
+          title="Works on a copy of the last commit, on its own branch, so the folder you have open stays as it is. Changes you have not committed, and folders like node_modules, are not in the copy."
+        >
+          <Switch label="Work in a separate copy" checked={draft.worktree} onCheckedChange={(worktree) => setDraft({ worktree })} />
+          Separate copy
         </span>
       )}
     </div>

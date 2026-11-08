@@ -12,6 +12,7 @@ import { useSettings, type ThemePref } from '@/stores/settings'
 import { useUi, type SettingsSection } from '@/stores/ui'
 import { useVendors } from '@/stores/vendors'
 import { DevicesSettings } from '@/features/devices/DevicesSettings'
+import { SeparateCopies } from './SeparateCopies'
 import { VendorCard } from './VendorCard'
 
 const SECTIONS: { id: SettingsSection; label: string; icon: typeof Bot }[] = [
@@ -278,6 +279,7 @@ function Content({ section }: { section: SettingsSection }) {
               Show in folder
             </Button>
           </Row>
+          <SeparateCopies />
           <Row title="Export all sessions" description="A file you can keep or move to another computer.">
             <Button variant="secondary" size="sm" onClick={() => pushToast({ text: 'Export arrives in a later phase.' })}>
               Export

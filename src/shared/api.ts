@@ -64,6 +64,8 @@ export interface SessionSummary {
   approval: ApprovalMode
   cwd?: string
   branch?: string
+  /** The folder is a separate copy of a project that Celeste made for this session (a git worktree). */
+  worktree?: boolean
   status: SessionStatus
   createdAt: number
   updatedAt: number
@@ -80,6 +82,21 @@ export interface CreateSessionInput {
   approval: ApprovalMode
   cwd?: string
   branch?: string
+}
+
+/** One separate copy of a project on this computer, made for a Develop session. */
+export interface WorktreeInfo {
+  path: string
+  name: string
+  branch: string
+  /** The project's own folder, which the copy was made from. Empty if it has gone. */
+  repo: string
+  /** Files changed in the copy and not committed. */
+  changed: number
+  /** Commits on the copy's branch that are on no other branch: they are lost if the copy is removed. */
+  ahead: number
+  /** The session that works in it, if there is one. */
+  session?: { id: string; title: string }
 }
 
 export interface SessionPatch {
@@ -238,6 +255,12 @@ export interface CoreApi {
   'sessions.revertPreview': (id: string, checkpointId: string) => Promise<CheckpointChanges>
   /** Every file that differs now from how the folder was before the session's first message, without the lines. Empty when nothing was saved. */
   'sessions.netChanges': (id: string) => Promise<CheckpointChanges>
+  /** Makes a separate copy (a git worktree) of the project in Celeste's data folder, on a new branch from its last commit. */
+  'project.createWorktree': (repo: string, hint: string) => Promise<{ path: string; branch: string }>
+  /** The separate copies on this computer, with what would be lost if one were removed. */
+  'project.worktrees': () => Promise<WorktreeInfo[]>
+  /** Removes a separate copy and its branch. Only one that Celeste made. */
+  'project.removeWorktree': (path: string) => Promise<void>
   /** What is in a folder of the session's project (`path` is relative to the project, empty for the top). Develop sessions only. */
   'sessions.listFiles': (id: string, path: string) => Promise<FileListing>
   /** A file of the session's project, for a preview. Nothing outside the project folder, and nothing inside its `.git`. */

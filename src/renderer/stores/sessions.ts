@@ -133,14 +133,24 @@ export const useSessions = create<SessionsState>((set, get) => {
           // The first message creates the session, with the settings chosen on the home screen.
           const d = useUi.getState().draft
           if (mode === 'develop' && !d.project) throw new Error('Choose a project folder first.')
+          const title = titleFrom(input.text || input.attachments[0]?.name || '')
+          let cwd = d.project
+          let branch = d.branch
+          if (mode === 'develop' && d.worktree && d.branch) {
+            // A separate copy is made first, from the project's last commit, and the session works in that.
+            useUi.getState().pushToast({ text: 'Making a separate copy of the project…' })
+            const copy = await core.call('project.createWorktree', d.project, title)
+            cwd = copy.path
+            branch = copy.branch
+          }
           const created = await core.call('sessions.create', {
             vendor: modelOf(d.model).vendor,
             mode,
-            title: titleFrom(input.text || input.attachments[0]?.name || ''),
+            title,
             model: d.model,
             effort: d.effort,
             approval: d.approval,
-            ...(mode === 'develop' ? { cwd: d.project, ...(d.branch ? { branch: d.branch } : {}) } : {})
+            ...(mode === 'develop' ? { cwd, ...(branch ? { branch } : {}) } : {})
           })
           id = created.id
           const sid = created.id

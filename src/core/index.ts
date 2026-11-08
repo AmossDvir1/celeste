@@ -19,7 +19,8 @@ import { GitSnapshots } from './snapshots'
 import { createClaudeHost, createClaudeSession, createClaudeTitler, type ClaudeHost } from './adapters/claude'
 import { copilotRuntime, createCopilotHost, createCopilotSession, createCopilotTitler, type CopilotHost } from './adapters/copilot'
 import { createUnavailableSession } from './adapters/unavailable'
-import { projectApi } from './project'
+import { createProjectApi } from './project'
+import { Worktrees } from './worktrees'
 import { SessionService } from './service'
 import { VendorService } from './vendors'
 import { SqliteStore } from './sqlite-store'
@@ -112,6 +113,7 @@ async function start(): Promise<void> {
   })
   claude = claudeHost
 
+  const worktrees = new Worktrees(join(dataDir, 'worktrees'))
   const claudeTitle = createClaudeTitler(claudeHost)
   const copilotTitle = createCopilotTitler(host)
 
@@ -145,7 +147,10 @@ async function start(): Promise<void> {
     ...service.api,
     ...devices.api,
     ...new VendorService({ copilot: host, claude: claudeHost }, push).api,
-    ...projectApi,
+    ...createProjectApi(worktrees, (path) => {
+      const s = db.listSessions().find((x) => x.cwd === path)
+      return s ? { id: s.id, title: s.title } : undefined
+    }, (path) => (service as SessionService).stopWorkingIn(path)),
     'devices.toolServer': async (sessionId) => servers.info(sessionId)
   }
   parent.postMessage({ type: 'ready' })

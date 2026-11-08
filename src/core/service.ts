@@ -1,5 +1,5 @@
 import { mkdirSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import type { AgentSession, ApprovalAnswer, ApprovalMode, AskAnswers, AttachmentInfo, ContextRef, SessionMode, ToolKind, UserInput, VendorId } from '@shared/agent'
 import {
   UNDO_WINDOW_MS,
@@ -184,7 +184,7 @@ export class SessionService {
     'sessions.get': (id) => {
       const row = this.store.getSession(id)
       if (!row || row.deletedAt !== null) return null
-      return { summary: summaryOf(row), events: this.store.events(id) }
+      return { summary: this.summary(row), events: this.store.events(id) }
     },
     'sessions.send': (id, input) => this.send(id, input),
     'sessions.interrupt': (id) => this.interrupt(id),
@@ -239,7 +239,7 @@ export class SessionService {
       settings: this.currentSettings(),
       settingsStored: SETTINGS_KEYS.some((k) => k in stored),
       vendors: this.currentVendors(),
-      sessions: this.store.listSessions().map(summaryOf),
+      sessions: this.store.listSessions().map((r) => this.summary(r)),
       drafts: this.store.drafts(),
       dataDir: this.opts.dataDir
     }
@@ -282,6 +282,23 @@ export class SessionService {
 
   // --- sessions --------------------------------------------------------------------------------------
 
+  /** Stops the agents working in a folder, so that the folder can be removed. */
+  stopWorkingIn(path: string): void {
+    for (const id of [...this.live.keys()]) {
+      if (this.store.getSession(id)?.cwd !== path) continue
+      this.declineToolApprovals(id)
+      this.opts.onSessionStopped?.(id)
+      this.stopRuntime(id)
+    }
+  }
+
+  /** What the window is told about a session. A folder under the data folder's `worktrees` is a separate copy Celeste made. */
+  private summary(row: SessionRow): SessionSummary {
+    const root = resolve(join(this.opts.dataDir, 'worktrees'))
+    const copy = row.cwd !== undefined && (process.platform === 'win32' ? resolve(row.cwd).toLowerCase().startsWith(root.toLowerCase() + sep) : resolve(row.cwd).startsWith(root + sep))
+    return { ...summaryOf(row), ...(copy ? { worktree: true } : {}) }
+  }
+
   private requireSession(id: string): SessionRow {
     const row = this.store.getSession(id)
     if (!row || row.deletedAt !== null) throw new Error('That session no longer exists')
@@ -291,7 +308,7 @@ export class SessionService {
   private emitSummary(id: string): SessionSummary | undefined {
     const row = this.store.getSession(id)
     if (!row || row.deletedAt !== null) return undefined
-    const summary = summaryOf(row)
+    const summary = this.summary(row)
     this.opts.push({ type: 'summary', session: summary })
     return summary
   }
@@ -317,7 +334,7 @@ export class SessionService {
     this.store.insertSession(row)
     this.store.index(row.id, 'title', row.title)
     const summary = this.emitSummary(row.id)
-    return summary ?? summaryOf(row)
+    return summary ?? this.summary(row)
   }
 
   private update(id: string, patch: SessionPatch): SessionSummary {

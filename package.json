@@ -36,6 +36,7 @@
     "verify:package": "electron-vite build && node scripts/package-check.mjs",
     "verify:devices": "electron-vite build && node scripts/devices-check.mjs",
     "verify:checkpoints": "electron-vite build && node scripts/checkpoints-check.mjs",
+    "verify:worktrees": "electron-vite build && node scripts/worktrees-check.mjs",
     "verify:claude": "electron-vite build && node scripts/claude-check.mjs",
     "verify:copilot": "electron-vite build && node scripts/copilot-check.mjs && node scripts/copilot-signin-check.mjs",
     "shots": "electron-vite build && node scripts/screenshots.mjs",

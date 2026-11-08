@@ -125,6 +125,11 @@ export function ConversationView({ sessionId }: { sessionId: string }) {
         <header className="relative z-10 flex h-14 shrink-0 items-center gap-3 border-b border-edge/70 px-5">
           <h1 className="min-w-0 truncate text-[15px] font-medium text-ink">{session.title}</h1>
           {model && <Badge className="shrink-0">{model.label}</Badge>}
+          {session.worktree && (
+            <span className="shrink-0" title={`A separate copy of the project, made for this session: ${session.cwd}`}>
+              <Badge tone="accent">Separate copy</Badge>
+            </span>
+          )}
           {attachedIds?.map((id) => {
             const d = allDevices.find((x) => x.id === id)
             return d ? (

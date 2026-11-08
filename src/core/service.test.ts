@@ -970,3 +970,21 @@ describe('naming a session after its first message', () => {
     expect(api['settings.patch']({ autoTitle: false }).autoTitle).toBe(false)
   })
 })
+
+describe('separate copies of a project', () => {
+  it('tells the window which sessions work in a copy Celeste made, and only those', () => {
+    const { api } = setup(new MemoryStore(), '/data')
+    const copy = api['sessions.create']({ ...input, mode: 'develop', cwd: '/data/worktrees/shop-web-1a2b3c4d', branch: 'celeste/fix-1a2b3c4d' })
+    const own = api['sessions.create']({ ...input, mode: 'develop', cwd: '/work/shop-web', branch: 'main' })
+    const lookalike = api['sessions.create']({ ...input, mode: 'develop', cwd: '/data/worktrees-elsewhere/x' })
+    const chat = api['sessions.create'](input)
+    expect(copy.worktree).toBe(true)
+    expect(own.worktree).toBeUndefined()
+    expect(lookalike.worktree).toBeUndefined()
+    expect(chat.worktree).toBeUndefined()
+    const boot = api['app.bootstrap']().sessions
+    expect(boot.find((s) => s.id === copy.id)?.worktree).toBe(true)
+    expect(api['sessions.get'](copy.id)?.summary.worktree).toBe(true)
+    expect(boot.find((s) => s.id === own.id)?.worktree).toBeUndefined()
+  })
+})

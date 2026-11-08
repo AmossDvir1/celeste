@@ -17,6 +17,8 @@ export interface Draft {
   project: string
   /** Its git branch, read from the folder. Empty when it has none. */
   branch: string
+  /** Work in a separate copy of the project (a git worktree) instead of the folder itself. */
+  worktree: boolean
 }
 
 export interface Toast {
@@ -62,7 +64,8 @@ function freshDraft(): Draft {
     effort: model.efforts.length ? (model.defaultEffort ?? model.efforts[0]) : null,
     approval: defaults.approval,
     project: '',
-    branch: ''
+    branch: '',
+    worktree: false
   }
 }
 
@@ -88,7 +91,7 @@ export const useUi = create<UiState>((set, get) => ({
   setSearchOpen: (searchOpen) => set({ searchOpen }),
   setDraft: (patch) => set({ draft: { ...get().draft, ...patch } }),
   resetDraft: () => {
-    set({ draft: { ...freshDraft(), project: get().draft.project, branch: get().draft.branch } })
+    set({ draft: { ...freshDraft(), project: get().draft.project, branch: get().draft.branch, worktree: get().draft.worktree } })
     get().fitDraftToModels()
   },
   fitDraftToModels: () => {
