@@ -21,7 +21,7 @@ export async function startSshFixture(options = {}) {
   const users = options.users ?? { dev: 'secret' }
   const authorized = options.authorizedKey ? utils.parseKey(options.authorizedKey) : null
   const root = options.root ?? mkdtempSync(join(tmpdir(), 'celeste-ssh-'))
-  const hostKey = utils.generateKeyPairSync('ed25519')
+  const hostKey = generateKey()
   const commands = []
   const sockets = new Set()
   let connections = 0
@@ -228,5 +228,16 @@ export async function startSshFixture(options = {}) {
 
 /** A key pair for key sign-in tests. */
 export function generateClientKey() {
-  return utils.generateKeyPairSync('ed25519')
+  return generateKey()
+}
+
+/**
+ * An ed25519 key pair that ssh2 can read back. ssh2 itself writes an unreadable private key about one time in 200
+ * ("Malformed OpenSSH private key"), which made tests fail now and then, so a key is checked and made again if needed.
+ */
+function generateKey() {
+  for (;;) {
+    const pair = utils.generateKeyPairSync('ed25519')
+    if (!(utils.parseKey(pair.private) instanceof Error)) return pair
+  }
 }
