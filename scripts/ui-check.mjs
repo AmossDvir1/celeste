@@ -146,6 +146,8 @@ try {
   await audit(page, 'Settings, Tools with tools that do not work')
   await page.keyboard.press('Escape')
   await page.getByRole('navigation', { name: 'Settings sections' }).waitFor({ state: 'detached' })
+  // The pointer rests where the last click was, which can be right where the messages appear; park it out of the way.
+  await page.mouse.move(700, 300)
   const toasts = page.getByTestId('toast')
   const stack = page.getByTestId('toast-stack')
   const rows = () => toasts.evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).map((r) => ({ top: r.top, bottom: r.bottom, w: r.width })))
@@ -153,6 +155,15 @@ try {
   check('piled up, they are not spread out', (await stack.getAttribute('data-open')) === 'false')
   const piled = await rows()
   check('the older ones show only as edges behind the newest', Math.max(...piled.map((r) => r.top)) - Math.min(...piled.map((r) => r.top)) <= 30, JSON.stringify(piled))
+  check('they really are piled: each older one peeks out a little above the next', new Set(piled.map((r) => Math.round(r.top))).size === 3, JSON.stringify(piled))
+  // The newest must be the one on top, with its words showing: whatever is at its centre belongs to it.
+  const frontOnTop = await toasts.last().evaluate((el) => {
+    const r = el.getBoundingClientRect()
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+    return Boolean(hit && el.contains(hit)) && el.textContent.trim().length > 0
+  })
+  check('the newest message is in front and readable', frontOnTop)
+  await page.screenshot({ path: join(import.meta.dirname, '.output', 'toasts-piled.png') })
   await audit(page, 'Messages, piled')
   await page.evaluate(() => document.activeElement?.blur())
   await page.keyboard.press('Shift+Tab')

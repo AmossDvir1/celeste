@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { useUi } from '@/stores/ui'
@@ -9,6 +9,11 @@ const LIFETIME_MS = 7000
 const GRACE_MS = 1800
 /** In the pile, this many are drawn, one behind the other; the rest wait underneath. */
 const PEEK = 3
+/** Space between two messages when the pile is spread out, and how much of each older one shows above the one in front. */
+const GAP = 8
+const EDGE = 9
+/** The pointer crossing the gap between two spread messages is not leaving. */
+const LEAVE_MS = 120
 
 /**
  * Short messages at the bottom of the window, for example "Deleted a chat" with Undo. One shows alone. Two or more are
@@ -24,6 +29,28 @@ export function Toasts() {
   const paused = pointed || focused
   const left = useRef(new Map<number, number>())
   const box = useRef<HTMLDivElement>(null)
+  const leaving = useRef<number>(undefined)
+  // Every card is laid on the same spot and moved with a transform, so going between pile and spread is one smooth motion;
+  // that needs each card's height.
+  const [heights, setHeights] = useState<Record<number, number>>({})
+
+  useLayoutEffect(() => {
+    const read = () => {
+      const next: Record<number, number> = {}
+      box.current?.querySelectorAll<HTMLElement>('[data-toast-card]').forEach((el) => {
+        next[Number(el.dataset.toastCard)] = el.offsetHeight
+      })
+      setHeights((prev) => {
+        const keys = Object.keys(next)
+        return keys.length === Object.keys(prev).length && keys.every((k) => prev[Number(k)] === next[Number(k)]) ? prev : next
+      })
+    }
+    read()
+    window.addEventListener('resize', read)
+    return () => window.removeEventListener('resize', read)
+  }, [toasts])
+
+  useEffect(() => () => window.clearTimeout(leaving.current), [])
 
   useEffect(() => {
     if (paused) return
@@ -56,60 +83,72 @@ export function Toasts() {
 
   if (toasts.length === 0) return null
   const newest = toasts.length - 1
+  const height = (id: number) => heights[id] ?? 0
+  // How far up a card sits when spread: the cards in front of it, and the gaps between.
+  const spreadLift = (index: number) => toasts.slice(index + 1).reduce((sum, t) => sum + height(t.id) + GAP, 0)
+  const boxHeight = open ? toasts.reduce((sum, t) => sum + height(t.id), 0) + GAP * newest : height(toasts[newest].id) + Math.min(newest, PEEK - 1) * EDGE
   return (
     <div role="status" aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-5 z-[90] flex justify-center px-4">
       <div
         ref={box}
         data-testid="toast-stack"
         data-open={open}
-        onMouseEnter={() => setPointed(true)}
-        onMouseLeave={() => setPointed(false)}
+        onMouseEnter={() => {
+          window.clearTimeout(leaving.current)
+          setPointed(true)
+        }}
+        onMouseLeave={() => {
+          leaving.current = window.setTimeout(() => setPointed(false), LEAVE_MS)
+        }}
         // Only keyboard focus spreads the pile: a click on a button is over once it is done.
         onFocus={(e) => e.target.matches(':focus-visible') && setFocused(true)}
         onBlur={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && setFocused(false)}
-        className={cn('pointer-events-auto max-w-full', open ? 'flex flex-col items-center gap-2' : 'grid items-end justify-items-center')}
+        style={{ height: boxHeight }}
+        className="pointer-events-none relative w-full max-w-[32rem] transition-[height] duration-300 ease-out"
       >
         {toasts.map((t, index) => {
           // 0 is the newest, in front.
           const depth = newest - index
           const behind = !open && depth > 0
+          const transform = open
+            ? `translateY(${-spreadLift(index)}px)`
+            : `translateY(${-Math.min(depth, PEEK - 1) * EDGE}px) scale(${1 - Math.min(depth, PEEK - 1) * 0.05})`
           return (
-            <div
-              key={t.id}
-              data-testid="toast"
-              style={
-                behind
-                  ? { transform: `translateY(${-depth * 8}px) scale(${1 - depth * 0.05})`, zIndex: 10 - depth, opacity: depth < PEEK ? 1 : 0, transformOrigin: 'bottom center' }
-                  : undefined
-              }
-              className={cn(
-                'animate-fade-up flex max-w-full items-center gap-3 rounded-xl border border-accent/70 bg-raised-2 py-2 pr-2 pl-4 text-sm text-ink shadow-pop transition-[transform,opacity] duration-200',
-                !open && '[grid-area:1/1]'
-              )}
-            >
-              <span className={cn('min-w-0', behind && 'invisible')}>{t.text}</span>
-              {t.actionLabel && (
-                <button
-                  type="button"
-                  tabIndex={behind ? -1 : 0}
-                  onClick={() => {
-                    t.onAction?.()
-                    dismiss(t.id)
-                  }}
-                  className={cn('rounded-md px-2.5 py-1 font-medium text-accent-text hover:bg-accent-soft', behind && 'invisible')}
-                >
-                  {t.actionLabel}
-                </button>
-              )}
-              <button
-                type="button"
-                aria-label="Dismiss"
-                tabIndex={behind ? -1 : 0}
-                onClick={() => dismiss(t.id)}
-                className={cn('flex h-7 w-7 items-center justify-center rounded-md text-ink-faint hover:bg-hover hover:text-ink', behind && 'invisible')}
+            // The outer layer only enters and stacks; the inner one moves, so the entrance does not fight the pile's motion.
+            <div key={t.id} style={{ zIndex: 100 - depth }} className="animate-fade-up absolute inset-x-0 bottom-0 flex justify-center">
+              <div
+                data-testid="toast"
+                data-toast-card={t.id}
+                style={{ transform, transformOrigin: 'bottom center', opacity: !open && depth >= PEEK ? 0 : 1 }}
+                className="pointer-events-auto relative flex max-w-full items-center gap-3 rounded-xl border border-accent/70 bg-raised-2 py-2 pr-2 pl-4 text-sm text-ink shadow-pop transition-[transform,opacity] duration-300 ease-out"
               >
-                <X className="h-4 w-4" />
-              </button>
+                {/* Behind the newest only an edge shows; the words wait until it is spread out. */}
+                <div aria-hidden={behind || undefined} className={cn('flex min-w-0 items-center gap-3 transition-opacity duration-200', behind && 'opacity-0')}>
+                  <span className="min-w-0">{t.text}</span>
+                  {t.actionLabel && (
+                    <button
+                      type="button"
+                      tabIndex={behind ? -1 : 0}
+                      onClick={() => {
+                        t.onAction?.()
+                        dismiss(t.id)
+                      }}
+                      className="rounded-md px-2.5 py-1 font-medium text-accent-text hover:bg-accent-soft"
+                    >
+                      {t.actionLabel}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    aria-label="Dismiss"
+                    tabIndex={behind ? -1 : 0}
+                    onClick={() => dismiss(t.id)}
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-ink-faint hover:bg-hover hover:text-ink"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
             </div>
           )
         })}
