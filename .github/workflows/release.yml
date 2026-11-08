@@ -1,0 +1,108 @@
+name: Release
+
+# Making a release is two steps, both by a person:
+#   1. Push a tag that matches the version in package.json:   git tag v1.0.0 && git push origin v1.0.0
+#   2. Look at the DRAFT release this workflow makes, then press Publish.
+# Nothing is published by this workflow. See RELEASING.md.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      note:
+        description: 'Run the whole build without a tag (the installers are kept as downloads of the run, and no release is made)'
+        required: false
+        default: 'dry run'
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Windows installers
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: The tag says the version in package.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: node -e "const v=require('./package.json').version; if ('v'+v !== process.env.GITHUB_REF_NAME) { console.error('The tag is '+process.env.GITHUB_REF_NAME+' but package.json says '+v); process.exit(1) }"
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run dist:win
+        env:
+          # Signing is done only when these secrets exist (see RELEASING.md); without them the installers are unsigned.
+          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+      - name: Install it, run it, uninstall it
+        run: node scripts/installer-check.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            release/*.exe
+            release/*.msi
+          if-no-files-found: error
+
+  mac:
+    name: macOS (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, arch: arm64 }
+          - { os: macos-15-intel, arch: x64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run dist:mac -- --${{ matrix.arch }}
+        env:
+          # Signing and notarization are done only when these secrets exist (see RELEASING.md); without them the app is unsigned.
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - name: Start the packed app and look inside it
+        run: node scripts/installer-check.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-${{ matrix.arch }}
+          path: |
+            release/*.dmg
+            release/*.zip
+          if-no-files-found: error
+
+  draft:
+    name: Draft release
+    needs: [windows, mac]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - name: A draft release, for a person to look at and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          # The notes are the section of CHANGELOG.md for this version; the release is not made if there is none.
+          node scripts/release-notes.mjs "$VERSION" > notes.md
+          gh release create "$GITHUB_REF_NAME" dist/* --draft --verify-tag --title "Celeste $VERSION" --notes-file notes.md

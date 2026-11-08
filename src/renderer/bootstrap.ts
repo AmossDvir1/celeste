@@ -56,6 +56,7 @@ export async function bootstrap(): Promise<void> {
   await useMcp.getState().refresh()
   await useWorkflows.getState().refresh()
   useUi.getState().setDataDir(data.dataDir)
+  useUi.getState().setVersion(data.version)
   useUi.getState().resetDraft()
 
   // Closing the window or quitting waits for this, so the last keystrokes are saved.

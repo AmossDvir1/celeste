@@ -1,6 +1,6 @@
 {
   "name": "celeste",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Celeste: one desktop workbench for Claude, GitHub Copilot, OpenAI and Google Gemini",
   "license": "Apache-2.0",
@@ -48,7 +48,12 @@
     "verify:copilot": "electron-vite build && node scripts/copilot-check.mjs && node scripts/copilot-signin-check.mjs",
     "shots": "electron-vite build && node scripts/screenshots.mjs",
     "glow:compare": "electron-vite build && node scripts/glow-compare.mjs",
-    "icons": "node scripts/make-icons.mjs"
+    "icons": "node scripts/make-icons.mjs",
+    "notices": "node scripts/notices.mjs",
+    "dist:dir": "electron-vite build && node scripts/stage.mjs && electron-builder --config.directories.app=release/stage --dir --publish never",
+    "dist:win": "electron-vite build && node scripts/stage.mjs && electron-builder --config.directories.app=release/stage --win --publish never",
+    "dist:mac": "electron-vite build && node scripts/stage.mjs && electron-builder --config.directories.app=release/stage --mac --publish never",
+    "installer-check": "node scripts/installer-check.mjs"
   },
   "devDependencies": {
     "@electron/asar": "^3.4.1",
@@ -62,9 +67,13 @@
     "@types/react-dom": "^19.3.0",
     "@types/ssh2": "^1.15.6",
     "@vitejs/plugin-react": "^6.2.1",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "@xyflow/react": "12.10.2",
     "axe-core": "^4.14.0",
     "buffer": "^6.0.3",
     "electron": "^45.2.3",
+    "electron-builder": "26.0.12",
     "electron-vite": "^6.0.0",
     "jpeg-js": "^0.4.4",
     "lucide-react": "^1.70.0",
@@ -89,10 +98,8 @@
     "@github/copilot-sdk": "1.0.29",
     "@lydell/node-pty": "1.1.0",
     "@modelcontextprotocol/sdk": "^1.32.2",
-    "@xterm/addon-fit": "^0.11.0",
-    "@xterm/xterm": "^6.0.0",
-    "@xyflow/react": "12.10.2",
     "bonjour-service": "^1.4.4",
     "ssh2": "^1.17.0"
-  }
+  },
+  "author": "The Celeste contributors"
 }

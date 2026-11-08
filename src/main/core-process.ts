@@ -18,7 +18,7 @@ export class CoreProcess {
   start(): void {
     const child = utilityProcess.fork(join(__dirname, 'core.js'), [], {
       serviceName: 'Celeste Core',
-      env: { ...process.env, CELESTE_DATA_DIR: app.getPath('userData') }
+      env: { ...process.env, CELESTE_DATA_DIR: app.getPath('userData'), CELESTE_VERSION: app.getVersion() }
     })
     this.child = child
 

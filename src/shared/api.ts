@@ -285,11 +285,24 @@ export interface Bootstrap {
   sessions: SessionSummary[]
   drafts: Record<string, DraftState>
   dataDir: string
+  /** The version of Celeste that is running. */
+  version: string
+}
+
+export interface UpdateInfo {
+  current: string
+  /** The newest release, when there is one. */
+  latest?: string
+  /** Where to download it. */
+  url?: string
+  newer: boolean
 }
 
 /** The methods of Core. Return types are what the caller receives, wrapped in a Promise by the transport. */
 export interface CoreApi {
   'app.bootstrap': () => Bootstrap
+  /** Asks GitHub which release is newest. Only when the person asks: Celeste never looks by itself. */
+  'app.checkUpdate': () => Promise<UpdateInfo>
   'settings.patch': (patch: SettingsPatch) => AppSettings
   'vendors.set': (id: VendorId, record: VendorRecord | null) => void
 
@@ -422,7 +435,7 @@ export type McpApi = { [K in keyof CoreApi as K extends `mcp.${string}` ? K : ne
 export type VendorLinkApi = { [K in keyof CoreApi as K extends `vendor.${string}` ? K : never]: CoreApi[K] }
 export type ProjectApi = { [K in keyof CoreApi as K extends `project.${string}` ? K : never]: CoreApi[K] }
 /** The methods the session service answers. The device service and the vendor service answer the rest. */
-export type SessionApi = Omit<CoreApi, keyof DeviceApi | keyof VendorLinkApi | keyof ProjectApi | keyof McpApi | keyof TerminalApi | keyof WorkflowApi>
+export type SessionApi = Omit<CoreApi, keyof DeviceApi | keyof VendorLinkApi | keyof ProjectApi | keyof McpApi | keyof TerminalApi | keyof WorkflowApi | 'app.checkUpdate'>
 
 export type CoreMethod = keyof CoreApi
 export type CoreParams<M extends CoreMethod> = Parameters<CoreApi[M]>

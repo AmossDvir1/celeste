@@ -55,3 +55,32 @@ jobs:
           name: pictures-${{ matrix.check }}
           path: scripts/.output/
           if-no-files-found: ignore
+
+  # The installers, made and tried on every push, so that a release is never the first time they are built. Windows: installed silently,
+  # run and uninstalled. Mac: the packed app is started and looked inside. The files are kept for two weeks as downloads of the run, so a
+  # person can try exactly what a release would contain. (Nothing here is published; see RELEASING.md.)
+  installers:
+    name: Installer (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Windows, os: windows-latest, make: 'npm run dist:win', files: "release/*.exe\nrelease/*.msi" }
+          - { name: macOS arm64, os: macos-latest, make: 'npm run dist:mac -- --arm64', files: "release/*.dmg\nrelease/*.zip" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: ${{ matrix.make }}
+      - run: node scripts/ci-report.mjs installer-check
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.name }}
+          path: ${{ matrix.files }}
+          retention-days: 14
+          if-no-files-found: error

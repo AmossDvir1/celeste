@@ -19,6 +19,7 @@ import { GitSnapshots } from './snapshots'
 import { createClaudeHost, createClaudeSession, createClaudeTitler, type ClaudeHost } from './adapters/claude'
 import { copilotRuntime, createCopilotHost, createCopilotSession, createCopilotTitler, type CopilotHost } from './adapters/copilot'
 import { OwnPrograms } from './adapters/own-copy'
+import { checkForUpdate } from './update'
 import { OWN_CLAUDE } from './adapters/claude/program'
 import { OWN_COPILOT } from './adapters/copilot/runtime'
 import { createUnavailableSession } from './adapters/unavailable'
@@ -150,6 +151,7 @@ async function start(): Promise<void> {
     store,
     files: new DiskFileStore(join(dataDir, 'attachments')),
     dataDir,
+    version: process.env['CELESTE_VERSION'],
     // Copilot and Claude are real. OpenAI and Gemini have no adapter yet, and the window does not offer them.
     adapter: adapterFor,
     // Develop sessions save their project folder before each message, in a private copy under the data folder.
@@ -242,6 +244,7 @@ async function start(): Promise<void> {
   terminalsRef = terminals
   api = {
     ...service.api,
+    'app.checkUpdate': () => checkForUpdate(process.env['CELESTE_VERSION'] ?? '0.0.0'),
     // A removed session takes its shell with it.
     'sessions.remove': (id) => {
       terminalsRef?.close(id)

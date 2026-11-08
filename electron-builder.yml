@@ -1,0 +1,74 @@
+# How Celeste is packed into installers. `npm run dist:win` and `npm run dist:mac` use this; the release workflow runs them
+# (.github/workflows/release.yml). Nothing is published from here: `--publish never`, the workflow makes a draft release.
+appId: io.github.amossdvir1.celeste
+productName: Celeste
+copyright: Copyright © 2026 The Celeste contributors
+directories:
+  output: release
+  buildResources: resources
+
+# What is packed is the staged folder release/stage (scripts/stage.mjs): the built app and the libraries it loads at run time, nothing else.
+# The vendors' own programs are NOT shipped: Claude's (about 330 MB) and Copilot's (about 180 MB) are downloaded the first time that
+# vendor is connected, checked against the checksum npm publishes.
+files:
+  - '**/*'
+  - '!**/*.map'
+
+asar: true
+# The terminal's pty has a program and a native library that cannot run from inside an archive.
+asarUnpack:
+  - node_modules/@lydell/node-pty-*/**
+
+extraResources:
+  - from: LICENSE
+    to: LICENSE.txt
+  - from: THIRD_PARTY_NOTICES.md
+    to: THIRD_PARTY_NOTICES.md
+  - from: PRIVACY.md
+    to: PRIVACY.md
+
+# Windows: a setup program that installs for the current user without administrator rights, with a folder choice, a Start menu entry and a
+# desktop shortcut, and an uninstaller that leaves the person's chats and workflows (their data folder) alone. The .msi is the same
+# program in the form that IT departments deploy.
+win:
+  icon: icon.ico
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: msi
+      arch: [x64]
+  artifactName: Celeste-${version}-windows-${arch}-setup.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Celeste
+  deleteAppDataOnUninstall: false
+  license: LICENSE
+  uninstallDisplayName: Celeste
+msi:
+  oneClick: false
+  perMachine: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  upgradeCode: 6f1d3c1e-6a0f-5b7e-9d5c-2a9a7c3c1e41
+
+# macOS: a disk image to drag into Applications, and a zip. Signing and notarization happen when the signing secrets are present in the
+# environment (CSC_LINK, CSC_KEY_PASSWORD, APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID); without them the app is unsigned.
+mac:
+  icon: icons/celeste-1024.png
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist
+  artifactName: Celeste-${version}-mac-${arch}.${ext}
+dmg:
+  title: Celeste ${version}

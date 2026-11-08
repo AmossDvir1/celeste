@@ -199,7 +199,7 @@ try {
 
   console.log('\n# Tools panel, and a new chat gets the change')
   await page.getByRole('button', { name: 'Tools & Integrations' }).first().click()
-  const panel = page.getByRole('region', { name: 'Tools' })
+  const panel = page.getByRole('region', { name: 'Tools', exact: true })
   await panel.waitFor()
   const panelText = await panel.innerText()
   check('the panel lists the tools with their state', /Fixture tools/.test(panelText) && /pasted-a/.test(panelText) && /Off/.test(panelText), panelText)

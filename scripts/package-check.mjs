@@ -7,36 +7,8 @@ import { dirname, join, relative } from 'node:path'
 import { createPackage } from '@electron/asar'
 import { launch, root } from './lib/app.mjs'
 import { startRegistry } from './lib/registry.mjs'
+import { runtimePackages } from './lib/runtime-packages.mjs'
 import { claudeReady, pasteClaudeKey, say, startStub } from './lib/stub.mjs'
-
-/**
- * The packages the main process and Core load at run time: what package.json lists as dependencies, and what those
- * need in turn, found the way Node finds them. (The interface's libraries are bundled and are not needed.)
- */
-function runtimePackages() {
-  const found = new Map()
-  const lookup = (name, from) => {
-    for (let dir = from; ; dir = dirname(dir)) {
-      const candidate = join(dir, 'node_modules', name)
-      if (existsSync(join(candidate, 'package.json'))) return candidate
-      if (dir === dirname(dir)) return null
-    }
-  }
-  const visit = (name, from) => {
-    // Copilot's program (about 180 MB) is not shipped: Celeste downloads it when someone connects Copilot.
-    if (/^@github\/copilot-sdk-(darwin|linux|linuxmusl|win32)-/.test(name)) return
-    // Claude Code's program (about 330 MB) is left out the same way: Celeste downloads it the first time Claude is connected.
-    if (/^@anthropic-ai\/claude-agent-sdk-(darwin|linux|win32)-/.test(name)) return
-    const dir = lookup(name, from)
-    if (!dir || found.has(dir)) return
-    found.set(dir, name)
-    const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
-    for (const dep of Object.keys({ ...pkg.dependencies, ...pkg.optionalDependencies, ...pkg.peerDependencies })) visit(dep, dir)
-  }
-  const own = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
-  for (const dep of Object.keys(own.dependencies ?? {})) visit(dep, root)
-  return [...found.keys()]
-}
 
 const work = mkdtempSync(join(tmpdir(), 'celeste-pack-'))
 const stage = join(work, 'stage')

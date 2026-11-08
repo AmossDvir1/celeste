@@ -29,3 +29,4 @@ Thumbs.db
 
 # Reference pictures and design kits belong to their creators: never publish by accident
 design/
+scripts/.ci-wait.sh

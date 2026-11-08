@@ -6,11 +6,12 @@ import { Field, SelectField } from '@/components/form'
 import { Button, IconButton, Kbd, Switch, TextInput } from '@/components/ui'
 import { APPROVAL_OPTIONS, VENDORS, VENDOR_ORDER } from '@/lib/vendors'
 import { useModels } from '@/stores/models'
-import { revealDataFolder } from '@/api'
+import { core, revealDataFolder } from '@/api'
+import type { UpdateInfo } from '@shared/api'
 import { useSessions } from '@/stores/sessions'
 import { useSettings, type ThemePref } from '@/stores/settings'
 import { useUi, type SettingsSection } from '@/stores/ui'
-import { useVendors } from '@/stores/vendors'
+import { openExternal, useVendors } from '@/stores/vendors'
 import { DevicesSettings } from '@/features/devices/DevicesSettings'
 import { McpSettings } from '@/features/tools/McpSettings'
 import { SeparateCopies } from './SeparateCopies'
@@ -155,6 +156,38 @@ const NOTICES = [
   ['JetBrains Mono font', 'SIL Open Font License']
 ]
 
+/** Asks GitHub for the newest version, when the person asks, and says so plainly. */
+function UpdateCheck() {
+  const [state, setState] = useState<{ busy: boolean; info?: UpdateInfo; error?: string }>({ busy: false })
+  const check = () => {
+    setState({ busy: true })
+    core.call('app.checkUpdate').then(
+      (info) => setState({ busy: false, info }),
+      (err: unknown) => setState({ busy: false, error: err instanceof Error ? err.message : 'Could not check.' })
+    )
+  }
+  const { info } = state
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <Button variant="secondary" onClick={check} disabled={state.busy}>
+        {state.busy ? 'Looking…' : 'Check for updates'}
+      </Button>
+      <span role="status" className="text-[13px] text-ink-muted">
+        {state.error ? <span className="text-danger">{state.error}</span> : null}
+        {info && !info.newer && (info.latest ? `You have the newest version (${info.current}).` : `No newer version has been published (this is ${info.current}).`)}
+        {info?.newer && (
+          <>
+            Version {info.latest} is available.{' '}
+            <button type="button" onClick={() => info.url && openExternal(info.url)} className="text-accent-text underline underline-offset-2 hover:brightness-110">
+              Open the download page
+            </button>
+          </>
+        )}
+      </span>
+    </div>
+  )
+}
+
 function Content({ section }: { section: SettingsSection }) {
   const settings = useSettings()
   const closeSettings = useUi((s) => s.closeSettings)
@@ -162,6 +195,7 @@ function Content({ section }: { section: SettingsSection }) {
   const pushToast = useUi((s) => s.pushToast)
   const resetDraft = useUi((s) => s.resetDraft)
   const dataDir = useUi((s) => s.dataDir)
+  const version = useUi((s) => s.version)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   switch (section) {
@@ -320,7 +354,11 @@ function Content({ section }: { section: SettingsSection }) {
       )
     case 'about':
       return (
-        <Section title="About Celeste" description="Version 0.1.0 · early development. GitHub Copilot and Claude are connected for real; OpenAI and Gemini are not available yet.">
+        <Section title="About Celeste" description={`Version ${version || '…'}. Works with GitHub Copilot and Claude; OpenAI and Gemini are coming soon.`}>
+          <UpdateCheck />
+          <p className="text-[13px] leading-relaxed text-ink-faint">
+            Celeste has no server of its own and collects nothing: your chats, workflows and settings stay on this computer, and what you ask goes from here to your own account with each vendor. It looks for a new version only when you press the button above.
+          </p>
           <div>
             <h3 className="text-[14px] text-ink">Open-source software in this app</h3>
             <ul className="mt-3 divide-y divide-edge/70 rounded-xl border border-edge">

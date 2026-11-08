@@ -43,6 +43,8 @@ export interface ServiceOptions {
   store: Store
   files: FileStore
   dataDir: string
+  /** The version of Celeste that is running, from the main process. */
+  version?: string
   adapter: AdapterFactory
   push: (p: CorePush) => void
   defaults: AppSettings
@@ -245,7 +247,8 @@ export class SessionService {
       vendors: this.currentVendors(),
       sessions: this.store.listSessions().map((r) => this.summary(r)),
       drafts: this.store.drafts(),
-      dataDir: this.opts.dataDir
+      dataDir: this.opts.dataDir,
+      version: this.opts.version ?? '0.0.0'
     }
   }
 

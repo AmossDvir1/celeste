@@ -10,7 +10,7 @@ Use each vendor's own agent from a single, fast interface, with your sessions sa
 action under your control. No Celeste server, no account with us: your usage goes to your own vendor account.
 
 [![CI](https://github.com/AmossDvir1/celeste/actions/workflows/ci.yml/badge.svg)](https://github.com/AmossDvir1/celeste/actions/workflows/ci.yml)
-![Status](https://img.shields.io/badge/status-early%20development-c2417d)
+[![Release](https://img.shields.io/github/v/release/AmossDvir1/celeste?color=c2417d)](https://github.com/AmossDvir1/celeste/releases/latest)
 ![Electron](https://img.shields.io/badge/Electron-45-47848f?logo=electron&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-149eca?logo=react&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-7-3178c6?logo=typescript&logoColor=white)
@@ -44,9 +44,33 @@ action under your control. No Celeste server, no account with us: your usage goe
   </tr>
 </table>
 
+## Download
+
+Get the newest version from the [Releases page](https://github.com/AmossDvir1/celeste/releases/latest).
+
+| System | Download | Notes |
+|---|---|---|
+| **Windows 10 or 11** (64-bit) | `Celeste-<version>-windows-x64-setup.exe` | Installs for your own account, no administrator rights needed. You choose the folder; it adds a Start menu entry and a desktop shortcut. |
+| Windows, for IT departments | `Celeste-<version>-windows-x64-setup.msi` | The same program as an MSI, for deployment tools and group policy. |
+| **macOS** (Apple silicon) | `Celeste-<version>-mac-arm64.dmg` | Open it and drag Celeste into Applications. |
+| macOS (Intel) | `Celeste-<version>-mac-x64.dmg` | The same, for Intel Macs. |
+
+Every release lists a checksum for each file (`SHA256SUMS.txt`). To check one on Windows: `certutil -hashfile <file> SHA256`; on a Mac: `shasum -a 256 <file>`.
+
+**The first time you open it, your system may warn you.** The installers of this release are not signed with a paid certificate yet, so Windows and macOS do not know who made them. This is expected; the program is the one built from this repository's code.
+
+- **Windows:** SmartScreen may say "Windows protected your PC". Choose **More info**, then **Run anyway**.
+- **macOS:** it may say Celeste "cannot be opened" or "is damaged". Open **System Settings → Privacy & Security**, scroll to Security, and choose **Open Anyway** next to Celeste. If it still says "damaged", run `xattr -dr com.apple.quarantine /Applications/Celeste.app` in Terminal once.
+
+**Uninstalling** on Windows: Settings → Apps → Celeste. This removes the program and leaves your chats, workflows and settings in `%APPDATA%\Celeste`; delete that folder yourself if you want them gone. On a Mac, drag Celeste to the Bin; your data is in `~/Library/Application Support/Celeste`.
+
+**Updating:** Settings → About → *Check for updates* tells you whether a newer version exists and opens the download page. Celeste never looks by itself. Install the new version over the old one; your data is kept.
+
+What leaves your computer, and where it goes, is written down in [PRIVACY.md](PRIVACY.md). The open-source software inside Celeste is listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 ## Status
 
-Celeste is in early development and not released yet. Nothing in the app is pretended: a vendor is there only if it is connected, and what is not built yet says so.
+Celeste 1.0 is the first release. Nothing in the app is pretended: a vendor is there only if it is connected, and what is not built yet says so.
 
 | Area | State |
 |---|---|
@@ -55,12 +79,17 @@ Celeste is in early development and not released yet. Nothing in the app is pret
 | OpenAI, Gemini | Not available yet: their cards say "Coming soon". Adapters are next |
 | Sessions, settings, drafts, attachments | **Working.** Saved locally, and they survive a crash |
 | Devices (SSH, Hyper-V, Android) | **Working against test fixtures**, not yet tried on a wide range of real hardware. Read-only by default, with approvals |
-| Workflows, and the shared tool list (Tools & Integrations) | Not built yet. Devices attached to a chat are available |
-| Installers and auto-update | Not yet |
+| Workflows | **Working.** Build them on a canvas, with an assistant, or import one; run them from the screen or with `/` in a chat; every run shows what it will do first. The assistant can run the ones you allow |
+| Tools & Integrations (MCP) | **Working.** Add a tool once and every vendor can use it. Checked against real MCP servers and the stand-in for Claude; Copilot's side checked live |
+| Develop extras | **Working.** Reverting to before any message, a review screen, a file tree, separate copies of a project (git worktrees), an integrated terminal |
+| Installers | Windows (`.exe`, `.msi`) and macOS (`.dmg`). Not signed with a paid certificate yet; no automatic updates (there is a manual check) |
+| Linux | Not released. It runs from source |
+
+Tried on Windows by hand and on macOS by automatic checks only (no one working on Celeste has a Mac); please report what you find.
 
 The full plan, with the reasoning behind each decision, is in [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md).
 
-## Getting started
+## Running from source
 
 You need [Node.js](https://nodejs.org) 22.13 or newer (the database is `node:sqlite`, built into Node and Electron).
 
@@ -85,7 +114,7 @@ program (about 330 MB unpacked) from npm the first time, and starts doing so as 
 |---|---|
 | Ctrl K | Search chats and sessions |
 | Ctrl N | New chat |
-| Ctrl 1 / 2 | Chat / Develop |
+| Ctrl 1 / 2 / 3 | Chat / Develop / Workflows |
 | Ctrl B | Show or hide the sidebar |
 | Ctrl , | Settings |
 
@@ -134,6 +163,9 @@ scripts/       end-to-end checks that drive the built app, screenshot tools
 | `npm run verify:workflows` | Drive the Workflows tab in the real app: the empty start, building a workflow on the canvas, saving, versions, unsaved changes, deleting (no account, no cost) |
 | `npm run verify:workflows-chat` | Start a workflow from a conversation with `/`: the menu, the card that asks first, the result, and the assistant being told (no account, no cost) |
 | `npm run verify:workflows-ai` | Build with AI, Make this a workflow, and the assistant running a workflow only when allowed (no account, no cost) |
+| `npm run verify:ui` | An accessibility audit (axe, WCAG 2.2 A and AA) of every screen in both themes, plus keyboard checks |
+| `npm run dist:win` / `dist:mac` | Make the installers (`release/`). See [RELEASING.md](RELEASING.md) |
+| `node scripts/installer-check.mjs` | Install what `dist:win` made, run it, and uninstall it (on a Mac: open the packed app and check it) |
 | `npm run verify:copilot` | Drive the real app with your real Copilot account (spends a few premium requests) |
 | `npm run shots` | Screenshots of the key screens in both themes. They are the real app; Claude's answers come from a stand-in for the API, so the pictures cost nothing |
 
@@ -142,12 +174,11 @@ The Copilot live tests are opt-in (`CELESTE_LIVE_COPILOT=1`) because they use a 
 
 ## Roadmap
 
-1. Design, foundation (storage, sessions), devices, **Copilot** (done)
-2. Claude adapter (built), then OpenAI and Gemini adapters
-3. Modes and tools: Plan, tool catalog, MCP
-4. Workflows
-5. Public release: installers, signing, auto-update
-6. A companion app for phones that controls your desktop Celeste
+1. **Done in 1.0:** design, storage and sessions, devices, Copilot, Claude, tools (MCP), Develop (review, revert, worktrees, terminal), Chat file cards, workflows, Windows and macOS installers
+2. OpenAI and Gemini adapters (their cards say Coming soon)
+3. Signed installers, automatic updates, Linux
+4. Branches, schedules and templates for workflows; letting the assistant use the mouse and keyboard, after asking
+5. A companion app for phones that controls your desktop Celeste
 
 ## License
 
