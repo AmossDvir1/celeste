@@ -34,7 +34,8 @@ child.on('close', (code) => {
   const plain = lines.map((l) => l.replace(/\x1b\[[0-9;]*m/g, '').trimEnd())
   // The lines that say what failed, and for an accessibility audit which rule, where, and why.
   const wanted = plain.filter((l, i) => /^(FAIL|failed|\d+ failed)|Error|Timed out|waiting for|Call log|✘|Timeout|\((serious|critical|moderate|minor)\)|^\s+\[|Element has|must |should |^npm (error|ERR!)/.test(l) || (i > 0 && /^(FAIL|Error)/.test(plain[i - 1] ?? '')))
-  const body = (wanted.length ? wanted : plain.slice(-25)).slice(-30).join('\n').slice(-3500)
+  // A command's own message comes first (npm prints its help after it); a test's comes last.
+  const body = (wanted.length ? (raw ? wanted.slice(0, 25) : wanted.slice(-30)) : plain.slice(-25)).join('\n').slice(0, 3500)
   const escape = (s) => s.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A')
   console.log(`::error title=${escape(script)} failed::${escape(body)}`)
   process.exit(code ?? 1)
