@@ -37,6 +37,8 @@
     "verify:devices": "electron-vite build && node scripts/devices-check.mjs",
     "verify:checkpoints": "electron-vite build && node scripts/checkpoints-check.mjs",
     "verify:worktrees": "electron-vite build && node scripts/worktrees-check.mjs",
+    "verify:terminal": "electron-vite build && node scripts/terminal-check.mjs",
+    "verify:files": "electron-vite build && node scripts/files-check.mjs",
     "verify:mcp": "electron-vite build && node scripts/mcp-check.mjs",
     "verify:ui": "electron-vite build && node scripts/ui-check.mjs",
     "verify:claude": "electron-vite build && node scripts/claude-check.mjs",
@@ -82,7 +84,10 @@
     "@anthropic-ai/claude-agent-sdk": "0.3.319",
     "@anthropic-ai/sdk": "1.6.0",
     "@github/copilot-sdk": "1.0.29",
+    "@lydell/node-pty": "1.1.0",
     "@modelcontextprotocol/sdk": "^1.32.2",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "bonjour-service": "^1.4.4",
     "ssh2": "^1.17.0"
   }

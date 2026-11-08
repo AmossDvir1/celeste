@@ -65,6 +65,9 @@ export function reduceEvent(s: Session, e: LogEvent, at: number): Session {
         items: s.items.map((it) => (it.kind === 'user' && it.checkpoint?.id === e.id ? { ...it, checkpoint: { id: e.id, files: e.files, more: e.more } } : it))
       }
 
+    case 'files.produced':
+      return { ...s, items: [...s.items, { kind: 'files', id: itemId(), files: e.files, more: e.more }] }
+
     case 'checkpoint.skipped':
       return { ...s, items: [...s.items, { kind: 'notice', id: itemId(), text: `Celeste could not save the folder before this message, so it cannot be reverted. ${e.reason}` }] }
 

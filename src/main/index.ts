@@ -1,5 +1,8 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
-import { join } from 'node:path'
+import { copyFile } from 'node:fs/promises'
+import { basename, join } from 'node:path'
+import { canOpenFile } from '@shared/produced'
+import { resolveChatFile } from './chat-files'
 import { registerAttachmentScheme, serveAttachments } from './attachments-protocol'
 import { CoreProcess } from './core-process'
 import { secrets } from './secrets'
@@ -122,6 +125,33 @@ ipcMain.handle('celeste:secrets', (event, op: string, name: unknown, value: unkn
     default:
       throw new Error('Unknown operation')
   }
+})
+
+// Files the agent made in a chat's private folder. The window names one; this checks it is really there, and never starts a program.
+ipcMain.handle('celeste:chat-file', async (event, sessionId: unknown, path: unknown, action: unknown) => {
+  if (!fromOurWindow(event)) throw new Error('Not allowed')
+  const found = resolveChatFile(app.getPath('userData'), sessionId, path)
+  if ('error' in found) return { ok: false, message: found.error }
+  const name = basename(found.file)
+  if (action === 'reveal') {
+    shell.showItemInFolder(found.file)
+    return { ok: true }
+  }
+  if (action === 'open') {
+    // Only documents are opened. A program or script the agent wrote can be shown in its folder, not started from here.
+    if (!canOpenFile(name)) return { ok: false, message: 'Celeste only opens documents. Show this one in its folder instead.' }
+    const failed = await shell.openPath(found.file)
+    return failed ? { ok: false, message: failed } : { ok: true }
+  }
+  if (action === 'save') {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const options = { defaultPath: join(app.getPath('downloads'), name) }
+    const chosen = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options)
+    if (chosen.canceled || !chosen.filePath) return { ok: false }
+    await copyFile(found.file, chosen.filePath)
+    return { ok: true, message: `Saved ${basename(chosen.filePath)}.` }
+  }
+  return { ok: false, message: 'Unknown action.' }
 })
 
 ipcMain.handle('celeste:reveal-data', (event) => {

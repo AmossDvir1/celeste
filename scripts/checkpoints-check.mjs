@@ -221,6 +221,8 @@ try {
 
   console.log('\n# The terminal')
   await page.getByRole('button', { name: 'Terminal', exact: true }).click()
+  // The panel opens on a shell; the agent's own commands are the other tab.
+  await page.getByRole('button', { name: 'Agent commands' }).click()
   await textbox(page).fill('Run the long command please')
   await textbox(page).press('Enter')
   const terminal = page.getByLabel('Terminal output')

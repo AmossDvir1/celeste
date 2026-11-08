@@ -205,6 +205,22 @@ describe('checkpoints in the log', () => {
   })
 })
 
+describe('files a chat made', () => {
+  it('shows them as one entry after the answer, with how many more were not listed', () => {
+    const made = [{ path: 'report.csv', size: 4, status: 'added' as const }]
+    const s = foldEvents(
+      blank(),
+      log(
+        [1000, { type: 'message.delta', text: 'Done.' }],
+        [1100, { type: 'turn.completed', turnId: 't' }],
+        [1200, { type: 'files.produced', files: made, more: 2 }]
+      )
+    )
+    expect(s.items.map((i) => i.kind)).toEqual(['assistant', 'files'])
+    expect(s.items[1]).toMatchObject({ kind: 'files', files: made, more: 2 })
+  })
+})
+
 describe('files added to a message', () => {
   it('keeps the paths on the message, and nothing when there are none', () => {
     const s = foldEvents(

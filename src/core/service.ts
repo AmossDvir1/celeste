@@ -26,6 +26,7 @@ import type { Snapshots } from './snapshots'
 import { cleanTitle, type Titler } from './titles'
 import { contextText, MAX_CONTEXT } from './context'
 import { listFolder, readPreview } from './files'
+import { producedSince, scanFolder, type Manifest } from './produced-files'
 
 /*
  * The session logic, independent of where data is kept. The app runs it on SQLite inside the Core process;
@@ -69,6 +70,8 @@ interface Live {
   checkpoint?: string
   /** The folder was reverted since the agent last heard from the person, so the next message says so. */
   reverted: boolean
+  /** Chat: the private folder as it was when the current turn began, to find the files the turn made. */
+  filesBefore?: Manifest
 }
 
 /** How long Celeste waits for a folder to be saved before it sends the message anyway, without a checkpoint. */
@@ -432,6 +435,7 @@ export class SessionService {
         if (live.text) this.store.index(id, 'assistant', live.text)
         live.text = ''
         this.finishCheckpoint(id)
+        this.finishFiles(id)
         break
     }
 
@@ -460,6 +464,9 @@ export class SessionService {
     const extra = [live.reverted ? REVERT_NOTE : '', row.cwd && context.length ? contextText(row.cwd, context) : ''].filter(Boolean)
     const outgoing: UserInput = { text: [input.text, ...extra].filter(Boolean).join('\n\n'), attachments: input.attachments }
     live.reverted = false
+
+    // Chat: what is in the private folder now is compared with what is there when the answer ends.
+    if (row.mode === 'chat') live.filesBefore ??= scanFolder(this.chatDir(id))
 
     const cwd = row.cwd
     if (!this.opts.snapshots || row.mode !== 'develop' || !cwd) {
@@ -544,6 +551,23 @@ export class SessionService {
     })
   }
 
+  /** Chat: when a turn ends, the files it wrote in the private folder are logged, so the answer can offer them. */
+  private finishFiles(id: string): void {
+    const live = this.live.get(id)
+    const before = live?.filesBefore
+    if (live) live.filesBefore = undefined
+    if (!before || !live) return
+    // After the event that ended the turn has been delivered, so the files come behind the answer.
+    queueMicrotask(() => {
+      try {
+        const made = producedSince(before, scanFolder(this.chatDir(id)))
+        if (made.files.length) this.record(id, { type: 'files.produced', ...made }, live)
+      } catch (err) {
+        console.error('[core] could not look for files made in a turn', err)
+      }
+    })
+  }
+
   /** True when the folder was reverted after the person's latest message. Read from the log, so it survives a restart. */
   private revertedSince(id: string): boolean {
     const events = this.store.events(id)
@@ -570,6 +594,11 @@ export class SessionService {
   }
 
   /** The folder a Develop session works in. Only that folder is ever browsed: the window names a path inside it, never outside. */
+  /** The folder a Develop session works in (its separate copy, when it has one). */
+  projectFolder(id: string): string {
+    return this.projectOf(id)
+  }
+
   private projectOf(id: string): string {
     const row = this.requireSession(id)
     if (row.mode !== 'develop' || !row.cwd) throw new Error('Only Develop sessions have a project folder.')
@@ -747,8 +776,12 @@ export class SessionService {
    * A chat with no project folder still gives its agent somewhere to work: a private folder of its own, so a file it writes
    * lands there and not in whatever folder Celeste was started from. It is made when first needed and removed with the session.
    */
+  private chatDir(id: string): string {
+    return join(this.opts.dataDir, 'chats', id)
+  }
+
   private scratchDir(id: string): string {
-    const dir = join(this.opts.dataDir, 'chats', id)
+    const dir = this.chatDir(id)
     mkdirSync(dir, { recursive: true })
     return dir
   }

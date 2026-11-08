@@ -129,6 +129,8 @@ scripts/       end-to-end checks that drive the built app, screenshot tools
 | `npm run verify:devices` | Run the built app against an in-process SSH server that stands in for a VM |
 | `npm run verify:claude` | Drive the real app with the real Claude Code program against a stand-in for Anthropic's API on this computer (no account, no cost) |
 | `npm run verify:checkpoints` | Drive a Develop session in the real app: checkpoints before each message, revert, undo, and your project's own git left alone (no account, no cost) |
+| `npm run verify:terminal` | Drive the real integrated terminal in the real app: a shell in the project folder, typing, the same shell after closing the panel (no account, no cost) |
+| `npm run verify:files` | Drive a Chat that makes files in the real app: the cards, Open, Show in folder, Save a copy, and what is refused (no account, no cost) |
 | `npm run verify:copilot` | Drive the real app with your real Copilot account (spends a few premium requests) |
 | `npm run shots` | Screenshots of the key screens in both themes. They are the real app; Claude's answers come from a stand-in for the API, so the pictures cost nothing |
 

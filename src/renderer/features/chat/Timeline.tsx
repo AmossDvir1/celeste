@@ -28,6 +28,7 @@ import { ReviewDialog } from '@/features/develop/ReviewDialog'
 import { useSessions } from '@/stores/sessions'
 import { AttachmentStrip } from './attachments'
 import { ContextStrip } from './context'
+import { FileCards } from './FileCards'
 import type { Session, TimelineItem } from '@/stores/types'
 
 type ToolItem = Extract<TimelineItem, { kind: 'tool' }>
@@ -565,6 +566,8 @@ export function Timeline({
         switch (it.kind) {
           case 'user':
             return <UserMessage key={it.id} item={it} canRevert={idle} onRevert={setTarget} onReview={setReviewing} />
+          case 'files':
+            return <FileCards key={it.id} sessionId={session.id} files={it.files} more={it.more} />
           case 'reverted':
             return <RevertedNotice key={it.id} item={it} canUndo={idle && it.id === lastReverted} onUndo={() => void revert(session.id, it.undoId)} />
           case 'assistant':

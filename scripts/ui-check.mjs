@@ -16,6 +16,10 @@ const ACCEPTED = {}
 
 const script = (r) => {
   if (r.last.kind === 'tool_result') return [{ type: 'text', text: r.last.isError ? `That did not work: ${r.last.text}` : 'Finished that step.' }]
+  if (/Make a file/.test(r.last.text)) {
+    const command = "node -e \"require('fs').writeFileSync('notes.md','# Notes\\n');require('fs').writeFileSync('tool.exe','MZ')\""
+    return [{ type: 'tool_use', name: 'Bash', input: { command, description: 'Make some files' } }]
+  }
   if (/Run the change/.test(r.last.text)) {
     const command = `node -e "require('fs').writeFileSync('a.txt','changed\\n')"`
     return [{ type: 'tool_use', name: 'Bash', input: { command, description: 'Change a file here' } }]
@@ -98,6 +102,12 @@ try {
 
   await say(page, 'Hello there')
   await audit(page, 'Chat, a conversation')
+  const chatBox = page.getByRole('textbox', { name: 'Message' })
+  await chatBox.fill('Make a file please')
+  await chatBox.press('Enter')
+  await page.getByRole('region', { name: 'Files made in this answer' }).waitFor({ timeout: 60_000 })
+  await page.getByRole('button', { name: 'Stop' }).waitFor({ state: 'detached', timeout: 60_000 })
+  await audit(page, 'Chat, with files the agent made')
 
   console.log('\n# Keyboard')
   const insideDialog = () => page.evaluate(() => Boolean(document.querySelector('[role="dialog"]')?.contains(document.activeElement)))

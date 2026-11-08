@@ -979,6 +979,54 @@ describe('naming a session after its first message', () => {
   })
 })
 
+describe('files a chat makes', () => {
+  async function turnWith(write: (folder: string) => void, mode: 'chat' | 'develop' = 'chat') {
+    const data = mkdtempSync(join(tmpdir(), 'celeste-files-'))
+    const { api, agents, pushes } = setup(new MemoryStore(), data)
+    const { id } = api['sessions.create']({ ...input, mode, ...(mode === 'develop' ? { cwd: data } : {}) })
+    api['sessions.send'](id, { text: 'Make me a report', attachments: [] })
+    agents[0].emit({ type: 'turn.started', turnId: 't1' })
+    await flush()
+    // The agent writes while it works, in the folder it was given.
+    const folder = join(data, 'chats', id)
+    mkdirSync(folder, { recursive: true })
+    write(folder)
+    agents[0].emit({ type: 'message.delta', text: 'Done.' })
+    agents[0].emit({ type: 'turn.completed', turnId: 't1' })
+    await flush()
+    await flush()
+    return { data, log: (api['sessions.get'](id)?.events ?? []).map((e) => e.event), pushes, id }
+  }
+
+  it('logs the files the agent wrote, behind the answer, so they can be offered', async () => {
+    const { data, log } = await turnWith((folder) => writeFileSync(join(folder, 'report.csv'), 'a,b\n'))
+    try {
+      expect(log.map((e) => e.type)).toEqual(['user.message', 'turn.started', 'message.delta', 'turn.completed', 'files.produced'])
+      expect(log.at(-1)).toEqual({ type: 'files.produced', files: [{ path: 'report.csv', size: 4, status: 'added' }], more: 0 })
+    } finally {
+      rmSync(data, { recursive: true, force: true })
+    }
+  })
+
+  it('logs nothing when the turn wrote no file', async () => {
+    const { data, log } = await turnWith(() => undefined)
+    try {
+      expect(log.map((e) => e.type)).not.toContain('files.produced')
+    } finally {
+      rmSync(data, { recursive: true, force: true })
+    }
+  })
+
+  it('does not look in a Develop session, whose folder is the person’s own project', async () => {
+    const { data, log } = await turnWith((folder) => writeFileSync(join(folder, 'report.csv'), 'a,b\n'), 'develop')
+    try {
+      expect(log.map((e) => e.type)).not.toContain('files.produced')
+    } finally {
+      rmSync(data, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('separate copies of a project', () => {
   it('tells the window which sessions work in a copy Celeste made, and only those', () => {
     const { api } = setup(new MemoryStore(), '/data')

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDown, FileDiff, RefreshCw, SquareTerminal, Undo2 } from 'lucide-react'
 import type { FileDiff as FileDiffData } from '@shared/agent'
 import { PanelCard } from '@/components/PanelCard'
+import { cn } from '@/lib/cn'
 import { Button, IconButton, Spinner } from '@/components/ui'
 import { useChanges } from '@/stores/changes'
 import { useSessions } from '@/stores/sessions'
@@ -9,6 +10,7 @@ import { useUi } from '@/stores/ui'
 import { DiffFile, DiffList } from './DiffView'
 import { RevertDialog } from './RevertDialog'
 import { ReviewDialog } from './ReviewDialog'
+import { ShellTerminal } from './ShellTerminal'
 
 function useDevelopSession() {
   return useSessions((s) => {
@@ -202,8 +204,8 @@ export function ChangesPanel() {
   )
 }
 
-export function TerminalPanel() {
-  const setRight = useUi((s) => s.setRight)
+/** The commands the agent ran in this session, with their output. Read only. */
+function AgentCommands() {
   const session = useDevelopSession()
   const ran = (session?.items ?? []).filter((i) => i.kind === 'tool' && i.tool === 'shell')
   const scroller = useRef<HTMLDivElement>(null)
@@ -223,7 +225,7 @@ export function TerminalPanel() {
   }
 
   return (
-    <PanelCard title="Terminal" onClose={() => setRight(null)} className="h-full" bodyClassName="relative overflow-hidden bg-field">
+    <div className="relative h-full overflow-hidden">
       {ran.length === 0 ? (
         <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
           <SquareTerminal className="h-8 w-8 text-ink-faint" />
@@ -255,6 +257,51 @@ export function TerminalPanel() {
           )}
         </>
       )}
+    </div>
+  )
+}
+
+type TerminalView = 'shell' | 'agent'
+
+export function TerminalPanel() {
+  const setRight = useUi((s) => s.setRight)
+  const session = useDevelopSession()
+  const [view, setView] = useState<TerminalView>('shell')
+  const tab = (id: TerminalView, label: string) => (
+    <button
+      type="button"
+      aria-pressed={view === id}
+      onClick={() => setView(id)}
+      className={cn('h-8 rounded-md px-2.5 text-[13px] transition-colors', view === id ? 'bg-hover text-ink' : 'text-ink-muted hover:text-ink')}
+    >
+      {label}
+    </button>
+  )
+  return (
+    <PanelCard
+      title="Terminal"
+      onClose={() => setRight(null)}
+      className="h-full"
+      bodyClassName="relative overflow-hidden bg-field"
+      actions={
+        <div role="group" aria-label="What to show" className="flex gap-0.5 rounded-lg border border-edge p-0.5">
+          {tab('shell', 'Shell')}
+          {tab('agent', 'Agent commands')}
+        </div>
+      }
+    >
+      {view === 'agent' ? (
+        <AgentCommands />
+      ) : session ? (
+        <ShellTerminal key={session.id} sessionId={session.id} />
+      ) : (
+        <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+          <SquareTerminal className="h-8 w-8 text-ink-faint" />
+          <div className="text-[14px] text-ink">No session yet</div>
+          <div className="text-[13px] text-ink-muted">Start a session, and the terminal opens in its project folder.</div>
+        </div>
+      )}
     </PanelCard>
   )
 }
+

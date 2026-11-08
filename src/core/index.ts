@@ -24,6 +24,7 @@ import { OWN_COPILOT } from './adapters/copilot/runtime'
 import { createUnavailableSession } from './adapters/unavailable'
 import { createProjectApi } from './project'
 import { McpService } from './mcp'
+import { TerminalService } from './terminal'
 import { Worktrees } from './worktrees'
 import { SessionService } from './service'
 import { VendorService } from './vendors'
@@ -52,6 +53,7 @@ let copilot: CopilotHost | undefined
 let claude: ClaudeHost | undefined
 let api: CoreApi | undefined
 let store: SqliteStore | undefined
+let terminalsRef: TerminalService | undefined
 
 // Passwords and key passphrases live in the main process. Core asks for one only when it is about to connect.
 let nextSecretId = 0
@@ -156,11 +158,23 @@ async function start(): Promise<void> {
     },
   })
   service.init()
+  const terminals = new TerminalService({ folderOf: (id) => (service as SessionService).projectFolder(id), push })
+  terminalsRef = terminals
   api = {
     ...service.api,
+    // A removed session takes its shell with it.
+    'sessions.remove': (id) => {
+      terminalsRef?.close(id)
+      return (service as SessionService).api['sessions.remove'](id)
+    },
+    'sessions.removeAll': () => {
+      terminalsRef?.closeAll()
+      return (service as SessionService).api['sessions.removeAll']()
+    },
     ...devices.api,
     ...new VendorService({ copilot: host, claude: claudeHost }, push, ownPrograms).api,
     ...mcp.api,
+    ...terminals.api,
     ...createProjectApi(worktrees, (path) => {
       const s = db.listSessions().find((x) => x.cwd === path)
       return s ? { id: s.id, title: s.title } : undefined
@@ -210,6 +224,7 @@ parent.on('message', (event) => {
     service?.close()
     void (async () => {
       await devices?.close().catch(() => undefined)
+      terminalsRef?.closeAll()
       await toolServer?.stop().catch(() => undefined)
       await copilot?.stop().catch(() => undefined)
       await claude?.stop().catch(() => undefined)

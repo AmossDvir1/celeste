@@ -14,6 +14,7 @@ import type {
   NewDevice,
   TestResult
 } from './devices'
+import type { ProducedFile } from './produced'
 import type {
   AgentEvent,
   ApprovalAnswer,
@@ -160,6 +161,8 @@ export type LogEvent =
   | ({ type: 'checkpoint.summary'; id: string } & CheckpointChanges)
   /** Celeste could not save the folder before this message, so it cannot be reverted. */
   | { type: 'checkpoint.skipped'; reason: string }
+  /** Chat: files the agent wrote in its private folder during the turn that just ended. `more` is how many further files are not listed. */
+  | { type: 'files.produced'; files: ProducedFile[]; more: number }
   /** The folder was put back as it was at checkpoint `id`. `undoId` goes back to how it was just before. */
   | { type: 'checkpoint.reverted'; id: string; restored: number; removed: number; undoId: string }
 
@@ -240,6 +243,12 @@ export type VendorConnection =
   /** Celeste has no adapter for this vendor yet. */
   | { state: 'unsupported' }
 
+/** What a terminal that was opened holds already: the end of what it printed, for a window that was away. */
+export interface TerminalOpened {
+  output: string
+  running: boolean
+}
+
 /** Which copy of a vendor's program is in use. */
 export interface VendorProgram {
   /** 'yours' is the person's own installed copy, 'celeste' the one Celeste downloads, 'none' that neither is on this computer yet. */
@@ -305,6 +314,12 @@ export interface CoreApi {
   'sessions.revertPreview': (id: string, checkpointId: string) => Promise<CheckpointChanges>
   /** Every file that differs now from how the folder was before the session's first message, without the lines. Empty when nothing was saved. */
   'sessions.netChanges': (id: string) => Promise<CheckpointChanges>
+  /** Opens the session's terminal (a shell in its project folder), or picks up the one that is already running. Output then arrives as `terminal` pushes. */
+  'terminal.open': (sessionId: string, cols: number, rows: number) => Promise<TerminalOpened>
+  'terminal.write': (sessionId: string, data: string) => Promise<void>
+  'terminal.resize': (sessionId: string, cols: number, rows: number) => Promise<void>
+  /** Ends the session's shell. */
+  'terminal.close': (sessionId: string) => Promise<void>
   /** The tools (MCP servers) the person has added, shared by every vendor. */
   'mcp.list': () => McpServerView[]
   /** Adds a server, or changes the one with `id`. It is looked at straight after. */
@@ -373,11 +388,12 @@ export interface CoreApi {
 }
 
 export type DeviceApi = { [K in keyof CoreApi as K extends `devices.${string}` ? K : never]: CoreApi[K] }
+export type TerminalApi = { [K in keyof CoreApi as K extends `terminal.${string}` ? K : never]: CoreApi[K] }
 export type McpApi = { [K in keyof CoreApi as K extends `mcp.${string}` ? K : never]: CoreApi[K] }
 export type VendorLinkApi = { [K in keyof CoreApi as K extends `vendor.${string}` ? K : never]: CoreApi[K] }
 export type ProjectApi = { [K in keyof CoreApi as K extends `project.${string}` ? K : never]: CoreApi[K] }
 /** The methods the session service answers. The device service and the vendor service answer the rest. */
-export type SessionApi = Omit<CoreApi, keyof DeviceApi | keyof VendorLinkApi | keyof ProjectApi | keyof McpApi>
+export type SessionApi = Omit<CoreApi, keyof DeviceApi | keyof VendorLinkApi | keyof ProjectApi | keyof McpApi | keyof TerminalApi>
 
 export type CoreMethod = keyof CoreApi
 export type CoreParams<M extends CoreMethod> = Parameters<CoreApi[M]>
@@ -386,6 +402,8 @@ export type CoreResult<M extends CoreMethod> = ReturnType<CoreApi[M]>
 export type CorePush =
   | { type: 'devices' }
   | { type: 'mcp' }
+  /** Output from a session's shell; `exited` is set once, when the shell ends. */
+  | { type: 'terminal'; sessionId: string; data: string; exited?: number }
   | { type: 'vendor'; vendor: VendorId; progress: VendorProgress }
   | { type: 'event'; sessionId: string; stored: StoredEvent }
   | { type: 'summary'; session: SessionSummary }

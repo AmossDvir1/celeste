@@ -18,6 +18,8 @@ export interface CelesteBridge {
     /** The last four characters, to tell two keys apart. */
     hint(name: string): Promise<string | null>
   }
+  /** A file the agent made in a chat's private folder: open it, show it in its folder, or save a copy. The window names it by session and path; the main process checks it. */
+  chatFile(sessionId: string, path: string, action: 'open' | 'reveal' | 'save'): Promise<{ ok: boolean; message?: string }>
   revealDataFolder(): Promise<void>
   /** Asks the person to choose a folder. Null when they cancel. */
   chooseFolder(): Promise<string | null>

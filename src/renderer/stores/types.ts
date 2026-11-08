@@ -8,6 +8,7 @@ import type {
   ToolKind
 } from '@shared/agent'
 import type { CheckpointFile, SessionStatus, SessionSummary } from '@shared/api'
+import type { ProducedFile } from '@shared/produced'
 
 export type { SessionStatus }
 
@@ -50,6 +51,8 @@ export type TimelineItem =
   | { kind: 'ask'; id: string; requestId: string; questions: Question[]; answers?: AskAnswers; status: 'pending' | 'answered' }
   | { kind: 'error'; id: string; error: AgentError }
   | { kind: 'notice'; id: string; text: string }
+  /** Chat: files the agent wrote during the turn, offered to open. */
+  | { kind: 'files'; id: string; files: ProducedFile[]; more: number }
   /** The folder was put back to a checkpoint. `undoId` goes back to how it was just before. */
   | { kind: 'reverted'; id: string; restored: number; removed: number; undoId: string }
 
