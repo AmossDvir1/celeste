@@ -76,7 +76,18 @@ jobs:
           node-version: 24
           cache: npm
       - run: node scripts/ci-report.mjs --raw npm ci
-      - run: ${{ matrix.make }}
+      - name: Stop Spotlight indexing the disk image that is about to be made
+        if: runner.os == 'macOS'
+        run: sudo mdutil -a -i off || true
+      - name: Make the installer (the Mac disk image is flaky to make on these machines, so it is tried up to three times)
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if ${{ matrix.make }}; then exit 0; fi
+            echo "Attempt $attempt failed."
+            sleep 15
+          done
+          exit 1
       - run: node scripts/ci-report.mjs installer-check
       - uses: actions/upload-artifact@v4
         with:

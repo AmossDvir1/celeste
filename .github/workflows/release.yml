@@ -98,7 +98,19 @@ jobs:
           else
             echo "No signing certificate in the secrets: the app will be unsigned."
           fi
-      - run: npm run dist:mac -- --${{ matrix.arch }}
+      - name: Stop Spotlight indexing the disk image that is about to be made (macOS then refuses to eject it)
+        run: sudo mdutil -a -i off || true
+      # Making the disk image is flaky on these machines ("Resource busy" when ejecting it), so a failed try is tried again.
+      - name: Make the installers
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if npm run dist:mac -- --${{ matrix.arch }}; then exit 0; fi
+            echo "Attempt $attempt failed."
+            hdiutil detach -force /Volumes/Celeste* 2>/dev/null || true
+            sleep 15
+          done
+          exit 1
       - name: Start the packed app and look inside it
         run: node scripts/installer-check.mjs
       - uses: actions/upload-artifact@v4

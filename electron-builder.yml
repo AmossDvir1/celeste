@@ -60,11 +60,10 @@ msi:
 mac:
   icon: icons/celeste-1024.png
   category: public.app-category.developer-tools
+  # The chip is chosen on the command line (--arm64 or --x64); with neither, the one of this computer.
   target:
-    - target: dmg
-      arch: [arm64, x64]
-    - target: zip
-      arch: [arm64, x64]
+    - dmg
+    - zip
   hardenedRuntime: true
   gatekeeperAssess: false
   entitlements: resources/entitlements.mac.plist
