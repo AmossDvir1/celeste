@@ -44,6 +44,15 @@ async function audit(page, screen) {
   audited++
   for (const theme of ['dark', 'light']) {
     await page.evaluate((t) => (document.documentElement.dataset.theme = t), theme)
+    // Colours fade when the theme changes. A slow computer is still part way when axe looks, and reads one theme's text on the other's
+    // background, so wait until every animation has finished (and a moment more for the page to repaint).
+    await page.evaluate(async () => {
+      for (let i = 0; i < 20; i++) {
+        const running = document.getAnimations().filter((x) => x.playState === 'running' && x.effect?.getTiming().iterations !== Infinity)
+        if (!running.length) break
+        await Promise.all(running.map((x) => x.finished.catch(() => undefined)))
+      }
+    })
     await page.waitForTimeout(250)
     if (!(await page.evaluate(() => Boolean(window.axe)))) await page.evaluate(axeSource)
     const violations = await page.evaluate(async () => {
