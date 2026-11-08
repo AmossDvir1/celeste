@@ -3,6 +3,7 @@ import type { CanUseTool, McpServerConfig, Options, PermissionResult, SDKMessage
 import type { AgentError, AgentEvent, AgentSession, ApprovalAnswer, ApprovalMode, AskAnswers, Effort, UserInput } from '@shared/agent'
 import type { AdapterContext } from '../types'
 import { EventQueue } from '../event-queue'
+import { forClaude, type ResolvedMcpServer } from '../../mcp'
 import { DEVICE_SERVER, decide, describe, questionsFrom } from './permissions'
 import { Translator, errorFrom } from './translate'
 
@@ -23,6 +24,8 @@ export interface ClaudeDeps {
   launch: () => Promise<{ env: Record<string, string | undefined>; executable?: string }>
   /** Picks the model Claude offers for the session's choice, and whether it takes an effort setting. */
   resolveModel: (model: string, effort: Effort | null) => { model?: string; effort?: Effort }
+  /** The outside tools (MCP servers) the person added, with their secrets filled in. Read when the session starts. */
+  mcpServers?: () => Promise<ResolvedMcpServer[]>
   /** Where the agent reaches Celeste's device tools for this session, when devices are available. */
   deviceServer?: () => { url: string; token: string } | undefined
 }
@@ -154,9 +157,11 @@ export class ClaudeAgentSession implements AgentSession {
     const abort = new AbortController()
     const prompt = new EventQueue<SDKUserMessage>()
     const resume = this.id || undefined
-    const mcpServers: Record<string, McpServerConfig> | undefined = device
-      ? { [DEVICE_SERVER]: { type: 'http', url: device.url, headers: { Authorization: `Bearer ${device.token}` } } }
-      : undefined
+    // The person's own tools first, then Celeste's device server under its reserved name, which no tool of theirs may have.
+    const own = await this.deps.mcpServers?.().catch(() => [] as ResolvedMcpServer[])
+    const servers: Record<string, McpServerConfig> = Object.fromEntries((own ?? []).map((s) => [s.key, forClaude(s) as unknown as McpServerConfig]))
+    if (device) servers[DEVICE_SERVER] = { type: 'http', url: device.url, headers: { Authorization: `Bearer ${device.token}` } }
+    const mcpServers = Object.keys(servers).length ? servers : undefined
     const q = this.deps.start({
       prompt,
       options: {

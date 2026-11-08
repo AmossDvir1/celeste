@@ -2,6 +2,7 @@ import type { ResumeSessionConfig, SessionConfig, SessionEvent } from '@github/c
 import type { AgentError, AgentEvent, AgentSession, ApprovalAnswer, ApprovalMode, AskAnswers, Effort, UserInput } from '@shared/agent'
 import type { AdapterContext } from '../types'
 import { EventQueue } from '../event-queue'
+import { forCopilot, type ResolvedMcpServer } from '../../mcp'
 import { DEVICE_SERVER, decide, describe, type PermissionLike } from './permissions'
 import { Translator } from './translate'
 
@@ -26,6 +27,8 @@ export interface CopilotDeps {
   client: () => Promise<SdkClient>
   /** Picks the model Copilot offers for the session's choice, and whether it takes an effort setting. */
   resolveModel: (model: string, effort: Effort | null) => Promise<{ model: string; effort?: string }>
+  /** The outside tools (MCP servers) the person added, with their secrets filled in. Read when the session starts. */
+  mcpServers?: () => Promise<ResolvedMcpServer[]>
   /** Where the agent reaches Celeste's device tools for this session, when devices are available. */
   deviceServer?: () => { url: string; token: string } | undefined
 }
@@ -117,6 +120,8 @@ export class CopilotAgentSession implements AgentSession {
     const options = ctx.options()
     const resolved = await this.deps.resolveModel(options.model, options.effort)
     const device = this.deps.deviceServer?.()
+    const own = await this.deps.mcpServers?.().catch(() => [] as ResolvedMcpServer[])
+    const ownServers = Object.fromEntries((own ?? []).map((s) => [s.key, forCopilot(s)]))
     const common = {
       model: resolved.model,
       ...(resolved.effort ? { reasoningEffort: resolved.effort } : {}),
@@ -124,8 +129,9 @@ export class CopilotAgentSession implements AgentSession {
       streaming: true,
       onPermissionRequest: (request: unknown) => this.onPermission(request as PermissionLike),
       onUserInputRequest: (request: { question: string; choices?: string[] }) => this.onUserInput(request),
-      ...(device
-        ? { mcpServers: { [DEVICE_SERVER]: { type: 'http' as const, url: device.url, headers: { Authorization: `Bearer ${device.token}` }, tools: ['*'] } } }
+      // The person's own tools, and Celeste's device server under its reserved name, which no tool of theirs may have.
+      ...(device || Object.keys(ownServers).length
+        ? { mcpServers: { ...ownServers, ...(device ? { [DEVICE_SERVER]: { type: 'http' as const, url: device.url, headers: { Authorization: `Bearer ${device.token}` }, tools: ['*'] } } : {}) } }
         : {})
     }
 

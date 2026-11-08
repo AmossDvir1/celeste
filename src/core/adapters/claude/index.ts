@@ -3,6 +3,7 @@ import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { AdapterContext } from '../types'
 import { ClaudeHost, type Env, type Probe } from './host'
 import { cheapest, titlePrompt, TITLE_SYSTEM } from '../../titles'
+import type { ResolvedMcpServer } from '../../mcp'
 import { downloadClaudeProgram, findProgram } from './program'
 import { ClaudeAgentSession, type ClaudeQuery, type StartQuery } from './session'
 
@@ -162,7 +163,8 @@ export function createClaudeTitler(host: ClaudeHost): (text: string) => Promise<
 export function createClaudeSession(
   host: ClaudeHost,
   ctx: AdapterContext,
-  deviceServer?: (sessionId: string) => { url: string; token: string } | undefined
+  deviceServer?: (sessionId: string) => { url: string; token: string } | undefined,
+  mcpServers?: () => Promise<ResolvedMcpServer[]>
 ): ClaudeAgentSession {
   const start: StartQuery = ({ prompt, options }) => {
     // The SDK loads on first use, so the query is created once it has: this wrapper hands the messages through.
@@ -191,7 +193,8 @@ export function createClaudeSession(
       return { env: await host.env(), ...(executable ? { executable } : {}) }
     },
     resolveModel: (model, effort) => host.resolve(model, effort),
-    ...(deviceServer ? { deviceServer: () => deviceServer(ctx.sessionId) } : {})
+    ...(deviceServer ? { deviceServer: () => deviceServer(ctx.sessionId) } : {}),
+    ...(mcpServers ? { mcpServers } : {})
   })
 }
 

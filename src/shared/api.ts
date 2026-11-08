@@ -84,6 +84,41 @@ export interface CreateSessionInput {
   branch?: string
 }
 
+/** Whether an MCP server (an outside tool) could be reached, and what it offers. Looked at on demand, not kept between runs. */
+export type McpStatus =
+  | { state: 'unchecked' }
+  | { state: 'checking' }
+  | { state: 'ok'; tools: { name: string; description?: string }[]; at: number }
+  | { state: 'failed'; message: string; at: number }
+
+/** An MCP server as the window sees it: what it is, never the secret values (the names of the variables and headers only). */
+export interface McpServerView {
+  id: string
+  name: string
+  type: 'stdio' | 'http'
+  command?: string
+  args?: string[]
+  url?: string
+  envNames: string[]
+  headerNames: string[]
+  enabled: boolean
+  status: McpStatus
+}
+
+/** What the window sends to add or change a server. Secret values are stored by the window itself, under the main process's care. */
+export interface McpServerInput {
+  /** Absent for a new server. */
+  id?: string
+  name: string
+  type: 'stdio' | 'http'
+  command?: string
+  args?: string[]
+  url?: string
+  envNames: string[]
+  headerNames: string[]
+  enabled?: boolean
+}
+
 /** One separate copy of a project on this computer, made for a Develop session. */
 export interface WorktreeInfo {
   path: string
@@ -255,6 +290,14 @@ export interface CoreApi {
   'sessions.revertPreview': (id: string, checkpointId: string) => Promise<CheckpointChanges>
   /** Every file that differs now from how the folder was before the session's first message, without the lines. Empty when nothing was saved. */
   'sessions.netChanges': (id: string) => Promise<CheckpointChanges>
+  /** The tools (MCP servers) the person has added, shared by every vendor. */
+  'mcp.list': () => McpServerView[]
+  /** Adds a server, or changes the one with `id`. It is looked at straight after. */
+  'mcp.save': (input: McpServerInput) => Promise<McpServerView>
+  'mcp.remove': (id: string) => void
+  'mcp.setEnabled': (id: string, enabled: boolean) => McpServerView
+  /** Connects to the server, asks what tools it has, and disconnects. */
+  'mcp.test': (id: string) => Promise<McpStatus>
   /** Makes a separate copy (a git worktree) of the project in Celeste's data folder, on a new branch from its last commit. */
   'project.createWorktree': (repo: string, hint: string) => Promise<{ path: string; branch: string }>
   /** The separate copies on this computer, with what would be lost if one were removed. */
@@ -315,10 +358,11 @@ export interface CoreApi {
 }
 
 export type DeviceApi = { [K in keyof CoreApi as K extends `devices.${string}` ? K : never]: CoreApi[K] }
+export type McpApi = { [K in keyof CoreApi as K extends `mcp.${string}` ? K : never]: CoreApi[K] }
 export type VendorLinkApi = { [K in keyof CoreApi as K extends `vendor.${string}` ? K : never]: CoreApi[K] }
 export type ProjectApi = { [K in keyof CoreApi as K extends `project.${string}` ? K : never]: CoreApi[K] }
 /** The methods the session service answers. The device service and the vendor service answer the rest. */
-export type SessionApi = Omit<CoreApi, keyof DeviceApi | keyof VendorLinkApi | keyof ProjectApi>
+export type SessionApi = Omit<CoreApi, keyof DeviceApi | keyof VendorLinkApi | keyof ProjectApi | keyof McpApi>
 
 export type CoreMethod = keyof CoreApi
 export type CoreParams<M extends CoreMethod> = Parameters<CoreApi[M]>
@@ -326,6 +370,7 @@ export type CoreResult<M extends CoreMethod> = ReturnType<CoreApi[M]>
 
 export type CorePush =
   | { type: 'devices' }
+  | { type: 'mcp' }
   | { type: 'vendor'; vendor: VendorId; progress: VendorProgress }
   | { type: 'event'; sessionId: string; stored: StoredEvent }
   | { type: 'summary'; session: SessionSummary }

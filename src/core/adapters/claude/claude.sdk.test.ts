@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Resvg } from '@resvg/resvg-js'
 import type { AgentEvent, ApprovalMode } from '@shared/agent'
 import type { AdapterContext } from '../types'
+import type { ResolvedMcpServer } from '../../mcp'
 import { FakeAnthropic, type Script } from './fake-anthropic'
 import { claudeProgram, createClaudeHost, createClaudeSession, createClaudeTitler } from './index'
 import { RESUME_NOTICE, type ClaudeAgentSession } from './session'
@@ -64,7 +65,7 @@ describe.skipIf(!program)('the Claude adapter with the real Claude Code', () => 
     remembered: string[]
     set: (patch: Partial<ReturnType<AdapterContext['options']>>) => void
   }
-  const make = (over: { approval?: ApprovalMode; vendorSessionId?: string; transcript?: string; model?: string; attachmentPath?: (id: string) => string | undefined } = {}): Made => {
+  const make = (over: { approval?: ApprovalMode; vendorSessionId?: string; transcript?: string; model?: string; attachmentPath?: (id: string) => string | undefined; mcp?: ResolvedMcpServer[] } = {}): Made => {
     const remembered: string[] = []
     const options: ReturnType<AdapterContext['options']> = { model: over.model ?? 'claude:haiku', effort: null, approval: over.approval ?? 'auto', cwd: dir }
     const ctx: AdapterContext = {
@@ -78,7 +79,7 @@ describe.skipIf(!program)('the Claude adapter with the real Claude Code', () => 
       transcript: () => over.transcript ?? '',
       attachmentPath: over.attachmentPath ?? (() => undefined),
     }
-    const session = createClaudeSession(host(), ctx)
+    const session = createClaudeSession(host(), ctx, undefined, over.mcp ? async () => over.mcp as ResolvedMcpServer[] : undefined)
     open.push(session)
     return { session, remembered, set: (patch) => Object.assign(options, patch) }
   }
@@ -165,6 +166,37 @@ describe.skipIf(!program)('the Claude adapter with the real Claude Code', () => 
     expect(events[events.length - 1]).toMatchObject({ type: 'turn.completed' })
     await t.session.close()
   }, 90_000)
+
+  it('lets the agent use a tool the person added: asks first in ask mode, then the real program calls the real server', async () => {
+    const fixture = join(process.cwd(), 'scripts', 'lib', 'mcp-fixture.mjs')
+    const mcp: ResolvedMcpServer[] = [{ key: 'fixture', type: 'stdio', command: process.execPath, args: [fixture], env: { FIXTURE_TOKEN: 'from-celeste' }, headers: {} }]
+    api.setScript((r) => (r.last.kind === 'text' ? [{ type: 'tool_use', name: 'mcp__fixture__shout', input: { text: 'quiet please' } }] : [{ type: 'text', text: 'Finished' }]))
+    const t = make({ approval: 'ask', mcp })
+    const before = api.main.length
+    const events = await turn(t.session, 'use the tool', (e) => {
+      if (e.type === 'approval.requested') t.session.respond(e.requestId, { allow: true })
+    })
+    expect(events.find((e) => e.type === 'approval.requested')).toMatchObject({ kind: 'mcp' })
+    expect(api.main.length).toBeGreaterThan(before)
+    expect(api.main[api.main.length - 1]?.last).toMatchObject({ kind: 'tool_result', isError: false })
+    expect(api.main[api.main.length - 1]?.last.text).toBe('QUIET PLEASE')
+    expect(events[events.length - 1]).toMatchObject({ type: 'turn.completed' })
+
+    // The secret variable reaches the program.
+    api.setScript((r) => (r.last.kind === 'text' ? [{ type: 'tool_use', name: 'mcp__fixture__whoami', input: {} }] : [{ type: 'text', text: 'Finished' }]))
+    await turn(t.session, 'who are you', (e) => {
+      if (e.type === 'approval.requested') t.session.respond(e.requestId, { allow: true })
+    })
+    expect(api.main[api.main.length - 1]?.last.text).toBe('token=from-celeste')
+    await t.session.close()
+
+    // Without the tool added, the same call fails, and the agent is told so.
+    api.setScript((r) => (r.last.kind === 'text' ? [{ type: 'tool_use', name: 'mcp__fixture__shout', input: { text: 'x' } }] : [{ type: 'text', text: 'Finished' }]))
+    const none = make({ approval: 'auto' })
+    await turn(none.session, 'use the tool')
+    expect(api.main[api.main.length - 1]?.last).toMatchObject({ kind: 'tool_result', isError: true })
+    await none.session.close()
+  }, 150_000)
 
   it('does not write the file when the answer is no, and Claude is told', async () => {
     const target = join(dir, 'refused.txt')

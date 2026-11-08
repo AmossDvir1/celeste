@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { PanelLeft } from 'lucide-react'
 import { ChatHome } from '@/features/chat/ChatHome'
 import { AddDeviceDialog } from '@/features/devices/AddDeviceDialog'
+import { McpDialog, McpImportDialog } from '@/features/tools/McpDialog'
 import { FolderPicker } from '@/features/devices/FolderPicker'
 import { ConversationView } from '@/features/chat/ConversationView'
 import { ProjectBar } from '@/features/develop/ProjectBar'
@@ -138,6 +139,8 @@ export function App() {
         <SettingsDialog />
         <SearchDialog />
         <AddDeviceDialog />
+        <McpDialog />
+        <McpImportDialog />
         <FolderPicker />
         <Toasts />
       </div>

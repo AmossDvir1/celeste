@@ -1,6 +1,7 @@
 import { core } from '@/api'
 import { useDevices } from '@/stores/devices'
 import { useDrafts } from '@/stores/drafts'
+import { useMcp } from '@/stores/mcp'
 import { useModels } from '@/stores/models'
 import { useSessions } from '@/stores/sessions'
 import { setSaveErrorHandler, useSettings } from '@/stores/settings'
@@ -33,6 +34,7 @@ export async function bootstrap(): Promise<void> {
     useSessions.getState().applyPush(push)
     useDevices.getState().applyPush(push)
     useVendors.getState().applyPush(push)
+    useMcp.getState().applyPush(push)
   })
 
   const data = await within(core.call('app.bootstrap'), 15_000)
@@ -47,6 +49,7 @@ export async function bootstrap(): Promise<void> {
   useSessions.getState().init(data.sessions)
   useDrafts.getState().init(data.drafts)
   await useDevices.getState().refresh()
+  await useMcp.getState().refresh()
   useUi.getState().setDataDir(data.dataDir)
   useUi.getState().resetDraft()
 

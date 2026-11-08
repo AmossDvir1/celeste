@@ -20,6 +20,7 @@ import { createClaudeHost, createClaudeSession, createClaudeTitler, type ClaudeH
 import { copilotRuntime, createCopilotHost, createCopilotSession, createCopilotTitler, type CopilotHost } from './adapters/copilot'
 import { createUnavailableSession } from './adapters/unavailable'
 import { createProjectApi } from './project'
+import { McpService } from './mcp'
 import { Worktrees } from './worktrees'
 import { SessionService } from './service'
 import { VendorService } from './vendors'
@@ -114,6 +115,7 @@ async function start(): Promise<void> {
   claude = claudeHost
 
   const worktrees = new Worktrees(join(dataDir, 'worktrees'))
+  const mcp = new McpService(db, getSecret, undefined, () => push({ type: 'mcp' }))
   const claudeTitle = createClaudeTitler(claudeHost)
   const copilotTitle = createCopilotTitler(host)
 
@@ -124,9 +126,9 @@ async function start(): Promise<void> {
     // Copilot and Claude are real. OpenAI and Gemini have no adapter yet, and the window does not offer them.
     adapter: (ctx) =>
       ctx.vendor === 'copilot'
-        ? createCopilotSession(host, ctx, (id) => servers.info(id))
+        ? createCopilotSession(host, ctx, (id) => servers.info(id), () => mcp.resolved())
         : ctx.vendor === 'claude'
-          ? createClaudeSession(claudeHost, ctx, (id) => servers.info(id))
+          ? createClaudeSession(claudeHost, ctx, (id) => servers.info(id), () => mcp.resolved())
           : createUnavailableSession(ctx.vendor),
     // Develop sessions save their project folder before each message, in a private copy under the data folder.
     snapshots: new GitSnapshots(join(dataDir, 'snapshots')),
@@ -147,6 +149,7 @@ async function start(): Promise<void> {
     ...service.api,
     ...devices.api,
     ...new VendorService({ copilot: host, claude: claudeHost }, push).api,
+    ...mcp.api,
     ...createProjectApi(worktrees, (path) => {
       const s = db.listSessions().find((x) => x.cwd === path)
       return s ? { id: s.id, title: s.title } : undefined

@@ -7,7 +7,7 @@ import { app, safeStorage } from 'electron'
  * the Linux secret service). They live in this process only: the window can store and remove a secret and
  * learn its last four characters, but never read it back. If the system cannot encrypt, nothing is stored.
  */
-const NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/
+const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
 
 const path = () => join(app.getPath('userData'), 'secrets.json')
 

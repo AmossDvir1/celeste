@@ -1,6 +1,7 @@
 import { tmpdir } from 'node:os'
 import { CopilotClient, RuntimeConnection } from '@github/copilot-sdk'
 import { cheapest, titlePrompt } from '../../titles'
+import type { ResolvedMcpServer } from '../../mcp'
 import type { AdapterContext } from '../types'
 import { CopilotHost, type LoginSession, type RuntimeSource, type SdkClientHandle } from './host'
 import { downloadRuntime, findRuntime } from './runtime'
@@ -75,12 +76,14 @@ export function createCopilotTitler(host: CopilotHost): (text: string) => Promis
 export function createCopilotSession(
   host: CopilotHost,
   ctx: AdapterContext,
-  deviceServer?: (sessionId: string) => { url: string; token: string } | undefined
+  deviceServer?: (sessionId: string) => { url: string; token: string } | undefined,
+  mcpServers?: () => Promise<ResolvedMcpServer[]>
 ): CopilotAgentSession {
   return new CopilotAgentSession({
     ctx,
     client: () => host.ready(),
     resolveModel: (model, effort) => host.resolve(model, effort),
-    ...(deviceServer ? { deviceServer: () => deviceServer(ctx.sessionId) } : {})
+    ...(deviceServer ? { deviceServer: () => deviceServer(ctx.sessionId) } : {}),
+    ...(mcpServers ? { mcpServers } : {})
   })
 }

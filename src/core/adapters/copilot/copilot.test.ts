@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import type { ResumeSessionConfig, SessionConfig, SessionEvent } from '@github/copilot-sdk'
 import type { AgentEvent, ApprovalAnswer, ApprovalMode, Effort } from '@shared/agent'
 import { describe, expect, it } from 'vitest'
+import type { ResolvedMcpServer } from '../../mcp'
 import type { AdapterContext } from '../types'
 import { displayPath, parseUnifiedDiff } from './diff'
 import { CopilotHost, toModels, type SdkClientHandle } from './host'
@@ -327,7 +328,7 @@ interface Setup {
   set: (patch: Partial<ReturnType<AdapterContext['options']>>) => void
 }
 
-function setup(script: SessionEvent[], over: { approval?: ApprovalMode; vendorSessionId?: string; transcript?: string; client?: () => Promise<SdkClient>; devices?: boolean } = {}): Setup {
+function setup(script: SessionEvent[], over: { approval?: ApprovalMode; vendorSessionId?: string; transcript?: string; client?: () => Promise<SdkClient>; devices?: boolean; mcp?: () => Promise<ResolvedMcpServer[]> } = {}): Setup {
   const sdk = new FakeSdk(script)
   const remembered: string[] = []
   const options: ReturnType<AdapterContext['options']> = { model: 'claude-haiku-4.5', effort: null, approval: over.approval ?? 'auto', cwd: CWD }
@@ -346,7 +347,8 @@ function setup(script: SessionEvent[], over: { approval?: ApprovalMode; vendorSe
     ctx,
     client: over.client ?? (async () => sdk),
     resolveModel: async (model, effort) => ({ model, ...(effort ? { effort } : {}) }),
-    ...(over.devices === false ? {} : { deviceServer: () => ({ url: 'http://127.0.0.1:5555/mcp', token: 'tok' }) })
+    ...(over.devices === false ? {} : { deviceServer: () => ({ url: 'http://127.0.0.1:5555/mcp', token: 'tok' }) }),
+    ...(over.mcp ? { mcpServers: over.mcp } : {})
   })
   return { session, sdk, ctx, remembered, set: (patch) => Object.assign(options, patch) }
 }
@@ -385,6 +387,29 @@ describe('a Copilot session', () => {
     expect(t.sdk.created[0]?.config.mcpServers).toEqual({
       [DEVICE_SERVER]: { type: 'http', url: 'http://127.0.0.1:5555/mcp', headers: { Authorization: 'Bearer tok' }, tools: ['*'] }
     })
+  })
+
+  it('hands the tools the person added to Copilot beside the device tools, with their secrets', async () => {
+    const mcp = async (): Promise<ResolvedMcpServer[]> => [
+      { key: 'notes', type: 'stdio', command: 'node', args: ['notes.js'], env: { TOKEN: 'abc' }, headers: {} },
+      { key: 'wiki', type: 'http', url: 'https://wiki.example.com/mcp', args: [], env: {}, headers: { Authorization: 'Bearer xyz' } }
+    ]
+    const t = setup(fixture('basic').events, { mcp })
+    await run(t.session, 'hi')
+    expect(t.sdk.created[0]?.config.mcpServers).toEqual({
+      notes: { type: 'stdio', command: 'node', args: ['notes.js'], env: { TOKEN: 'abc' }, tools: ['*'] },
+      wiki: { type: 'http', url: 'https://wiki.example.com/mcp', headers: { Authorization: 'Bearer xyz' }, tools: ['*'] },
+      [DEVICE_SERVER]: { type: 'http', url: 'http://127.0.0.1:5555/mcp', headers: { Authorization: 'Bearer tok' }, tools: ['*'] }
+    })
+  })
+
+  it('still starts when the list of added tools cannot be read, and sends none without a tool server or a list', async () => {
+    const broken = setup(fixture('basic').events, { devices: false, mcp: async () => Promise.reject(new Error('no list')) })
+    await run(broken.session, 'hi')
+    expect(broken.sdk.created[0]?.config.mcpServers).toBeUndefined()
+    const empty = setup(fixture('basic').events, { devices: false, mcp: async () => [] })
+    await run(empty.session, 'hi')
+    expect(empty.sdk.created[0]?.config.mcpServers).toBeUndefined()
   })
 
   it('leaves the device tools out when there is no tool server', async () => {

@@ -12,6 +12,7 @@ import { useSettings, type ThemePref } from '@/stores/settings'
 import { useUi, type SettingsSection } from '@/stores/ui'
 import { useVendors } from '@/stores/vendors'
 import { DevicesSettings } from '@/features/devices/DevicesSettings'
+import { McpSettings } from '@/features/tools/McpSettings'
 import { SeparateCopies } from './SeparateCopies'
 import { VendorCard } from './VendorCard'
 
@@ -156,7 +157,6 @@ const NOTICES = [
 
 function Content({ section }: { section: SettingsSection }) {
   const settings = useSettings()
-  const setRight = useUi((s) => s.setRight)
   const closeSettings = useUi((s) => s.closeSettings)
   const setWizardOpen = useUi((s) => s.setWizardOpen)
   const pushToast = useUi((s) => s.pushToast)
@@ -249,16 +249,7 @@ function Content({ section }: { section: SettingsSection }) {
     case 'tools':
       return (
         <Section title="Tools & Integrations" description="One list of tools, shared by every vendor. Add an internal tool once and any assistant can use it.">
-          <Button
-            variant="secondary"
-            onClick={() => {
-              closeSettings()
-              setRight('tools')
-            }}
-          >
-            <Plug className="h-4 w-4" /> Open Tools &amp; Integrations
-          </Button>
-          <p className="text-[13px] text-ink-faint">The shared tool list is not built yet. Devices you attach to a chat are available now.</p>
+          <McpSettings />
         </Section>
       )
     case 'devices':

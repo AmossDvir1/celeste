@@ -509,7 +509,7 @@ Opened from the bottom-left button. Sections: General, Appearance, AI Vendors, A
 
 ### 7.9 Tools & Integrations
 
-Celeste stores one list of MCP servers and passes it to whichever vendor runs the session. MCP (Model Context Protocol) is the standard way agents connect to outside tools. Your internal tools are added once rather than per vendor. The panel matches `Design.jpeg`, with search and connection status. Phase 1 shows the pictured list as mock data.
+Celeste stores one list of MCP servers and passes it to whichever vendor runs the session. MCP (Model Context Protocol) is the standard way agents connect to outside tools. Your internal tools are added once rather than per vendor. **Built in Phase 6, step 5:** Settings, Tools & Integrations manages the list, and the Tools panel beside a chat shows each tool's status with a switch (see the Phase 6 notes).
 
 Celeste also runs a small MCP server of its own, for `ask_user` on vendors with no native version, and for the device tools in section 7.11. **Verify** long-wait behavior, because some MCP clients time out on tool calls that wait for a person.
 
@@ -922,7 +922,7 @@ What was built, and the choices made along the way:
 - **Sign-out.** Not offered, see Disconnect above.
 - **The download on macOS and Linux**, and a download started from an installed app. Only the Windows copy was downloaded, and the installed layout was checked to report "not downloaded yet" rather than fail.
 - **Develop-mode extras** (diff review as a screen of its own, per-turn snapshots and revert, git worktrees) are Phase 6. Edits already show their diff in the timeline.
-- **Copilot's own tools beyond these** (its MCP servers and plugins) are not configured from Celeste yet; that is Phase 6.
+- **Copilot's own tools beyond these** (its own plugins) are not configured from Celeste. The tools added in Settings, Tools & Integrations are passed to it (Phase 6, step 5).
 - **The other three vendors** still play the scripted assistant, and their Connect buttons still play the scripted steps.
 - **A cost note.** Every real turn uses your Copilot plan's premium requests. The default model is Auto. The checks above use Claude Haiku 4.5.
 
@@ -982,7 +982,17 @@ A short test against each real CLI to settle the **Verify** items, starting with
 
 **Done when:** a real change can be made, reviewed and reverted in Develop, and a real internal MCP server works with every vendor.
 
-**Status: steps 1 to 4 of 6 are built (checkpoints and revert, the review screen, the file tree, separate copies; 8 November 2026).** CI on GitHub passes on Ubuntu and Windows for steps 1 and 2. Order of work: (1) per-turn checkpoints and revert, (2) a review screen for changes, (3) a real file tree, (4) git worktrees, (5) MCP configuration, (6) the terminal and Chat file cards.
+**Status: steps 1 to 5 of 6 are built (checkpoints and revert, the review screen, the file tree, separate copies, MCP tools; 8 November 2026).** CI on GitHub passes on Ubuntu and Windows for steps 1 and 2. Order of work: (1) per-turn checkpoints and revert, (2) a review screen for changes, (3) a real file tree, (4) git worktrees, (5) MCP configuration, (6) the terminal and Chat file cards.
+
+*Tools, MCP configuration* (`src/core/mcp.ts`, `src/shared/mcp.ts`, `features/tools/`):
+
+- **One list for every vendor.** The person adds a tool once, and every chat that starts afterwards gets it, whichever vendor runs it. A tool is a **program** Celeste starts (command, arguments, secret variables) or a **web address** (with secret headers). Claude gets it as `mcpServers` of the SDK and Copilot as `mcpServers` of the session config (`tools: ['*']`, since what is asked first is decided by the approval mode, as for any tool). The list is kept in Core's settings (names only), so there is no database change.
+- **Secrets.** A variable's or header's value is stored by the window in the encrypted store of the main process (`mcp.<id>.env.<NAME>`), which Core reads when it starts a session or tests a tool. The window can store and remove them but never read them back; an edit dialog says "Saved. Leave empty to keep it." and the list shows names only.
+- **Status that is true.** "Check again", and a check right after adding or changing, really connects with the official MCP client (starting the program, or opening the address, with Streamable HTTP and a fallback to SSE), asks for the tools, and stops again. The result is "Working · N tools" with each tool and what it does, or "Not working" with the reason, including what the program printed. Nothing is started just by opening Celeste, so the status after a restart is "Not checked" until asked.
+- **Adding.** A dialog (program or web address, with arguments as one line that understands quotes), or **Paste a configuration**, which reads the `mcpServers` of a `.mcp.json` or one server's snippet, names what it found and what it left out and why, and stores the values in it as secrets. A tool cannot take the name `celeste-devices` (Celeste's own device server), and names are unique.
+- **Changes apply to chats that start afterwards.** A running chat keeps the tools it started with; the Tools panel says so. Switching a tool off leaves it out of new chats without removing it. Removing it deletes its stored secrets after a confirmation.
+- **Checks.** 16 tests with real MCP servers (the fixture `scripts/lib/mcp-fixture.mjs`, over stdio and over HTTP behind a header gate): validation, persistence, secrets reaching the program, programs that are missing, that quit, or that never answer, the HTTP header, and what a vendor is handed; a Claude test where the real program calls the real tool through the stand-in API (asking first in Ask mode, the secret arriving in the program's environment); a Copilot test of the config it is given; and `verify:mcp` in the real app: add, see its tools, name clashes, a broken program saying why, change, paste, remove, no secret in the data folder in the clear, the assistant calling the tool in a chat, a switched-off tool not offered, a new chat getting a tool switched back on, and everything after a restart.
+- **Not done.** A live run against a real Copilot or Claude account (only the shape Copilot is handed is tested), per-tool allow lists, OAuth sign-in for web-address tools, and a running chat picking up a change without restarting.
 
 *Separate copies, git worktrees* (`src/core/worktrees.ts`, `SeparateCopies.tsx`):
 
