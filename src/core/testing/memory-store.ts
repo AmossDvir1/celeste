@@ -1,6 +1,7 @@
 import type { DraftState, LogEvent, SearchHit, StoredEvent } from '@shared/api'
 import type { DeviceActivity, DeviceFolder, DeviceRecord } from '@shared/devices'
-import type { AttachmentRow, FileStore, IndexKind, SessionRow, StoredFolder, Store } from '../store'
+import type { RunEvent, RunSummary, StoredRunEvent, WorkflowDefinition } from '@shared/workflow'
+import type { AttachmentRow, FileStore, IndexKind, SessionRow, StoredFolder, Store, WorkflowRow } from '../store'
 
 const fold = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
 
@@ -20,6 +21,76 @@ export class MemoryStore implements Store {
   private folders = new Map<string, StoredFolder>()
   private acts: DeviceActivity[] = []
   private actId = 0
+
+  private wfs = new Map<string, WorkflowRow>()
+  private wfVersions = new Map<string, Map<number, { definition: WorkflowDefinition; createdAt: number }>>()
+  private runRows = new Map<string, RunSummary>()
+  private runLogs = new Map<string, StoredRunEvent[]>()
+  private runOrder: string[] = []
+
+  listWorkflows(): WorkflowRow[] {
+    return [...this.wfs.values()].sort((a, b) => b.updatedAt - a.updatedAt).map((w) => structuredClone(w))
+  }
+  getWorkflow(id: string): WorkflowRow | undefined {
+    const w = this.wfs.get(id)
+    return w && structuredClone(w)
+  }
+  saveWorkflow(w: WorkflowRow): void {
+    this.wfs.set(w.id, structuredClone(w))
+    const versions = this.wfVersions.get(w.id) ?? new Map()
+    if (!versions.has(w.version)) versions.set(w.version, { definition: structuredClone(w.definition), createdAt: w.updatedAt })
+    this.wfVersions.set(w.id, versions)
+  }
+  deleteWorkflow(id: string): void {
+    this.wfs.delete(id)
+    this.wfVersions.delete(id)
+    for (const [runId, run] of this.runRows) {
+      if (run.workflowId !== id) continue
+      this.runRows.delete(runId)
+      this.runLogs.delete(runId)
+      this.runOrder = this.runOrder.filter((r) => r !== runId)
+    }
+  }
+  workflowVersions(id: string): { version: number; createdAt: number }[] {
+    return [...(this.wfVersions.get(id) ?? [])].map(([version, v]) => ({ version, createdAt: v.createdAt })).sort((a, b) => b.version - a.version)
+  }
+  workflowVersion(id: string, version: number): WorkflowDefinition | undefined {
+    const v = this.wfVersions.get(id)?.get(version)
+    return v && structuredClone(v.definition)
+  }
+  insertRun(run: RunSummary): void {
+    this.runRows.set(run.id, structuredClone(run))
+    this.runLogs.set(run.id, [])
+    this.runOrder.push(run.id)
+  }
+  patchRun(id: string, patch: Partial<Pick<RunSummary, 'status' | 'finishedAt' | 'output' | 'error'>>): void {
+    const run = this.runRows.get(id)
+    if (!run) return
+    for (const [key, value] of Object.entries(patch)) if (value !== undefined) (run as unknown as Record<string, unknown>)[key] = value
+  }
+  getRun(id: string): RunSummary | undefined {
+    const r = this.runRows.get(id)
+    return r && structuredClone(r)
+  }
+  listRuns(workflowId: string | undefined, limit: number): RunSummary[] {
+    return [...this.runOrder]
+      .reverse()
+      .map((id) => this.runRows.get(id) as RunSummary)
+      .filter((r) => !workflowId || r.workflowId === workflowId)
+      .sort((a, b) => b.startedAt - a.startedAt)
+      .slice(0, limit)
+      .map((r) => structuredClone(r))
+  }
+  appendRunEvent(runId: string, at: number, event: RunEvent): StoredRunEvent {
+    const log = this.runLogs.get(runId) ?? []
+    const stored = { seq: log.length + 1, at, event: structuredClone(event) }
+    log.push(stored)
+    this.runLogs.set(runId, log)
+    return structuredClone(stored)
+  }
+  runEvents(runId: string, afterSeq = 0): StoredRunEvent[] {
+    return (this.runLogs.get(runId) ?? []).filter((e) => e.seq > afterSeq).map((e) => structuredClone(e))
+  }
 
   insertSession(row: SessionRow): void {
     if (this.sessions.has(row.id)) throw new Error(`Session ${row.id} exists`)

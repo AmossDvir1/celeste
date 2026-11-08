@@ -1,5 +1,6 @@
 import type { DraftState, LogEvent, SearchHit, SessionSummary, StoredEvent } from '@shared/api'
 import type { DeviceActivity, DeviceFolder, DeviceRecord } from '@shared/devices'
+import type { RunSummary, StoredRunEvent, RunEvent, WorkflowDefinition } from '@shared/workflow'
 
 /** A session as stored. `deletedAt` is set between Delete and the end of the undo window. */
 export interface SessionRow extends SessionSummary {
@@ -75,7 +76,36 @@ export interface Store {
   addActivity(row: Omit<DeviceActivity, 'id'>): void
   activity(deviceId: string, limit: number): DeviceActivity[]
 
+  listWorkflows(): WorkflowRow[]
+  getWorkflow(id: string): WorkflowRow | undefined
+  /** Inserts or replaces the workflow. When `row.version` is new, that version's definition is kept too, so it can be run or restored later. */
+  saveWorkflow(row: WorkflowRow): void
+  /** Removes the workflow with its versions and its runs. */
+  deleteWorkflow(id: string): void
+  workflowVersions(id: string): { version: number; createdAt: number }[]
+  workflowVersion(id: string, version: number): WorkflowDefinition | undefined
+
+  insertRun(run: RunSummary): void
+  patchRun(id: string, patch: Partial<Pick<RunSummary, 'status' | 'finishedAt' | 'output' | 'error'>>): void
+  getRun(id: string): RunSummary | undefined
+  /** Newest first. */
+  listRuns(workflowId: string | undefined, limit: number): RunSummary[]
+  appendRunEvent(runId: string, at: number, event: RunEvent): StoredRunEvent
+  runEvents(runId: string, afterSeq?: number): StoredRunEvent[]
+
   close(): void
+}
+
+/** A workflow as stored: the newest version's definition, and how the assistant may use it. */
+export interface WorkflowRow {
+  id: string
+  name: string
+  description: string
+  version: number
+  allowAssistant: boolean
+  definition: WorkflowDefinition
+  createdAt: number
+  updatedAt: number
 }
 
 /** A folder as stored: with where its snapshot copy lives on this computer, which the window never sees. */

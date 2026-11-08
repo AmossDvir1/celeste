@@ -4,7 +4,8 @@ import type { ApprovalMode, Effort, SessionMode, VendorId } from '@shared/agent'
 import type { DraftState, LogEvent, SearchHit, SessionStatus, StoredEvent } from '@shared/api'
 import type { AccessLevel, AuthMethod, DeviceActivity, DeviceFolder, DeviceKind, DeviceOs, DeviceRecord, DeviceShell, FolderMode } from '@shared/devices'
 import { MIGRATIONS } from './migrations'
-import { toMatchQuery, type AttachmentRow, type IndexKind, type SessionRow, type StoredFolder, type Store } from './store'
+import type { RunEvent, RunSummary, StoredRunEvent, WorkflowDefinition } from '@shared/workflow'
+import { toMatchQuery, type AttachmentRow, type IndexKind, type SessionRow, type StoredFolder, type Store, type WorkflowRow } from './store'
 
 type Row = Record<string, unknown>
 
@@ -101,6 +102,37 @@ function folderFrom(r: Row): StoredFolder {
     bytes: r.bytes as number,
     files: r.files as number,
     createdAt: r.created_at as number
+  }
+}
+
+function workflowFrom(r: Row): WorkflowRow {
+  return {
+    id: r.id as string,
+    name: r.name as string,
+    description: r.description as string,
+    version: r.version as number,
+    allowAssistant: r.allow_assistant === 1,
+    definition: JSON.parse(r.definition_json as string) as WorkflowDefinition,
+    createdAt: r.created_at as number,
+    updatedAt: r.updated_at as number
+  }
+}
+
+function runFrom(r: Row): RunSummary {
+  return {
+    id: r.id as string,
+    workflowId: r.workflow_id as string,
+    workflowName: r.workflow_name as string,
+    version: r.version as number,
+    status: r.status as RunSummary['status'],
+    startedBy: r.started_by as RunSummary['startedBy'],
+    inputs: JSON.parse(r.inputs_json as string) as RunSummary['inputs'],
+    ...(r.session_id ? { sessionId: r.session_id as string } : {}),
+    folder: r.folder as string,
+    startedAt: r.started_at as number,
+    ...(r.finished_at !== null ? { finishedAt: r.finished_at as number } : {}),
+    ...(r.output !== null ? { output: r.output as string } : {}),
+    ...(r.error !== null ? { error: r.error as string } : {})
   }
 }
 
@@ -333,6 +365,86 @@ export class SqliteStore implements Store {
 
   unlinkedAttachments(): AttachmentRow[] {
     return this.all('SELECT * FROM attachments WHERE session_id IS NULL').map(attachmentFrom)
+  }
+
+  listWorkflows(): WorkflowRow[] {
+    return this.all('SELECT * FROM workflows ORDER BY updated_at DESC').map(workflowFrom)
+  }
+
+  getWorkflow(id: string): WorkflowRow | undefined {
+    const r = this.get('SELECT * FROM workflows WHERE id = ?', id)
+    return r && workflowFrom(r)
+  }
+
+  saveWorkflow(w: WorkflowRow): void {
+    const json = JSON.stringify(w.definition)
+    this.run(
+      `INSERT INTO workflows (id, name, description, version, allow_assistant, definition_json, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (id) DO UPDATE SET name = excluded.name, description = excluded.description, version = excluded.version,
+         allow_assistant = excluded.allow_assistant, definition_json = excluded.definition_json, updated_at = excluded.updated_at`,
+      w.id, w.name, w.description, w.version, w.allowAssistant ? 1 : 0, json, w.createdAt, w.updatedAt
+    )
+    this.run('INSERT OR IGNORE INTO workflow_versions (workflow_id, version, definition_json, created_at) VALUES (?, ?, ?, ?)', w.id, w.version, json, w.updatedAt)
+  }
+
+  deleteWorkflow(id: string): void {
+    this.run('DELETE FROM workflows WHERE id = ?', id)
+  }
+
+  workflowVersions(id: string): { version: number; createdAt: number }[] {
+    return this.all('SELECT version, created_at FROM workflow_versions WHERE workflow_id = ? ORDER BY version DESC', id).map((r) => ({ version: r.version as number, createdAt: r.created_at as number }))
+  }
+
+  workflowVersion(id: string, version: number): WorkflowDefinition | undefined {
+    const r = this.get('SELECT definition_json FROM workflow_versions WHERE workflow_id = ? AND version = ?', id, version)
+    return r && (JSON.parse(r.definition_json as string) as WorkflowDefinition)
+  }
+
+  insertRun(r: RunSummary): void {
+    this.run(
+      `INSERT INTO workflow_runs (id, workflow_id, workflow_name, version, status, started_by, inputs_json, session_id, folder, started_at, finished_at, output, error)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      r.id, r.workflowId, r.workflowName, r.version, r.status, r.startedBy, JSON.stringify(r.inputs), r.sessionId ?? null, r.folder, r.startedAt, r.finishedAt ?? null, r.output ?? null, r.error ?? null
+    )
+  }
+
+  patchRun(id: string, patch: Partial<Pick<RunSummary, 'status' | 'finishedAt' | 'output' | 'error'>>): void {
+    const columns: Record<string, string> = { status: 'status', finishedAt: 'finished_at', output: 'output', error: 'error' }
+    const sets: string[] = []
+    const values: unknown[] = []
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === undefined || !columns[key]) continue
+      sets.push(`${columns[key]} = ?`)
+      values.push(value)
+    }
+    if (sets.length) this.run(`UPDATE workflow_runs SET ${sets.join(', ')} WHERE id = ?`, ...values, id)
+  }
+
+  getRun(id: string): RunSummary | undefined {
+    const r = this.get('SELECT * FROM workflow_runs WHERE id = ?', id)
+    return r && runFrom(r)
+  }
+
+  listRuns(workflowId: string | undefined, limit: number): RunSummary[] {
+    const rows = workflowId
+      ? this.all('SELECT * FROM workflow_runs WHERE workflow_id = ? ORDER BY started_at DESC, rowid DESC LIMIT ?', workflowId, limit)
+      : this.all('SELECT * FROM workflow_runs ORDER BY started_at DESC, rowid DESC LIMIT ?', limit)
+    return rows.map(runFrom)
+  }
+
+  appendRunEvent(runId: string, at: number, event: RunEvent): StoredRunEvent {
+    const next = ((this.get('SELECT MAX(seq) AS seq FROM run_events WHERE run_id = ?', runId)?.seq as number | null) ?? 0) + 1
+    this.run('INSERT INTO run_events (run_id, seq, payload_json, created_at) VALUES (?, ?, ?, ?)', runId, next, JSON.stringify(event), at)
+    return { seq: next, at, event }
+  }
+
+  runEvents(runId: string, afterSeq = 0): StoredRunEvent[] {
+    return this.all('SELECT seq, payload_json, created_at FROM run_events WHERE run_id = ? AND seq > ? ORDER BY seq', runId, afterSeq).map((r) => ({
+      seq: r.seq as number,
+      at: r.created_at as number,
+      event: JSON.parse(r.payload_json as string) as RunEvent
+    }))
   }
 
   listDevices(): DeviceRecord[] {

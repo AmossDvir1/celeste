@@ -23,7 +23,12 @@ import { OWN_CLAUDE } from './adapters/claude/program'
 import { OWN_COPILOT } from './adapters/copilot/runtime'
 import { createUnavailableSession } from './adapters/unavailable'
 import { createProjectApi } from './project'
-import { McpService } from './mcp'
+import { callTool, McpService } from './mcp'
+import { serverKey } from '@shared/mcp'
+import { createAgentStepRunner } from './workflows/agent-step'
+import { WorkflowRunner } from './workflows/runner'
+import { WorkflowService } from './workflows/service'
+import type { AdapterFactory } from './adapters/types'
 import { TerminalService } from './terminal'
 import { Worktrees } from './worktrees'
 import { SessionService } from './service'
@@ -129,6 +134,13 @@ async function start(): Promise<void> {
 
   const worktrees = new Worktrees(join(dataDir, 'worktrees'))
   const mcp = new McpService(db, getSecret, undefined, () => push({ type: 'mcp' }))
+  // The same adapters serve chats and the agent steps of workflows.
+  const adapterFor: AdapterFactory = (ctx) =>
+    ctx.vendor === 'copilot'
+      ? createCopilotSession(host, ctx, (id) => servers.info(id), () => mcp.resolved())
+      : ctx.vendor === 'claude'
+        ? createClaudeSession(claudeHost, ctx, (id) => servers.info(id), () => mcp.resolved())
+        : createUnavailableSession(ctx.vendor)
   const claudeTitle = createClaudeTitler(claudeHost)
   const copilotTitle = createCopilotTitler(host)
 
@@ -137,12 +149,7 @@ async function start(): Promise<void> {
     files: new DiskFileStore(join(dataDir, 'attachments')),
     dataDir,
     // Copilot and Claude are real. OpenAI and Gemini have no adapter yet, and the window does not offer them.
-    adapter: (ctx) =>
-      ctx.vendor === 'copilot'
-        ? createCopilotSession(host, ctx, (id) => servers.info(id), () => mcp.resolved())
-        : ctx.vendor === 'claude'
-          ? createClaudeSession(claudeHost, ctx, (id) => servers.info(id), () => mcp.resolved())
-          : createUnavailableSession(ctx.vendor),
+    adapter: adapterFor,
     // Develop sessions save their project folder before each message, in a private copy under the data folder.
     snapshots: new GitSnapshots(join(dataDir, 'snapshots')),
     // A new session is named by a small model of its own vendor; the other vendors have no adapter yet.
@@ -158,6 +165,40 @@ async function start(): Promise<void> {
     },
   })
   service.init()
+  const runner = new WorkflowRunner({
+    store: db,
+    push,
+    agent: createAgentStepRunner({
+      adapter: adapterFor,
+      // A step that names no model uses the first vendor that is ready, with the model that vendor calls automatic or lists first.
+      defaults: async () => {
+        for (const vendor of ['copilot', 'claude'] as const) {
+          const h = vendor === 'copilot' ? host : claudeHost
+          if ((await h.status().catch(() => undefined))?.state !== 'signed-in') continue
+          const models = await h.models().catch(() => [])
+          const pick = models.find((m) => m.id === 'auto' || m.id === 'copilot-auto') ?? models[0]
+          if (pick) return { vendor, model: pick.id }
+        }
+        throw new Error('No assistant is connected. Connect one in Settings, AI vendors.')
+      }
+    }),
+    mcp: {
+      find: async (name) => (await mcp.resolved()).find((s) => s.key === serverKey(name) || s.key === name),
+      call: (server, tool, args, timeoutMs, signal) => callTool(server, tool, args, timeoutMs, signal)
+    },
+    devices: {
+      get: (id) => db.getDevice(id),
+      run: async (device, command, { timeoutMs, signal }) => {
+        const connector = await (devices as DeviceService).connector(device)
+        const r = await connector.run(command, { timeoutMs, maxBytes: 200_000, signal })
+        const known = devices as DeviceService
+        known.record(device.id, null, 'workflow', command, r.exitCode === 0, Buffer.byteLength(r.output))
+        return { output: r.output, exitCode: r.exitCode, timedOut: r.timedOut, cancelled: r.cancelled }
+      }
+    }
+  })
+  runner.markAbandoned()
+  const workflows = new WorkflowService(db, runner, undefined, () => push({ type: 'workflows' }))
   const terminals = new TerminalService({ folderOf: (id) => (service as SessionService).projectFolder(id), push })
   terminalsRef = terminals
   api = {
@@ -174,6 +215,7 @@ async function start(): Promise<void> {
     ...devices.api,
     ...new VendorService({ copilot: host, claude: claudeHost }, push, ownPrograms).api,
     ...mcp.api,
+    ...workflows.api,
     ...terminals.api,
     ...createProjectApi(worktrees, (path) => {
       const s = db.listSessions().find((x) => x.cwd === path)

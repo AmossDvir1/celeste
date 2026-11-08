@@ -91,6 +91,23 @@ function clean(input: McpServerInput, existing: Stored[]): Stored {
 
 /** Connects once, asks for the tools, and leaves. Everything it started is stopped again. */
 export async function probe(server: ResolvedMcpServer, timeoutMs = TEST_TIMEOUT_MS): Promise<{ name: string; description?: string }[]> {
+  return withClient(server, timeoutMs, async (client, limit) => {
+    const { tools } = await limit(client.listTools(), 'Asking for the tools')
+    return tools.map((t) => ({ name: t.name, ...(t.description ? { description: t.description } : {}) }))
+  })
+}
+
+/** Calls one tool of a server and returns what it said as text. `isError` is the server's own report that the tool failed. */
+export async function callTool(server: ResolvedMcpServer, tool: string, args: Record<string, unknown>, timeoutMs: number, signal?: AbortSignal): Promise<{ text: string; isError: boolean }> {
+  return withClient(server, timeoutMs, async (client, limit) => {
+    const result = await limit(client.callTool({ name: tool, arguments: args }, undefined, { signal, timeout: timeoutMs }), `The tool “${tool}”`)
+    const content = Array.isArray(result.content) ? (result.content as { type: string; text?: string }[]) : []
+    const text = content.filter((c) => c.type === 'text').map((c) => c.text ?? '').join('\n')
+    return { text, isError: result.isError === true }
+  })
+}
+
+async function withClient<T>(server: ResolvedMcpServer, timeoutMs: number, op: (client: Client, limit: <V>(p: Promise<V>, what: string) => Promise<V>) => Promise<T>): Promise<T> {
   const limit = <T>(promise: Promise<T>, what: string): Promise<T> => {
     let timer: ReturnType<typeof setTimeout> | undefined
     const late = new Promise<never>((_, reject) => {
@@ -98,15 +115,14 @@ export async function probe(server: ResolvedMcpServer, timeoutMs = TEST_TIMEOUT_
     })
     return Promise.race([promise, late]).finally(() => clearTimeout(timer))
   }
-  const ask = async (make: () => ConstructorParameters<typeof Client> extends never ? never : unknown): Promise<{ name: string; description?: string }[]> => {
+  const ask = async (make: () => ConstructorParameters<typeof Client> extends never ? never : unknown): Promise<T> => {
     const client = new Client({ name: 'celeste', version: '1.0.0' })
     const transport = make() as Parameters<Client['connect']>[0] & { stderr?: NodeJS.ReadableStream | null }
     let said = ''
     transport.stderr?.on('data', (b: Buffer) => (said = (said + b.toString('utf8')).slice(-1500)))
     try {
       await limit(client.connect(transport), 'Connecting')
-      const { tools } = await limit(client.listTools(), 'Asking for the tools')
-      return tools.map((t) => ({ name: t.name, ...(t.description ? { description: t.description } : {}) }))
+      return await op(client, limit)
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err)
       throw new Error(said.trim() ? `${reason} The program said: ${said.trim().split('\n').slice(-3).join(' ')}` : reason)

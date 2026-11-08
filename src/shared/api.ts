@@ -15,6 +15,7 @@ import type {
   TestResult
 } from './devices'
 import type { ProducedFile } from './produced'
+import type { RunSummary, StoredRunEvent, WorkflowDefinition, WorkflowFull, WorkflowSummary } from './workflow'
 import type {
   AgentEvent,
   ApprovalAnswer,
@@ -320,6 +321,23 @@ export interface CoreApi {
   'terminal.resize': (sessionId: string, cols: number, rows: number) => Promise<void>
   /** Ends the session's shell. */
   'terminal.close': (sessionId: string) => Promise<void>
+  'workflows.list': () => WorkflowSummary[]
+  'workflows.get': (id: string) => WorkflowFull | null
+  /** Saves a workflow: a new one when `id` is absent. A change to the steps makes a new version. Throws a sentence when it is not valid. */
+  'workflows.save': (input: { id?: string; name: string; description?: string; definition: WorkflowDefinition }) => WorkflowFull
+  /** Lets the assistant start this workflow (after Celeste asks), or stops it. */
+  'workflows.setAssistant': (id: string, allow: boolean) => WorkflowSummary
+  /** Deletes the workflow, its versions and its runs. A run in progress is stopped first. */
+  'workflows.remove': (id: string) => Promise<void>
+  'workflows.versions': (id: string) => { version: number; createdAt: number }[]
+  'workflows.version': (id: string, version: number) => WorkflowDefinition | null
+  /** Starts a run in a folder of the person's choosing and answers at once; the run reports through `run` and `runEvent` pushes. */
+  'workflows.run': (id: string, inputs: Record<string, unknown>, where: { folder: string; sessionId?: string }) => Promise<RunSummary>
+  'runs.list': (workflowId?: string) => RunSummary[]
+  'runs.get': (id: string) => { summary: RunSummary; events: StoredRunEvent[] } | null
+  'runs.cancel': (id: string) => Promise<void>
+  'runs.respondApproval': (runId: string, requestId: string, allow: boolean) => void
+  'runs.respondAsk': (runId: string, requestId: string, answers: AskAnswers) => void
   /** The tools (MCP servers) the person has added, shared by every vendor. */
   'mcp.list': () => McpServerView[]
   /** Adds a server, or changes the one with `id`. It is looked at straight after. */
@@ -388,12 +406,13 @@ export interface CoreApi {
 }
 
 export type DeviceApi = { [K in keyof CoreApi as K extends `devices.${string}` ? K : never]: CoreApi[K] }
+export type WorkflowApi = { [K in keyof CoreApi as K extends `workflows.${string}` | `runs.${string}` ? K : never]: CoreApi[K] }
 export type TerminalApi = { [K in keyof CoreApi as K extends `terminal.${string}` ? K : never]: CoreApi[K] }
 export type McpApi = { [K in keyof CoreApi as K extends `mcp.${string}` ? K : never]: CoreApi[K] }
 export type VendorLinkApi = { [K in keyof CoreApi as K extends `vendor.${string}` ? K : never]: CoreApi[K] }
 export type ProjectApi = { [K in keyof CoreApi as K extends `project.${string}` ? K : never]: CoreApi[K] }
 /** The methods the session service answers. The device service and the vendor service answer the rest. */
-export type SessionApi = Omit<CoreApi, keyof DeviceApi | keyof VendorLinkApi | keyof ProjectApi | keyof McpApi | keyof TerminalApi>
+export type SessionApi = Omit<CoreApi, keyof DeviceApi | keyof VendorLinkApi | keyof ProjectApi | keyof McpApi | keyof TerminalApi | keyof WorkflowApi>
 
 export type CoreMethod = keyof CoreApi
 export type CoreParams<M extends CoreMethod> = Parameters<CoreApi[M]>
@@ -402,6 +421,12 @@ export type CoreResult<M extends CoreMethod> = ReturnType<CoreApi[M]>
 export type CorePush =
   | { type: 'devices' }
   | { type: 'mcp' }
+  /** The list of workflows changed. */
+  | { type: 'workflows' }
+  /** A workflow run was created or changed. */
+  | { type: 'run'; run: RunSummary }
+  /** Something happened in a run; `stored` is its place in the run's log. */
+  | { type: 'runEvent'; runId: string; stored: StoredRunEvent }
   /** Output from a session's shell; `exited` is set once, when the shell ends. */
   | { type: 'terminal'; sessionId: string; data: string; exited?: number }
   | { type: 'vendor'; vendor: VendorId; progress: VendorProgress }

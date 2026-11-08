@@ -4,7 +4,8 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { MemoryStore } from './testing/memory-store'
 import { SqliteStore } from './sqlite-store'
-import type { AttachmentRow, SessionRow, Store } from './store'
+import type { RunSummary, WorkflowDefinition } from '@shared/workflow'
+import type { AttachmentRow, SessionRow, Store, WorkflowRow } from './store'
 
 const session = (over: Partial<SessionRow> = {}): SessionRow => ({
   id: 's1',
@@ -230,5 +231,55 @@ describe.each(factories)('%s', (_name, make) => {
 
     expect(s.deleteAttachment('b')?.file).toBe('b.png')
     expect(s.deleteAttachment('b')).toBeUndefined()
+  })
+
+  it('keeps workflows and every saved version, and removes a workflow with its runs', () => {
+    const s = make()
+    const def = (name: string): WorkflowDefinition => ({
+      nodes: [
+        { id: 'start', type: 'start', name: 'Start', inputs: [] },
+        { id: 'end', type: 'end', name: name }
+      ],
+      edges: [{ from: 'start', to: 'end' }]
+    })
+    const row = (over: Partial<WorkflowRow> = {}): WorkflowRow => ({ id: 'w1', name: 'Update KBs', description: '', version: 1, allowAssistant: false, definition: def('v1'), createdAt: 10, updatedAt: 10, ...over })
+    s.saveWorkflow(row())
+    s.saveWorkflow(row({ id: 'w2', name: 'Other', updatedAt: 5 }))
+    s.saveWorkflow(row({ version: 2, allowAssistant: true, definition: def('v2'), updatedAt: 20 }))
+    expect(s.listWorkflows().map((w) => w.id)).toEqual(['w1', 'w2'])
+    expect(s.getWorkflow('w1')).toMatchObject({ version: 2, allowAssistant: true, updatedAt: 20, createdAt: 10 })
+    expect(s.workflowVersions('w1')).toEqual([
+      { version: 2, createdAt: 20 },
+      { version: 1, createdAt: 10 }
+    ])
+    expect(s.workflowVersion('w1', 1)?.nodes[1]).toMatchObject({ name: 'v1' })
+    expect(s.workflowVersion('w1', 2)?.nodes[1]).toMatchObject({ name: 'v2' })
+    expect(s.workflowVersion('w1', 3)).toBeUndefined()
+
+    const run = (over: Partial<RunSummary> = {}): RunSummary => ({ id: 'r1', workflowId: 'w1', workflowName: 'Update KBs', version: 2, status: 'running', startedBy: 'you', inputs: { days: 30 }, folder: 'D:\\Work', startedAt: 100, ...over })
+    s.insertRun(run())
+    s.insertRun(run({ id: 'r2', startedAt: 200, sessionId: 's1', startedBy: 'menu' }))
+    s.insertRun(run({ id: 'r3', workflowId: 'w2', startedAt: 300 }))
+    s.patchRun('r1', { status: 'completed', finishedAt: 150, output: 'done' })
+    s.patchRun('r2', { status: 'failed', error: 'It broke.' })
+    expect(s.getRun('r1')).toMatchObject({ status: 'completed', finishedAt: 150, output: 'done', inputs: { days: 30 } })
+    expect(s.getRun('r1')).not.toHaveProperty('sessionId')
+    expect(s.getRun('r2')).toMatchObject({ sessionId: 's1', startedBy: 'menu', error: 'It broke.' })
+    expect(s.listRuns('w1', 10).map((r) => r.id)).toEqual(['r2', 'r1'])
+    expect(s.listRuns(undefined, 2).map((r) => r.id)).toEqual(['r3', 'r2'])
+
+    expect(s.appendRunEvent('r1', 1, { type: 'run.started', inputs: {} }).seq).toBe(1)
+    expect(s.appendRunEvent('r1', 2, { type: 'node.started', nodeId: 'a', attempt: 1 }).seq).toBe(2)
+    s.appendRunEvent('r1', 3, { type: 'run.completed', output: 'done' })
+    expect(s.runEvents('r1').map((e) => e.event.type)).toEqual(['run.started', 'node.started', 'run.completed'])
+    expect(s.runEvents('r1', 2).map((e) => e.seq)).toEqual([3])
+
+    s.deleteWorkflow('w1')
+    expect(s.getWorkflow('w1')).toBeUndefined()
+    expect(s.workflowVersions('w1')).toEqual([])
+    expect(s.getRun('r1')).toBeUndefined()
+    expect(s.runEvents('r1')).toEqual([])
+    expect(s.listRuns(undefined, 10).map((r) => r.id)).toEqual(['r3'])
+    expect(s.getWorkflow('w2')).toBeDefined()
   })
 })

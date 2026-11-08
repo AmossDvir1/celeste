@@ -123,5 +123,52 @@ export const MIGRATIONS: string[] = [
     WHEN model LIKE 'openai-%' THEN 'openai'
     WHEN model LIKE 'gemini-%' THEN 'gemini'
     ELSE 'copilot' END;
+  `,
+
+  // 4: workflows, their saved versions, their runs and what happened in each run
+  `
+  CREATE TABLE workflows (
+    id               TEXT PRIMARY KEY,
+    name             TEXT NOT NULL,
+    description      TEXT NOT NULL DEFAULT '',
+    version          INTEGER NOT NULL,
+    allow_assistant  INTEGER NOT NULL DEFAULT 0,
+    definition_json  TEXT NOT NULL,
+    created_at       INTEGER NOT NULL,
+    updated_at       INTEGER NOT NULL
+  );
+
+  CREATE TABLE workflow_versions (
+    workflow_id      TEXT NOT NULL REFERENCES workflows (id) ON DELETE CASCADE,
+    version          INTEGER NOT NULL,
+    definition_json  TEXT NOT NULL,
+    created_at       INTEGER NOT NULL,
+    PRIMARY KEY (workflow_id, version)
+  ) WITHOUT ROWID;
+
+  CREATE TABLE workflow_runs (
+    id             TEXT PRIMARY KEY,
+    workflow_id    TEXT NOT NULL REFERENCES workflows (id) ON DELETE CASCADE,
+    workflow_name  TEXT NOT NULL,
+    version        INTEGER NOT NULL,
+    status         TEXT NOT NULL,
+    started_by     TEXT NOT NULL,
+    inputs_json    TEXT NOT NULL,
+    session_id     TEXT,
+    folder         TEXT NOT NULL,
+    started_at     INTEGER NOT NULL,
+    finished_at    INTEGER,
+    output         TEXT,
+    error          TEXT
+  );
+  CREATE INDEX workflow_runs_by_workflow ON workflow_runs (workflow_id, started_at DESC);
+
+  CREATE TABLE run_events (
+    run_id        TEXT NOT NULL REFERENCES workflow_runs (id) ON DELETE CASCADE,
+    seq           INTEGER NOT NULL,
+    payload_json  TEXT NOT NULL,
+    created_at    INTEGER NOT NULL,
+    PRIMARY KEY (run_id, seq)
+  ) WITHOUT ROWID;
   `
 ]

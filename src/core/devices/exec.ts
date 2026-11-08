@@ -8,6 +8,8 @@ export interface ExecOptions {
   /** Stops reading after this many bytes of output. */
   maxBytes?: number
   input?: Buffer | string
+  /** The folder the program starts in. */
+  cwd?: string
 }
 
 export interface ExecResult {
@@ -39,7 +41,7 @@ export const runProcess: Exec = (file, args, options = {}) =>
       options.signal?.removeEventListener('abort', onAbort)
       resolve({ code, stdout: Buffer.concat(out), stderr: Buffer.concat(err), timedOut, cancelled, missing })
     }
-    const child = spawn(file, args, { env: { ...process.env, ...options.env }, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
+    const child = spawn(file, args, { env: { ...process.env, ...options.env }, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'], ...(options.cwd ? { cwd: options.cwd } : {}) })
     const stop = () => child.kill()
     const timer = setTimeout(() => {
       timedOut = true
