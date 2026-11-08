@@ -162,6 +162,10 @@ export type LogEvent =
   | ({ type: 'checkpoint.summary'; id: string } & CheckpointChanges)
   /** Celeste could not save the folder before this message, so it cannot be reverted. */
   | { type: 'checkpoint.skipped'; reason: string }
+  /** A workflow was started from this conversation (the `/` menu, or the assistant). The run's own log is read with `runs.get`. */
+  | { type: 'workflow.started'; runId: string; workflowId: string; name: string }
+  /** That run ended. `output` is its result, which the assistant is told with the person's next message. */
+  | { type: 'workflow.finished'; runId: string; name: string; status: 'completed' | 'failed' | 'cancelled'; output?: string; error?: string }
   /** Chat: files the agent wrote in its private folder during the turn that just ended. `more` is how many further files are not listed. */
   | { type: 'files.produced'; files: ProducedFile[]; more: number }
   /** The folder was put back as it was at checkpoint `id`. `undoId` goes back to how it was just before. */
@@ -336,7 +340,7 @@ export interface CoreApi {
   'workflows.versions': (id: string) => { version: number; createdAt: number }[]
   'workflows.version': (id: string, version: number) => WorkflowDefinition | null
   /** Starts a run in a folder of the person's choosing (an empty one: a private folder for the workflow) and answers at once; the run reports through `run` and `runEvent` pushes. */
-  'workflows.run': (id: string, inputs: Record<string, unknown>, where: { folder: string; sessionId?: string }) => Promise<RunSummary>
+  'workflows.run': (id: string, inputs: Record<string, unknown>, where: { folder: string; sessionId?: string; startedBy?: 'you' | 'menu' }) => Promise<RunSummary>
   'runs.list': (workflowId?: string) => RunSummary[]
   'runs.get': (id: string) => { summary: RunSummary; events: StoredRunEvent[] } | null
   'runs.cancel': (id: string) => Promise<void>

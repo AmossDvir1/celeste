@@ -205,6 +205,20 @@ describe('checkpoints in the log', () => {
   })
 })
 
+describe('workflows started from a conversation', () => {
+  it('shows one card where it started, and the end of the run adds nothing of its own', () => {
+    const s = foldEvents(
+      blank(),
+      log(
+        [1000, { type: 'workflow.started', runId: 'r1', workflowId: 'w1', name: 'Test the app' }],
+        [2000, { type: 'workflow.finished', runId: 'r1', name: 'Test the app', status: 'completed', output: 'done' }]
+      )
+    )
+    expect(s.items).toHaveLength(1)
+    expect(s.items[0]).toMatchObject({ kind: 'workflow', runId: 'r1', workflowId: 'w1', name: 'Test the app' })
+  })
+})
+
 describe('files a chat made', () => {
   it('shows them as one entry after the answer, with how many more were not listed', () => {
     const made = [{ path: 'report.csv', size: 4, status: 'added' as const }]

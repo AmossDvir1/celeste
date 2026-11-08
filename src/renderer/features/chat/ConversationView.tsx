@@ -200,6 +200,7 @@ export function ConversationView({ sessionId }: { sessionId: string }) {
               prefs={{ model: session.model, effort: session.effort, approval: session.approval }}
               onPrefs={(p) => setPrefs(sessionId, p)}
               attachments={attachments}
+              sessionId={sessionId}
               context={context}
               onRemoveContext={(path) => useDrafts.getState().removeContext(sessionId, path)}
               busy={busy}

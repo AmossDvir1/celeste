@@ -40,6 +40,7 @@
     "verify:terminal": "electron-vite build && node scripts/terminal-check.mjs",
     "verify:files": "electron-vite build && node scripts/files-check.mjs",
     "verify:workflows": "electron-vite build && node scripts/workflows-check.mjs",
+    "verify:workflows-chat": "electron-vite build && node scripts/workflows-chat-check.mjs",
     "verify:mcp": "electron-vite build && node scripts/mcp-check.mjs",
     "verify:ui": "electron-vite build && node scripts/ui-check.mjs",
     "verify:claude": "electron-vite build && node scripts/claude-check.mjs",

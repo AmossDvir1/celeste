@@ -1027,6 +1027,67 @@ describe('files a chat makes', () => {
   })
 })
 
+describe('workflows started from a conversation', () => {
+  const started = { type: 'workflow.started' as const, runId: 'r1', workflowId: 'w1', name: 'Test the app' }
+  const finished = { type: 'workflow.finished' as const, runId: 'r1', name: 'Test the app', status: 'completed' as const, output: '3 passed, 1 failed' }
+
+  it('writes the start and the end of a run into the conversation, and pushes them like any event', async () => {
+    const { service, api, pushes } = setup()
+    const { id } = api['sessions.create'](input)
+    service.recordWorkflow(id, started)
+    service.recordWorkflow(id, finished)
+    const log = (api['sessions.get'](id)?.events ?? []).map((e) => e.event)
+    expect(log).toEqual([started, finished])
+    expect(pushedEvents(pushes, id).map((e) => e.event.type)).toEqual(['workflow.started', 'workflow.finished'])
+    // A conversation that is gone is not written to.
+    service.recordWorkflow('nope', started)
+  })
+
+  it('tells the assistant how it ended with the next message, once', async () => {
+    const { service, api, agents } = setup()
+    const { id } = api['sessions.create'](input)
+    api['sessions.send'](id, { text: 'Run the tests', attachments: [] })
+    service.recordWorkflow(id, started)
+    service.recordWorkflow(id, finished)
+    api['sessions.send'](id, { text: 'Now fix what failed', attachments: [] })
+    const told = agents[0]?.sent.at(-1)?.text ?? ''
+    expect(told.startsWith('Now fix what failed')).toBe(true)
+    expect(told).toContain('The workflow “Test the app” that the user started from this conversation finished. Its result:')
+    expect(told).toContain('3 passed, 1 failed')
+    api['sessions.send'](id, { text: 'And again', attachments: [] })
+    expect(agents[0]?.sent.at(-1)?.text).toBe('And again')
+  })
+
+  it('says when a run failed or was stopped, and nothing about one that is still going', async () => {
+    const { service, api, agents } = setup()
+    const { id } = api['sessions.create'](input)
+    service.recordWorkflow(id, started)
+    service.recordWorkflow(id, { ...finished, status: 'failed', output: undefined, error: '“Build” failed: Exit code 2.' })
+    service.recordWorkflow(id, { ...started, runId: 'r2', name: 'Deploy' })
+    service.recordWorkflow(id, { ...finished, runId: 'r2', name: 'Deploy', status: 'cancelled', output: undefined })
+    service.recordWorkflow(id, { ...started, runId: 'r3', name: 'Still going' })
+    api['sessions.send'](id, { text: 'What happened?', attachments: [] })
+    const told = agents[0]?.sent.at(-1)?.text ?? ''
+    expect(told).toContain('“Test the app” that the user started from this conversation failed: “Build” failed: Exit code 2.')
+    expect(told).toContain('“Deploy” that the user started from this conversation was stopped before it finished')
+    expect(told).not.toContain('Still going')
+  })
+
+  it('works in the project of a Develop session and in the private folder of a chat', () => {
+    const data = mkdtempSync(join(tmpdir(), 'celeste-svc-wf-'))
+    try {
+      const { service, api } = setup(new MemoryStore(), data)
+      const chat = api['sessions.create'](input)
+      const dev = api['sessions.create']({ ...input, mode: 'develop', cwd: data })
+      expect(service.workFolder(chat.id)).toBe(join(data, 'chats', chat.id))
+      expect(existsSync(join(data, 'chats', chat.id))).toBe(true)
+      expect(service.workFolder(dev.id)).toBe(data)
+    } finally {
+      rmSync(data, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('separate copies of a project', () => {
   it('tells the window which sessions work in a copy Celeste made, and only those', () => {
     const { api } = setup(new MemoryStore(), '/data')

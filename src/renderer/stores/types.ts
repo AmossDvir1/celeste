@@ -51,6 +51,8 @@ export type TimelineItem =
   | { kind: 'ask'; id: string; requestId: string; questions: Question[]; answers?: AskAnswers; status: 'pending' | 'answered' }
   | { kind: 'error'; id: string; error: AgentError }
   | { kind: 'notice'; id: string; text: string }
+  /** A workflow started from this conversation. The card reads the run itself, so it shows steps as they happen and the result after. */
+  | { kind: 'workflow'; id: string; runId: string; workflowId: string; name: string }
   /** Chat: files the agent wrote during the turn, offered to open. */
   | { kind: 'files'; id: string; files: ProducedFile[]; more: number }
   /** The folder was put back to a checkpoint. `undoId` goes back to how it was just before. */

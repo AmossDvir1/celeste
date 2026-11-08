@@ -165,9 +165,32 @@ async function start(): Promise<void> {
     },
   })
   service.init()
+  // A run started from a conversation is written into it: when it starts, and how it ended, so the assistant can be told.
+  const noted = new Set<string>()
+  const runPush = (p: CorePush) => {
+    push(p)
+    if (p.type !== 'run' || !p.run.sessionId) return
+    const { run } = p
+    if (!noted.has(run.id)) {
+      noted.add(run.id)
+      ;(service as SessionService).recordWorkflow(run.sessionId as string, { type: 'workflow.started', runId: run.id, workflowId: run.workflowId, name: run.workflowName })
+    }
+    if (run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled') {
+      if (noted.has(`done:${run.id}`)) return
+      noted.add(`done:${run.id}`)
+      ;(service as SessionService).recordWorkflow(run.sessionId as string, {
+        type: 'workflow.finished',
+        runId: run.id,
+        name: run.workflowName,
+        status: run.status,
+        ...(run.output !== undefined ? { output: run.output } : {}),
+        ...(run.error ? { error: run.error } : {})
+      })
+    }
+  }
   const runner = new WorkflowRunner({
     store: db,
-    push,
+    push: runPush,
     agent: createAgentStepRunner({
       adapter: adapterFor,
       // A step that names no model uses the first vendor that is ready, with the model that vendor calls automatic or lists first.
@@ -198,7 +221,7 @@ async function start(): Promise<void> {
     }
   })
   runner.markAbandoned()
-  const workflows = new WorkflowService(db, runner, undefined, () => push({ type: 'workflows' }), dataDir, async () => (await mcp.resolved()).map((s) => s.key))
+  const workflows = new WorkflowService(db, runner, undefined, () => push({ type: 'workflows' }), dataDir, async () => (await mcp.resolved()).map((s) => s.key), (sessionId) => (service as SessionService).workFolder(sessionId))
   const terminals = new TerminalService({ folderOf: (id) => (service as SessionService).projectFolder(id), push })
   terminalsRef = terminals
   api = {

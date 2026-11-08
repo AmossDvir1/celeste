@@ -1,14 +1,17 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useId, useRef } from 'react'
 import { Paperclip, Send, Square, TriangleAlert, X } from 'lucide-react'
 import type { ContextRef, SessionMode, UserInput } from '@shared/agent'
 import { cn } from '@/lib/cn'
 import { IconButton } from '@/components/ui'
+import { slugify } from '@shared/workflow'
 import { lookupModel, useModels } from '@/stores/models'
+import { useWorkflows } from '@/stores/workflows'
 import { useUi } from '@/stores/ui'
 import { connectedVendors, useVendors } from '@/stores/vendors'
 import { AttachmentStrip, type AttachmentsApi } from './attachments'
 import { ContextStrip } from './context'
 import { ApprovalPicker, ModelControls, type Prefs } from './controls'
+import { SlashList, WorkflowChip, parseSlash, useSlash } from './slash'
 
 const NO_CONTEXT: ContextRef[] = []
 
@@ -20,6 +23,8 @@ export interface ComposerProps {
   prefs: Prefs
   onPrefs: (patch: Partial<Prefs>) => void
   attachments: AttachmentsApi
+  /** The conversation this box belongs to. A workflow chosen with "/" runs in it; without one it is opened in the Workflows tab. */
+  sessionId?: string
   /** Files and folders of the project added to this message (Develop). */
   context?: ContextRef[]
   onRemoveContext?: (path: string) => void
@@ -38,6 +43,7 @@ export function Composer({
   prefs,
   onPrefs,
   attachments,
+  sessionId,
   context = NO_CONTEXT,
   onRemoveContext,
   busy,
@@ -53,7 +59,10 @@ export function Composer({
   const model = lookupModel(byId, prefs.model)
   const noVendor = useVendors((s) => connectedVendors(s.vendors).length === 0)
   const openSettings = useUi((s) => s.openSettings)
-  const canSend = !noVendor && (text.trim().length > 0 || attachments.items.length > 0 || context.length > 0)
+  const slash = useSlash(text, sessionId)
+  const listId = useId()
+  // A workflow chosen with "/" is run by sending; it needs no AI vendor of its own, but its steps may.
+  const canSend = slash.chip !== null || (!noVendor && (text.trim().length > 0 || attachments.items.length > 0 || context.length > 0))
   const imageBlocked = model?.images === false && attachments.items.some((a) => a.mime.startsWith('image/'))
 
   // Grow with the text, up to a limit.
@@ -69,10 +78,30 @@ export function Composer({
   }, [autoFocus])
 
   const submit = () => {
+    if (slash.chip) {
+      void slash.run()
+      return
+    }
     if (busy || !canSend) return
+    // "/name answer=value" typed out in full is a workflow as well.
+    const typed = parseSlash(text)
+    const named = typed && useWorkflows.getState().list.find((w) => slugify(w.name) === typed.name)
+    if (typed && named) {
+      onText('')
+      void slash.choose(named.id, typed.args)
+      return
+    }
     onSend({ text: text.trim(), attachments: attachments.items, ...(context.length ? { context } : {}) })
     attachments.clear()
     onText('')
+  }
+
+  /** Chooses an item of the "/" menu: a command happens at once, a workflow becomes a chip. The text typed so far goes. */
+  function pickItem(i: number) {
+    const item = slash.items[i]
+    if (!item) return
+    onText('')
+    slash.pick(item)
   }
 
   const sendButton = (
@@ -99,6 +128,8 @@ export function Composer({
         home ? 'min-h-[134px] px-[22px] pt-[17px] pb-[14px]' : 'px-4 pt-3 pb-2.5'
       )}
     >
+      {slash.open && <SlashList id={listId} items={slash.items} index={slash.index} onPick={(i) => pickItem(i)} onHover={slash.setIndex} />}
+      {slash.chip && <WorkflowChip chip={slash.chip} problem={slash.problem} onChange={(values) => slash.setChip({ ...(slash.chip as NonNullable<typeof slash.chip>), values })} onRemove={() => slash.setChip(null)} />}
       {context.length > 0 && <ContextStrip items={context} onRemove={onRemoveContext} className="mb-2.5" />}
       {attachments.items.length > 0 && (
         <AttachmentStrip items={attachments.items} onRemove={attachments.remove} className="mb-3" />
@@ -141,7 +172,26 @@ export function Composer({
         placeholder={placeholder}
         aria-label="Message"
         onChange={(e) => onText(e.target.value)}
+        aria-controls={slash.open ? listId : undefined}
+        aria-activedescendant={slash.open ? `${listId}-${slash.index}` : undefined}
         onKeyDown={(e) => {
+          if (slash.open && !e.nativeEvent.isComposing) {
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+              e.preventDefault()
+              slash.setIndex((slash.index + (e.key === 'ArrowDown' ? 1 : slash.items.length - 1)) % slash.items.length)
+              return
+            }
+            if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
+              e.preventDefault()
+              pickItem(slash.index)
+              return
+            }
+            if (e.key === 'Escape') {
+              e.preventDefault()
+              slash.dismiss()
+              return
+            }
+          }
           if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault()
             submit()

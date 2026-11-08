@@ -27,6 +27,8 @@ interface RunsState {
   load: (runId: string) => Promise<void>
   history: (workflowId: string) => Promise<RunSummary[]>
   start: (workflowId: string, inputs: Record<string, unknown>, folder: string) => Promise<RunSummary | null>
+  /** Starts a workflow from a conversation: it works where the conversation does, and its card appears in it. */
+  startInSession: (workflowId: string, inputs: Record<string, unknown>, sessionId: string) => Promise<boolean>
   cancel: (runId: string) => Promise<void>
   approve: (runId: string, requestId: string, allow: boolean) => Promise<void>
   answer: (runId: string, requestId: string, answers: AskAnswers) => Promise<void>
@@ -107,6 +109,16 @@ export const useRuns = create<RunsState>()((set, get) => ({
     } catch (err) {
       say(sentence(err, 'Could not start the workflow.'))
       return null
+    }
+  },
+
+  startInSession: async (workflowId, inputs, sessionId) => {
+    try {
+      await core.call('workflows.run', workflowId, inputs, { folder: '', sessionId, startedBy: 'menu' })
+      return true
+    } catch (err) {
+      say(sentence(err, 'Could not start the workflow.'))
+      return false
     }
   },
 

@@ -29,7 +29,9 @@ export class WorkflowService {
     /** Where Celeste keeps its data. A run that is given no folder works in a private one of its own under it. */
     private readonly dataDir?: string,
     /** The names of the tool servers the person has, so an imported workflow can say which of its tools are missing. */
-    private readonly toolNames?: () => Promise<string[]>
+    private readonly toolNames?: () => Promise<string[]>,
+    /** The folder a conversation works in, for a run started from it. */
+    private readonly folderOfSession?: (sessionId: string) => string
   ) {}
 
   private summary(w: WorkflowRow): WorkflowSummary {
@@ -128,8 +130,10 @@ export class WorkflowService {
     'workflows.version': (id, version) => this.store.workflowVersion(this.require(id).id, Number(version)) ?? null,
 
     'workflows.run': (id, inputs, where) => {
-      const given = text(where?.folder, 'folder', 500)
       const workflow = this.require(id)
+      const sessionId = typeof where?.sessionId === 'string' ? where.sessionId : undefined
+      // Started from a conversation, it works where that conversation does, unless another folder was chosen.
+      const given = text(where?.folder, 'folder', 500) || (sessionId && this.folderOfSession ? this.folderOfSession(sessionId) : '')
       // No folder: a private one for this workflow, so a workflow that only needs somewhere to put files has it.
       const folder = given || (this.dataDir ? join(this.dataDir, 'workflows', workflow.id) : '')
       if (!given && folder) mkdirSync(folder, { recursive: true })
@@ -140,7 +144,7 @@ export class WorkflowService {
         /* reported below */
       }
       if (!ok) throw new Error('Choose a folder for the run to work in.')
-      return this.runner.start({ workflowId: workflow.id, inputs: inputs ?? {}, startedBy: 'you', folder, ...(typeof where.sessionId === 'string' ? { sessionId: where.sessionId } : {}) })
+      return this.runner.start({ workflowId: workflow.id, inputs: inputs ?? {}, startedBy: where.startedBy === 'menu' ? 'menu' : 'you', folder, ...(sessionId ? { sessionId } : {}) })
     },
 
     'runs.list': (workflowId) => this.store.listRuns(typeof workflowId === 'string' ? workflowId : undefined, 100),

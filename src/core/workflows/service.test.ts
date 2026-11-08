@@ -137,6 +137,20 @@ describe('starting a run', () => {
     await expect(Promise.resolve().then(() => api['workflows.run'](a.id, {}, { folder: '' }))).rejects.toThrow('Choose a folder')
   })
 
+  it('started from a conversation, works where the conversation does, and says it was started from the menu', async () => {
+    const store = new MemoryStore()
+    const runner = new WorkflowRunner({ store, push: () => undefined, agent: { run: async () => 'ok' }, mcp: { find: async () => undefined, call: async () => ({ text: '', isError: false }) } })
+    const asked: string[] = []
+    const service = new WorkflowService(store, runner, undefined, undefined, undefined, undefined, (id) => (asked.push(id), folder))
+    const a = service.api['workflows.save']({ name: 'W', definition: def() })
+    const run = await service.api['workflows.run'](a.id, {}, { folder: '', sessionId: 's-1', startedBy: 'menu' })
+    expect(asked).toEqual(['s-1'])
+    expect(run).toMatchObject({ folder, sessionId: 's-1', startedBy: 'menu' })
+    // Anything other than "menu" is the person themselves: the window cannot claim to be the assistant.
+    const other = await service.api['workflows.run'](a.id, {}, { folder, startedBy: 'assistant' as never })
+    expect(other.startedBy).toBe('you')
+  })
+
   it('does not answer a question that was already answered', async () => {
     const { api } = make()
     expect(() => api['runs.respondApproval']('nope', 'x', true)).toThrow('already been answered')

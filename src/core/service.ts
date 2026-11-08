@@ -452,6 +452,8 @@ export class SessionService {
     }
     const row = this.requireSession(id)
     const context = this.contextOf(row, input.context)
+    // Read before this message is logged, because it is what has happened since the one before.
+    const workflows = this.workflowNote(id)
     const live = this.runtime(id)
     this.store.linkAttachments(input.attachments.map((a) => a.id), id)
     this.record(id, { type: 'user.message', text: input.text, attachments: input.attachments, ...(context.length ? { context } : {}) }, live)
@@ -461,7 +463,7 @@ export class SessionService {
 
     // What the agent is told: the person's words, then (if the folder was reverted) a note about that, then the files they added.
     // The agent's adapter gets only text and attachments; the files are already in the text.
-    const extra = [live.reverted ? REVERT_NOTE : '', row.cwd && context.length ? contextText(row.cwd, context) : ''].filter(Boolean)
+    const extra = [live.reverted ? REVERT_NOTE : '', workflows, row.cwd && context.length ? contextText(row.cwd, context) : ''].filter(Boolean)
     const outgoing: UserInput = { text: [input.text, ...extra].filter(Boolean).join('\n\n'), attachments: input.attachments }
     live.reverted = false
 
@@ -566,6 +568,32 @@ export class SessionService {
         console.error('[core] could not look for files made in a turn', err)
       }
     })
+  }
+
+  /** The folder a workflow started from this conversation works in: the project of a Develop session, the private folder of a chat. */
+  workFolder(id: string): string {
+    const row = this.requireSession(id)
+    return row.mode === 'develop' && row.cwd ? row.cwd : this.scratchDir(id)
+  }
+
+  /** Writes what a workflow run did into the conversation it was started from. Nothing happens for a conversation that is gone. */
+  recordWorkflow(id: string, event: Extract<LogEvent, { type: 'workflow.started' | 'workflow.finished' }>): void {
+    if (!this.store.getSession(id)) return
+    this.record(id, event, this.live.get(id) ?? { text: '' })
+  }
+
+  /** What the assistant has not been told yet about workflows that ended since the person's last message. Read from the log. */
+  private workflowNote(id: string): string {
+    const notes: string[] = []
+    const events = this.store.events(id)
+    for (let i = events.length - 1; i >= 0; i--) {
+      const event = (events[i] as { event: LogEvent }).event
+      if (event.type === 'user.message') break
+      if (event.type !== 'workflow.finished') continue
+      const result = event.status === 'completed' ? `finished. Its result:\n${(event.output ?? '').slice(0, 4000) || '(nothing)'}` : event.status === 'failed' ? `failed: ${event.error ?? 'it did not say why'}` : 'was stopped before it finished'
+      notes.unshift(`[The workflow “${event.name}” that the user started from this conversation ${result}]`)
+    }
+    return notes.join('\n\n')
   }
 
   /** True when the folder was reverted after the person's latest message. Read from the log, so it survives a restart. */
