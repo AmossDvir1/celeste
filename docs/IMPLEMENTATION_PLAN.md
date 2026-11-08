@@ -951,7 +951,16 @@ A short test against each real CLI to settle the **Verify** items, starting with
 
 **Done when:** a real change can be made, reviewed and reverted in Develop, and a real internal MCP server works with every vendor.
 
-**Status: steps 1 and 2 of 6 are built (checkpoints and revert, then the review screen; 8 November 2026).** Order of work: (1) per-turn checkpoints and revert, (2) a review screen for changes, (3) a real file tree, (4) git worktrees, (5) MCP configuration, (6) the terminal and Chat file cards.
+**Status: steps 1 to 3 of 6 are built (checkpoints and revert, the review screen, the file tree; 8 November 2026).** CI on GitHub passes on Ubuntu and Windows for steps 1 and 2. Order of work: (1) per-turn checkpoints and revert, (2) a review screen for changes, (3) a real file tree, (4) git worktrees, (5) MCP configuration, (6) the terminal and Chat file cards.
+
+*The file tree* (`FilesPanel.tsx`, `src/core/files.ts`): the earlier fake tree is replaced by the real folder.
+
+- **What it shows.** A Files button in a Develop session's header opens a panel with the project folder as a tree: folders first, then files, by name (numbers in order), opened folder by folder when you click, so a big project costs nothing until you look. Arrow keys move, Right and Left open and close folders, Enter opens a file. `.git` is never shown. `node_modules` is shown faded and can be opened. A folder lists at most 2,000 things and counts the rest.
+- **What it marks.** What the agent changed, from what each finished turn logged: `M` on a file it changed, `A` on one it made, and a dot on a folder with changes inside it (a file made and then deleted is not a change). The tree reads the disk again when an answer ends, and has a Refresh button.
+- **Previewing.** A click on a file shows its text with line numbers in the panel (the first 4,000 lines of a long one). A file that is not text, larger than 1 MB, or gone says so. A file the agent changed has "Show changes", which opens the review on that file.
+- **What the window may ask for.** Two new calls, `sessions.listFiles` and `sessions.readFile`, take a session and a path inside its project, never a path of the machine. A path may not go up (`..`), start from a drive, enter `.git`, or lead out through a link: a link is only followed when it stays inside the project, which is checked on the real path. A path that starts with a slash is read as inside the project. Only Develop sessions have a project.
+- **Checks.** 9 tests on the real disk (order, hidden `.git`, every way of writing a path, the 2,000 limit, a link out of the project, text, accents, line endings, binary, too large, gone), and `verify:checkpoints` now also opens the panel in the real app: the order and the missing `.git`, the markers, a folder opening in place, a file opening with its lines, Show changes, and Back.
+- **Not done.** Editing files, creating or renaming them, syntax colours, images, searching by name, and showing files the agent deleted. The tree needs a session, so it is not offered on the Develop start screen before the first message.
 
 *The review screen* (`ReviewDialog.tsx`, reading the saved copies from step 1):
 

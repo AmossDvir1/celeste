@@ -19,7 +19,19 @@ const trim = (text: string, max: number) => (text.length > max ? `${text.slice(0
  * commands changed, not only what the agent said it edited). Pick the whole session or one message's turn, read each file,
  * mark it viewed, or put a file back as it was.
  */
-export function ReviewDialog({ sessionId, scope: first, onClose }: { sessionId: string; /** 'all', or the checkpoint of the message to look at. */ scope: 'all' | string; onClose: () => void }) {
+export function ReviewDialog({
+  sessionId,
+  scope: first,
+  file: firstFile,
+  onClose
+}: {
+  sessionId: string
+  /** 'all', or the checkpoint of the message to look at. */
+  scope: 'all' | string
+  /** The file to have selected when it opens. */
+  file?: string
+  onClose: () => void
+}) {
   const session = useSessions((s) => s.sessions[sessionId])
   const review = useSessions((s) => s.review)
   const discardFiles = useSessions((s) => s.discardFiles)
@@ -42,7 +54,7 @@ export function ReviewDialog({ sessionId, scope: first, onClose }: { sessionId: 
   const [data, setData] = useState<CheckpointReview | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [reload, setReload] = useState(0)
-  const [selected, setSelected] = useState<string | null>(null)
+  const [selected, setSelected] = useState<string | null>(firstFile ?? null)
   const [viewed, setViewed] = useState<Set<string>>(new Set())
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)

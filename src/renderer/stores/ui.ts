@@ -5,7 +5,7 @@ import { lookupModel, modelOf, useModels } from './models'
 import { useSettings } from '@/stores/settings'
 
 export type AppMode = 'chat' | 'develop'
-export type RightPanel = null | 'tools' | 'changes' | 'terminal'
+export type RightPanel = null | 'tools' | 'changes' | 'terminal' | 'files'
 export type SettingsSection = 'general' | 'appearance' | 'vendors' | 'agent' | 'tools' | 'devices' | 'data' | 'about'
 
 /** Settings of the composer before a session exists. A new session copies them. */

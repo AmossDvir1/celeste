@@ -22,6 +22,7 @@ import {
 import { nextStatus } from '@shared/status'
 import type { AttachmentRow, FileStore, SessionRow, Store } from './store'
 import type { Snapshots } from './snapshots'
+import { listFolder, readPreview } from './files'
 
 /*
  * The session logic, independent of where data is kept. The app runs it on SQLite inside the Core process;
@@ -183,6 +184,8 @@ export class SessionService {
     'sessions.respondApproval': (id, requestId, answer) => this.respondApproval(id, requestId, answer),
     'sessions.respondAsk': (id, requestId, answers) => this.respondAsk(id, requestId, answers),
     'sessions.update': (id, patch) => this.update(id, patch),
+    'sessions.listFiles': async (id, path) => listFolder(this.projectOf(id), path),
+    'sessions.readFile': async (id, path) => readPreview(this.projectOf(id), path),
     'sessions.review': (id, from, to) => this.review(id, from, to),
     'sessions.discardFiles': (id, checkpointId, paths) => this.discardFiles(id, checkpointId, paths),
     'sessions.revertPreview': (id, checkpointId) => this.revertPreview(id, checkpointId),
@@ -504,6 +507,13 @@ export class SessionService {
     const mine = this.store.events(id).some(({ event }) => (event.type === 'checkpoint.created' && event.id === checkpointId) || (event.type === 'checkpoint.reverted' && event.undoId === checkpointId))
     if (!mine) throw new Error('That checkpoint does not belong to this session.')
     return { cwd: row.cwd, snapshots, checkpoint: checkpointId, row }
+  }
+
+  /** The folder a Develop session works in. Only that folder is ever browsed: the window names a path inside it, never outside. */
+  private projectOf(id: string): string {
+    const row = this.requireSession(id)
+    if (row.mode !== 'develop' || !row.cwd) throw new Error('Only Develop sessions have a project folder.')
+    return row.cwd
   }
 
   /** The files that changed between two of this session's checkpoints (`to` null: up to now), with their lines. */

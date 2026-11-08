@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDown, FileDiff, Folder, GitBranch, Plug, SquareTerminal } from 'lucide-react'
+import { ArrowDown, FileDiff, Folder, FolderTree, GitBranch, Plug, SquareTerminal } from 'lucide-react'
 import type { UserInput } from '@shared/agent'
 import { cn } from '@/lib/cn'
 import { basename } from '@/lib/format'
@@ -124,6 +124,7 @@ export function ConversationView({ sessionId }: { sessionId: string }) {
           <div className="ml-auto flex shrink-0 items-center gap-0.5">
             {develop && (
               <>
+                <PanelToggle panel="files" label="Files" icon={FolderTree} />
                 <PanelToggle panel="changes" label="Changes" icon={FileDiff} badge={changedFiles} />
                 <PanelToggle panel="terminal" label="Terminal" icon={SquareTerminal} />
               </>

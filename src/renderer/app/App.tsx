@@ -6,6 +6,7 @@ import { FolderPicker } from '@/features/devices/FolderPicker'
 import { ConversationView } from '@/features/chat/ConversationView'
 import { ProjectBar } from '@/features/develop/ProjectBar'
 import { ChangesPanel, TerminalPanel } from '@/features/develop/panels'
+import { FilesPanel } from '@/features/develop/FilesPanel'
 import { SearchDialog } from '@/features/search/SearchDialog'
 import { SettingsDialog } from '@/features/settings/SettingsDialog'
 import { ToolsPanel } from '@/features/tools/ToolsPanel'
@@ -43,6 +44,7 @@ function RightPanel() {
   return (
     <div className="animate-slide-in-right h-full w-[400px] shrink-0">
       {panel === 'tools' && <ToolsPanel />}
+      {panel === 'files' && <FilesPanel />}
       {panel === 'changes' && <ChangesPanel />}
       {panel === 'terminal' && <TerminalPanel />}
     </div>

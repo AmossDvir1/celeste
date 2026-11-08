@@ -117,6 +117,24 @@ export interface CheckpointChanges {
   more: number
 }
 
+/** One thing in a project folder, as the file tree lists it. */
+export interface FileEntry {
+  name: string
+  kind: 'file' | 'dir'
+  size?: number
+}
+export interface FileListing {
+  entries: FileEntry[]
+  /** How many more there are than are listed. */
+  more: number
+}
+/** What a file looks like for a preview. */
+export type FilePreview =
+  | { kind: 'text'; text: string; size: number; lines: number }
+  | { kind: 'binary'; size: number }
+  | { kind: 'large'; size: number }
+  | { kind: 'missing' }
+
 /** The files that changed between two points in a session, with the lines of each. */
 export interface CheckpointReview {
   files: FileDiff[]
@@ -212,6 +230,10 @@ export interface CoreApi {
   'sessions.update': (id: string, patch: SessionPatch) => SessionSummary
   /** What reverting to a checkpoint would change in the folder, as it would be after the revert. */
   'sessions.revertPreview': (id: string, checkpointId: string) => Promise<CheckpointChanges>
+  /** What is in a folder of the session's project (`path` is relative to the project, empty for the top). Develop sessions only. */
+  'sessions.listFiles': (id: string, path: string) => Promise<FileListing>
+  /** A file of the session's project, for a preview. Nothing outside the project folder, and nothing inside its `.git`. */
+  'sessions.readFile': (id: string, path: string) => Promise<FilePreview>
   /** The files that changed between two checkpoints of a session (`to` null: up to now), with their lines, for review. */
   'sessions.review': (id: string, from: string, to: string | null) => Promise<CheckpointReview>
   /** Puts only these files back as they were at the checkpoint, after saving how things are now so it can be undone. */
