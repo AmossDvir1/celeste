@@ -262,11 +262,11 @@ export function WorkflowEditor() {
     <div className="flex h-full min-h-0 gap-3 p-3">
       <section aria-label="Workflow" className="relative flex min-w-0 flex-1 flex-col">
         <h1 className="sr-only">{draft.name.trim() || 'New workflow'}</h1>
-        <header className="flex items-start gap-3 px-1 pb-3">
+        <header className="flex flex-wrap items-start gap-x-3 gap-y-2 px-1 pb-3">
           <IconButton label="Back to all workflows" onClick={close}>
             <ArrowLeft className="h-[18px] w-[18px]" />
           </IconButton>
-          <div className="min-w-0 flex-1">
+          <div className="min-w-[220px] flex-1">
             <div className="flex items-center gap-2">
               <TextInput
                 aria-label="Workflow name"
@@ -286,7 +286,7 @@ export function WorkflowEditor() {
               className="h-8 border-transparent bg-transparent px-1 text-[13px] text-ink-muted hover:border-edge focus:border-accent-edge"
             />
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
             {draft.id && (
               <Menu.Root>
                 <Menu.Trigger asChild>

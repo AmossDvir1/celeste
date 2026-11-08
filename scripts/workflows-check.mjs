@@ -197,6 +197,8 @@ try {
   await again.getByRole('button', { name: 'More about this workflow' }).click()
   await again.getByRole('menuitem', { name: 'Run history' }).click()
   const runs = again.getByRole('dialog', { name: 'Run history' }).getByRole('list', { name: 'Runs' })
+  await runs.getByRole('listitem').first().waitFor({ timeout: 10_000 })
+  await again.waitForTimeout(300)
   const entries = await runs.getByRole('listitem').allInnerTexts()
   check('the history keeps both runs, newest first', entries.length === 2 && /Stopped/.test(entries[0]) && /Finished/.test(entries[1]), entries.join(' | '))
   await runs.getByRole('listitem').nth(1).getByRole('button').click()
