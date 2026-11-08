@@ -113,10 +113,15 @@ describe.skipIf(!program)('the Claude adapter with the real Claude Code', () => 
     // The raw reply comes back; turning it into a title is the service's job.
     expect(reply).toBe('"Plan the KB rollout."')
     const asked = api.requests.slice(before).filter((r) => r.last.kind === 'text' && r.last.text.includes('canary hosts'))
-    expect(asked).toHaveLength(1)
-    expect(asked[0]?.model).toMatch(/haiku/i)
-    expect(asked[0]?.body['tools'] ?? []).toEqual([])
-    expect(asked[0]?.last.kind === 'text' && asked[0].last.text).toContain('at most 6 words')
+    // Claude Code may add a request of its own about the same text (on a computer it has not run on before it did, in CI), so the
+    // test does not count requests. What matters is that every one that carries the text is the small model with no tools, and that
+    // Celeste's own instruction is among them.
+    expect(asked.length).toBeGreaterThanOrEqual(1)
+    for (const r of asked) {
+      expect(r.model).toMatch(/haiku/i)
+      expect(r.body['tools'] ?? []).toEqual([])
+    }
+    expect(asked.some((r) => r.last.kind === 'text' && r.last.text.includes('at most 6 words'))).toBe(true)
   }, 90_000)
 
   it('names nothing, quietly, when Claude is not ready', async () => {

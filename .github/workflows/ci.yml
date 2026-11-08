@@ -46,7 +46,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: git config --global user.name "CI" && git config --global user.email "ci@example.com" && git config --global init.defaultBranch main
-      - run: npm run verify:${{ matrix.check }}
+      # The wrapper also writes the reason for a failure as an annotation, which is readable without opening the log.
+      - run: node scripts/ci-report.mjs verify:${{ matrix.check }}
       - name: Keep the pictures the check made
         if: always()
         uses: actions/upload-artifact@v4
