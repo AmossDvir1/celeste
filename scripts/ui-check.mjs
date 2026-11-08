@@ -140,6 +140,35 @@ try {
   await page.getByRole('button', { name: 'Back to all workflows' }).click()
   await page.getByRole('dialog', { name: 'Leave without saving?' }).getByRole('button', { name: 'Leave without saving' }).click()
   await audit(page, 'Workflows, leaving with unsaved changes closed again')
+  // A workflow that can run: the run dialog, the card shown before it starts, and a finished run.
+  await page.evaluate(() =>
+    window.celeste.core.call('workflows.save', [
+      {
+        name: 'Audit run',
+        definition: {
+          nodes: [
+            { id: 'start', type: 'start', name: 'Start', inputs: [{ name: 'who', label: 'Who', type: 'text', default: 'there' }] },
+            { id: 'write_it', type: 'tool', name: 'Write it', tool: { kind: 'file', op: 'write', path: 'hi.txt', content: 'Hi {{inputs.who}}' } },
+            { id: 'end', type: 'end', name: 'End', output: '{{nodes.write_it.output}}' }
+          ],
+          edges: [{ from: 'start', to: 'write_it' }, { from: 'write_it', to: 'end' }]
+        }
+      }
+    ])
+  )
+  await page.getByRole('list', { name: 'Your workflows' }).getByRole('button', { name: /Audit run/ }).click()
+  await page.getByRole('button', { name: 'Run', exact: true }).click()
+  await page.getByRole('dialog', { name: /^Run “Audit run”/ }).waitFor()
+  await audit(page, 'Workflows, the run dialog')
+  await page.getByRole('dialog', { name: /^Run “Audit run”/ }).getByRole('button', { name: 'Run', exact: true }).click()
+  await page.getByRole('group', { name: 'Approval needed' }).waitFor({ timeout: 15_000 })
+  await audit(page, 'Workflows, the card before a run starts')
+  await page.getByRole('button', { name: 'Allow and run' }).click()
+  await page.getByRole('region', { name: 'Result' }).waitFor({ timeout: 30_000 })
+  await audit(page, 'Workflows, a finished run')
+  await page.getByRole('region', { name: 'Run', exact: true }).getByRole('button', { name: 'Close panel' }).click()
+  await page.getByRole('button', { name: 'Back to all workflows' }).click()
+  await audit(page, 'Workflows, the list')
   await page.getByRole('navigation', { name: 'Modes' }).getByRole('button', { name: 'Chat' }).click()
 
   console.log('\n# Keyboard')

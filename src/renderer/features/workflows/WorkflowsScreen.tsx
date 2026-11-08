@@ -1,4 +1,4 @@
-import { Plus, Workflow as WorkflowIcon } from 'lucide-react'
+import { FileDown, Plus, Workflow as WorkflowIcon } from 'lucide-react'
 import type { WorkflowSummary } from '@shared/workflow'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { Button } from '@/components/ui'
@@ -41,6 +41,7 @@ function Home() {
   const list = useWorkflows((s) => s.list)
   const loaded = useWorkflows((s) => s.loaded)
   const create = useWorkflows((s) => s.newWorkflow)
+  const importFile = useWorkflows((s) => s.importFile)
   return (
     <div className="mx-auto flex h-full max-w-[860px] flex-col px-8 py-10">
       <div className="flex items-start justify-between gap-6">
@@ -49,9 +50,14 @@ function Home() {
           <p className="mt-1 max-w-[560px] text-[14px] text-ink-muted">A workflow is a list of steps that run one after another: commands, web requests, files, your tools, and questions to an assistant. You see everything it will do before it starts.</p>
         </div>
         {list.length > 0 && (
-          <Button variant="primary" onClick={create}>
-            <Plus className="h-4 w-4" /> New workflow
-          </Button>
+          <div className="flex shrink-0 gap-2">
+            <Button variant="secondary" onClick={importFile}>
+              <FileDown className="h-4 w-4" /> Import
+            </Button>
+            <Button variant="primary" onClick={create}>
+              <Plus className="h-4 w-4" /> New workflow
+            </Button>
+          </div>
         )}
       </div>
 
@@ -62,9 +68,14 @@ function Home() {
           </span>
           <h2 className="mt-5 text-[18px] font-medium text-ink">No workflows yet</h2>
           <p className="mt-1.5 max-w-[420px] text-[14px] text-ink-muted">Make one for something you do again and again, and run it in one click.</p>
-          <Button variant="primary" className="mt-6" onClick={create}>
-            <Plus className="h-4 w-4" /> New workflow
-          </Button>
+          <div className="mt-6 flex gap-2">
+            <Button variant="primary" onClick={create}>
+              <Plus className="h-4 w-4" /> New workflow
+            </Button>
+            <Button variant="secondary" onClick={importFile}>
+              <FileDown className="h-4 w-4" /> Import a file
+            </Button>
+          </div>
         </div>
       ) : (
         <ul aria-label="Your workflows" className="mt-8 min-h-0 flex-1 space-y-2.5 overflow-y-auto pr-1">

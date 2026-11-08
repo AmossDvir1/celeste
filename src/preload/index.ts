@@ -68,6 +68,8 @@ const bridge: CelesteBridge = {
     hint: (name) => secret('hint', name)
   },
   chatFile: (sessionId, path, action) => ipcRenderer.invoke('celeste:chat-file', sessionId, path, action),
+  saveText: (suggestedName, text) => ipcRenderer.invoke('celeste:save-text', suggestedName, text),
+  openText: (extensions) => ipcRenderer.invoke('celeste:open-text', extensions),
   revealDataFolder: () => ipcRenderer.invoke('celeste:reveal-data'),
   chooseFolder: () => ipcRenderer.invoke('celeste:choose-folder'),
   onBeforeQuit: (handler) => {

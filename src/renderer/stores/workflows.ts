@@ -56,6 +56,10 @@ interface WorkflowsState {
   restore: (version: number) => Promise<void>
   save: () => Promise<boolean>
   remove: (id: string) => Promise<void>
+  /** Saves the workflow as a file the person chooses, for someone else to open. */
+  share: () => Promise<void>
+  /** Opens a shared file as a new workflow that is not saved yet. */
+  importFile: () => void
 }
 
 const draftFrom = (w: WorkflowFull): Draft => ({
@@ -158,6 +162,40 @@ export const useWorkflows = create<WorkflowsState>()((set, get) => ({
       return false
     }
   },
+
+  share: async () => {
+    const d = get().draft
+    if (!d?.id) return say('Save the workflow first, then it can be shared.')
+    try {
+      const out = await core.call('workflows.export', d.id)
+      const saved = await window.celeste?.saveText(out.filename, out.text)
+      if (!saved?.saved) return
+      say(`Saved ${saved.saved}.`)
+      for (const note of out.notes.slice(0, 3)) say(note)
+    } catch (err) {
+      say(sentence(err, 'Could not share the workflow.'))
+    }
+  },
+
+  importFile: () =>
+    get().guard(() => {
+      void (async () => {
+        try {
+          const file = await window.celeste?.openText(['json'])
+          if (!file) return
+          const read = await core.call('workflows.import', file.text)
+          // A name is used once, so a copy of a workflow that is already here gets a number.
+          const taken = new Set(get().list.map((w) => w.name.trim().toLowerCase()))
+          let name = read.name
+          for (let n = 2; taken.has(name.trim().toLowerCase()); n++) name = `${read.name} (${n})`
+          set({ draft: { name, description: read.description, definition: read.definition, version: 0, saved: '' }, selectedNode: null })
+          say('Opened it. Look it over, then save it. Nothing runs until you say so.')
+          for (const note of read.notes.slice(0, 3)) say(note)
+        } catch (err) {
+          say(sentence(err, 'Could not open that file.'))
+        }
+      })()
+    }),
 
   remove: async (id) => {
     try {

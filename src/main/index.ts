@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
-import { copyFile } from 'node:fs/promises'
+import { copyFile, readFile, stat, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { canOpenFile } from '@shared/produced'
 import { resolveChatFile } from './chat-files'
@@ -152,6 +152,30 @@ ipcMain.handle('celeste:chat-file', async (event, sessionId: unknown, path: unkn
     return { ok: true, message: `Saved ${basename(chosen.filePath)}.` }
   }
   return { ok: false, message: 'Unknown action.' }
+})
+
+// A workflow is shared and imported as a text file. The window asks; the person chooses the file in the system's own dialog.
+ipcMain.handle('celeste:save-text', async (event, suggestedName: unknown, text: unknown) => {
+  if (!fromOurWindow(event)) throw new Error('Not allowed')
+  if (typeof suggestedName !== 'string' || typeof text !== 'string' || text.length > 2_000_000) throw new Error('Invalid file')
+  const win = BrowserWindow.fromWebContents(event.sender)
+  const options = { defaultPath: join(app.getPath('documents'), basename(suggestedName)) }
+  const chosen = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options)
+  if (chosen.canceled || !chosen.filePath) return { saved: null }
+  await writeFile(chosen.filePath, text, 'utf8')
+  return { saved: basename(chosen.filePath) }
+})
+
+ipcMain.handle('celeste:open-text', async (event, extensions: unknown) => {
+  if (!fromOurWindow(event)) throw new Error('Not allowed')
+  const exts = Array.isArray(extensions) ? extensions.filter((e): e is string => typeof e === 'string' && /^[a-z0-9]{1,12}$/i.test(e)) : []
+  const win = BrowserWindow.fromWebContents(event.sender)
+  const options = { properties: ['openFile' as const], filters: exts.length ? [{ name: 'Workflow', extensions: exts }] : [] }
+  const chosen = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
+  const path = chosen.filePaths[0]
+  if (chosen.canceled || !path) return null
+  if ((await stat(path)).size > 1_000_000) throw new Error('That file is too large to be a workflow.')
+  return { name: basename(path), text: await readFile(path, 'utf8') }
 })
 
 ipcMain.handle('celeste:reveal-data', (event) => {

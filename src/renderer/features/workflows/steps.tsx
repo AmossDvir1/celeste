@@ -1,6 +1,7 @@
-import { FileText, Flag, Globe, Play, Plug, Sparkles, Terminal } from 'lucide-react'
+import { Check, CircleAlert, FileText, Flag, Globe, Minus, Play, Plug, Sparkles, Terminal } from 'lucide-react'
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 import type { WorkflowNode } from '@shared/workflow'
+import type { NodeState } from '@shared/workflow-run'
 import { cn } from '@/lib/cn'
 
 export interface StepMeta {
@@ -51,21 +52,36 @@ export function summaryOf(step: WorkflowNode): string {
   }
 }
 
-export type StepData = Node<{ step: WorkflowNode; selected: boolean }, 'step'>
+export type StepData = Node<{ step: WorkflowNode; selected: boolean; /** How far a run being shown has got with this step. */ state?: NodeState; /** The run is waiting for the person on this step. */ waiting?: boolean }, 'step'>
 
 /** One step on the canvas. It is a button in all but looks: Enter or Space opens its details. */
 export function StepNode({ data }: NodeProps<StepData>) {
-  const { step, selected } = data
+  const { step, selected, state, waiting } = data
   const meta = metaOf(step)
   const Icon = meta.icon
   return (
     <div
       className={cn(
-        'w-[230px] rounded-xl border bg-raised-2 p-3 text-left shadow-pop transition-shadow',
+        'relative w-[230px] rounded-xl border bg-raised-2 p-3 text-left shadow-pop transition-shadow',
         meta.tone,
-        selected && 'ring-2 ring-accent ring-offset-2 ring-offset-canvas'
+        selected && 'ring-2 ring-accent ring-offset-2 ring-offset-canvas',
+        state === 'running' && 'ring-2 ring-accent/70',
+        state === 'failed' && '!border-danger',
+        state === 'done' && '!border-success/60'
       )}
     >
+      {state && state !== 'pending' && (
+        <span
+          className={cn(
+            'absolute -top-2.5 -right-2.5 flex h-6 w-6 items-center justify-center rounded-full border bg-panel',
+            state === 'done' ? 'border-success/60 text-success' : state === 'failed' ? 'border-danger text-danger' : state === 'skipped' ? 'border-edge-strong text-ink-muted' : 'border-accent text-accent-text'
+          )}
+          title={waiting ? 'Waiting for you' : { running: 'Running', done: 'Done', failed: 'Failed', skipped: 'Skipped' }[state]}
+        >
+          {state === 'done' ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : state === 'failed' ? <CircleAlert className="h-3.5 w-3.5" /> : state === 'skipped' ? <Minus className="h-3.5 w-3.5" /> : <Play className="h-3 w-3" />}
+          <span className="sr-only">{waiting ? 'Waiting for you' : { running: 'Running', done: 'Done', failed: 'Failed', skipped: 'Skipped' }[state]}</span>
+        </span>
+      )}
       <Handle type="target" position={Position.Left} isConnectable={false} className="!h-2 !w-2 !border-0 !bg-accent" />
       <div className="flex items-start gap-2.5">
         <span className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-lg', meta.tile)}>

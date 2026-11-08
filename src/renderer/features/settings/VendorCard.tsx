@@ -49,7 +49,7 @@ export function VendorCard({ id, compact }: { id: VendorId; compact?: boolean })
 
   const status = {
     'not-installed': 'Not on this computer yet. Celeste downloads it when you connect.',
-    ready: meta.available ? meta.blurb : 'Coming soon. Celeste cannot talk to this vendor yet.',
+    ready: meta.available ? meta.blurb : 'Celeste cannot talk to this vendor yet.',
     downloading: `Downloading… ${Math.round((v.progress ?? 0) * 100)}%`,
     waiting: v.step?.kind === 'device-code' ? 'Type this code on GitHub to finish.' : v.step ? 'Finish signing in in your browser…' : 'Waiting for you in your browser…',
     connected: v.account ? `Connected · ${v.account}` : 'Connected'
@@ -67,6 +67,7 @@ export function VendorCard({ id, compact }: { id: VendorId; compact?: boolean })
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-[15px] font-medium text-ink">{meta.name}</h3>
+            {!meta.available && <Badge tone="accent">Coming soon</Badge>}
             {v.status === 'connected' && (
               <Badge tone="success">
                 <Check className="h-3 w-3" strokeWidth={3} /> Connected

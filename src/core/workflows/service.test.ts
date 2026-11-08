@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -114,6 +114,27 @@ describe('starting a run', () => {
     expect(got?.events.map((e) => e.event.type)).toContain('run.completed')
     expect(api['runs.get']('nope')).toBeNull()
     expect(api['runs.list']().map((r) => r.id)).toEqual([run.id])
+  })
+
+  it('works in a private folder of the workflow’s own when none is given, made when it is needed', async () => {
+    const data = mkdtempSync(join(tmpdir(), 'celeste-wfs-data-'))
+    try {
+      const store = new MemoryStore()
+      const runner = new WorkflowRunner({ store, push: () => undefined, agent: { run: async () => 'ok' }, mcp: { find: async () => undefined, call: async () => ({ text: '', isError: false }) } })
+      const service = new WorkflowService(store, runner, undefined, undefined, data)
+      const a = service.api['workflows.save']({ name: 'W', definition: def() })
+      const run = await service.api['workflows.run'](a.id, {}, { folder: '' })
+      expect(run.folder).toBe(join(data, 'workflows', a.id))
+      expect(existsSync(run.folder)).toBe(true)
+    } finally {
+      rmSync(data, { recursive: true, force: true })
+    }
+  })
+
+  it('has no private folder to offer when it does not know where to keep one', async () => {
+    const { api } = make()
+    const a = api['workflows.save']({ name: 'W', definition: def() })
+    await expect(Promise.resolve().then(() => api['workflows.run'](a.id, {}, { folder: '' }))).rejects.toThrow('Choose a folder')
   })
 
   it('does not answer a question that was already answered', async () => {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, FileText, Globe, History, MoreHorizontal, Plug, Plus, Save, Sparkles, Terminal, Trash2 } from 'lucide-react'
+import { ArrowLeft, Clock, FileText, Globe, History, MoreHorizontal, Play, Plug, Plus, Save, Share2, Sparkles, Terminal, Trash2 } from 'lucide-react'
 import { Background, Controls, MarkerType, ReactFlow, ReactFlowProvider, useReactFlow, type Edge, type Node, type NodeChange } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { core } from '@/api'
@@ -7,9 +7,15 @@ import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { Modal } from '@/components/Dialog'
 import { Menu } from '@/components/menu'
 import { Badge, Button, IconButton, TextInput } from '@/components/ui'
-import { insertStep, makeStep, orderedNodes, type NewStep } from '@shared/workflow-edit'
+import { insertStep, makeStep, orderedNodes, STEP_WIDTH, type NewStep } from '@shared/workflow-edit'
+import { foldRun, stateOf } from '@shared/workflow-run'
+import type { RunSummary, StartNode } from '@shared/workflow'
+import { formatDay, formatTime, sameDay } from '@/lib/format'
+import { useRuns } from '@/stores/runs'
 import { isDirty, problemsOf, useWorkflows } from '@/stores/workflows'
 import { NodeDetails } from './NodeDetails'
+import { RunDialog } from './RunDialog'
+import { RunPanel } from './RunPanel'
 import { metaOf, StepNode, type StepData } from './steps'
 
 const nodeTypes = { step: StepNode }
@@ -21,21 +27,25 @@ function Canvas() {
   const flow = useReactFlow()
 
   const order = useMemo(() => (def ? orderedNodes(def) : []), [def])
+  // While a run is shown, each step lights up as the run reaches it.
+  const run = useRuns((s) => (s.watching ? s.runs[s.watching] : undefined))
+  const view = useMemo(() => (run ? foldRun(run.events) : undefined), [run])
   const nodes = useMemo<Node[]>(
     () =>
       order.map(
-        (step): StepData => ({
+        (step, index): StepData => ({
           id: step.id,
           type: 'step',
-          position: step.position ?? { x: 0, y: 0 },
-          data: { step, selected: step.id === selected },
+          // Steps run in a line, so the line is laid out here whatever positions a file came with (an imported one may have none).
+          position: { x: index * STEP_WIDTH, y: 0 },
+          data: { step, selected: step.id === selected, state: view ? stateOf(view, step.id) : undefined, waiting: view?.waiting !== undefined && 'nodeId' in view.waiting && view.waiting.nodeId === step.id },
           draggable: false,
           connectable: false,
           selected: step.id === selected,
           ariaLabel: `${step.name}, ${metaOf(step).label}. Press Enter to change it.`
         })
       ),
-    [order, selected]
+    [order, selected, view]
   )
   const edges = useMemo<Edge[]>(
     () =>
@@ -54,7 +64,12 @@ function Canvas() {
   // The canvas reports a step being selected (by a click, or Enter or Space on a step with keyboard focus) as a change to its nodes.
   const onChanges = useCallback(
     (changes: NodeChange[]) => {
-      for (const c of changes) if (c.type === 'select' && c.selected && c.id !== useWorkflows.getState().selectedNode) select(c.id)
+      for (const c of changes) {
+        if (c.type !== 'select' || !c.selected) continue
+        // While a run is shown a step opens its result in the run; otherwise its details.
+        if (useRuns.getState().watching) useRuns.getState().focus(c.id)
+        else if (c.id !== useWorkflows.getState().selectedNode) select(c.id)
+      }
     },
     [select]
   )
@@ -63,7 +78,7 @@ function Canvas() {
   useEffect(() => {
     const t = setTimeout(() => void flow.fitView({ padding: 0.25, maxZoom: 1, duration: 200 }), 30)
     return () => clearTimeout(t)
-  }, [order.length, flow])
+  }, [order.length, flow, selected === null, run === undefined])
 
   return (
     <ReactFlow
@@ -77,7 +92,7 @@ function Canvas() {
       fitViewOptions={{ padding: 0.25, maxZoom: 1 }}
       minZoom={0.3}
       maxZoom={1.5}
-      onNodeClick={(_, n) => select(n.id)}
+      onNodeClick={(_, n) => (useRuns.getState().watching ? useRuns.getState().focus(n.id) : select(n.id))}
       onNodesChange={onChanges}
       onPaneClick={() => select(null)}
       aria-label="The steps of this workflow, in the order they run"
@@ -125,6 +140,49 @@ function AddStep() {
         ))}
       </Menu.Content>
     </Menu.Root>
+  )
+}
+
+/** Every run of this workflow, newest first. Choosing one shows it beside the canvas. */
+function RunHistory({ id, onClose }: { id: string; onClose: () => void }) {
+  const history = useRuns((s) => s.history)
+  const watch = useRuns((s) => s.watch)
+  const [list, setList] = useState<RunSummary[] | null>(null)
+  useEffect(() => {
+    void history(id).then(setList)
+  }, [id, history])
+  const STATUS: Record<string, string> = { running: 'Running', waiting: 'Waiting', completed: 'Finished', failed: 'Failed', cancelled: 'Stopped' }
+  return (
+    <Modal open onOpenChange={(next) => !next && onClose()} title="Run history" className="w-[min(520px,calc(100vw-48px))]">
+      <div className="px-6 pt-2 pb-5">
+        {list && list.length === 0 && <p className="text-[13px] text-ink-muted">This workflow has not been run yet.</p>}
+        <ul aria-label="Runs" className="mt-1 max-h-[50vh] divide-y divide-edge/70 overflow-y-auto rounded-xl border border-edge">
+          {(list ?? []).map((r) => (
+            <li key={r.id}>
+              <button
+                type="button"
+                onClick={() => {
+                  watch(r.id)
+                  onClose()
+                }}
+                className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-hover"
+              >
+                <span className="flex-1 text-[14px] text-ink">
+                  {STATUS[r.status] ?? r.status}
+                  <span className="ml-2 text-[12.5px] text-ink-muted">version {r.version}</span>
+                </span>
+                <span className="text-[12.5px] text-ink-muted">{sameDay(r.startedAt, Date.now()) ? formatTime(r.startedAt) : `${formatDay(r.startedAt)}, ${formatTime(r.startedAt)}`}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+        <div className="mt-4 flex justify-end">
+          <Button variant="ghost" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+      </div>
+    </Modal>
   )
 }
 
@@ -180,9 +238,18 @@ export function WorkflowEditor() {
   const close = useWorkflows((s) => s.close)
   const save = useWorkflows((s) => s.save)
   const remove = useWorkflows((s) => s.remove)
+  const share = useWorkflows((s) => s.share)
   const [versions, setVersions] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [running, setRunning] = useState(false)
+  const [history, setHistory] = useState(false)
+  const watching = useRuns((s) => s.watching)
+  const watch = useRuns((s) => s.watch)
+  // Another workflow's run has nothing to do with this canvas.
+  useEffect(() => {
+    watch(null)
+  }, [draft?.id, watch])
   if (!draft) return null
   const dirty = isDirty(draft)
   const problems = problemsOf(draft)
@@ -223,6 +290,9 @@ export function WorkflowEditor() {
                   </IconButton>
                 </Menu.Trigger>
                 <Menu.Content align="end" className="w-[220px]">
+                  <Menu.Item onSelect={() => setHistory(true)}>
+                    <Clock className="h-4 w-4 text-ink-muted" /> Run history
+                  </Menu.Item>
                   <Menu.Item onSelect={() => setVersions(true)}>
                     <History className="h-4 w-4 text-ink-muted" /> Versions
                   </Menu.Item>
@@ -231,6 +301,11 @@ export function WorkflowEditor() {
                   </Menu.Item>
                 </Menu.Content>
               </Menu.Root>
+            )}
+            {draft.id && (
+              <Button variant="secondary" disabled={dirty} title={dirty ? 'Save your changes first' : undefined} onClick={() => void share()}>
+                <Share2 className="h-4 w-4" /> Share
+              </Button>
             )}
             <Button
               variant="primary"
@@ -243,6 +318,23 @@ export function WorkflowEditor() {
               }}
             >
               <Save className="h-4 w-4" /> Save
+            </Button>
+            <Button
+              variant="primary"
+              disabled={saving || problems.length > 0}
+              title={problems[0]}
+              onClick={async () => {
+                // It runs what is on the screen: if that has not been saved, it is saved first, so the run and the version agree.
+                if (dirty || !draft.id) {
+                  setSaving(true)
+                  const ok = await save()
+                  setSaving(false)
+                  if (!ok) return
+                }
+                setRunning(true)
+              }}
+            >
+              <Play className="h-4 w-4" /> Run
             </Button>
           </div>
         </header>
@@ -265,8 +357,18 @@ export function WorkflowEditor() {
         </div>
       </section>
 
-      {selected && <NodeDetails id={selected} onClose={() => select(null)} />}
+      {selected && !watching && <NodeDetails id={selected} onClose={() => select(null)} />}
 
+      {watching && <RunPanel runId={watching} onClose={() => watch(null)} onRunAgain={() => setRunning(true)} />}
+      {running && draft.id && (
+        <RunDialog
+          workflowId={draft.id}
+          name={draft.name}
+          inputs={(draft.definition.nodes.find((n): n is StartNode => n.type === 'start')?.inputs) ?? []}
+          onClose={() => setRunning(false)}
+        />
+      )}
+      {history && draft.id && <RunHistory id={draft.id} onClose={() => setHistory(false)} />}
       {versions && draft.id && <Versions id={draft.id} current={draft.version} onClose={() => setVersions(false)} />}
       <ConfirmDialog
         open={deleting}

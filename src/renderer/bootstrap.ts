@@ -3,6 +3,7 @@ import { useDevices } from '@/stores/devices'
 import { useDrafts } from '@/stores/drafts'
 import { useMcp } from '@/stores/mcp'
 import { useModels } from '@/stores/models'
+import { useRuns } from '@/stores/runs'
 import { useSessions } from '@/stores/sessions'
 import { setSaveErrorHandler, useSettings } from '@/stores/settings'
 import { useUi } from '@/stores/ui'
@@ -37,6 +38,7 @@ export async function bootstrap(): Promise<void> {
     useVendors.getState().applyPush(push)
     useMcp.getState().applyPush(push)
     useWorkflows.getState().applyPush(push)
+    useRuns.getState().applyPush(push)
   })
 
   const data = await within(core.call('app.bootstrap'), 15_000)

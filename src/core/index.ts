@@ -198,7 +198,7 @@ async function start(): Promise<void> {
     }
   })
   runner.markAbandoned()
-  const workflows = new WorkflowService(db, runner, undefined, () => push({ type: 'workflows' }))
+  const workflows = new WorkflowService(db, runner, undefined, () => push({ type: 'workflows' }), dataDir, async () => (await mcp.resolved()).map((s) => s.key))
   const terminals = new TerminalService({ folderOf: (id) => (service as SessionService).projectFolder(id), push })
   terminalsRef = terminals
   api = {

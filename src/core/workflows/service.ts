@@ -1,6 +1,8 @@
-import { statSync } from 'node:fs'
+import { mkdirSync, statSync } from 'node:fs'
+import { join } from 'node:path'
 import type { AskAnswers } from '@shared/agent'
 import type { WorkflowApi } from '@shared/api'
+import { fromFile, toFile } from '@shared/workflow-file'
 import { validateWorkflow, type RunSummary, type WorkflowDefinition, type WorkflowFull, type WorkflowSummary } from '@shared/workflow'
 import type { Store, WorkflowRow } from '../store'
 import type { WorkflowRunner } from './runner'
@@ -23,7 +25,11 @@ export class WorkflowService {
     private readonly runner: WorkflowRunner,
     private readonly now: () => number = () => Date.now(),
     /** The list of workflows changed, so the window should look again. */
-    private readonly changed: () => void = () => undefined
+    private readonly changed: () => void = () => undefined,
+    /** Where Celeste keeps its data. A run that is given no folder works in a private one of its own under it. */
+    private readonly dataDir?: string,
+    /** The names of the tool servers the person has, so an imported workflow can say which of its tools are missing. */
+    private readonly toolNames?: () => Promise<string[]>
   ) {}
 
   private summary(w: WorkflowRow): WorkflowSummary {
@@ -91,6 +97,17 @@ export class WorkflowService {
       return this.full(row)
     },
 
+    'workflows.export': (id) => {
+      const w = this.require(id)
+      return toFile(w.name, w.description, w.definition)
+    },
+
+    'workflows.import': async (text) => {
+      if (typeof text !== 'string') throw new Error('That is not a workflow file.')
+      const read = fromFile(text, { mcpServers: this.toolNames ? await this.toolNames() : undefined })
+      return read
+    },
+
     'workflows.setAssistant': (id, allow) => {
       const w = this.require(id)
       const row = { ...w, allowAssistant: allow === true, updatedAt: this.now() }
@@ -111,7 +128,11 @@ export class WorkflowService {
     'workflows.version': (id, version) => this.store.workflowVersion(this.require(id).id, Number(version)) ?? null,
 
     'workflows.run': (id, inputs, where) => {
-      const folder = text(where?.folder, 'folder', 500)
+      const given = text(where?.folder, 'folder', 500)
+      const workflow = this.require(id)
+      // No folder: a private one for this workflow, so a workflow that only needs somewhere to put files has it.
+      const folder = given || (this.dataDir ? join(this.dataDir, 'workflows', workflow.id) : '')
+      if (!given && folder) mkdirSync(folder, { recursive: true })
       let ok = false
       try {
         ok = statSync(folder).isDirectory()
@@ -119,7 +140,7 @@ export class WorkflowService {
         /* reported below */
       }
       if (!ok) throw new Error('Choose a folder for the run to work in.')
-      return this.runner.start({ workflowId: this.require(id).id, inputs: inputs ?? {}, startedBy: 'you', folder, ...(typeof where.sessionId === 'string' ? { sessionId: where.sessionId } : {}) })
+      return this.runner.start({ workflowId: workflow.id, inputs: inputs ?? {}, startedBy: 'you', folder, ...(typeof where.sessionId === 'string' ? { sessionId: where.sessionId } : {}) })
     },
 
     'runs.list': (workflowId) => this.store.listRuns(typeof workflowId === 'string' ? workflowId : undefined, 100),

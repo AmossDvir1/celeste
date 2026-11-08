@@ -313,7 +313,7 @@ function ApprovalCard({
 
 /* ---------- ask_user ---------- */
 
-function AskUserCard({
+export function AskUserCard({
   item,
   onAnswer
 }: {

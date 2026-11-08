@@ -325,13 +325,17 @@ export interface CoreApi {
   'workflows.get': (id: string) => WorkflowFull | null
   /** Saves a workflow: a new one when `id` is absent. A change to the steps makes a new version. Throws a sentence when it is not valid. */
   'workflows.save': (input: { id?: string; name: string; description?: string; definition: WorkflowDefinition }) => WorkflowFull
+  /** The workflow as a file to share, and what was left out of it (secrets, devices). */
+  'workflows.export': (id: string) => { filename: string; text: string; notes: string[] }
+  /** Reads a shared file into a workflow that is not saved yet. Throws a sentence when it is not one, or is not valid. */
+  'workflows.import': (text: string) => Promise<{ name: string; description: string; definition: WorkflowDefinition; notes: string[] }>
   /** Lets the assistant start this workflow (after Celeste asks), or stops it. */
   'workflows.setAssistant': (id: string, allow: boolean) => WorkflowSummary
   /** Deletes the workflow, its versions and its runs. A run in progress is stopped first. */
   'workflows.remove': (id: string) => Promise<void>
   'workflows.versions': (id: string) => { version: number; createdAt: number }[]
   'workflows.version': (id: string, version: number) => WorkflowDefinition | null
-  /** Starts a run in a folder of the person's choosing and answers at once; the run reports through `run` and `runEvent` pushes. */
+  /** Starts a run in a folder of the person's choosing (an empty one: a private folder for the workflow) and answers at once; the run reports through `run` and `runEvent` pushes. */
   'workflows.run': (id: string, inputs: Record<string, unknown>, where: { folder: string; sessionId?: string }) => Promise<RunSummary>
   'runs.list': (workflowId?: string) => RunSummary[]
   'runs.get': (id: string) => { summary: RunSummary; events: StoredRunEvent[] } | null
