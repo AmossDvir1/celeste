@@ -116,8 +116,12 @@ try {
   await page.getByRole('button', { name: 'More about this workflow' }).click()
   await page.getByRole('menuitem', { name: 'Versions' }).click()
   const versions = page.getByRole('dialog', { name: 'Versions' })
+  // The list is read from Core when the dialog opens, which a slower computer takes a moment over.
+  await versions.getByRole('listitem').first().waitFor({ timeout: 10_000 })
+  await page.waitForTimeout(300)
   check('both versions are kept', (await versions.getByRole('listitem').count()) === 2)
   await versions.getByRole('button', { name: 'Restore version 1' }).click()
+  await page.getByText('Unsaved changes').first().waitFor({ timeout: 10_000 }).catch(() => undefined)
   check('restoring puts the old steps back as an unsaved change', (await page.getByText('Unsaved changes').count()) === 1)
   await nodes.nth(1).click()
   check('the command is the one from version 1', (await details.getByRole('textbox', { name: 'Command' }).inputValue()) === 'find-kbs --days {{inputs.older_than_days}}')
