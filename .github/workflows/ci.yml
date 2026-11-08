@@ -22,7 +22,7 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
+      - run: node scripts/ci-report.mjs --raw npm ci
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
@@ -44,7 +44,7 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
+      - run: node scripts/ci-report.mjs --raw npm ci
       - run: git config --global user.name "CI" && git config --global user.email "ci@example.com" && git config --global init.defaultBranch main
       # The wrapper also writes the reason for a failure as an annotation, which is readable without opening the log.
       - run: node scripts/ci-report.mjs verify:${{ matrix.check }}
@@ -75,7 +75,7 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
+      - run: node scripts/ci-report.mjs --raw npm ci
       - run: ${{ matrix.make }}
       - run: node scripts/ci-report.mjs installer-check
       - uses: actions/upload-artifact@v4
