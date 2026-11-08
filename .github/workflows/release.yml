@@ -35,11 +35,21 @@ jobs:
         run: node -e "const v=require('./package.json').version; if ('v'+v !== process.env.GITHUB_REF_NAME) { console.error('The tag is '+process.env.GITHUB_REF_NAME+' but package.json says '+v); process.exit(1) }"
       - run: npm run typecheck
       - run: npm test
-      - run: npm run dist:win
+      - name: Signing, only when the secrets exist
+        shell: bash
         env:
-          # Signing is done only when these secrets exist (see RELEASING.md); without them the installers are unsigned.
-          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+          LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+          PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+        # An empty value is not "no value" to the packager, which would try to sign with a file called "": so nothing is set unless there is something.
+        run: |
+          if [ -n "$LINK" ]; then
+            echo "CSC_LINK=$LINK" >> "$GITHUB_ENV"
+            echo "CSC_KEY_PASSWORD=$PASSWORD" >> "$GITHUB_ENV"
+            echo "Signing with the certificate from the secrets."
+          else
+            echo "No signing certificate in the secrets: the installers will be unsigned."
+          fi
+      - run: npm run dist:win
       - name: Install it, run it, uninstall it
         run: node scripts/installer-check.mjs
       - uses: actions/upload-artifact@v4
@@ -66,14 +76,29 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npm run dist:mac -- --${{ matrix.arch }}
+      - name: Signing and notarization, only when the secrets exist
+        shell: bash
         env:
-          # Signing and notarization are done only when these secrets exist (see RELEASING.md); without them the app is unsigned.
-          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          LINK: ${{ secrets.MAC_CSC_LINK }}
+          PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID_VALUE: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD_VALUE: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_VALUE: ${{ secrets.APPLE_TEAM_ID }}
+        # An empty value is not "no value" to the packager, which would try to sign with a file called "": so nothing is set unless there is something.
+        run: |
+          if [ -n "$LINK" ]; then
+            echo "CSC_LINK=$LINK" >> "$GITHUB_ENV"
+            echo "CSC_KEY_PASSWORD=$PASSWORD" >> "$GITHUB_ENV"
+            if [ -n "$APPLE_ID_VALUE" ]; then
+              echo "APPLE_ID=$APPLE_ID_VALUE" >> "$GITHUB_ENV"
+              echo "APPLE_APP_SPECIFIC_PASSWORD=$APPLE_PASSWORD_VALUE" >> "$GITHUB_ENV"
+              echo "APPLE_TEAM_ID=$APPLE_TEAM_VALUE" >> "$GITHUB_ENV"
+            fi
+            echo "Signing with the certificate from the secrets."
+          else
+            echo "No signing certificate in the secrets: the app will be unsigned."
+          fi
+      - run: npm run dist:mac -- --${{ matrix.arch }}
       - name: Start the packed app and look inside it
         run: node scripts/installer-check.mjs
       - uses: actions/upload-artifact@v4
