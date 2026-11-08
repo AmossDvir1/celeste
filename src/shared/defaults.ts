@@ -10,6 +10,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   wizardDone: false,
   sidebarCollapsed: false,
   sidebarWidth: SIDEBAR_WIDTH.default,
+  autoTitle: true,
   pinnedModels: [],
   defaults: { model: 'copilot-auto', approval: 'auto', projectsFolder: '' }
 }

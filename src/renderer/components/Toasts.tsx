@@ -11,7 +11,7 @@ export function Toasts() {
       {toasts.map((t) => (
         <div
           key={t.id}
-          className="animate-fade-up pointer-events-auto flex items-center gap-3 rounded-xl border border-edge-strong bg-raised-2 py-2 pr-2 pl-4 text-sm text-ink shadow-pop"
+          className="animate-fade-up pointer-events-auto flex items-center gap-3 rounded-xl border border-accent/70 bg-raised-2 py-2 pr-2 pl-4 text-sm text-ink shadow-pop"
         >
           <span>{t.text}</span>
           {t.actionLabel && (

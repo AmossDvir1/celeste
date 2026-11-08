@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 import type { AdapterContext } from '../types'
 import { displayPath, parseUnifiedDiff } from './diff'
 import { CopilotHost, toModels, type SdkClientHandle } from './host'
+import { createCopilotTitler } from './index'
 import { decide, describe as describeRequest, DEVICE_SERVER, type PermissionLike } from './permissions'
 import { CopilotAgentSession, RESUME_NOTICE, type SdkClient, type SdkSession } from './session'
 import { Translator, errorFrom } from './translate'
@@ -698,5 +699,55 @@ describe('the Copilot host', () => {
     await host.status()
     await host.stop()
     expect(handle.stops).toBe(1)
+  })
+})
+
+describe('naming a conversation with Copilot', () => {
+  /** A client that records what it was asked, and answers a title request with `reply`. */
+  function naming(reply: string | undefined, models: { id: string; name: string }[]) {
+    const log = { created: [] as unknown[], prompts: [] as string[], deleted: [] as string[], disconnected: 0 }
+    const handle = fakeHandle({
+      async listModels() {
+        return models.map((m) => ({ ...m, capabilities: { supports: {} } }))
+      },
+      createSession: (async (config: unknown) => {
+        log.created.push(config)
+        return {
+          sessionId: 'title-session',
+          sendAndWait: async (prompt: string) => {
+            log.prompts.push(prompt)
+            return reply === undefined ? undefined : { data: { content: reply } }
+          },
+          disconnect: async () => void log.disconnected++
+        }
+      }) as never,
+      deleteSession: async (id: string) => void log.deleted.push(id)
+    })
+    return { host: new CopilotHost(() => handle), log }
+  }
+
+  it('asks the smallest model, with no tools, and deletes the session straight after', async () => {
+    const { host, log } = naming('Plan the KB rollout', [
+      { id: 'gpt-5', name: 'GPT-5' },
+      { id: 'gpt-5-mini', name: 'GPT-5 mini' }
+    ])
+    expect(await createCopilotTitler(host)('Help me plan the KB rollout')).toBe('Plan the KB rollout')
+    expect(log.created[0]).toMatchObject({ model: 'gpt-5-mini', availableTools: [] })
+    expect(log.prompts[0]).toContain('Help me plan the KB rollout')
+    expect(log.disconnected).toBe(1)
+    expect(log.deleted).toEqual(['title-session'])
+  })
+
+  it('asks nothing when there is no small model, so a large one is never spent on a title', async () => {
+    const { host, log } = naming('x', [{ id: 'gpt-5', name: 'GPT-5' }])
+    expect(await createCopilotTitler(host)('Anything')).toBeUndefined()
+    expect(log.created).toEqual([])
+  })
+
+  it('gives up quietly when nobody is signed in or Copilot does not answer, and still cleans up', async () => {
+    expect(await createCopilotTitler(new CopilotHost(() => fakeHandle({ authed: false })))('Anything')).toBeUndefined()
+    const { host, log } = naming(undefined, [{ id: 'gpt-5-mini', name: 'GPT-5 mini' }])
+    expect(await createCopilotTitler(host)('Anything')).toBeUndefined()
+    expect(log.deleted).toEqual(['title-session'])
   })
 })

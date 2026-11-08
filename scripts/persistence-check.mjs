@@ -81,6 +81,25 @@ try {
   await page.getByRole('button', { name: /^Revenue chat/ }).waitFor()
   check('a session can be renamed', true)
 
+  // After its first message a chat is named by a small model of its vendor (here the stand-in answers), and the setting turns that off.
+  stub.naming = (m) => (/NAME-ME/.test(m) ? 'Named by the stand-in' : 'This reply is far too long to be a title, so the app ignores it and keeps the first words.')
+  await page.getByRole('button', { name: 'New chat' }).click()
+  await say(page, 'NAME-ME summarize the quarterly numbers')
+  await page.getByRole('button', { name: /^Named by the stand-in/ }).waitFor({ timeout: 30_000 })
+  check('the first message names the chat: a short title replaces the first words in the list', (await sidebar(page, /NAME-ME summarize/).count()) === 0)
+  const autoTitle = async () => {
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'General' }).click()
+    await page.getByRole('switch', { name: 'Name new chats automatically' }).click()
+    await page.keyboard.press('Escape')
+  }
+  await autoTitle()
+  await page.getByRole('button', { name: 'New chat' }).click()
+  await say(page, 'NAME-ME again, with the setting off')
+  await page.waitForTimeout(1500)
+  check('with the setting off the first words stay as the title', (await sidebar(page, /NAME-ME again/).count()) === 1)
+  await autoTitle()
+
   // The session list can be dragged wider and narrower, but only between two limits, and the width is kept.
   const handle = page.getByRole('separator', { name: 'Resize the sidebar' })
   const drag = async (dx) => {

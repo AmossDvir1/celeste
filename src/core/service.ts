@@ -23,6 +23,7 @@ import { SIDEBAR_WIDTH } from '@shared/defaults'
 import { nextStatus } from '@shared/status'
 import type { AttachmentRow, FileStore, SessionRow, Store } from './store'
 import type { Snapshots } from './snapshots'
+import { cleanTitle, type Titler } from './titles'
 import { contextText, MAX_CONTEXT } from './context'
 import { listFolder, readPreview } from './files'
 
@@ -48,6 +49,8 @@ export interface ServiceOptions {
   onSessionStopped?: (sessionId: string) => void
   /** Saves a Develop session's project folder before each message, so a turn can be reverted. Without it there are no checkpoints. */
   snapshots?: Snapshots
+  /** Writes the short title shown for a session after its first message. Without it the first words stay as the title. */
+  titler?: Titler
   now?: () => number
   undoMs?: number
 }
@@ -71,6 +74,8 @@ interface Live {
 /** How long Celeste waits for a folder to be saved before it sends the message anyway, without a checkpoint. */
 const CHECKPOINT_TIMEOUT_MS = 90_000
 const CHECKPOINT_ID = /^[0-9a-f]{40}$/
+/** How long the small model has to name a session. Its own limit is a little shorter, so this is the backstop. */
+const NAMING_TIMEOUT_MS = 40_000
 /** Added to the first message after a revert: the agent remembers edits that are no longer there. */
 const REVERT_NOTE =
   '[Celeste: before this message the person reverted the project folder to an earlier point, which undid changes made since. Files you changed may be back to older contents or gone. Read a file again before relying on what you remember of it.]'
@@ -88,7 +93,7 @@ const APPROVALS: ApprovalMode[] = ['auto', 'edits', 'ask', 'plan']
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const THEMES = ['dark', 'light', 'system']
 const VENDOR_IDS: VendorId[] = ['copilot', 'claude', 'openai', 'gemini']
-const SETTINGS_KEYS = ['theme', 'userName', 'wizardDone', 'sidebarCollapsed', 'sidebarWidth', 'pinnedModels', 'defaults'] as const
+const SETTINGS_KEYS = ['theme', 'userName', 'wizardDone', 'sidebarCollapsed', 'sidebarWidth', 'autoTitle', 'pinnedModels', 'defaults'] as const
 const MAX_PINNED = 100
 const TRANSCRIPT_LIMIT = 24_000
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
@@ -218,6 +223,7 @@ export class SessionService {
       wizardDone: (stored.wizardDone as boolean) ?? d.wizardDone,
       sidebarCollapsed: (stored.sidebarCollapsed as boolean) ?? d.sidebarCollapsed,
       sidebarWidth: (stored.sidebarWidth as number | undefined) ?? d.sidebarWidth,
+      autoTitle: (stored.autoTitle as boolean | undefined) ?? d.autoTitle,
       pinnedModels: (stored.pinnedModels as string[] | undefined) ?? d.pinnedModels,
       defaults: { ...d.defaults, ...(stored.defaults as Partial<AppSettings['defaults']> | undefined) }
     }
@@ -245,6 +251,7 @@ export class SessionService {
     if (patch.userName !== undefined) next.userName = text(patch.userName, 'name', 100)
     if (patch.wizardDone !== undefined) next.wizardDone = patch.wizardDone === true
     if (patch.sidebarCollapsed !== undefined) next.sidebarCollapsed = patch.sidebarCollapsed === true
+    if (patch.autoTitle !== undefined) next.autoTitle = patch.autoTitle === true
     if (patch.sidebarWidth !== undefined) {
       if (typeof patch.sidebarWidth !== 'number' || !Number.isFinite(patch.sidebarWidth)) throw new Error('Invalid sidebar width')
       next.sidebarWidth = Math.round(Math.min(SIDEBAR_WIDTH.max, Math.max(SIDEBAR_WIDTH.min, patch.sidebarWidth)))
@@ -426,6 +433,9 @@ export class SessionService {
     this.store.linkAttachments(input.attachments.map((a) => a.id), id)
     this.record(id, { type: 'user.message', text: input.text, attachments: input.attachments, ...(context.length ? { context } : {}) }, live)
 
+    // The first message names the session: the sidebar shows a short title in place of its first words, a moment later.
+    if (row.lastSeq === 0 && this.opts.titler && input.text.trim().length >= 3 && this.currentSettings().autoTitle) void this.autoTitle(id, row.vendor, row.title, input.text)
+
     // What the agent is told: the person's words, then (if the folder was reverted) a note about that, then the files they added.
     // The agent's adapter gets only text and attachments; the files are already in the text.
     const extra = [live.reverted ? REVERT_NOTE : '', row.cwd && context.length ? contextText(row.cwd, context) : ''].filter(Boolean)
@@ -445,6 +455,26 @@ export class SessionService {
       if (checkpoint) await this.checkpointBefore(id, cwd, live)
       if (this.live.get(id) === live) live.session.send(outgoing)
     })
+  }
+
+  /**
+   * Asks a small model of the session's own vendor for a title and puts it in place of the first words. It is only ever a
+   * nicety: if the model cannot be asked, takes too long, or answers with something that is not a title, nothing changes, and
+   * if the person renamed the session in the meantime their name stays.
+   */
+  private async autoTitle(id: string, vendor: VendorId, provisional: string, text: string): Promise<void> {
+    const titler = this.opts.titler
+    if (!titler) return
+    try {
+      const title = cleanTitle(await withTimeout(titler.title(vendor, text), NAMING_TIMEOUT_MS, 'Naming took too long.'))
+      const row = this.store.getSession(id)
+      if (!title || !row || row.deletedAt !== null || row.title !== provisional || title === provisional) return
+      this.store.patchSession(id, { title })
+      this.store.index(id, 'title', title)
+      this.emitSummary(id)
+    } catch (err) {
+      console.error('[core] could not name a session', err)
+    }
   }
 
   /** Saves the folder before a message. If it cannot be saved the message still goes, and the log says there is no checkpoint. */

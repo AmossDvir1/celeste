@@ -30,6 +30,12 @@ export class FakeAnthropic {
   get main(): FakeRequest[] {
     return this.requests.filter((r) => Array.isArray(r.body['tools']) && (r.body['tools'] as unknown[]).length > 0)
   }
+  /**
+   * What the stand-in says when Celeste asks for a title for a new session (recognised by its two-line instructions, not by the
+   * script, so a script written for a conversation is not confused by it). By default the reply is too long to be a title, which
+   * Celeste ignores, so a session keeps its first words; a test that wants a title sets this.
+   */
+  naming: (message: string) => string = () => 'This reply is far too long to be a title, so the app ignores it and keeps the first words.'
   private server: Server | undefined
   private counter = 0
   url = ''
@@ -73,7 +79,8 @@ export class FakeAnthropic {
     }
     const request = describe(body)
     this.requests.push(request)
-    const blocks = this.script(request)
+    const naming = JSON.stringify(body['system'] ?? '').includes('You name conversations')
+    const blocks: Block[] = naming ? [{ type: 'text', text: this.naming(request.last.kind === 'text' ? request.last.text : '') }] : this.script(request)
     const id = `msg_fake_${++this.counter}`
     const model = String(body['model'] ?? 'claude-fake')
     if (body['stream'] !== true) {

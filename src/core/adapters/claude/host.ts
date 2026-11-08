@@ -177,6 +177,11 @@ export class ClaudeHost {
     return { state: 'signed-in', account: `Console · ${a.organization ?? a.email ?? 'Anthropic'}` }
   }
 
+  /** The models already read from Claude Code, without starting it again. Empty before the first time. */
+  knownModels(): ModelInfo[] {
+    return toModels(this.cached)
+  }
+
   async models(): Promise<ModelInfo[]> {
     const probe = await this.deps.probe(await this.env())
     this.cached = probe.models

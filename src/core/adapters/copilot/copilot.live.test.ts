@@ -13,7 +13,8 @@ import { DeviceTools } from '../../devices/tools'
 import { DiskFileStore } from '../../disk-files'
 import { MemoryStore } from '../../testing/memory-store'
 import { SessionService } from '../../service'
-import { copilotRuntime, createCopilotHost, createCopilotSession } from './index'
+import { copilotRuntime, createCopilotHost, createCopilotSession, createCopilotTitler } from './index'
+import { cheapest, cleanTitle } from '../../titles'
 import { downloadedRuntime, runtimePlatform } from './runtime'
 import { RESUME_NOTICE } from './session'
 
@@ -289,4 +290,12 @@ describe.skipIf(!live)('Copilot, for real', () => {
     expect(models.find((m) => m.id === MODEL)).toBeDefined()
     expect(await host.status()).toMatchObject({ state: 'signed-in' })
   }, 60_000)
+
+  it('names a conversation with the smallest model on offer, leaving no session behind', async () => {
+    const small = cheapest(await host.models())
+    console.log(`Naming model: ${small?.id ?? 'none looks small'}`)
+    const reply = await createCopilotTitler(host)('Help me plan how we roll out the KB updates to the canary hosts first')
+    console.log(`Raw reply: ${JSON.stringify(reply)}`)
+    expect(cleanTitle(reply)).toBeTruthy()
+  }, 90_000)
 })

@@ -875,3 +875,98 @@ describe('files from the project added to a message', () => {
     expect(first.api['app.bootstrap']().drafts['s-draft']).toBeUndefined()
   })
 })
+
+// --- naming a new session -------------------------------------------------------------------------------
+
+describe('naming a session after its first message', () => {
+  /** A titler the test answers by hand. */
+  function naming() {
+    const asked: { vendor: string; text: string }[] = []
+    const waiting: ((reply: string | undefined | Error) => void)[] = []
+    const titler = {
+      title: (vendor: string, text: string) => {
+        asked.push({ vendor, text })
+        return new Promise<string | undefined>((resolve, reject) => waiting.push((r) => (r instanceof Error ? reject(r) : resolve(r))))
+      }
+    }
+    return { titler, asked, answer: (reply: string | undefined | Error, n = 0) => waiting[n]?.(reply) }
+  }
+  const titleOf = (api: ReturnType<typeof setup>['api'], id: string) => api['sessions.get'](id)?.summary.title
+
+  it('puts a short title in place of the first words, tells the windows, and makes it searchable', async () => {
+    const { titler, asked, answer } = naming()
+    const { api, pushes } = setup(new MemoryStore(), '/data', { titler })
+    const { id } = api['sessions.create']({ ...input, title: 'Help me plan how we roll out the KB updates' })
+    api['sessions.send'](id, { text: 'Help me plan how we roll out the KB updates to the canary hosts', attachments: [] })
+    expect(asked).toEqual([{ vendor: 'claude', text: 'Help me plan how we roll out the KB updates to the canary hosts' }])
+    expect(titleOf(api, id)).toBe('Help me plan how we roll out the KB updates')
+    answer('"Plan the KB rollout."')
+    await flush()
+    expect(titleOf(api, id)).toBe('Plan the KB rollout')
+    expect(pushes.some((p) => p.type === 'summary' && p.session.id === id && p.session.title === 'Plan the KB rollout')).toBe(true)
+    expect(api['sessions.search']('rollout').map((h) => h.sessionId)).toContain(id)
+  })
+
+  it('names a session once: not again for later messages', async () => {
+    const { titler, asked, answer } = naming()
+    const { api } = setup(new MemoryStore(), '/data', { titler })
+    const { id } = api['sessions.create'](input)
+    api['sessions.send'](id, { text: 'First message here', attachments: [] })
+    answer('First title')
+    await flush()
+    api['sessions.send'](id, { text: 'A second message', attachments: [] })
+    await flush()
+    expect(asked).toHaveLength(1)
+    expect(titleOf(api, id)).toBe('First title')
+  })
+
+  it('leaves a name the person chose in the meantime alone', async () => {
+    const { titler, answer } = naming()
+    const { api } = setup(new MemoryStore(), '/data', { titler })
+    const { id } = api['sessions.create'](input)
+    api['sessions.send'](id, { text: 'Plan the rollout please', attachments: [] })
+    api['sessions.update'](id, { title: 'My own name' })
+    answer('Plan the rollout')
+    await flush()
+    expect(titleOf(api, id)).toBe('My own name')
+  })
+
+  it('keeps the first words when the model cannot be asked, answers badly, fails, or the session is gone', async () => {
+    const { titler, answer } = naming()
+    const { api, service } = setup(new MemoryStore(), '/data', { titler })
+    const ids = [1, 2, 3, 4].map(() => api['sessions.create'](input).id)
+    for (const id of ids) api['sessions.send'](id, { text: 'Some message to name', attachments: [] })
+    answer(undefined, 0)
+    answer('I am sorry, but I cannot help with that request because it is outside what I am able to do here.', 1)
+    answer(new Error('The model is not available'), 2)
+    api['sessions.remove'](ids[3] as string)
+    answer('A fine title', 3)
+    await flush()
+    for (const id of ids.slice(0, 3)) expect(titleOf(api, id)).toBe(input.title)
+    expect(service).toBeDefined()
+  })
+
+  it('does not ask when the setting is off, or when there is no text to name it by', async () => {
+    const { titler, asked } = naming()
+    const { api } = setup(new MemoryStore(), '/data', { titler })
+    const quiet = api['sessions.create'](input)
+    api['sessions.send'](quiet.id, { text: 'ok', attachments: [] })
+    const files = api['sessions.create'](input)
+    api['sessions.send'](files.id, { text: '', attachments: [] })
+    expect(asked).toEqual([])
+
+    api['settings.patch']({ autoTitle: false })
+    const off = api['sessions.create'](input)
+    api['sessions.send'](off.id, { text: 'A perfectly good message', attachments: [] })
+    expect(asked).toEqual([])
+  })
+
+  it('works without a titler at all, and keeps the setting, which starts on', () => {
+    const { api, agents } = setup()
+    const { id } = api['sessions.create'](input)
+    api['sessions.send'](id, { text: 'Just a message', attachments: [] })
+    expect(agents[0]?.sent).toHaveLength(1)
+    expect(api['app.bootstrap']().settings.autoTitle).toBe(true)
+    expect(api['settings.patch']({ autoTitle: false }).autoTitle).toBe(false)
+  })
+})

@@ -1,4 +1,6 @@
+import { tmpdir } from 'node:os'
 import { CopilotClient, RuntimeConnection } from '@github/copilot-sdk'
+import { cheapest, titlePrompt } from '../../titles'
 import type { AdapterContext } from '../types'
 import { CopilotHost, type LoginSession, type RuntimeSource, type SdkClientHandle } from './host'
 import { downloadRuntime, findRuntime } from './runtime'
@@ -37,6 +39,37 @@ export function createCopilotHost(runtime?: RuntimeSource, options: { isolatedDi
     (path) => handle(new CopilotClient({ logLevel: 'error', ...isolated, ...(path ? { connection: RuntimeConnection.forStdio({ path }) } : {}) })),
     runtime
   )
+}
+
+/**
+ * Asks Copilot's smallest model for a title, once, in a session that is deleted straight after so it never shows up as a
+ * conversation. Gives up quietly (undefined) when Copilot is not signed in, offers no small model, or does not answer in half a
+ * minute.
+ */
+export function createCopilotTitler(host: CopilotHost): (text: string) => Promise<string | undefined> {
+  return async (text) => {
+    try {
+      const client = await host.ready()
+      const small = cheapest(await host.models())
+      if (!small) return undefined
+      const session = await client.createSession({
+        model: small.id,
+        workingDirectory: tmpdir(),
+        // It only has to write a line of text: no tools, and no way to ask for anything.
+        availableTools: [],
+        onPermissionRequest: () => ({ kind: 'reject' })
+      } as never)
+      try {
+        const talk = session as unknown as { sendAndWait(prompt: string, timeout?: number): Promise<{ data?: { content?: string } } | undefined> }
+        return (await talk.sendAndWait(titlePrompt(text), 30_000))?.data?.content
+      } finally {
+        await session.disconnect().catch(() => undefined)
+        await client.deleteSession(session.sessionId).catch(() => undefined)
+      }
+    } catch {
+      return undefined
+    }
+  }
 }
 
 export function createCopilotSession(

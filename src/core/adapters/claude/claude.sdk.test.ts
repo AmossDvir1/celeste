@@ -6,7 +6,7 @@ import { Resvg } from '@resvg/resvg-js'
 import type { AgentEvent, ApprovalMode } from '@shared/agent'
 import type { AdapterContext } from '../types'
 import { FakeAnthropic, type Script } from './fake-anthropic'
-import { claudeProgram, createClaudeHost, createClaudeSession } from './index'
+import { claudeProgram, createClaudeHost, createClaudeSession, createClaudeTitler } from './index'
 import { RESUME_NOTICE, type ClaudeAgentSession } from './session'
 
 /*
@@ -104,6 +104,24 @@ describe.skipIf(!program)('the Claude adapter with the real Claude Code', () => 
 
   const said = (events: AgentEvent[]) => events.flatMap((e) => (e.type === 'message.delta' ? [e.text] : [])).join('')
   const echo: Script = (r) => [{ type: 'text', text: r.last.kind === 'text' ? `Echo: ${r.last.text}` : 'Finished' }]
+
+  it('names a conversation with the smallest model, with no tools, and nothing kept as a session', async () => {
+    api.naming = () => '"Plan the KB rollout."'
+    const before = api.requests.length
+    const reply = await createClaudeTitler(host())('Help me plan how we roll out the KB updates to the canary hosts first')
+    // The raw reply comes back; turning it into a title is the service's job.
+    expect(reply).toBe('"Plan the KB rollout."')
+    const asked = api.requests.slice(before).filter((r) => r.last.kind === 'text' && r.last.text.includes('canary hosts'))
+    expect(asked).toHaveLength(1)
+    expect(asked[0]?.model).toMatch(/haiku/i)
+    expect(asked[0]?.body['tools'] ?? []).toEqual([])
+    expect(asked[0]?.last.kind === 'text' && asked[0].last.text).toContain('at most 6 words')
+  }, 90_000)
+
+  it('names nothing, quietly, when Claude is not ready', async () => {
+    const lost = createClaudeHost({ installedAt: [], getKey: async () => null, configDir: config })
+    expect(await createClaudeTitler(lost)('Anything at all')).toBeUndefined()
+  })
 
   it('streams an answer in parts, reports usage, ends the turn, and remembers the session', async () => {
     api.setScript(echo)

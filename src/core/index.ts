@@ -16,8 +16,8 @@ import { DeviceToolServer } from './devices/mcp-server'
 import { nodeFileOps } from './devices/node-fs'
 import { DeviceTools } from './devices/tools'
 import { GitSnapshots } from './snapshots'
-import { createClaudeHost, createClaudeSession, type ClaudeHost } from './adapters/claude'
-import { copilotRuntime, createCopilotHost, createCopilotSession, type CopilotHost } from './adapters/copilot'
+import { createClaudeHost, createClaudeSession, createClaudeTitler, type ClaudeHost } from './adapters/claude'
+import { copilotRuntime, createCopilotHost, createCopilotSession, createCopilotTitler, type CopilotHost } from './adapters/copilot'
 import { createUnavailableSession } from './adapters/unavailable'
 import { projectApi } from './project'
 import { SessionService } from './service'
@@ -112,6 +112,9 @@ async function start(): Promise<void> {
   })
   claude = claudeHost
 
+  const claudeTitle = createClaudeTitler(claudeHost)
+  const copilotTitle = createCopilotTitler(host)
+
   service = new SessionService({
     store,
     files: new DiskFileStore(join(dataDir, 'attachments')),
@@ -125,6 +128,10 @@ async function start(): Promise<void> {
           : createUnavailableSession(ctx.vendor),
     // Develop sessions save their project folder before each message, in a private copy under the data folder.
     snapshots: new GitSnapshots(join(dataDir, 'snapshots')),
+    // A new session is named by a small model of its own vendor; the other vendors have no adapter yet.
+    titler: {
+      title: (vendor, text) => (vendor === 'claude' ? claudeTitle(text) : vendor === 'copilot' ? copilotTitle(text) : Promise.resolve(undefined))
+    },
     onSessionStopped: (id) => tools.cancel(id),
     push,
     defaults: {

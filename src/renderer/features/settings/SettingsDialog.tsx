@@ -168,6 +168,9 @@ function Content({ section }: { section: SettingsSection }) {
       return (
         <Section title="General" description="Celeste uses your name in the greeting.">
           <Field label="Your name">{(id) => <TextInput id={id} value={settings.userName} onChange={(e) => settings.set({ userName: e.target.value })} className="max-w-sm" />}</Field>
+          <Row title="Name new chats automatically" description="After your first message, a small, quick model from the same vendor writes a short title for the list. It sees your first message, as the chat itself does, and uses a little of your quota. Off: the title is the first words.">
+            <Switch label="Name new chats automatically" checked={settings.autoTitle} onCheckedChange={(autoTitle) => settings.set({ autoTitle })} />
+          </Row>
           <div>
             <h3 className="text-[14px] text-ink">Keyboard shortcuts</h3>
             <ul className="mt-3 divide-y divide-edge/70 rounded-xl border border-edge">

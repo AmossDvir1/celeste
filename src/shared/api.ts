@@ -39,6 +39,8 @@ export interface AppSettings {
   sidebarCollapsed: boolean
   /** How wide the session list is, in pixels. */
   sidebarWidth: number
+  /** After a session's first message, a small model of its vendor writes a short title for the sidebar. */
+  autoTitle: boolean
   /** Models the person pinned to the top of the model menu, in the order they were pinned. */
   pinnedModels: string[]
   defaults: { model: string; approval: ApprovalMode; projectsFolder: string }

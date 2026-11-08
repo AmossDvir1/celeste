@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { AdapterContext } from '../types'
 import { ClaudeHost, type Env, type Probe } from './host'
+import { cheapest, titlePrompt, TITLE_SYSTEM } from '../../titles'
 import { downloadClaudeProgram, findProgram } from './program'
 import { ClaudeAgentSession, type ClaudeQuery, type StartQuery } from './session'
 
@@ -110,6 +111,52 @@ export function createClaudeHost(options: ClaudeOptions): ClaudeHost {
     }
   })
   return host
+}
+
+/**
+ * Asks Claude's smallest model for a title, once: no tools, Celeste's own two-line instructions in place of Claude Code's long
+ * ones, nothing saved as a session. Gives up quietly (undefined) when Claude is not ready, has no small model, or does not
+ * answer within half a minute.
+ */
+export function createClaudeTitler(host: ClaudeHost): (text: string) => Promise<string | undefined> {
+  return async (text) => {
+    try {
+      if (!host.hasProgram()) return undefined
+      const models = host.knownModels().length ? host.knownModels() : await host.models()
+      const small = cheapest(models)
+      if (!small) return undefined
+      const { query } = await loadSdk()
+      const abort = new AbortController()
+      const timer = setTimeout(() => abort.abort(), 30_000)
+      const executable = host.programPath()
+      try {
+        const q = query({
+          prompt: titlePrompt(text),
+          options: {
+            model: small.id.replace(/^claude:/, ''),
+            maxTurns: 1,
+            tools: [],
+            systemPrompt: TITLE_SYSTEM,
+            persistSession: false,
+            settingSources: [],
+            env: await host.env(),
+            abortController: abort,
+            ...(executable ? { pathToClaudeCodeExecutable: executable } : {})
+          }
+        })
+        for await (const message of q) {
+          const m = message as unknown as { type?: string; subtype?: string; is_error?: boolean; result?: string }
+          if (m.type === 'result') return m.subtype === 'success' && !m.is_error ? m.result : undefined
+        }
+        return undefined
+      } finally {
+        clearTimeout(timer)
+        abort.abort()
+      }
+    } catch {
+      return undefined
+    }
+  }
 }
 
 export function createClaudeSession(
