@@ -97,10 +97,14 @@ try {
   if (win) {
     console.log('\n# Uninstalling')
     writeFileSync(join(profile, 'marker.txt'), 'my data')
-    execFileSync(join(home, 'Uninstall Celeste.exe'), ['/S', `_?=${home}`], { timeout: 180_000 })
-    // With _?= the uninstaller runs in place and leaves itself behind to be removed by hand.
+    // The uninstaller copies itself aside and finishes on its own, so wait for the program to go. (Running it in place with _?= would leave
+    // the system's record of the install behind, and the next setup would wait for an uninstaller that is no longer there.)
+    execFileSync(join(home, 'Uninstall Celeste.exe'), ['/S'], { timeout: 180_000 })
+    for (let i = 0; i < 120 && existsSync(exe); i++) await new Promise((r) => setTimeout(r, 500))
     await new Promise((r) => setTimeout(r, 1500))
     check('it takes Celeste away', !existsSync(exe) && !existsSync(join(home, 'resources', 'app.asar')))
+    const records = execFileSync('reg', ['query', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall', '/s', '/f', 'Celeste', '/d'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).toString().split('\n').filter((l) => /DisplayName\s+REG_SZ\s+Celeste/.test(l))
+    check('the system no longer lists it as installed', records.length === 0, records.join(' '))
     check('and leaves the person’s data alone', existsSync(join(profile, 'celeste.db')) && existsSync(join(profile, 'marker.txt')))
   }
 } catch (err) {
