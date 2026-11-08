@@ -74,6 +74,7 @@
     "buffer": "^6.0.3",
     "electron": "^45.2.3",
     "electron-builder": "26.18.0",
+    "electron-builder-squirrel-windows": "26.18.0",
     "electron-vite": "^6.0.0",
     "jpeg-js": "^0.4.4",
     "lucide-react": "^1.70.0",
