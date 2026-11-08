@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -784,5 +784,94 @@ describe('checkpoints', () => {
       vi.advanceTimersByTime(6000)
       expect(snapshots.forgotten).toEqual([id])
     })
+  })
+})
+
+// --- files added as context -----------------------------------------------------------------------------
+
+describe('files from the project added to a message', () => {
+  function project() {
+    const dir = mkdtempSync(join(tmpdir(), 'celeste-svc-context-'))
+    writeFileSync(join(dir, 'a.txt'), 'the contents of a\n')
+    mkdirSync(join(dir, 'src'))
+    writeFileSync(join(dir, 'src', 'b.ts'), 'export const b = 2\n')
+    return dir
+  }
+
+  it('tells the agent what is in them, keeps only the paths in the log, and hides the field from the adapter', async () => {
+    const dir = project()
+    try {
+      const { api, agents } = setup()
+      const { id } = api['sessions.create']({ ...input, mode: 'develop', cwd: dir })
+      api['sessions.send'](id, { text: 'Explain these', attachments: [], context: [{ path: 'a.txt', kind: 'file' }, { path: 'src', kind: 'dir' }] })
+      const sent = agents[0]?.sent[0] as { text: string; attachments: unknown[]; context?: unknown }
+      expect(sent.text.startsWith('Explain these\n\n[Files and folders from the project')).toBe(true)
+      expect(sent.text).toContain('File: a.txt\n```\nthe contents of a\n```')
+      expect(sent.text).toContain('Folder: src/ (contains b.ts)')
+      expect(Object.keys(sent).sort()).toEqual(['attachments', 'text'])
+      // What was logged, and so what shows under the message, is the person's words and the paths.
+      const logged = api['sessions.get'](id)?.events[0]?.event
+      expect(logged).toEqual({
+        type: 'user.message',
+        text: 'Explain these',
+        attachments: [],
+        context: [
+          { path: 'a.txt', kind: 'file' },
+          { path: 'src', kind: 'dir' }
+        ]
+      })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('sends files alone, and a plain message exactly as before', () => {
+    const dir = project()
+    try {
+      const { api, agents } = setup()
+      const { id } = api['sessions.create']({ ...input, mode: 'develop', cwd: dir })
+      api['sessions.send'](id, { text: '', attachments: [], context: [{ path: 'a.txt', kind: 'file' }] })
+      expect((agents[0]?.sent[0] as { text: string }).text.startsWith('[Files and folders from the project')).toBe(true)
+      api['sessions.send'](id, { text: 'No files this time', attachments: [] })
+      expect(agents[0]?.sent[1]).toEqual({ text: 'No files this time', attachments: [] })
+      expect(api['sessions.get'](id)?.events.at(-1)?.event).toEqual({ type: 'user.message', text: 'No files this time', attachments: [] })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses them in a chat, and refuses anything that is not a list of paths inside the project, recording nothing', () => {
+    const dir = project()
+    try {
+      const { api, agents } = setup()
+      const chat = api['sessions.create'](input)
+      expect(() => api['sessions.send'](chat.id, { text: 'x', attachments: [], context: [{ path: 'a.txt', kind: 'file' }] })).toThrow(/Only Develop sessions/)
+
+      const { id } = api['sessions.create']({ ...input, mode: 'develop', cwd: dir })
+      const bad = (context: unknown) => expect(() => api['sessions.send'](id, { text: 'x', attachments: [], context: context as never })).toThrow(/Invalid files/)
+      bad('a.txt')
+      bad([{ path: '../outside.txt', kind: 'file' }])
+      bad([{ path: 'a/../../outside.txt', kind: 'file' }])
+      bad([{ path: 'C:/Windows/win.ini', kind: 'file' }])
+      bad([{ path: '', kind: 'file' }])
+      bad([{ path: 'a.txt', kind: 'socket' }])
+      bad([{ path: 42, kind: 'file' }])
+      bad(Array.from({ length: 21 }, (_, i) => ({ path: `f${i}.txt`, kind: 'file' })))
+      expect(api['sessions.get'](id)?.events).toEqual([])
+      expect(agents.flatMap((a) => a.sent)).toEqual([])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps them in an unsent draft, across a restart, and a draft with only files is not empty', () => {
+    const first = setup()
+    const draft = { text: '', attachments: [], context: [{ path: 'src/b.ts', kind: 'file' as const }] }
+    first.api['drafts.set']('s-draft', draft)
+    first.service.close()
+    expect(setup(first.store).api['app.bootstrap']().drafts['s-draft']).toEqual(draft)
+    expect(() => first.api['drafts.set']('s-draft', { ...draft, context: [{ path: '../x', kind: 'file' }] })).toThrow(/Invalid files/)
+    first.api['drafts.set']('s-draft', { text: '', attachments: [] })
+    expect(first.api['app.bootstrap']().drafts['s-draft']).toBeUndefined()
   })
 })

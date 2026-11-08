@@ -35,6 +35,11 @@ const script = (r) => {
   if (r.last.kind === 'tool_result') return [{ type: 'text', text: r.last.isError ? `That did not work: ${r.last.text}` : 'Finished that step.' }]
   if (/Edit the file/.test(r.last.text)) return [{ type: 'tool_use', name: 'Edit', input: { file_path: A, old_string: 'original', new_string: 'edited by the agent' } }]
   if (/Create a file/.test(r.last.text)) return [{ type: 'tool_use', name: 'Write', input: { file_path: NEW, content: 'created by the agent\n' } }]
+  if (/Describe the context/.test(r.last.text)) {
+    const sawFile = /File: a\.txt/.test(r.last.text) && r.last.text.includes('edited by the agent')
+    const sawOther = /keep\.txt/.test(r.last.text)
+    return [{ type: 'text', text: sawFile && !sawOther ? 'I can see a.txt: edited by the agent.' : `Unexpected context (file ${sawFile}, other ${sawOther}).` }]
+  }
   if (/Run the long command/.test(r.last.text)) return [{ type: 'tool_use', name: 'Bash', input: { command: 'node -e "for(let i=1;i<=120;i++)console.log(\'output line \'+i)"', description: 'Print a long output' } }]
   if (/Temporarily change keep/.test(r.last.text)) return [{ type: 'tool_use', name: 'Edit', input: { file_path: join(project, 'keep.txt'), old_string: 'never touched', new_string: 'temporarily changed' } }]
   if (/Put keep back/.test(r.last.text)) return [{ type: 'tool_use', name: 'Edit', input: { file_path: join(project, 'keep.txt'), old_string: 'temporarily changed', new_string: 'never touched' } }]
@@ -241,7 +246,7 @@ try {
   check('an untouched file has no marker', (await tree.getByRole('treeitem', { name: /keep\.txt/ }).getByLabel(/changed|new/).count()) === 0)
   await tree.getByRole('treeitem', { name: /^made/ }).click()
   await tree.getByRole('treeitem', { name: /new\.txt/ }).waitFor({ timeout: 10_000 })
-  check('a folder opens in place, and the file the agent created is marked new', (await tree.getByRole('treeitem', { name: /new\.txt/ }).getByLabel('new').count()) === 1)
+  check('a folder opens in place, and the file the agent created is marked new', (await tree.getByRole('treeitem', { name: /new\.txt/ }).getByLabel('new', { exact: true }).count()) === 1)
   await page.screenshot({ path: join(import.meta.dirname, '.output', 'checkpoints-files.png') })
   await tree.getByRole('treeitem', { name: /^node_modules/ }).click()
   await tree.getByRole('treeitem', { name: /^pkg/ }).waitFor({ timeout: 10_000 })
@@ -257,6 +262,30 @@ try {
   await page.getByRole('button', { name: 'Back to the files' }).click()
   await tree.waitFor()
   check('and Back returns to the tree', (await tree.getByRole('treeitem', { name: /keep\.txt/ }).count()) === 1)
+
+  console.log('\n# Files as context')
+  const chips = page.getByRole('list', { name: 'Files added as context' })
+  // Dragged from the tree onto the message box.
+  await tree.getByRole('treeitem', { name: /^a\.txt/ }).dragTo(textbox(page))
+  await chips.getByText('a.txt').waitFor({ timeout: 10_000 })
+  check('a file dragged from the tree onto the message box becomes a chip', (await chips.getByRole('listitem').count()) === 1)
+  // The plus button does the same without dragging, and a chip can be taken off again.
+  await tree.getByRole('treeitem', { name: /keep\.txt/ }).hover()
+  await page.getByRole('button', { name: 'Add keep.txt to the message' }).click()
+  await page.waitForFunction(() => document.querySelectorAll('ul[aria-label="Files added as context"] li').length === 2)
+  check('the plus button on a row adds it too', true)
+  await page.getByRole('button', { name: 'Remove keep.txt from the message' }).click()
+  await page.waitForFunction(() => document.querySelectorAll('ul[aria-label="Files added as context"] li').length === 1)
+  check('and a chip can be removed', (await chips.getByText('keep.txt').count()) === 0)
+  await page.screenshot({ path: join(import.meta.dirname, '.output', 'checkpoints-context.png') })
+
+  await textbox(page).fill('Describe the context please')
+  await textbox(page).press('Enter')
+  await page.getByText('I can see a.txt: edited by the agent.').waitFor({ timeout: 60_000 })
+  await idle(page)
+  check('the agent was given the file’s contents with the message, and only that file', true)
+  check('the sent message shows the file as a chip, and the box is empty again', (await chips.count()) === 1 && (await chips.getByRole('button').count()) === 0)
+  check('the message itself holds only what was typed', (await page.getByText('Describe the context please', { exact: true }).count()) >= 1)
   await app.close()
 
   console.log('\n# The project’s own git')

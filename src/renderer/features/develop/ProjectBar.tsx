@@ -56,18 +56,14 @@ export function ProjectBar() {
   }, [])
 
   const label = draft.project ? basename(draft.project) : 'Choose a project folder'
+  // The folder chosen now is listed too, first, even before any session has used it, so the menu is never just one command.
+  const projects = draft.project ? [draft.project, ...recent.filter((p) => p !== draft.project)] : recent
 
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-      {recent.length === 0 ? (
-        // Nothing to pick from, so a menu with one item would only be a step in the way: the button opens the folder window.
-        <button
-          type="button"
-          className={chip}
-          aria-label={draft.project ? `Project: ${label}. Choose another folder` : 'Choose a project folder'}
-          title={draft.project ? 'Choose another folder' : undefined}
-          onClick={() => void pick()}
-        >
+      {projects.length === 0 ? (
+        // Nothing chosen and nothing to pick from, so a menu with one item would only be a step in the way: the button opens the folder window.
+        <button type="button" className={chip} aria-label="Choose a project folder" onClick={() => void pick()}>
           <Folder className="h-4 w-4 text-accent-text" />
           <span className="max-w-[260px] truncate">{label}</span>
           <Plus className="h-4 w-4 text-ink-muted" />
@@ -82,11 +78,11 @@ export function ProjectBar() {
             </button>
           </Menu.Trigger>
           <Menu.Content className="w-[320px]">
-            {recent.length > 0 && (
+            {projects.length > 0 && (
               <>
-                <Menu.Label>Recent projects</Menu.Label>
+                <Menu.Label>Projects</Menu.Label>
                 <Menu.RadioGroup value={draft.project} onValueChange={(path) => void choose(path)}>
-                  {recent.map((path) => (
+                  {projects.map((path) => (
                     <Menu.RadioItem key={path} value={path} description={path}>
                       {basename(path)}
                     </Menu.RadioItem>

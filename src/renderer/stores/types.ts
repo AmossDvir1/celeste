@@ -2,6 +2,7 @@ import type {
   AgentError,
   AskAnswers,
   AttachmentInfo,
+  ContextRef,
   FileDiff,
   Question,
   ToolKind
@@ -17,6 +18,8 @@ export type TimelineItem =
       id: string
       text: string
       attachments: AttachmentInfo[]
+      /** Files and folders of the project that were added to the message. */
+      context?: ContextRef[]
       at: number
       /** Develop: the folder was saved just before this message. `files` is what the turn changed, known once it ends. */
       checkpoint?: { id: string; files?: CheckpointFile[]; more?: number }

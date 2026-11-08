@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
-import { ArrowLeft, ChevronRight, FileText, Folder, FolderOpen, RefreshCw } from 'lucide-react'
+import { ArrowLeft, ChevronRight, FileText, Folder, FolderOpen, Plus, RefreshCw } from 'lucide-react'
+import type { ContextRef } from '@shared/agent'
 import type { FileListing, FilePreview } from '@shared/api'
+import { CONTEXT_MIME } from '@/features/chat/context'
+import { useDrafts } from '@/stores/drafts'
 import { core } from '@/api'
 import { PanelCard } from '@/components/PanelCard'
 import { Button, IconButton, Spinner } from '@/components/ui'
@@ -28,6 +31,7 @@ const size = (bytes: number) => (bytes < 1024 ? `${bytes} B` : bytes < 1024 * 10
  */
 export function FilesPanel() {
   const setRight = useUi((s) => s.setRight)
+  const pushToast = useUi((s) => s.pushToast)
   const session = useSessions((s) => (s.active.develop ? s.sessions[s.active.develop] : undefined))
   const sessionId = session?.id
   const status = session?.status
@@ -89,6 +93,12 @@ export function FilesPanel() {
 
   if (!session) return null
 
+  /** Adds a file or folder to the message being written in this session, the same as dragging it there. */
+  const addToMessage = (ref: ContextRef) => {
+    const left = useDrafts.getState().addContext(session.id, [ref])
+    pushToast({ text: left > 0 ? 'A message can carry up to 20 files and folders.' : `Added ${ref.path} to your message.` })
+  }
+
   const toggle = (path: string) => {
     const next = new Set(open)
     if (next.delete(path)) {
@@ -138,6 +148,12 @@ export function FilesPanel() {
           aria-selected={viewing === path}
           tabIndex={0}
           title={path}
+          // Drag it onto the message box to add it as context.
+          draggable
+          onDragStart={(e) => {
+            e.dataTransfer.setData(CONTEXT_MIME, JSON.stringify([{ path, kind: entry.kind }]))
+            e.dataTransfer.effectAllowed = 'copy'
+          }}
           onClick={() => (isDir ? toggle(path) : (setViewing(path), show(path)))}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
@@ -146,7 +162,7 @@ export function FilesPanel() {
             }
           }}
           style={{ paddingLeft: 8 + depth * 16 }}
-          className={cn('flex h-8 cursor-pointer items-center gap-1.5 pr-3 text-[13px] outline-none hover:bg-hover focus-visible:bg-hover', FADED.has(entry.name) && 'opacity-50')}
+          className={cn('group flex h-8 cursor-pointer items-center gap-1.5 pr-3 text-[13px] outline-none hover:bg-hover focus-visible:bg-hover', FADED.has(entry.name) && 'opacity-50')}
         >
           {isDir ? <ChevronRight className={cn('h-3.5 w-3.5 shrink-0 text-ink-faint transition-transform', expanded && 'rotate-90')} /> : <span className="w-3.5 shrink-0" />}
           <Icon className={cn('h-4 w-4 shrink-0', isDir ? 'text-accent-text' : 'text-ink-muted')} />
@@ -157,6 +173,19 @@ export function FilesPanel() {
             </span>
           )}
           {inside && !expanded && <span aria-label="contains changes" className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />}
+          <button
+            type="button"
+            aria-label={`Add ${path} to the message`}
+            title="Add to the message as context (or drag it there)"
+            onClick={(e) => {
+              e.stopPropagation()
+              addToMessage({ path, kind: entry.kind })
+            }}
+            onKeyDown={(e) => e.stopPropagation()}
+            className="hidden h-6 w-6 shrink-0 items-center justify-center rounded-md text-ink-muted hover:bg-raised hover:text-ink group-focus-within:flex group-hover:flex"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </button>
         </div>
       )
       if (expanded) {
@@ -217,6 +246,9 @@ export function FilesPanel() {
             <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-ink" title={viewing}>
               {viewing}
             </span>
+            <Button variant="secondary" size="sm" onClick={() => addToMessage({ path: viewing, kind: 'file' })}>
+              Add to message
+            </Button>
             {change && (
               <Button variant="soft" size="sm" onClick={() => setReviewing(true)}>
                 Show changes

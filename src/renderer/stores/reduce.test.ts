@@ -204,3 +204,17 @@ describe('checkpoints in the log', () => {
     expect(s.items).toEqual([])
   })
 })
+
+describe('files added to a message', () => {
+  it('keeps the paths on the message, and nothing when there are none', () => {
+    const s = foldEvents(
+      blank({ mode: 'develop' }),
+      log(
+        [1000, { type: 'user.message', text: 'look at these', attachments: [], context: [{ path: 'src/a.ts', kind: 'file' }, { path: 'docs', kind: 'dir' }] }],
+        [2000, { type: 'user.message', text: 'and nothing here', attachments: [] }]
+      )
+    )
+    expect(s.items[0]).toMatchObject({ kind: 'user', context: [{ path: 'src/a.ts', kind: 'file' }, { path: 'docs', kind: 'dir' }] })
+    expect((s.items[1] as { context?: unknown }).context).toBeUndefined()
+  })
+})

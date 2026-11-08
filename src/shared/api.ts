@@ -20,6 +20,7 @@ import type {
   ApprovalMode,
   AskAnswers,
   AttachmentInfo,
+  ContextRef,
   Effort,
   FileDiff,
   ModelInfo,
@@ -92,7 +93,7 @@ export interface SessionPatch {
  */
 export type LogEvent =
   | AgentEvent
-  | { type: 'user.message'; text: string; attachments: AttachmentInfo[] }
+  | { type: 'user.message'; text: string; attachments: AttachmentInfo[]; context?: ContextRef[] }
   | { type: 'approval.resolved'; requestId: string; allow: boolean }
   | { type: 'ask.answered'; requestId: string; answers: AskAnswers }
   /** Celeste was closed while a turn was running. Written the next time it starts. */
@@ -153,6 +154,7 @@ export interface StoredEvent {
 export interface DraftState {
   text: string
   attachments: AttachmentInfo[]
+  context?: ContextRef[]
 }
 
 export interface SearchHit {

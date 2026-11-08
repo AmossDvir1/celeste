@@ -1,6 +1,6 @@
 import { mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import type { AgentSession, ApprovalAnswer, ApprovalMode, AskAnswers, AttachmentInfo, SessionMode, ToolKind, UserInput, VendorId } from '@shared/agent'
+import type { AgentSession, ApprovalAnswer, ApprovalMode, AskAnswers, AttachmentInfo, ContextRef, SessionMode, ToolKind, UserInput, VendorId } from '@shared/agent'
 import {
   UNDO_WINDOW_MS,
   type AppSettings,
@@ -23,6 +23,7 @@ import { SIDEBAR_WIDTH } from '@shared/defaults'
 import { nextStatus } from '@shared/status'
 import type { AttachmentRow, FileStore, SessionRow, Store } from './store'
 import type { Snapshots } from './snapshots'
+import { contextText, MAX_CONTEXT } from './context'
 import { listFolder, readPreview } from './files'
 
 /*
@@ -420,12 +421,15 @@ export class SessionService {
       throw new Error('Invalid message')
     }
     const row = this.requireSession(id)
+    const context = this.contextOf(row, input.context)
     const live = this.runtime(id)
     this.store.linkAttachments(input.attachments.map((a) => a.id), id)
-    this.record(id, { type: 'user.message', text: input.text, attachments: input.attachments }, live)
+    this.record(id, { type: 'user.message', text: input.text, attachments: input.attachments, ...(context.length ? { context } : {}) }, live)
 
-    // After a revert the agent still remembers edits that are gone, so its next message says so.
-    const outgoing: UserInput = live.reverted ? { ...input, text: input.text ? `${input.text}\n\n${REVERT_NOTE}` : REVERT_NOTE } : input
+    // What the agent is told: the person's words, then (if the folder was reverted) a note about that, then the files they added.
+    // The agent's adapter gets only text and attachments; the files are already in the text.
+    const extra = [live.reverted ? REVERT_NOTE : '', row.cwd && context.length ? contextText(row.cwd, context) : ''].filter(Boolean)
+    const outgoing: UserInput = { text: [input.text, ...extra].filter(Boolean).join('\n\n'), attachments: input.attachments }
     live.reverted = false
 
     const cwd = row.cwd
@@ -724,16 +728,34 @@ export class SessionService {
 
   // --- drafts and attachments -----------------------------------------------------------------------
 
+  /** The files and folders added to a message, checked: only Develop sessions have a project, and a path is only ever inside it. */
+  private contextOf(row: { mode: SessionMode; cwd?: string }, value: unknown): ContextRef[] {
+    if (value === undefined) return []
+    if (!Array.isArray(value) || value.length > MAX_CONTEXT) throw new Error('Invalid files for the message')
+    if (value.length > 0 && (row.mode !== 'develop' || !row.cwd)) throw new Error('Only Develop sessions have project files to add.')
+    const refs: ContextRef[] = []
+    for (const item of value as Partial<ContextRef>[]) {
+      if (typeof item?.path !== 'string' || item.path.length === 0 || item.path.length > 1000 || (item.kind !== 'file' && item.kind !== 'dir')) throw new Error('Invalid files for the message')
+      // A name that leaves the project is refused here, before anything reads it.
+      const parts = item.path.split(/[\\/]+/)
+      if (parts.some((p) => p === '..' || /^[a-z]:$/i.test(p)) || item.path.includes('\0')) throw new Error('Invalid files for the message')
+      refs.push({ path: item.path, kind: item.kind })
+    }
+    return refs
+  }
+
   private setDraft(key: string, draft: DraftState | null): void {
     if (typeof key !== 'string' || !/^(home:(chat|develop)|[\w-]{1,80})$/.test(key)) throw new Error('Invalid draft')
-    if (!draft || (draft.text === '' && draft.attachments.length === 0)) {
+    if (!draft || (draft.text === '' && draft.attachments.length === 0 && !draft.context?.length)) {
       this.store.setDraft(key, null)
       return
     }
     if (typeof draft.text !== 'string' || draft.text.length > 200_000 || !Array.isArray(draft.attachments) || draft.attachments.length > MAX_ATTACHMENTS) {
       throw new Error('Invalid draft')
     }
-    this.store.setDraft(key, { text: draft.text, attachments: draft.attachments as AttachmentInfo[] })
+    // A draft is not tied to a session yet, so only the shape of what was added is checked here; Send checks it against the project.
+    const context = this.contextOf({ mode: 'develop', cwd: '.' }, draft.context)
+    this.store.setDraft(key, { text: draft.text, attachments: draft.attachments as AttachmentInfo[], ...(context.length ? { context } : {}) })
   }
 
   private saveAttachment(file: NewAttachment): AttachmentInfo {

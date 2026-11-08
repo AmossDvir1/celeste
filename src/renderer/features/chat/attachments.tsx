@@ -1,11 +1,12 @@
 import { useCallback, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import { HoverCard } from 'radix-ui'
 import { FileText, Image as ImageGlyph, Paperclip, X } from 'lucide-react'
-import type { AttachmentInfo } from '@shared/agent'
+import type { AttachmentInfo, ContextRef } from '@shared/agent'
 import { core } from '@/api'
 import { cn } from '@/lib/cn'
 import { formatBytes } from '@/lib/format'
 import { useDrafts } from '@/stores/drafts'
+import { isContextDrag, readContextDrag } from './context'
 
 const MAX_FILES = 10
 const MAX_BYTES = 25 * 1024 * 1024
@@ -99,41 +100,54 @@ const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).inclu
 /** Wraps a panel so files can be dropped anywhere on it. Shows a full-panel overlay while dragging. */
 export function DropZone({
   onFiles,
+  onProject,
   children,
   className
 }: {
   onFiles: (files: FileList) => void
+  /** Files and folders dragged from the Files panel. Absent where there is no project. */
+  onProject?: (refs: ContextRef[]) => void
   children: ReactNode
   className?: string
 }) {
-  const [over, setOver] = useState(false)
+  // What is being dragged over it: files from the computer, or things from the project's own Files panel.
+  const [over, setOver] = useState<'files' | 'project' | null>(null)
   const depth = useRef(0)
+  const kindOf = (e: DragEvent): 'files' | 'project' | null => (hasFiles(e) ? 'files' : onProject && isContextDrag(e.dataTransfer) ? 'project' : null)
 
   return (
     <div
       className={cn('relative', className)}
       onDragEnter={(e) => {
-        if (!hasFiles(e)) return
+        const kind = kindOf(e)
+        if (!kind) return
         e.preventDefault()
         depth.current += 1
-        setOver(true)
+        setOver(kind)
       }}
       onDragOver={(e) => {
-        if (!hasFiles(e)) return
+        if (!kindOf(e)) return
         e.preventDefault()
         e.dataTransfer.dropEffect = 'copy'
       }}
       onDragLeave={(e) => {
-        if (!hasFiles(e)) return
+        if (!kindOf(e)) return
         depth.current = Math.max(0, depth.current - 1)
-        if (depth.current === 0) setOver(false)
+        if (depth.current === 0) setOver(null)
       }}
       onDrop={(e) => {
-        if (!hasFiles(e)) return
+        const kind = kindOf(e)
+        if (!kind) return
+        // Without this a drop on the message box would also type the dropped text into it.
         e.preventDefault()
         depth.current = 0
-        setOver(false)
-        if (e.dataTransfer.files.length) onFiles(e.dataTransfer.files)
+        setOver(null)
+        if (kind === 'files') {
+          if (e.dataTransfer.files.length) onFiles(e.dataTransfer.files)
+        } else {
+          const refs = readContextDrag(e.dataTransfer)
+          if (refs.length) onProject?.(refs)
+        }
       }}
     >
       {children}
@@ -146,8 +160,8 @@ export function DropZone({
             <span className="flex h-14 w-14 items-center justify-center rounded-full bg-accent-soft text-accent-text">
               <Paperclip className="h-6 w-6" />
             </span>
-            <div className="text-lg font-medium text-ink">Drop files to attach</div>
-            <div className="text-sm text-ink-muted">Hover an image afterwards to preview it</div>
+            <div className="text-lg font-medium text-ink">{over === 'project' ? 'Drop to add as context' : 'Drop files to attach'}</div>
+            <div className="text-sm text-ink-muted">{over === 'project' ? 'The agent is given what is in them with your message' : 'Hover an image afterwards to preview it'}</div>
           </div>
         </div>
       )}

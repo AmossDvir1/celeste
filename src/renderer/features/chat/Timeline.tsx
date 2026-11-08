@@ -27,6 +27,7 @@ import { RevertDialog } from '@/features/develop/RevertDialog'
 import { ReviewDialog } from '@/features/develop/ReviewDialog'
 import { useSessions } from '@/stores/sessions'
 import { AttachmentStrip } from './attachments'
+import { ContextStrip } from './context'
 import type { Session, TimelineItem } from '@/stores/types'
 
 type ToolItem = Extract<TimelineItem, { kind: 'tool' }>
@@ -63,6 +64,7 @@ function UserMessage({
   const removed = files?.reduce((n, f) => n + f.removed, 0) ?? 0
   return (
     <div className="animate-fade-up flex flex-col items-end gap-2">
+      {item.context && <ContextStrip items={item.context} className="max-w-[78%] justify-end" />}
       {item.attachments.length > 0 && <AttachmentStrip items={item.attachments} className="max-w-[78%] justify-end" />}
       {item.text && (
         <div className="selectable max-w-[78%] rounded-2xl rounded-br-md border border-edge bg-raised px-4 py-2.5 text-[15px] leading-[1.6] whitespace-pre-wrap text-ink">

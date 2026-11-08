@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from 'react'
+import { useRef, type ReactNode, type RefObject } from 'react'
 import { Dialog as RDialog } from 'radix-ui'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/cn'
@@ -11,7 +11,8 @@ export function Modal({
   description,
   children,
   className,
-  hideTitle
+  hideTitle,
+  initialFocus
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -20,6 +21,8 @@ export function Modal({
   children: ReactNode
   className?: string
   hideTitle?: boolean
+  /** The control to focus when it opens, in place of the dialog itself. */
+  initialFocus?: RefObject<HTMLElement | null>
 }) {
   const content = useRef<HTMLDivElement>(null)
   return (
@@ -31,7 +34,10 @@ export function Modal({
           tabIndex={-1}
           // Focus the dialog itself instead of its first control, unless something inside asked for focus (autoFocus).
           onOpenAutoFocus={(e) => {
-            if (!content.current?.contains(document.activeElement)) {
+            if (initialFocus?.current) {
+              e.preventDefault()
+              initialFocus.current.focus()
+            } else if (!content.current?.contains(document.activeElement)) {
               e.preventDefault()
               content.current?.focus()
             }

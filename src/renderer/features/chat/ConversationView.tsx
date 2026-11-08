@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDown, FileDiff, Folder, FolderTree, GitBranch, Plug, SquareTerminal } from 'lucide-react'
-import type { UserInput } from '@shared/agent'
+import type { ContextRef, UserInput } from '@shared/agent'
 import { cn } from '@/lib/cn'
 import { basename } from '@/lib/format'
 import { Badge, IconButton } from '@/components/ui'
@@ -16,6 +16,8 @@ import { useDevices } from '@/stores/devices'
 import { Composer } from './Composer'
 import { Timeline } from './Timeline'
 import { DropZone, useAttachments } from './attachments'
+
+const NO_CONTEXT: ContextRef[] = []
 
 function PanelToggle({ panel, label, icon: Icon, badge }: { panel: Exclude<RightPanel, null>; label: string; icon: typeof Plug; badge?: number }) {
   const current = useUi((s) => s.rightPanel)
@@ -46,6 +48,8 @@ export function ConversationView({ sessionId }: { sessionId: string }) {
   const attachments = useAttachments(sessionId)
   // Unsent text belongs to the session, and is saved with it.
   const text = useDrafts((s) => s.drafts[sessionId]?.text ?? '')
+  const context = useDrafts((s) => s.drafts[sessionId]?.context ?? NO_CONTEXT)
+  const pushToast = useUi((s) => s.pushToast)
   const setText = (t: string) => useDrafts.getState().setText(sessionId, t)
   const scroller = useRef<HTMLDivElement>(null)
   const attachedIds = useDevices((s) => s.attached[sessionId])
@@ -99,11 +103,22 @@ export function ConversationView({ sessionId }: { sessionId: string }) {
   const onChatGptPlan = model?.vendor === 'openai' && vendors.openai.status === 'connected' && vendors.openai.method === 'browser'
 
   const retry = () => {
-    if (lastUser?.kind === 'user') send(session.mode, { text: lastUser.text, attachments: lastUser.attachments })
+    if (lastUser?.kind === 'user') send(session.mode, { text: lastUser.text, attachments: lastUser.attachments, ...(lastUser.context ? { context: lastUser.context } : {}) })
   }
 
   return (
-    <DropZone onFiles={(f) => void attachments.add(f)} className="h-full">
+    <DropZone
+      onFiles={(f) => void attachments.add(f)}
+      onProject={
+        develop
+          ? (refs) => {
+              const left = useDrafts.getState().addContext(sessionId, refs)
+              if (left > 0) pushToast({ text: 'A message can carry up to 20 files and folders.' })
+            }
+          : undefined
+      }
+      className="h-full"
+    >
       <div className="relative flex h-full min-h-0 flex-col overflow-hidden">
         <GlowArc className="opacity-35" />
 
@@ -180,6 +195,8 @@ export function ConversationView({ sessionId }: { sessionId: string }) {
               prefs={{ model: session.model, effort: session.effort, approval: session.approval }}
               onPrefs={(p) => setPrefs(sessionId, p)}
               attachments={attachments}
+              context={context}
+              onRemoveContext={(path) => useDrafts.getState().removeContext(sessionId, path)}
               busy={busy}
               onSend={(input: UserInput) => {
                 void send(session.mode, input)

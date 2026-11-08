@@ -1,13 +1,16 @@
 import { useEffect, useRef } from 'react'
 import { Paperclip, Send, Square, TriangleAlert, X } from 'lucide-react'
-import type { SessionMode, UserInput } from '@shared/agent'
+import type { ContextRef, SessionMode, UserInput } from '@shared/agent'
 import { cn } from '@/lib/cn'
 import { IconButton } from '@/components/ui'
 import { lookupModel, useModels } from '@/stores/models'
 import { useUi } from '@/stores/ui'
 import { connectedVendors, useVendors } from '@/stores/vendors'
 import { AttachmentStrip, type AttachmentsApi } from './attachments'
+import { ContextStrip } from './context'
 import { ApprovalPicker, ModelControls, type Prefs } from './controls'
+
+const NO_CONTEXT: ContextRef[] = []
 
 export interface ComposerProps {
   variant: 'home' | 'dock'
@@ -17,6 +20,9 @@ export interface ComposerProps {
   prefs: Prefs
   onPrefs: (patch: Partial<Prefs>) => void
   attachments: AttachmentsApi
+  /** Files and folders of the project added to this message (Develop). */
+  context?: ContextRef[]
+  onRemoveContext?: (path: string) => void
   busy?: boolean
   onSend: (input: UserInput) => void
   onStop?: () => void
@@ -32,6 +38,8 @@ export function Composer({
   prefs,
   onPrefs,
   attachments,
+  context = NO_CONTEXT,
+  onRemoveContext,
   busy,
   onSend,
   onStop,
@@ -45,7 +53,7 @@ export function Composer({
   const model = lookupModel(byId, prefs.model)
   const noVendor = useVendors((s) => connectedVendors(s.vendors).length === 0)
   const openSettings = useUi((s) => s.openSettings)
-  const canSend = !noVendor && (text.trim().length > 0 || attachments.items.length > 0)
+  const canSend = !noVendor && (text.trim().length > 0 || attachments.items.length > 0 || context.length > 0)
   const imageBlocked = model?.images === false && attachments.items.some((a) => a.mime.startsWith('image/'))
 
   // Grow with the text, up to a limit.
@@ -62,7 +70,7 @@ export function Composer({
 
   const submit = () => {
     if (busy || !canSend) return
-    onSend({ text: text.trim(), attachments: attachments.items })
+    onSend({ text: text.trim(), attachments: attachments.items, ...(context.length ? { context } : {}) })
     attachments.clear()
     onText('')
   }
@@ -91,6 +99,7 @@ export function Composer({
         home ? 'min-h-[134px] px-[22px] pt-[17px] pb-[14px]' : 'px-4 pt-3 pb-2.5'
       )}
     >
+      {context.length > 0 && <ContextStrip items={context} onRemove={onRemoveContext} className="mb-2.5" />}
       {attachments.items.length > 0 && (
         <AttachmentStrip items={attachments.items} onRemove={attachments.remove} className="mb-3" />
       )}

@@ -50,7 +50,7 @@ export function reduceEvent(s: Session, e: LogEvent, at: number): Session {
   const now = at
   switch (e.type) {
     case 'user.message':
-      return { ...s, items: [...s.items, { kind: 'user', id: itemId(), text: e.text, attachments: e.attachments, at: now }], updatedAt: now }
+      return { ...s, items: [...s.items, { kind: 'user', id: itemId(), text: e.text, attachments: e.attachments, ...(e.context?.length ? { context: e.context } : {}), at: now }], updatedAt: now }
 
     case 'checkpoint.created': {
       // It is written right after the message it belongs to.

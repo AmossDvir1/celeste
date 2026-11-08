@@ -15,6 +15,7 @@ import type { SessionMode } from '@shared/agent'
 import { SIDEBAR_WIDTH } from '@shared/defaults'
 import { cn } from '@/lib/cn'
 import { basename, formatDay, formatTime, sameDay } from '@/lib/format'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { Menu } from '@/components/menu'
 import { Button, IconButton, SearchInput, SectionLabel } from '@/components/ui'
 import { useSessions, needsYou } from '@/stores/sessions'
@@ -43,6 +44,7 @@ function SessionRow({ session, active }: { session: Session; active: boolean }) 
   const remove = useSessions((s) => s.remove)
   const rename = useSessions((s) => s.rename)
   const [editing, setEditing] = useState(false)
+  const [confirming, setConfirming] = useState(false)
   const [draft, setDraft] = useState(session.title)
   const Icon = session.mode === 'develop' ? Code : MessageSquare
   const waiting = needsYou(session)
@@ -120,12 +122,26 @@ function SessionRow({ session, active }: { session: Session; active: boolean }) 
             >
               <Pencil className="h-4 w-4 text-ink-muted" /> Rename
             </Menu.Item>
-            <Menu.Item onSelect={() => remove(session.id)} className="text-danger">
+            <Menu.Item onSelect={() => setConfirming(true)} className="text-danger">
               <Trash2 className="h-4 w-4" /> Delete
             </Menu.Item>
           </Menu.Content>
         </Menu.Root>
       )}
+
+      <ConfirmDialog
+        open={confirming}
+        title={`Delete “${session.title}”?`}
+        confirmLabel="Delete"
+        onCancel={() => setConfirming(false)}
+        onConfirm={() => {
+          setConfirming(false)
+          remove(session.id)
+        }}
+      >
+        This removes the {session.mode === 'develop' ? 'session' : 'chat'} from this computer.
+        {session.status !== 'idle' && ' It is still working, and deleting it stops it.'} Your files are not touched, and you can undo it for a few seconds afterwards.
+      </ConfirmDialog>
     </div>
   )
 }
@@ -246,7 +262,8 @@ function ResizeHandle({ width, onLive, onCommit }: { width: number; onLive: (w: 
       onPointerCancel={end}
       onDoubleClick={() => onCommit(SIDEBAR_WIDTH.default)}
       onKeyDown={onKeyDown}
-      className="group/handle absolute inset-y-0 -right-2 z-20 flex w-4 cursor-col-resize justify-center outline-none"
+      // The list and the page are 12 pixels apart: the handle is 20 wide, centred in that gap, so the line is in the middle of it.
+      className="group/handle absolute inset-y-0 -right-4 z-20 flex w-5 cursor-col-resize justify-center outline-none"
     >
       <span className="h-full w-px rounded-full bg-transparent transition-colors group-hover/handle:bg-accent-edge group-focus-visible/handle:bg-accent group-active/handle:bg-accent" />
     </div>

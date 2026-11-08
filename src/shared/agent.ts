@@ -78,9 +78,17 @@ export interface AttachmentInfo {
   height?: number
 }
 
+/** A file or folder of the project that the person dragged into a message so the agent looks at it. The path is relative to the project. */
+export interface ContextRef {
+  path: string
+  kind: 'file' | 'dir'
+}
+
 export interface UserInput {
   text: string
   attachments: AttachmentInfo[]
+  /** Develop only. Core turns these into what the agent is told; the agent's own adapter never sees this field. */
+  context?: ContextRef[]
 }
 
 export type AgentEvent =
