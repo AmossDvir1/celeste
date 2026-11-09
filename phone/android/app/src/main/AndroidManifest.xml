@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- The computer is reached over plain HTTP on the local network; everything inside is encrypted end to end
+         (see src/shared/phone.ts in the main project). -->
+    <application
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
+        android:theme="@style/AppTheme">
+
+        <activity
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
+            android:name=".MainActivity"
+            android:label="@string/title_activity_main"
+            android:theme="@style/AppTheme.NoActionBarLaunch"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize"
+            android:exported="true">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+        </activity>
+
+        <service
+            android:name=".ConnectionService"
+            android:exported="false"
+            android:foregroundServiceType="remoteMessaging" />
+
+        <receiver
+            android:name=".ApprovalReceiver"
+            android:exported="false" />
+
+        <!-- Phone abilities: Allow runs the one thing in this invisible activity; Deny tells the computer no. -->
+        <activity
+            android:name=".AbilityActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <receiver
+            android:name=".AbilityReceiver"
+            android:exported="false" />
+
+        <!-- Phone control: sees the screen and taps only during a grant the person gives on this phone. -->
+        <service
+            android:name=".CelesteAccessibilityService"
+            android:exported="false"
+            android:label="Celeste phone control"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/celeste_accessibility" />
+        </service>
+
+        <receiver
+            android:name=".ControlReceiver"
+            android:exported="false" />
+
+        <!-- Reads notifications only when the person allowed it in Android's Notification access, and each read is approved. -->
+        <service
+            android:name=".CelesteNotificationListener"
+            android:exported="false"
+            android:label="Celeste"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths"></meta-data>
+        </provider>
+    </application>
+
+    <!-- Talk to Celeste on the computer, and find it on the Wi-Fi. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <!-- Approvals and questions as notifications, and staying connected while the app is closed (only when switched on). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Phone abilities: set an alarm or timer in the clock app; find an app to open by its name. -->
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+</manifest>

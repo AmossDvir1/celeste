@@ -98,6 +98,9 @@ export class ClaudeHost {
       ANTHROPIC_API_KEY: key ?? '',
       // Claude Code retries a failed request ten times with growing waits, so a wrong key looks like a hang for minutes.
       CLAUDE_CODE_MAX_RETRIES: this.deps.baseEnv['CLAUDE_CODE_MAX_RETRIES'] ?? '3',
+      // Celeste's own tools can wait for the person (a card on the phone, a device command to approve), longer than the
+      // minute Claude Code gives a tool by default. Celeste's tools end their own waits (three minutes for a phone card).
+      MCP_TOOL_TIMEOUT: this.deps.baseEnv['MCP_TOOL_TIMEOUT'] ?? '600000',
       CLAUDE_AGENT_SDK_CLIENT_APP: 'celeste'
     }
   }

@@ -4,6 +4,22 @@ All notable changes to Celeste. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added
+- **Celeste for Android (experimental)**: use Celeste from your phone on the same Wi-Fi.
+  - **Settings → Phone** shows a QR code. The page it opens on the phone offers the app.
+  - **Connecting**: the app finds the computer by itself. You compare three pictures on both screens and press Allow on the computer.
+  - **On the phone**: follow your chats live, send messages, start a chat, stop a reply, and answer approvals and questions.
+  - **With the app closed**: switch on "Stay connected" and approvals arrive as notifications with Approve and Deny.
+  - **Security**: everything is encrypted end to end, with no server in between. A phone can't change settings, sign-ins or devices, and Remove cuts it off at once.
+  - **Develop from the phone**: start a Develop session in a project you already used on the computer, optionally in a separate copy.
+  - **Choose the model on the phone**: pick the model and thinking effort for a new chat, or change them in an open one.
+  - **Celeste can use the phone**: it can read your notifications and reply to messages, open an app or a link, or set an alarm or timer. Each ability has a switch in the app, and every request asks you on the phone first.
+  - **Phone control**: when no other tool can do a task, Celeste can ask to see your phone's screen and tap, swipe and type.
+    - It asks on the phone, for 15 minutes at most.
+    - While it works, a coloured border and a Stop button stay on screen. Pressing volume down three times also stops it.
+    - It never types into password fields, never touches password managers or Android's installer, and does nothing while the phone is locked.
+    - It asks again before buttons like Send, Pay or Delete.
+
 ## [1.1.0] - 2026-11-09
 
 ### Desktop control (Windows, off by default)

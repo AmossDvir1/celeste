@@ -198,9 +198,10 @@ export function reduceEvent(s: Session, e: LogEvent, at: number): Session {
       return { ...s, items: closeThinking(s.items, now), status: 'idle', activity: null, updatedAt: now }
 
     case 'turn.interrupted':
+      // Tools that were still running stopped with it: none is left spinning under "You stopped this response".
       return {
         ...s,
-        items: [...closeThinking(s.items, now), { kind: 'notice', id: itemId(), text: 'You stopped this response.' }],
+        items: [...failRunningTools(closeThinking(s.items, now), now), { kind: 'notice', id: itemId(), text: 'You stopped this response.' }],
         status: 'idle',
         activity: null,
         updatedAt: now

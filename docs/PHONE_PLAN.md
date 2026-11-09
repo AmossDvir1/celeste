@@ -1,6 +1,87 @@
 # Celeste: Phone Plan (Android)
 
-> **Status, 9 November 2026: a plan, nothing built. Experimental, on the `phone` branch.** The owner wants two-way control between Celeste and a phone on the same Wi-Fi: the person drives the assistant from the phone, and the assistant does things on the phone with the person's approval. Second version of this plan: the owner chose **an app, not a web page**, and **Android only** for now. Android's wireless debugging (what Celeste has today, `IMPLEMENTATION_PLAN.md` section 7.11) works, but it needs Developer options and isn't simple, so it stays only as an advanced option. This plan updates section 7.12 of `IMPLEMENTATION_PLAN.md` and borrows the safety design of `DESKTOP_CONTROL_PLAN.md`.
+> **Status, 9 November 2026: step A1 (the app as a remote) is built, on the `phone` branch, not merged.** See "What A1 built" below. The owner wants two-way control between Celeste and a phone on the same Wi-Fi: the person drives the assistant from the phone, and the assistant does things on the phone with the person's approval. Second version of this plan: the owner chose **an app, not a web page**, and **Android only** for now. Android's wireless debugging (what Celeste has today, `IMPLEMENTATION_PLAN.md` section 7.11) works, but it needs Developer options and isn't simple, so it stays only as an advanced option. This plan updates section 7.12 of `IMPLEMENTATION_PLAN.md` and borrows the safety design of `DESKTOP_CONTROL_PLAN.md`.
+
+### What A1 built
+
+**On the computer:**
+- **Phone bridge** (`src/core/phone/`): an HTTP server on the Wi-Fi, only while Settings → Phone is on. It serves the install page and the APK, and announces `_celeste._tcp`.
+- **Pairing**: a commitment, then the computer's key and nonce, then the phone's reveal. Both screens show three pictures, and the person presses Allow on the computer.
+- **Requests and pushes**: requests are sealed with AES-GCM and refused when replayed; pushes are a sealed Server-Sent Events stream.
+- **Limits**: a short list of methods (`PHONE_METHODS`), and a message from the phone is text only.
+- **Settings → Phone**: the switch, the QR code, the phones with Remove, and the "wants to connect" prompt.
+
+**The app** (`phone/`, Capacitor 8 + React, the reviewed mock's design):
+- **Setup**: finds the computer by mDNS, or takes a typed address.
+- **Chats**: the greeting, search and a "needs you" banner. A chat follows live with the desktop's own reducer: Markdown, tools, approval and question cards, Stop.
+- **New chat**: uses the newest chat's assistant and model.
+- **Workflows**: runs, read only.
+- **This phone**: notifications, Stay connected, theme, and Disconnect.
+- **Stay connected**: a foreground service with its own encrypted line. It shows approvals as notifications whose Approve and Deny reach the computer without opening the app.
+- **Older phones**: when the WebView has no X25519, `@noble/curves` stands in.
+
+**Checked:**
+- `src/core/phone/*.test.ts` and `src/shared/phone.test.ts`.
+- `npm run verify:phone`: 15 checks against the real built app, with the Claude stand-in and Copilot isolated.
+- An Android 15 emulator (WebView 124): installed from the APK, paired, chatted, then an approval arrived as a notification with the app closed and Approve ran the command.
+
+### Since then (A1 fixes, Develop, and the first phone abilities)
+
+- **Fixes from the owner's first try on the S24:**
+  - The glow stays still.
+  - "Thinking" shows under the newest message.
+  - Questions take a typed answer.
+  - The message box answers a waiting question, or is locked while an approval waits, so nothing queues behind it.
+- **Develop from the phone**: in a project already used for Develop on the computer (`phone.projects`), optionally in a separate copy. A phone can never name another folder.
+- **Model and effort on the phone**: a chip above the message box opens a sheet with the connected assistants' models (pinned first) and the effort. `phone.models` asks only connected vendors. New chat picks any of them; an open chat changes model within its own assistant (`phone.setModel`, model and effort only). The computer checks every choice against its own list. Checked on the emulator.
+- **Phone abilities (A2, first slice)**: `phone_status`, `phone_notifications`, `phone_notification_reply`, `phone_open` and `phone_alarm`.
+  - **On the computer** (`src/core/phone/tools.ts`): listed while Settings → Phone is on. A request goes on the phone's stream, and the answer comes back with `phone.reply`, only from that phone. There's no second card on the computer.
+  - **On the phone** (`Abilities`, `AbilityActivity`, `AbilityReceiver`, `CelesteNotificationListener`): each ability has a switch in This phone. Every request shows a card with Approve and Deny.
+- **Checked on the emulator**: an alarm was set, notifications were read, and Settings was opened, each approved from the card. Replying to a notification is not checked yet (it needs a messaging app's notification).
+- **Not in this slice**: location, calendar, photos and files.
+
+### Phone control (A3, first version)
+
+**Tools:** `phone_request_control`, `phone_screen` (numbered elements, and a screenshot when asked), `phone_tap`, `phone_type`, `phone_swipe`, `phone_key` and `phone_release_control`.
+
+**On the phone:** `CelesteAccessibilityService` reads the screen and acts, `PhoneControl` holds the grant and the rails, and `ControlReceiver` handles the buttons on its notifications.
+
+**Rails built:**
+- **Turning it on**: an app switch, plus Android's Accessibility switch (the app guides people there, restricted settings included).
+- **The grant**: a consent card that shows the reason and the AI-vendor note. It lasts 15 minutes, with 5 idle minutes and 500 actions at most, for one chat.
+- **While it runs**: a gradient border and a Stop button over everything, an ongoing notification with Stop, and volume down three times also stops it.
+- **Never**:
+  - taps on Celeste's own Stop
+  - typing into password fields (it says to ask the person)
+  - the never list: Celeste itself, Android's installer and permission screens, common password managers and authenticators
+  - anything while the phone is locked
+- **Asked again**: before buttons named Send, Pay, Buy, Delete, Install, Allow and the like.
+- **Screen text** is labelled as information, not instructions.
+
+**Checked on the emulator:** consent, then reading the screen with a screenshot, Home, and release, with the border and Stop on screen.
+
+**Not built yet:**
+- pausing when the person touches the screen
+- the person's own never list
+- turning the service off between grants
+- showing control in the computer's chat beyond the tool rows
+
+**Not checked yet:**
+- the asking-again before Send and the like
+- the password refusal
+- the volume-key stop
+- a real phone
+
+**Not done yet:**
+- **Not tried on a real phone**: Wi-Fi discovery is untested, and so is Chrome's handling of the APK download.
+- **Not built**:
+  - the Public-network check
+  - the Android Keystore for keys
+  - App Links from the QR
+  - self-update
+  - CI building the APK
+  - phone abilities (A2), phone control (A3), and away from home (A4)
+- **On the computer**: the desktop's key is kept in its settings, not in the system's secret store.
 
 ## 1. Summary
 

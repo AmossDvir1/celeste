@@ -1,0 +1,641 @@
+// The phone bridge: lets the Celeste app on a phone on the same Wi-Fi use this Celeste (docs/PHONE_PLAN.md).
+// A small HTTP server, on only while Settings → Phone is on:
+//   GET  /              the page the QR code opens: it hands out the app (APK) that matches this version
+//   GET  /celeste.apk   the app itself
+//   GET  /hello         who this computer is (name, version, public key)
+//   POST /pair/start    pairing, step 1 (see src/shared/phone.ts)
+//   POST /pair/reveal   pairing, step 3; the person then sees three pictures and presses Allow here
+//   GET  /pair/wait     the phone waits for that answer
+//   POST /rpc           one sealed request from a paired phone, answered sealed
+//   GET  /events        Server-Sent Events: sealed pushes for a paired phone
+// Nothing is answered for an address outside the local network, and nothing but /, /hello and pairing before the phone
+// proves it holds a paired key.
+
+import { createReadStream, statSync } from 'node:fs'
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
+import { networkInterfaces } from 'node:os'
+import type { CorePush } from '@shared/api'
+import {
+  LABEL,
+  PHONE_MAX_SKEW_MS,
+  PHONE_PROTOCOL,
+  PHONE_PUSHES,
+  commitment,
+  isPhoneMethod,
+  makeKeyPair,
+  open,
+  pairingEmoji,
+  randomB64,
+  seal,
+  sessionKey,
+  type PhoneAbility,
+  type PhoneHello,
+  type PhoneMethod,
+  type PhonePairRequest,
+  type PhoneRecord,
+  type PhoneReply,
+  type PhoneCancelPush,
+  type PhoneRequestPush,
+  type PhoneStatus,
+  type SealedCall,
+  type SealedReply,
+  type StoredKeyPair
+} from '@shared/phone'
+
+export interface PhoneSettingsStore {
+  settings(): Record<string, unknown>
+  setSetting(key: string, value: unknown): void
+}
+
+export interface PhoneBridgeDeps {
+  store: PhoneSettingsStore
+  /** Runs one of the phone's methods. Only methods in PHONE_METHODS ever get here. */
+  call: (method: PhoneMethod, params: unknown[], phone: PhoneRecord) => Promise<unknown>
+  computerName: () => string
+  version: string
+  /** The app to hand out, or null when there is none on this computer. */
+  apkFile: () => string | null
+  /** Settings → Phone changed (a phone added, removed, seen; the server started or stopped). */
+  onStatus: () => void
+  /** A pairing is waiting for the person at the computer, or no longer is (null). */
+  onPairing: (request: PhonePairRequest | null) => void
+  /** Announces the service on the local network. Returns how to stop announcing. */
+  announce?: (port: number, name: string, id: string) => Promise<() => Promise<void>>
+  addresses?: () => string[]
+  now?: () => number
+  /** Where to listen. Tests use 127.0.0.1. */
+  host?: string
+  /** A fixed port, for tests. Otherwise one is picked once and kept. */
+  port?: number
+}
+
+const PAIR_TTL_MS = 120_000
+const WAIT_MS = 25_000
+const HEARTBEAT_MS = 20_000
+const MAX_BODY = 4_000_000
+
+/** A phone's answer to a request: what happened, and a screenshot when phone control was asked for one. */
+export interface PhoneAnswer {
+  ok: boolean
+  text: string
+  image?: { mime: string; data: string }
+}
+
+/** The computer's addresses on the local network, home networks first. */
+export function lanAddresses(): string[] {
+  const rank = (a: string) => (a.startsWith('192.168.') ? 0 : a.startsWith('10.') ? 1 : 2)
+  return Object.values(networkInterfaces())
+    .flat()
+    .filter((a): a is NonNullable<typeof a> => !!a && a.family === 'IPv4' && !a.internal && isPrivate(a.address))
+    .map((a) => a.address)
+    .sort((a, b) => rank(a) - rank(b))
+}
+
+/** Loopback, private IPv4 ranges, IPv6 link-local and unique-local. */
+export function isPrivate(address: string | undefined): boolean {
+  if (!address) return false
+  const a = address.replace(/^::ffff:/i, '')
+  if (/^(127\.|10\.|192\.168\.)/.test(a)) return true
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(a)) return true
+  if (a === '::1') return true
+  return /^(fe80:|fc|fd)/i.test(a)
+}
+
+interface Pending {
+  pairId: string
+  name: string
+  commit: string
+  nonce: string
+  phoneKey?: string
+  phoneNonce?: string
+  emoji?: string[]
+  state: 'started' | 'revealed' | 'allowed' | 'denied'
+  phoneId?: string
+  at: number
+  waiters: Set<() => void>
+}
+
+interface Listener {
+  phoneId: string
+  key: CryptoKey
+  res: ServerResponse
+  queue: Promise<void>
+}
+
+export class PhoneBridge {
+  private server: Server | null = null
+  private stopAnnounce: (() => Promise<void>) | null = null
+  private pending: Pending | null = null
+  private readonly keys = new Map<string, Promise<CryptoKey>>()
+  private readonly seen = new Map<string, Map<string, number>>()
+  private readonly listeners = new Set<Listener>()
+  private heartbeat: ReturnType<typeof setInterval> | null = null
+  private lastError: string | undefined
+  private seenSaved = 0
+  /** Requests sent to a phone, waiting for its reply. */
+  private readonly asked = new Map<string, { phoneId: string; sessionId: string; done: (r: PhoneAnswer) => void; acked: () => void }>()
+
+  constructor(private readonly deps: PhoneBridgeDeps) {}
+
+  private now(): number {
+    return this.deps.now?.() ?? Date.now()
+  }
+
+  private get settings(): Record<string, unknown> {
+    return this.deps.store.settings()
+  }
+
+  phones(): PhoneRecord[] {
+    return (this.settings['phones'] as PhoneRecord[] | undefined) ?? []
+  }
+
+  private savePhones(list: PhoneRecord[]): void {
+    this.deps.store.setSetting('phones', list)
+  }
+
+  /** This computer's key pair and id, made the first time they are needed. */
+  private async identity(): Promise<{ keys: StoredKeyPair; id: string }> {
+    let keys = this.settings['phoneKey'] as StoredKeyPair | undefined
+    let id = this.settings['phoneId'] as string | undefined
+    if (!keys) {
+      keys = await makeKeyPair()
+      this.deps.store.setSetting('phoneKey', keys)
+    }
+    if (!id) {
+      id = randomB64(6).replace(/[^a-z0-9]/gi, '').slice(0, 8) || 'celeste'
+      this.deps.store.setSetting('phoneId', id)
+    }
+    return { keys, id }
+  }
+
+  get enabled(): boolean {
+    return this.settings['phoneEnabled'] === true
+  }
+
+  get port(): number | null {
+    const a = this.server?.address()
+    return a && typeof a === 'object' ? a.port : null
+  }
+
+  status(): PhoneStatus {
+    const addresses = (this.deps.addresses ?? lanAddresses)()
+    const port = this.port
+    const p = this.pending
+    return {
+      enabled: this.enabled,
+      running: !!this.server,
+      port,
+      addresses,
+      phones: this.phones(),
+      installUrl: port && addresses[0] ? `http://${addresses[0]}:${port}/` : null,
+      apk: !!this.deps.apkFile(),
+      pending: p && p.state === 'revealed' && p.emoji ? { pairId: p.pairId, name: p.name, emoji: p.emoji, at: p.at } : null,
+      ...(this.lastError ? { error: this.lastError } : {})
+    }
+  }
+
+  async setEnabled(on: boolean): Promise<PhoneStatus> {
+    this.deps.store.setSetting('phoneEnabled', on)
+    if (on) await this.start()
+    else await this.stop()
+    this.deps.onStatus()
+    return this.status()
+  }
+
+  /** Starts listening if Settings → Phone is on. Called when Celeste starts. */
+  async start(): Promise<void> {
+    if (this.server || !this.enabled) return
+    const { id } = await this.identity()
+    const wanted = this.deps.port ?? (this.settings['phonePort'] as number | undefined) ?? 40000 + Math.floor(Math.random() * 9000)
+    let server: Server
+    try {
+      server = await this.listen(wanted)
+    } catch {
+      // The port was taken (another program, or a second Celeste): pick another and keep that one.
+      try {
+        server = await this.listen(this.deps.port ? 0 : 40000 + Math.floor(Math.random() * 9000))
+      } catch (err) {
+        this.lastError = `Could not listen on the network: ${err instanceof Error ? err.message : String(err)}`
+        return
+      }
+    }
+    this.lastError = undefined
+    this.server = server
+    const port = this.port as number
+    if (!this.deps.port) this.deps.store.setSetting('phonePort', port)
+    this.heartbeat = setInterval(() => this.listeners.forEach((l) => l.res.write(': ping\n\n')), HEARTBEAT_MS)
+    this.heartbeat.unref?.()
+    if (this.deps.announce) {
+      this.stopAnnounce = await this.deps.announce(port, this.deps.computerName(), id).catch(() => null)
+    }
+  }
+
+  private listen(port: number): Promise<Server> {
+    return new Promise((resolve, reject) => {
+      const server = createServer((req, res) => void this.handle(req, res))
+      server.once('error', reject)
+      server.listen(port, this.deps.host ?? '0.0.0.0', () => {
+        server.off('error', reject)
+        resolve(server)
+      })
+    })
+  }
+
+  async stop(): Promise<void> {
+    if (this.heartbeat) clearInterval(this.heartbeat)
+    this.heartbeat = null
+    this.listeners.forEach((l) => l.res.end())
+    this.listeners.clear()
+    if (this.pending) this.endPairing('denied')
+    await this.stopAnnounce?.().catch(() => undefined)
+    this.stopAnnounce = null
+    const server = this.server
+    this.server = null
+    if (server) await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+
+  /** Forgets a phone: its key no longer works, and its open stream is closed at once. */
+  remove(phoneId: string): PhoneStatus {
+    this.savePhones(this.phones().filter((p) => p.id !== phoneId))
+    this.keys.delete(phoneId)
+    this.seen.delete(phoneId)
+    for (const l of [...this.listeners]) {
+      if (l.phoneId !== phoneId) continue
+      l.res.end()
+      this.listeners.delete(l)
+    }
+    this.deps.onStatus()
+    return this.status()
+  }
+
+  /** The person at the computer answered the three pictures. */
+  answer(pairId: string, allow: boolean): PhoneStatus {
+    const p = this.pending
+    if (!p || p.pairId !== pairId || p.state !== 'revealed' || !p.phoneKey) return this.status()
+    if (allow) {
+      const phone: PhoneRecord = { id: randomB64(9).replace(/[^a-z0-9]/gi, '').slice(0, 12), name: p.name, key: p.phoneKey, pairedAt: this.now(), lastSeen: this.now() }
+      this.savePhones([...this.phones().filter((x) => x.key !== phone.key), phone])
+      p.phoneId = phone.id
+      this.endPairing('allowed')
+    } else {
+      this.endPairing('denied')
+    }
+    this.deps.onStatus()
+    return this.status()
+  }
+
+  private endPairing(state: 'allowed' | 'denied'): void {
+    const p = this.pending
+    if (!p) return
+    p.state = state
+    p.waiters.forEach((w) => w())
+    p.waiters.clear()
+    this.deps.onPairing(null)
+    // Kept a little longer so a phone that is waiting still hears the answer.
+    setTimeout(() => {
+      if (this.pending === p) this.pending = null
+    }, 30_000).unref?.()
+  }
+
+  /** Sends a push to every phone that is listening, sealed for each, in order. */
+  broadcast(push: CorePush): void {
+    if (!PHONE_PUSHES.includes(push.type)) return
+    for (const l of this.listeners) {
+      l.queue = l.queue
+        .then(async () => {
+          const box = await seal(l.key, push, LABEL.push)
+          l.res.write(`data: ${box}\n\n`)
+        })
+        .catch(() => undefined)
+    }
+  }
+
+  /** The paired phones that are listening now, the most recently seen first. */
+  listening(): PhoneRecord[] {
+    const ids = new Set([...this.listeners].map((l) => l.phoneId))
+    return this.phones()
+      .filter((p) => ids.has(p.id))
+      .sort((a, b) => b.lastSeen - a.lastSeen)
+  }
+
+  /**
+   * Asks a phone to do something (a phone ability). The phone shows the person a card and answers with `phone.reply`.
+   * Resolves with its answer, or with a refusal when it does not answer in time or the line goes.
+   */
+  ask(phoneId: string, ability: PhoneAbility, args: Record<string, unknown>, chat: string, timeoutMs = 180_000, sessionId = '', ackMs = 12_000): Promise<PhoneAnswer> {
+    const targets = [...this.listeners].filter((l) => l.phoneId === phoneId)
+    if (!targets.length) return Promise.resolve({ ok: false, text: 'The phone is not connected.' })
+    const id = randomB64(12).replace(/[^a-z0-9]/gi, '')
+    const push: PhoneRequestPush = { type: 'phoneRequest', request: { id, ability, args, chat } }
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => finish({ ok: false, text: 'Nobody answered on the phone in time.' }), timeoutMs)
+      timer.unref?.()
+      // The phone says "got it" within seconds. A phone whose app sleeps in the background (no Stay connected) never
+      // does, and waiting minutes for it would leave the chat hanging.
+      const noAck = setTimeout(
+        () =>
+          finish({
+            ok: false,
+            text: 'The phone did not respond. Celeste may be closed or asleep on it: ask the user to open Celeste on the phone, or to switch on “Stay connected” in its This phone tab.'
+          }),
+        ackMs
+      )
+      noAck.unref?.()
+      const finish = (r: PhoneAnswer) => {
+        clearTimeout(timer)
+        clearTimeout(noAck)
+        if (!this.asked.delete(id)) return
+        resolve(r)
+      }
+      this.asked.set(id, { phoneId, sessionId, done: finish, acked: () => clearTimeout(noAck) })
+      this.sendTo(phoneId, push)
+    })
+  }
+
+  /** Stop was pressed in a chat: its requests waiting on the phone end now, their cards go, and phone control ends. */
+  cancel(sessionId: string): void {
+    const byPhone = new Map<string, string[]>()
+    for (const [id, a] of [...this.asked]) {
+      if (a.sessionId !== sessionId) continue
+      byPhone.set(a.phoneId, [...(byPhone.get(a.phoneId) ?? []), id])
+      a.done({ ok: false, text: 'The user stopped it.' })
+    }
+    for (const phone of this.listening()) {
+      const push: PhoneCancelPush = { type: 'phoneCancel', ids: byPhone.get(phone.id) ?? [], endControl: true }
+      this.sendTo(phone.id, push)
+    }
+  }
+
+  private sendTo(phoneId: string, value: PhoneRequestPush | PhoneCancelPush): void {
+    for (const l of this.listeners) {
+      if (l.phoneId !== phoneId) continue
+      l.queue = l.queue.then(async () => void l.res.write(`data: ${await seal(l.key, value, LABEL.push)}\n\n`)).catch(() => undefined)
+    }
+  }
+
+  private keyFor(phone: PhoneRecord): Promise<CryptoKey> {
+    let k = this.keys.get(phone.id)
+    if (!k) {
+      k = this.identity().then(({ keys }) => sessionKey(keys.priv, phone.key, keys.pub, phone.key))
+      this.keys.set(phone.id, k)
+    }
+    return k
+  }
+
+  /** True the first time a nonce is seen from this phone within the allowed clock skew. */
+  private fresh(phoneId: string, ts: number, n: string): boolean {
+    const now = this.now()
+    if (typeof ts !== 'number' || Math.abs(now - ts) > PHONE_MAX_SKEW_MS || typeof n !== 'string') return false
+    let seen = this.seen.get(phoneId)
+    if (!seen) {
+      seen = new Map()
+      this.seen.set(phoneId, seen)
+    }
+    for (const [k, at] of seen) if (now - at > PHONE_MAX_SKEW_MS * 2) seen.delete(k)
+    if (seen.has(n)) return false
+    seen.set(n, now)
+    return true
+  }
+
+  private touch(phone: PhoneRecord): void {
+    const now = this.now()
+    if (now - this.seenSaved < 60_000) return
+    this.seenSaved = now
+    this.savePhones(this.phones().map((p) => (p.id === phone.id ? { ...p, lastSeen: now } : p)))
+    this.deps.onStatus()
+  }
+
+  private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    res.setHeader('access-control-allow-origin', '*')
+    res.setHeader('access-control-allow-headers', 'content-type')
+    res.setHeader('access-control-allow-methods', 'GET, POST, OPTIONS')
+    if (!isPrivate(req.socket.remoteAddress)) return end(res, 403, { error: 'Only devices on the local network may connect.' })
+    if (req.method === 'OPTIONS') return end(res, 204)
+    const url = new URL(req.url ?? '/', 'http://phone')
+    try {
+      if (req.method === 'GET' && url.pathname === '/') return this.installPage(res)
+      if (req.method === 'GET' && url.pathname === '/celeste.apk') return this.sendApk(res)
+      if (req.method === 'GET' && url.pathname === '/hello') return end(res, 200, await this.hello())
+      if (req.method === 'POST' && url.pathname === '/pair/start') return end(res, ...(await this.pairStart(await body(req))))
+      if (req.method === 'POST' && url.pathname === '/pair/reveal') return end(res, ...(await this.pairReveal(await body(req))))
+      if (req.method === 'GET' && url.pathname === '/pair/wait') return this.pairWait(url.searchParams.get('pairId') ?? '', res)
+      if (req.method === 'POST' && url.pathname === '/rpc') return end(res, ...(await this.rpc(await body(req))))
+      if (req.method === 'GET' && url.pathname === '/events') return this.events(url, res)
+      return end(res, 404, { error: 'Not found' })
+    } catch (err) {
+      return end(res, 400, { error: err instanceof Error ? err.message : 'Bad request' })
+    }
+  }
+
+  private async hello(): Promise<PhoneHello> {
+    const { keys, id } = await this.identity()
+    return { protocol: PHONE_PROTOCOL, name: this.deps.computerName(), id, version: this.deps.version, key: keys.pub }
+  }
+
+  private async pairStart(b: Record<string, unknown>): Promise<[number, unknown]> {
+    const commit = str(b['commit'], 64)
+    const name = str(b['name'], 60).trim() || 'Android phone'
+    const p = this.pending
+    if (p && this.now() - p.at < PAIR_TTL_MS && (p.state === 'revealed' || p.state === 'started')) {
+      if (p.state === 'revealed') return [409, { error: 'Another phone is connecting. Try again in a moment.' }]
+    }
+    const { keys } = await this.identity()
+    const pairId = randomB64(12).replace(/[^a-z0-9]/gi, '')
+    this.pending = { pairId, name, commit, nonce: randomB64(16), state: 'started', at: this.now(), waiters: new Set() }
+    return [200, { pairId, key: keys.pub, nonce: this.pending.nonce }]
+  }
+
+  private async pairReveal(b: Record<string, unknown>): Promise<[number, unknown]> {
+    const p = this.pending
+    const pairId = str(b['pairId'], 40)
+    if (!p || p.pairId !== pairId || p.state !== 'started' || this.now() - p.at > PAIR_TTL_MS) return [410, { error: 'That pairing has ended. Start again.' }]
+    const phoneKey = str(b['key'], 64)
+    const phoneNonce = str(b['nonce'], 64)
+    if ((await commitment(phoneKey, phoneNonce)) !== p.commit) {
+      this.pending = null
+      return [400, { error: 'The phone’s answer did not match what it promised.' }]
+    }
+    const { keys } = await this.identity()
+    p.phoneKey = phoneKey
+    p.phoneNonce = phoneNonce
+    p.emoji = await pairingEmoji(keys.pub, phoneKey, phoneNonce, p.nonce)
+    p.state = 'revealed'
+    p.at = this.now()
+    this.deps.onPairing({ pairId: p.pairId, name: p.name, emoji: p.emoji, at: p.at })
+    this.deps.onStatus()
+    // Nobody answered: it ends by itself.
+    setTimeout(() => {
+      if (this.pending === p && p.state === 'revealed') {
+        this.endPairing('denied')
+        this.deps.onStatus()
+      }
+    }, PAIR_TTL_MS).unref?.()
+    return [200, { ok: true }]
+  }
+
+  private pairWait(pairId: string, res: ServerResponse): void {
+    const p = this.pending
+    const reply = () => {
+      const q = this.pending
+      if (!q || q.pairId !== pairId) return end(res, 200, { state: 'denied' })
+      if (q.state === 'allowed') return end(res, 200, { state: 'allowed', phoneId: q.phoneId })
+      if (q.state === 'denied') return end(res, 200, { state: 'denied' })
+      return end(res, 200, { state: 'waiting' })
+    }
+    if (!p || p.pairId !== pairId || p.state !== 'revealed') return reply()
+    const timer = setTimeout(() => {
+      p.waiters.delete(done)
+      reply()
+    }, WAIT_MS)
+    const done = () => {
+      clearTimeout(timer)
+      reply()
+    }
+    p.waiters.add(done)
+    res.on('close', () => {
+      clearTimeout(timer)
+      p.waiters.delete(done)
+    })
+  }
+
+  private async rpc(b: Record<string, unknown>): Promise<[number, unknown]> {
+    const phone = this.phones().find((p) => p.id === b['phone'])
+    if (!phone) return [401, { error: 'This phone is not paired. Connect it again.' }]
+    const key = await this.keyFor(phone)
+    let call: SealedCall
+    try {
+      call = await open<SealedCall>(key, str(b['box'], MAX_BODY), LABEL.request)
+    } catch {
+      return [401, { error: 'This phone is not paired. Connect it again.' }]
+    }
+    if (!this.fresh(phone.id, call.ts, call.n)) return [401, { error: 'Request refused: check the time on the phone.' }]
+    this.touch(phone)
+    let reply: SealedReply
+    if (typeof call.method !== 'string' || !isPhoneMethod(call.method) || !Array.isArray(call.params)) {
+      reply = { id: call.id, ok: false, error: 'Not available from a phone.' }
+    } else if (call.method === 'phone.ack') {
+      const r = call.params[0] as { id?: unknown } | undefined
+      const waiting = typeof r?.id === 'string' ? this.asked.get(r.id) : undefined
+      if (waiting && waiting.phoneId === phone.id) waiting.acked()
+      reply = { id: call.id, ok: true, result: null }
+    } else if (call.method === 'phone.reply') {
+      // The answer to a request this computer sent: only the phone it was sent to can answer it.
+      const r = call.params[0] as Partial<PhoneReply> | undefined
+      const waiting = typeof r?.id === 'string' ? this.asked.get(r.id) : undefined
+      if (waiting && waiting.phoneId === phone.id) {
+        const image = r?.image && typeof r.image.data === 'string' && r.image.data.length < 3_000_000 && /^image\/(jpeg|png)$/.test(String(r.image.mime)) ? { mime: String(r.image.mime), data: r.image.data } : undefined
+        waiting.done({ ok: r?.ok === true, text: typeof r?.text === 'string' ? r.text.slice(0, 100_000) : '', ...(image ? { image } : {}) })
+        reply = { id: call.id, ok: true, result: null }
+      } else reply = { id: call.id, ok: false, error: 'Nothing is waiting for that answer.' }
+    } else {
+      try {
+        reply = { id: call.id, ok: true, result: (await this.deps.call(call.method, call.params, phone)) ?? null }
+      } catch (err) {
+        reply = { id: call.id, ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    }
+    return [200, { box: await seal(key, reply, LABEL.response) }]
+  }
+
+  private async events(url: URL, res: ServerResponse): Promise<void> {
+    const phone = this.phones().find((p) => p.id === url.searchParams.get('phone'))
+    if (!phone) return end(res, 401, { error: 'This phone is not paired.' })
+    const key = await this.keyFor(phone)
+    try {
+      const proof = await open<{ ts: number; n: string }>(key, url.searchParams.get('auth') ?? '', LABEL.listen)
+      if (!this.fresh(phone.id, proof.ts, proof.n)) return end(res, 401, { error: 'Refused: check the time on the phone.' })
+    } catch {
+      return end(res, 401, { error: 'This phone is not paired.' })
+    }
+    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' })
+    res.write(': connected\n\n')
+    const listener: Listener = { phoneId: phone.id, key, res, queue: Promise.resolve() }
+    this.listeners.add(listener)
+    this.touch(phone)
+    res.on('close', () => this.listeners.delete(listener))
+  }
+
+  private installPage(res: ServerResponse): void {
+    const apk = !!this.deps.apkFile()
+    const name = escapeHtml(this.deps.computerName())
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
+    res.end(INSTALL_PAGE(name, escapeHtml(this.deps.version), apk))
+  }
+
+  private sendApk(res: ServerResponse): void {
+    const file = this.deps.apkFile()
+    if (!file) return end(res, 404, { error: 'The app is not on this computer yet.' })
+    const size = statSync(file).size
+    res.writeHead(200, {
+      'content-type': 'application/vnd.android.package-archive',
+      'content-length': String(size),
+      'content-disposition': `attachment; filename="celeste-${this.deps.version}.apk"`,
+      'cache-control': 'no-store'
+    })
+    createReadStream(file).pipe(res)
+  }
+}
+
+function str(v: unknown, max: number): string {
+  if (typeof v !== 'string' || v.length > max) throw new Error('Bad request')
+  return v
+}
+
+function end(res: ServerResponse, status: number, value?: unknown): void {
+  if (res.headersSent) return void res.end()
+  if (value === undefined) {
+    res.writeHead(status)
+    res.end()
+    return
+  }
+  res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+  res.end(JSON.stringify(value))
+}
+
+function body(req: IncomingMessage): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    let size = 0
+    const chunks: Buffer[] = []
+    req.on('data', (c: Buffer) => {
+      size += c.length
+      if (size > MAX_BODY) {
+        reject(new Error('Too large'))
+        req.destroy()
+      } else chunks.push(c)
+    })
+    req.on('end', () => {
+      try {
+        const v = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') as unknown
+        resolve(v && typeof v === 'object' ? (v as Record<string, unknown>) : {})
+      } catch {
+        reject(new Error('Bad request'))
+      }
+    })
+    req.on('error', reject)
+  })
+}
+
+const escapeHtml = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string)
+
+/** The page the QR code opens on the phone. Plain HTML: it must work in any phone browser, with nothing to load from elsewhere. */
+const INSTALL_PAGE = (computer: string, version: string, apk: boolean) => `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#080c17"><title>Celeste for Android</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:#080c17;color:#f7f8fc;font:16px/1.5 system-ui,'Segoe UI',Roboto,sans-serif;display:flex;justify-content:center}
+main{max-width:420px;width:100%;padding:56px 24px 32px;display:flex;flex-direction:column;align-items:center;gap:16px;text-align:center;position:relative;overflow:hidden}
+.glow{position:absolute;top:-260px;right:-260px;width:560px;height:560px;border-radius:50%;box-shadow:0 0 0 2px #a04684,0 0 60px 10px rgb(160 75 216/.35),inset 0 0 0 9999px #080c17;opacity:.9}
+.mark{width:84px;height:84px;border-radius:50%;background:conic-gradient(from 200deg,#1b2977,#58309a,#c04a93,#f8718d,#1b2977);position:relative;margin-top:8px}
+.mark::after{content:'';position:absolute;inset:16px 6px 16px 26px;border-radius:50%;background:#080c17}
+h1{font-size:30px;line-height:1.15;margin:8px 0 0;position:relative}h1 span{background:linear-gradient(90deg,#f45f9d,#c06ae0,#8f8aff);-webkit-background-clip:text;background-clip:text;color:transparent}
+p{margin:0;color:#aeb8d1;position:relative}.card{width:100%;background:#101826;border:1px solid #1b2538;border-radius:20px;padding:14px 16px;text-align:left;position:relative}
+a.btn{display:flex;align-items:center;justify-content:center;width:100%;height:56px;border-radius:28px;background:#c9285e;color:#fff;font-weight:600;font-size:17px;text-decoration:none;box-shadow:0 8px 24px rgb(201 40 94/.3);position:relative}
+ol{text-align:left;color:#aeb8d1;font-size:14px;padding-left:20px;margin:4px 0 0;position:relative}li{margin:6px 0}b{color:#f7f8fc}
+</style></head><body><main><div class="glow"></div><div class="mark"></div>
+<h1>Celeste for <span>Android</span></h1>
+<p>Shared by <b>${computer}</b> on your Wi-Fi. Chat with Celeste from your phone, and answer what it asks.</p>
+${apk ? `<div class="card"><b>Celeste</b><br><span style="color:#aeb8d1;font-size:14px">Version ${version}, the same as ${computer}</span></div>
+<a class="btn" href="/celeste.apk">Install</a>
+<ol><li>Android may ask once whether your browser can install apps. Switch it on, then go back.</li><li>Tap <b>Install</b>, then <b>Open</b>.</li><li>Celeste finds ${computer} by itself. Press <b>Allow</b> on the computer.</li></ol>`
+  : `<div class="card">The app is not on this computer yet. Ask whoever set up Celeste, or build it from the project (phone/README.md).</div>`}
+</main></body></html>`

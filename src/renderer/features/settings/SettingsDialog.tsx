@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Bot, Database, Info, Monitor, MousePointer2, Moon, Palette, Plug, Settings as SettingsIcon, Sun, Laptop, X, Plug2 } from 'lucide-react'
+import { Bot, Database, Info, Monitor, MousePointer2, Moon, Palette, Plug, Settings as SettingsIcon, Smartphone, Sun, Laptop, X, Plug2 } from 'lucide-react'
+import { PhoneSettings } from '@/features/phone/PhoneSettings'
 import { cn } from '@/lib/cn'
 import { Modal } from '@/components/Dialog'
 import { Field, SelectField } from '@/components/form'
@@ -26,6 +27,7 @@ const SECTIONS: { id: SettingsSection; label: string; icon: typeof Bot }[] = [
   { id: 'agent', label: 'Agent defaults', icon: Bot },
   { id: 'tools', label: 'Tools & Integrations', icon: Plug },
   { id: 'desktop', label: 'Desktop control', icon: MousePointer2 },
+  { id: 'phone', label: 'Phone', icon: Smartphone },
   { id: 'devices', label: 'Devices', icon: Monitor },
   { id: 'data', label: 'Data', icon: Database },
   { id: 'about', label: 'About', icon: Info }
@@ -371,6 +373,12 @@ function Content({ section }: { section: SettingsSection }) {
       return (
         <Section title="Tools & Integrations" description="One list of tools, shared by every vendor. Add an internal tool once and any assistant can use it.">
           <McpSettings />
+        </Section>
+      )
+    case 'phone':
+      return (
+        <Section title="Phone" description="Use Celeste from your Android phone: chat, follow your sessions, and answer what the assistant asks, on the same Wi-Fi.">
+          <PhoneSettings />
         </Section>
       )
     case 'devices':

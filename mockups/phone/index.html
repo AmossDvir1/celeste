@@ -1,0 +1,1274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#080c17">
+<title>Celeste for Android</title>
+<link rel="icon" href="logo.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Mock of the Celeste Android app (docs/PHONE_PLAN.md). Tokens copied from src/renderer/styles/tokens.css;
+   the glow arc, greeting, shimmer and motion follow the desktop app (GlowArc.tsx, ChatHome.tsx, index.css). */
+:root, [data-theme='dark'] {
+  color-scheme: dark;
+  --c-canvas:#080c17; --c-panel:#0b111e; --c-raised:#101826; --c-raised-2:#141d2f; --c-field:#0f1624;
+  --c-edge:#1b2538; --c-edge-strong:#2a3650;
+  --c-ink:#f7f8fc; --c-ink-soft:#cfd8ee; --c-ink-muted:#aeb8d1; --c-ink-faint:#8590ab;
+  --c-accent:#f5487f; --c-accent-fill:#c9285e; --c-accent-text:#ff7aa3; --c-accent-soft:rgb(245 72 127 / .14); --c-accent-edge:rgb(245 72 127 / .45);
+  --c-select:rgb(143 59 118 / .3); --c-hover:rgb(255 255 255 / .045);
+  --c-composer:#121929; --c-composer-edge:#66658a; --c-pill:#131e33; --c-send:#372346; --c-send-ink:#f4d3fb;
+  --c-success:#31d0aa; --c-warning:#f6c85f; --c-danger:#ff647c; --c-info:#55c7ff; --c-shimmer-hi:#ffffff;
+  --tab-active-bg:linear-gradient(180deg, rgb(143 59 118 / .55), rgb(199 65 123 / .4)); --tab-active-ink:#fff;
+  --shadow-pop:0 16px 50px rgb(0 0 0 / .5);
+  --glow-core-1:#171f4a; --glow-core-2:#4b2c6d; --glow-core-3:#7b3877; --glow-core-4:#a04684; --glow-core-5:#b0529c; --glow-core-6:#8e4dad; --glow-core-7:#7440a0;
+  --glow-haze-1:#4d6df0; --glow-haze-2:#a04bd8; --glow-haze-3:#d452c4; --glow-haze-4:#e056c8; --glow-haze-5:#e456c4; --glow-haze-6:#c258d6; --glow-haze-7:#a354dc;
+  --glow-wide-1:#5560dc; --glow-wide-2:#b45af0; --glow-wide-3:#c850f5; --glow-wide-4:#a858ff; --glow-wide-5:#7a55ff;
+  --glow-haze-opacity:1; --glow-wide-opacity:1; --glow-core-opacity:1; --glow-lift:#3a2a7a; --glow-lift-opacity:.1;
+  --glow-planet:#080c17; --glow-planet-opacity:1; --glow-star:#cdb6f5; --glow-star-opacity:.55;
+  /* Android's own screens (One UI-like), drawn only to show where Android steps in. */
+  --sys-bg:#000; --sys-card:#1c1c1e; --sys-ink:#fafafa; --sys-muted:#9a9a9f; --sys-accent:#3e91ff; --sys-dialog:#232325; --sys-scrim:rgb(0 0 0 / .55);
+  --stage:#03050b;
+  --ease:cubic-bezier(.2,.9,.3,1); --spring:cubic-bezier(.3,1.45,.55,1);
+}
+[data-theme='light'] {
+  color-scheme: light;
+  --c-canvas:#f7f8fc; --c-panel:#ffffff; --c-raised:#f2f4fa; --c-raised-2:#ffffff; --c-field:#ffffff;
+  --c-edge:#dde2f0; --c-edge-strong:#c8d0e3;
+  --c-ink:#111b4c; --c-ink-soft:#2f3a66; --c-ink-muted:#424e6e; --c-ink-faint:#5a6482;
+  --c-accent:#f5487f; --c-accent-fill:#c9285e; --c-accent-text:#a82c63; --c-accent-soft:rgb(245 72 127 / .1); --c-accent-edge:rgb(245 72 127 / .4);
+  --c-select:#f7e2ee; --c-hover:rgb(31 48 110 / .05);
+  --c-composer:#ffffff; --c-composer-edge:#c9bff0; --c-pill:#ffffff; --c-send:#f7d4e6; --c-send-ink:#a82c63;
+  --c-success:#0b7d50; --c-warning:#8f5a06; --c-danger:#c12c4b; --c-info:#315dce; --c-shimmer-hi:#f5487f;
+  --tab-active-bg:#f9dcec; --tab-active-ink:#a82c63;
+  --shadow-pop:0 12px 32px rgb(31 48 110 / .16);
+  --glow-core-1:#c9c2ee; --glow-core-2:#a98ad6; --glow-core-3:#c36fb4; --glow-core-4:#e0579b; --glow-core-5:#f0508f; --glow-core-6:#d462a6; --glow-core-7:#b377c8;
+  --glow-haze-1:#8fa0ee; --glow-haze-2:#a48cea; --glow-haze-3:#bc8be6; --glow-haze-4:#d68add; --glow-haze-5:#e48ad2; --glow-haze-6:#cf8ee6; --glow-haze-7:#b596ec;
+  --glow-wide-1:#9fb4f5; --glow-wide-2:#b8a4f2; --glow-wide-3:#d3a8f0; --glow-wide-4:#cfaaf0; --glow-wide-5:#b8aaf2;
+  --glow-haze-opacity:.75; --glow-wide-opacity:.7; --glow-core-opacity:.9; --glow-lift:#dcd6f6; --glow-lift-opacity:.45;
+  --glow-planet:#ebe6fb; --glow-planet-opacity:.85; --glow-star:#8f6fd0; --glow-star-opacity:.35;
+  --sys-bg:#f2f2f2; --sys-card:#fff; --sys-ink:#111; --sys-muted:#6b6b70; --sys-accent:#2a74e8; --sys-dialog:#fff; --sys-scrim:rgb(0 0 0 / .35);
+  --stage:#dfe3ef;
+}
+* { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+html, body { margin:0; height:100%; }
+body { background:var(--stage); color:var(--c-ink); font:15px/1.45 'Outfit','Segoe UI',system-ui,sans-serif; -webkit-font-smoothing:antialiased; }
+button { font:inherit; color:inherit; background:none; border:0; padding:0; cursor:pointer; }
+input, textarea { font:inherit; color:inherit; }
+code, .mono { font-family:'JetBrains Mono',ui-monospace,Consolas,monospace; font-size:.86em; }
+b { font-weight:600; }
+.i { flex:none; display:block; }
+
+#stage { min-height:100dvh; display:flex; align-items:center; justify-content:center; gap:44px; }
+#phone { position:relative; width:100vw; height:100dvh; overflow:hidden; background:var(--c-canvas); display:flex; flex-direction:column; isolation:isolate; }
+#side { display:none; max-width:290px; color:var(--c-ink-muted); font-size:14px; }
+#side h2 { color:var(--c-ink); font-size:18px; margin:0 0 8px; font-weight:600; }
+#side kbd, #side code { font-family:'JetBrains Mono',monospace; font-size:12px; border:1px solid var(--c-edge-strong); border-radius:6px; padding:1px 6px; }
+@media (min-width:640px) {
+  #phone { width:360px; height:780px; border-radius:42px; box-shadow:0 0 0 9px #0a0d16, 0 0 0 10px #2a3048, 0 40px 90px rgb(0 0 0 / .55); }
+  #side { display:block; }
+}
+.bare .statusbar, .bare .gesture { display:none; }
+.bare #phone { padding-top:env(safe-area-inset-top); padding-bottom:env(safe-area-inset-bottom); }
+
+/* System bars */
+.statusbar { height:30px; flex:none; display:flex; align-items:center; justify-content:space-between; padding:0 22px 0 26px; font-size:13px; font-weight:500; position:relative; z-index:1; }
+.statusbar .cam { position:absolute; left:50%; top:9px; width:11px; height:11px; margin-left:-5px; border-radius:50%; background:#000; box-shadow:0 0 0 1.5px #1a1a1a; }
+.statusbar .icons { display:flex; gap:5px; align-items:center; }
+.gesture { height:20px; flex:none; display:flex; align-items:center; justify-content:center; position:relative; z-index:1; }
+.gesture span { width:110px; height:4px; border-radius:4px; background:var(--c-ink); opacity:.55; }
+#screen { flex:1; min-height:0; display:flex; flex-direction:column; position:relative; view-transition-name:screen; }
+#overlay { position:absolute; inset:0; pointer-events:none; z-index:30; border-radius:inherit; }
+#overlay > * { pointer-events:auto; }
+#overlay > .ctl-border, #overlay > .ctl-glow { pointer-events:none; }
+
+/* Page transitions (View Transitions API): push, pop, tabs, theme. */
+::view-transition-group(*) { animation-duration:.36s; animation-timing-function:var(--ease); }
+::view-transition-group(screen) { overflow:clip; }
+html[data-nav=forward]::view-transition-old(screen) { animation:.28s var(--ease) both vt-out-left; }
+html[data-nav=forward]::view-transition-new(screen) { animation:.38s var(--ease) both vt-in-right; }
+html[data-nav=back]::view-transition-old(screen) { animation:.28s var(--ease) both vt-out-right; }
+html[data-nav=back]::view-transition-new(screen) { animation:.38s var(--ease) both vt-in-left; }
+html[data-nav=tab]::view-transition-old(screen) { animation:.14s ease-in both vt-fade-out; }
+html[data-nav=tab]::view-transition-new(screen) { animation:.3s var(--ease) .06s both vt-fade-up; }
+html[data-nav=theme]::view-transition-old(root) { animation:none; }
+html[data-nav=theme]::view-transition-new(root) { animation:.55s cubic-bezier(.4,0,.2,1) both vt-reveal; }
+html.vt-flat * { view-transition-name:none !important; }
+@keyframes vt-in-right { from { transform:translateX(70px); opacity:0 } }
+@keyframes vt-out-left { to { transform:translateX(-40px); opacity:0 } }
+@keyframes vt-in-left { from { transform:translateX(-50px); opacity:0 } }
+@keyframes vt-out-right { to { transform:translateX(70px); opacity:0 } }
+@keyframes vt-fade-out { to { opacity:0 } }
+@keyframes vt-fade-up { from { opacity:0; transform:translateY(10px) } }
+@keyframes vt-reveal { from { clip-path:circle(0 at var(--rx, 50%) var(--ry, 50%)) } to { clip-path:circle(150vmax at var(--rx, 50%) var(--ry, 50%)) } }
+
+/* Shared motion, after src/renderer/styles/index.css */
+@keyframes fade-up { from { opacity:0; transform:translateY(10px) } }
+@keyframes pop-in { from { opacity:0; transform:scale(.9) } }
+@keyframes ping { 0% { transform:scale(1); opacity:.7 } 80%,100% { transform:scale(2.6); opacity:0 } }
+@keyframes float { 50% { transform:translateY(-6px) } }
+@keyframes twinkle { 0%,100% { opacity:.15 } 50% { opacity:1 } }
+@keyframes dash-flow { to { stroke-dashoffset:-20 } }
+@keyframes sheen { from { transform:translateX(-100%) } to { transform:translateX(250%) } }
+@keyframes draw { from { stroke-dashoffset:var(--len, 24) } to { stroke-dashoffset:0 } }
+@keyframes spin { to { --a:360deg } }
+@property --a { syntax:'<angle>'; initial-value:0deg; inherits:false; }
+.entering .rise { animation:fade-up .45s var(--ease) both; animation-delay:calc(var(--i, 0) * 45ms + 60ms); }
+.fresh { animation:fade-up .35s var(--ease) both; }
+.shimmer { color:transparent; background-image:linear-gradient(100deg, transparent 0%, transparent 40%, var(--c-shimmer-hi) 50%, transparent 60%, transparent 100%), linear-gradient(var(--c-ink-muted), var(--c-ink-muted)); background-size:250% 100%, 100% 100%; background-repeat:no-repeat; -webkit-background-clip:text; background-clip:text; animation:shimmer-sweep 2.2s linear infinite; }
+@keyframes shimmer-sweep { from { background-position:-3% 0, 0 0 } to { background-position:103% 0, 0 0 } }
+.draw path, .draw polyline { stroke-dasharray:var(--len, 24); animation:draw .5s var(--ease) .15s both; }
+
+/* The glow arc, after GlowArc.tsx: a planet's edge across the top-right, with haze, a bright line and a few stars. */
+.arc { position:absolute; top:0; right:0; width:100%; height:430px; pointer-events:none; z-index:0; -webkit-mask-image:linear-gradient(#000 45%, transparent 92%); mask-image:linear-gradient(#000 45%, transparent 92%); }
+.arc .wide { opacity:calc(var(--glow-wide-opacity) * .38); animation:breathe 7s ease-in-out infinite; }
+.arc .near { opacity:calc(var(--glow-haze-opacity) * .6); }
+.arc .core { opacity:var(--glow-core-opacity); }
+.arc .comet { stroke-dasharray:46 900; animation:comet 7s cubic-bezier(.45,0,.25,1) infinite; }
+.arc .star { fill:var(--glow-star); opacity:var(--glow-star-opacity); animation:twinkle 3.6s ease-in-out infinite; }
+.arc.soft { opacity:.7; height:340px; }
+@keyframes breathe { 50% { opacity:calc(var(--glow-wide-opacity) * .55) } }
+@keyframes comet { 0% { stroke-dashoffset:46; opacity:0 } 8% { opacity:1 } 55% { stroke-dashoffset:-560; opacity:.9 } 60%,100% { stroke-dashoffset:-560; opacity:0 } }
+.above { position:relative; z-index:1; }
+
+/* Press feedback */
+.btn, .iconbtn, .chip, .play, .chatitem, .needs, .suggest button, .row[data-a], .card[data-a], .sendbtn, .fab, .m-tool[data-a], .seg button { transition:transform .14s var(--ease), background-color .2s, opacity .2s; }
+.btn:active, .iconbtn:active, .chip:active, .play:active, .sendbtn:active, .fab:active, .seg button:active { transform:scale(.95); }
+.chatitem:active, .needs:active, .suggest button:active, .row[data-a]:active, .card[data-a]:active, .m-tool[data-a]:active { transform:scale(.985); }
+
+/* App shell */
+.appbar { height:56px; flex:none; display:flex; align-items:center; gap:10px; padding:0 8px 0 16px; position:relative; z-index:3; transition:background-color .25s, box-shadow .25s; }
+.appbar h1 { font-size:19px; font-weight:600; margin:0; flex:1; letter-spacing:-.01em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; opacity:0; transform:translateY(6px); transition:opacity .25s, transform .25s var(--ease); }
+.appbar.scrolled { background:var(--c-panel); box-shadow:0 1px 0 var(--c-edge); }
+.appbar.scrolled h1 { opacity:1; transform:none; }
+.appbar .logo { width:28px; height:28px; }
+.iconbtn { width:44px; height:44px; border-radius:50%; display:grid; place-items:center; color:var(--c-ink-soft); flex:none; }
+.iconbtn:hover { background:var(--c-hover); }
+.content { flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:none; position:relative; }
+.content::-webkit-scrollbar { display:none; }
+.pad { padding:0 16px; }
+.navbar { height:70px; flex:none; display:flex; background:var(--c-panel); border-top:1px solid var(--c-edge); view-transition-name:navbar; position:relative; z-index:3; }
+.navbar button { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; font-size:12px; color:var(--c-ink-faint); position:relative; transition:color .2s; }
+.navbar .ind { width:62px; height:32px; border-radius:16px; display:grid; place-items:center; }
+.navbar .on { color:var(--c-ink); font-weight:600; }
+.navbar .on .ind { background:var(--tab-active-bg); color:var(--tab-active-ink); view-transition-name:nav-ind; }
+.navbar .badge { position:absolute; top:8px; left:calc(50% + 12px); min-width:17px; height:17px; padding:0 4px; border-radius:9px; background:var(--c-accent-fill); color:#fff; font-size:10.5px; font-weight:600; display:grid; place-items:center; box-shadow:0 0 0 2px var(--c-panel); }
+
+/* Large title, after the desktop's greeting */
+.hero { position:relative; padding:6px 20px 14px; }
+.overline { font-size:11px; font-weight:500; letter-spacing:.22em; text-transform:uppercase; color:var(--c-ink-muted); opacity:.85; }
+.greet { font-size:31px; line-height:1.12; font-weight:700; margin:10px 0 6px; letter-spacing:-.015em; }
+.grad { background:linear-gradient(90deg, #f45f9d, #c06ae0, #8f8aff); -webkit-background-clip:text; background-clip:text; color:transparent; }
+.subline { font-size:17px; font-weight:300; color:var(--c-ink-soft); margin:0; }
+.bigtitle { font-size:31px; font-weight:700; letter-spacing:-.015em; margin:8px 0 4px; }
+
+.chip { display:inline-flex; align-items:center; gap:7px; height:32px; padding:0 12px; border-radius:16px; background:var(--c-pill); border:1px solid var(--c-edge); font-size:13px; color:var(--c-ink-soft); white-space:nowrap; }
+.dot { width:8px; height:8px; border-radius:50%; background:var(--c-success); flex:none; position:relative; }
+.dot.live::after { content:''; position:absolute; inset:0; border-radius:50%; background:inherit; animation:ping 2.6s ease-out infinite; }
+.dot.off { background:var(--c-ink-faint); }
+.dot.off::after { display:none; }
+.dot.pink { background:var(--c-accent); }
+.muted { color:var(--c-ink-muted); }
+.faint { color:var(--c-ink-faint); }
+.small { font-size:13px; }
+.center { text-align:center; }
+.h-xl { font-size:30px; line-height:1.12; font-weight:700; letter-spacing:-.02em; margin:0; }
+.h-l { font-size:23px; line-height:1.2; font-weight:600; margin:0; letter-spacing:-.01em; }
+.section-title { font-size:11px; font-weight:600; color:var(--c-ink-faint); text-transform:uppercase; letter-spacing:.18em; margin:24px 20px 10px; }
+
+.btn { height:48px; padding:0 22px; border-radius:24px; display:inline-flex; align-items:center; justify-content:center; gap:8px; font-weight:600; font-size:15px; position:relative; overflow:hidden; }
+.btn.primary { background:var(--c-accent-fill); color:#fff; box-shadow:0 6px 20px rgb(201 40 94 / .28); }
+.btn.tonal { background:var(--c-raised-2); border:1px solid var(--c-edge-strong); color:var(--c-ink); }
+.btn.text { color:var(--c-accent-text); padding:0 12px; }
+.btn.block { width:100%; }
+.btn.big { height:56px; border-radius:28px; font-size:17px; }
+.btn.sm { height:40px; padding:0 16px; font-size:14px; }
+.btn.primary::after { content:''; position:absolute; top:0; bottom:0; left:0; width:40%; background:linear-gradient(100deg, transparent, rgb(255 255 255 / .22), transparent); transform:translateX(-100%); }
+.btn.primary.shine::after { animation:sheen 2.8s ease-in-out 1s infinite; }
+.btn .fill { position:absolute; left:0; top:0; bottom:0; width:0; background:rgb(255 255 255 / .18); }
+.btn.loading .fill { animation:loadfill 1.2s var(--ease) forwards; }
+@keyframes loadfill { to { width:100% } }
+.link { color:var(--c-accent-text); font-weight:500; cursor:pointer; }
+
+.card { background:var(--c-raised); border:1px solid var(--c-edge); border-radius:20px; }
+.row { display:flex; align-items:center; gap:14px; padding:13px 16px; }
+.row + .row { border-top:1px solid var(--c-edge); }
+.row .grow { flex:1; min-width:0; }
+.row .t { font-weight:500; }
+.row .s { font-size:13px; color:var(--c-ink-muted); transition:opacity .2s; }
+.ibox { width:38px; height:38px; border-radius:12px; display:grid; place-items:center; background:var(--c-raised-2); border:1px solid var(--c-edge); color:var(--c-ink-soft); flex:none; }
+.ibox.accent { background:var(--c-accent-soft); border-color:var(--c-accent-edge); color:var(--c-accent-text); }
+
+.switch { width:48px; height:28px; border-radius:14px; background:var(--c-edge-strong); position:relative; flex:none; transition:background-color .25s; }
+.switch::after { content:''; position:absolute; top:3px; left:3px; width:22px; height:22px; border-radius:50%; background:#fff; transition:transform .35s var(--spring), width .2s; box-shadow:0 1px 3px rgb(0 0 0 / .3); }
+.switch.on { background:var(--c-accent-fill); }
+.switch.on::after { transform:translateX(20px); }
+.row[data-a]:active .switch::after { width:26px; }
+.row[data-a]:active .switch.on::after { transform:translateX(16px); }
+
+.glowlogo { position:relative; display:grid; place-items:center; }
+.glowlogo::before { content:''; position:absolute; width:200px; height:200px; border-radius:50%; background:radial-gradient(circle, rgb(160 75 216 / .32), rgb(77 109 240 / .12) 45%, transparent 70%); filter:blur(8px); }
+.glowlogo img { position:relative; }
+.float { animation:float 6s ease-in-out infinite; }
+.logo-xl { width:92px; height:92px; }
+.rings { position:absolute; width:120px; height:120px; border-radius:50%; border:1.5px solid var(--c-accent-edge); animation:ring 2.4s ease-out infinite; }
+.rings.b { animation-delay:.8s; } .rings.c { animation-delay:1.6s; }
+@keyframes ring { from { transform:scale(.75); opacity:.9 } to { transform:scale(2.3); opacity:0 } }
+
+/* Browser (install page) */
+.browser { flex:1; display:flex; flex-direction:column; background:var(--c-canvas); min-height:0; }
+.b-bar { height:56px; display:flex; align-items:center; gap:8px; padding:0 8px 0 12px; background:var(--c-panel); border-bottom:1px solid var(--c-edge); position:relative; z-index:2; }
+.b-url { flex:1; height:40px; border-radius:20px; background:var(--c-raised-2); display:flex; align-items:center; gap:8px; padding:0 14px; font-size:14px; color:var(--c-ink-soft); }
+.b-url .warn { color:var(--c-ink-faint); font-size:12px; }
+.b-page { flex:1; overflow-y:auto; padding:34px 22px 24px; display:flex; flex-direction:column; align-items:center; gap:16px; scrollbar-width:none; position:relative; }
+.apk { width:100%; display:flex; gap:14px; align-items:center; padding:14px; }
+.apk img { width:46px; height:46px; border-radius:14px; background:var(--c-panel); padding:6px; border:1px solid var(--c-edge); }
+.steps { list-style:none; margin:4px 0 0; padding:0; width:100%; display:flex; flex-direction:column; gap:12px; }
+.steps li { display:flex; gap:12px; align-items:flex-start; font-size:14px; color:var(--c-ink-muted); }
+.steps .n { width:24px; height:24px; border-radius:50%; background:var(--c-raised-2); border:1px solid var(--c-edge-strong); display:grid; place-items:center; font-size:12px; font-weight:600; color:var(--c-ink); flex:none; }
+
+/* Pairing */
+.pair { flex:1; display:flex; flex-direction:column; align-items:center; padding:30px 24px 24px; gap:14px; text-align:center; position:relative; }
+.pair .spacer { flex:1; }
+.found { width:100%; padding:16px; display:flex; align-items:center; gap:14px; text-align:left; animation:fade-up .45s var(--ease) both; }
+.link-viz { display:flex; align-items:center; gap:0; margin:4px 0 2px; }
+.link-viz .end { width:52px; height:52px; border-radius:16px; display:grid; place-items:center; background:var(--c-raised); border:1px solid var(--c-edge-strong); color:var(--c-ink-soft); }
+.link-viz .end.pc { background:var(--c-accent-soft); border-color:var(--c-accent-edge); color:var(--c-accent-text); }
+.link-viz svg line { stroke:var(--c-accent); stroke-width:2; stroke-dasharray:3 7; stroke-linecap:round; animation:dash-flow .7s linear infinite; }
+.link-viz .pulse { fill:var(--c-accent); filter:drop-shadow(0 0 4px var(--c-accent)); animation:travel 1.6s var(--ease) infinite; }
+@keyframes travel { 0% { transform:translateX(0); opacity:0 } 15% { opacity:1 } 85% { opacity:1 } 100% { transform:translateX(84px); opacity:0 } }
+.emoji { display:flex; gap:12px; justify-content:center; margin:8px 0; }
+.emoji span { width:80px; height:88px; border-radius:22px; background:var(--c-raised); border:1px solid var(--c-edge-strong); display:grid; place-items:center; font-size:42px; animation:emoji-in .6s var(--spring) both; box-shadow:0 8px 24px rgb(0 0 0 / .18); }
+.emoji span:nth-child(2) { animation-delay:.12s } .emoji span:nth-child(3) { animation-delay:.24s }
+@keyframes emoji-in { from { opacity:0; transform:translateY(16px) scale(.7) rotate(-8deg) } }
+.waiting { display:inline-flex; gap:6px; align-items:center; font-size:14px; }
+.dots i { display:inline-block; width:5px; height:5px; margin:0 2px; border-radius:50%; background:currentColor; animation:blink 1.2s infinite; }
+.dots i:nth-child(2) { animation-delay:.2s } .dots i:nth-child(3) { animation-delay:.4s }
+@keyframes blink { 0%,80%,100% { opacity:.25 } 40% { opacity:1 } }
+.okcircle { width:104px; height:104px; border-radius:50%; background:rgb(49 208 170 / .14); border:1.5px solid rgb(49 208 170 / .5); display:grid; place-items:center; color:var(--c-success); animation:pop-in .55s var(--spring) both; position:relative; }
+.okcircle::after { content:''; position:absolute; inset:-2px; border-radius:50%; border:2px solid var(--c-success); animation:ring 1.1s ease-out .2s both; }
+.burst { position:absolute; left:50%; top:50%; width:0; height:0; }
+.burst i { position:absolute; width:6px; height:6px; margin:-3px; border-radius:50%; background:var(--c); animation:burst .9s var(--ease) .25s both; }
+@keyframes burst { from { transform:rotate(var(--r)) translateY(0) scale(1); opacity:1 } to { transform:rotate(var(--r)) translateY(-86px) scale(.3); opacity:0 } }
+.demo-hint { border:1px dashed var(--c-edge-strong); border-radius:14px; padding:10px 14px; font-size:13px; color:var(--c-ink-faint); }
+
+/* Chats */
+.search { margin:2px 16px 12px; height:48px; border-radius:24px; background:var(--c-raised); border:1px solid var(--c-edge); display:flex; align-items:center; gap:10px; padding:0 16px; color:var(--c-ink-faint); position:relative; z-index:1; }
+.needs { margin:0 16px 6px; padding:13px 14px; display:flex; align-items:center; gap:12px; border-radius:18px; background:var(--c-accent-soft); border:1px solid var(--c-accent-edge); cursor:pointer; position:relative; z-index:1; overflow:hidden; }
+.needs::before { content:''; position:absolute; inset:0; background:linear-gradient(100deg, transparent 30%, rgb(245 72 127 / .14) 50%, transparent 70%); transform:translateX(-100%); animation:sheen 4.5s ease-in-out 1.2s infinite; }
+.needs .t { font-weight:600; }
+.group { font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:var(--c-ink-faint); font-weight:600; margin:18px 20px 4px; }
+.chatitem { display:flex; gap:12px; padding:11px 16px; align-items:center; cursor:pointer; border-radius:16px; margin:0 4px; }
+.avatar { width:46px; height:46px; border-radius:15px; display:grid; place-items:center; flex:none; font-weight:600; font-size:16px; background:var(--c-raised-2); border:1px solid var(--c-edge); color:var(--c-ink-soft); }
+.avatar.needs-av { background:var(--c-accent-soft); border-color:var(--c-accent-edge); color:var(--c-accent-text); }
+.chatitem .top { display:flex; gap:8px; align-items:baseline; }
+.chatitem .title { flex:1; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.chatitem .time { font-size:12px; color:var(--c-ink-faint); }
+.chatitem .prev { font-size:13.5px; color:var(--c-ink-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; align-items:center; gap:7px; }
+.chatitem .prev.needs-t { color:var(--c-accent-text); }
+.fab { position:absolute; right:16px; bottom:86px; height:56px; padding:0 20px 0 16px; border-radius:18px; background:var(--c-accent-fill); color:#fff; display:flex; align-items:center; gap:8px; font-weight:600; box-shadow:0 10px 28px rgb(201 40 94 / .38); z-index:5; view-transition-name:fab; transition:transform .3s var(--ease), padding .3s var(--ease); }
+.fab span { transition:opacity .2s, max-width .3s var(--ease); max-width:100px; overflow:hidden; white-space:nowrap; }
+.fab.compact { padding:0 16px; }
+.fab.compact span { opacity:0; max-width:0; }
+
+/* Strips */
+.strip { display:flex; align-items:center; gap:10px; padding:8px 8px 8px 14px; font-size:13.5px; flex:none; position:relative; z-index:4; animation:strip-in .35s var(--ease) both; }
+@keyframes strip-in { from { transform:translateY(-100%); opacity:0 } }
+.strip.dc { background:linear-gradient(90deg, #b3203f, #c9285e); color:#fff; }
+.strip.dc .grow { flex:1; }
+.strip.dc button { background:#fff; color:#b3203f; border-radius:16px; height:32px; padding:0 14px; font-weight:600; display:flex; gap:6px; align-items:center; }
+.strip.off { background:var(--c-raised-2); color:var(--c-ink-muted); border-bottom:1px solid var(--c-edge); }
+.strip.off .grow { flex:1; }
+
+/* Chat */
+.chathead { height:62px; flex:none; display:flex; align-items:center; gap:4px; padding:0 4px; border-bottom:1px solid var(--c-edge); background:var(--c-canvas); position:relative; z-index:2; }
+.chathead .ttl { flex:1; min-width:0; }
+.chathead .ttl div { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.chathead .ttl .a { font-weight:600; font-size:16.5px; view-transition-name:chat-title; width:fit-content; max-width:100%; }
+.chathead .ttl .b { font-size:12.5px; color:var(--c-ink-faint); display:flex; align-items:center; gap:6px; }
+.msgs { padding:16px 14px 18px; display:flex; flex-direction:column; gap:10px; }
+.m-user { align-self:flex-end; max-width:84%; background:var(--c-select); border:1px solid var(--c-accent-edge); border-radius:20px 20px 6px 20px; padding:10px 14px; }
+.m-ai { max-width:100%; color:var(--c-ink-soft); padding:2px 4px; }
+.m-ai code, .m-user code { background:var(--c-raised-2); border:1px solid var(--c-edge); padding:1px 5px; border-radius:6px; }
+.m-ai .caret { display:inline-block; width:7px; height:15px; background:var(--c-accent); vertical-align:-2px; margin-left:3px; animation:blink 1s infinite; border-radius:2px; }
+.m-tool { display:flex; align-items:center; gap:10px; padding:9px 12px; border-radius:14px; background:var(--c-raised); border:1px solid var(--c-edge); font-size:13.5px; color:var(--c-ink-faint); }
+.m-tool .grow { flex:1; min-width:0; }
+.m-tool .l { color:var(--c-ink-soft); font-weight:500; }
+.m-tool .d { color:var(--c-ink-faint); font-size:12.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.m-tool.ok .st { color:var(--c-success); }
+.m-tool.fail .st { color:var(--c-danger); }
+.m-tool.wait { border-color:var(--c-accent-edge); background:var(--c-accent-soft); cursor:pointer; color:var(--c-accent-text); }
+.m-tool.wait .st { color:var(--c-accent-text); }
+.approval { border-radius:20px; background:var(--c-raised); position:relative; isolation:isolate; }
+.approval.pending { box-shadow:0 0 0 1px var(--c-accent-edge), 0 10px 30px rgb(201 40 94 / .14); }
+.approval.pending::before { content:''; position:absolute; inset:-1px; border-radius:21px; padding:1.5px; background:conic-gradient(from var(--a), transparent 0 60%, #f5487f 75%, #c06ae0 85%, transparent 95%); -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite:xor; mask-composite:exclude; animation:spin 3.2s linear infinite; z-index:-1; }
+.approval.done { border:1px solid var(--c-edge); }
+.approval .hd { display:flex; gap:10px; align-items:center; padding:13px 14px 6px; font-weight:600; }
+.approval .hd .faint { font-weight:500; font-size:12px; margin-left:auto; }
+.approval pre { margin:6px 14px 4px; padding:10px 12px; border-radius:12px; background:var(--c-canvas); border:1px solid var(--c-edge); white-space:pre-wrap; word-break:break-all; font-size:13px; }
+.approval .where { padding:2px 14px 0; font-size:12.5px; color:var(--c-ink-faint); }
+.approval .acts { display:flex; gap:10px; padding:12px 14px 14px; }
+.approval .acts .btn { flex:1; height:46px; }
+.approval .res { padding:10px 14px 14px; font-size:13.5px; display:flex; gap:8px; align-items:center; animation:fade-up .35s var(--ease) both; }
+.composer-wrap { flex:none; padding:8px 10px 10px; background:linear-gradient(transparent, var(--c-canvas) 30%); position:relative; z-index:2; }
+.chips { display:flex; gap:8px; padding:0 4px 8px; overflow-x:auto; scrollbar-width:none; }
+.composer { display:flex; align-items:flex-end; gap:4px; background:var(--c-composer); border:1px solid var(--c-composer-edge); border-radius:26px; padding:5px; transition:border-color .2s, box-shadow .25s; }
+.composer:focus-within { border-color:var(--c-accent-edge); box-shadow:0 0 0 4px var(--c-accent-soft), 0 8px 30px rgb(160 75 216 / .15); }
+.composer textarea { flex:1; border:0; background:none; outline:none; resize:none; height:42px; max-height:120px; padding:10px 4px; line-height:1.4; }
+.composer textarea::placeholder { color:var(--c-ink-faint); }
+.composer .iconbtn { width:42px; height:42px; }
+.sendbtn { width:42px; height:42px; border-radius:50%; background:var(--c-send); color:var(--c-send-ink); display:grid; place-items:center; flex:none; transition:background-color .2s, color .2s, transform .3s var(--spring); }
+.sendbtn.ready { background:var(--c-accent-fill); color:#fff; transform:rotate(0) scale(1.04); }
+.sendbtn.stop { background:var(--c-ink); color:var(--c-canvas); animation:pop-in .3s var(--spring); }
+.newchat { position:relative; padding:46px 22px 10px; }
+.suggest { display:flex; flex-direction:column; gap:10px; padding:14px 16px; }
+.suggest button { display:flex; align-items:center; gap:12px; text-align:left; padding:0 16px 0 18px; height:52px; border-radius:26px; background:color-mix(in srgb, var(--c-panel) 40%, transparent); border:1px solid var(--c-edge-strong); color:var(--c-ink); font-size:14.5px; }
+.suggest button span { flex:1; }
+.suggest button .i:last-child { color:var(--c-ink-soft); }
+.disabled { opacity:.45; pointer-events:none; }
+
+/* Workflows */
+.runcard { margin:4px 16px 6px; padding:16px; position:relative; z-index:1; }
+.progress { height:6px; border-radius:3px; background:var(--c-edge); overflow:hidden; margin:12px 0 12px; position:relative; }
+.progress span { display:block; height:100%; background:linear-gradient(90deg,#8f3b76,#f5487f); border-radius:3px; position:relative; overflow:hidden; animation:grow 1s var(--ease) .2s both; }
+.progress span::after { content:''; position:absolute; top:0; bottom:0; width:50%; background:linear-gradient(90deg, transparent, rgb(255 255 255 / .45), transparent); animation:sheen 1.8s ease-in-out infinite; }
+@keyframes grow { from { width:0 } }
+.q { padding:12px; border-radius:12px; background:var(--c-canvas); border:1px solid var(--c-edge); font-size:14px; }
+.play { width:40px; height:40px; border-radius:50%; background:var(--c-raised-2); border:1px solid var(--c-edge-strong); display:grid; place-items:center; color:var(--c-ink); }
+
+/* This phone */
+.phonehead { margin:4px 16px 0; padding:16px; display:flex; gap:14px; align-items:center; position:relative; z-index:1; }
+.seg { display:flex; padding:4px; gap:4px; background:var(--c-raised-2); border-radius:16px; border:1px solid var(--c-edge); }
+.seg button { flex:1; height:38px; border-radius:12px; font-size:14px; color:var(--c-ink-muted); display:flex; align-items:center; justify-content:center; gap:6px; }
+.seg .on { background:var(--tab-active-bg); color:var(--tab-active-ink); font-weight:600; }
+.pill-warn { font-size:11px; font-weight:600; color:var(--c-warning); background:rgb(246 200 95 / .12); border:1px solid rgb(246 200 95 / .35); padding:1px 8px; border-radius:10px; vertical-align:1px; }
+
+/* Guide */
+.guide { padding:8px 20px 24px; display:flex; flex-direction:column; gap:14px; }
+.gstep { display:flex; gap:14px; padding:14px; align-items:flex-start; }
+.gstep .n { width:28px; height:28px; border-radius:50%; background:var(--c-accent-fill); color:#fff; display:grid; place-items:center; font-weight:600; font-size:14px; flex:none; }
+.mini { margin-top:10px; border-radius:12px; background:var(--sys-bg); border:1px solid var(--c-edge); padding:10px; font-size:12px; color:var(--sys-ink); position:relative; }
+.mini .mm { position:absolute; right:10px; top:8px; }
+.mini .menu { margin-left:auto; width:170px; background:var(--sys-card); border-radius:10px; padding:8px 10px; box-shadow:0 4px 14px rgb(0 0 0 / .3); }
+.hl { outline:2px solid var(--c-accent); outline-offset:2px; border-radius:6px; }
+
+/* Sheets, dialogs, toasts */
+.scrim { position:absolute; inset:0; background:var(--sys-scrim); backdrop-filter:blur(2px); animation:vt-fade-up .25s both; }
+.sheet { position:absolute; left:0; right:0; bottom:0; background:var(--c-panel); border-radius:30px 30px 0 0; padding:10px 20px 30px; border-top:1px solid var(--c-edge-strong); animation:sheet-up .5s var(--spring) both; max-height:92%; overflow-y:auto; box-shadow:0 -20px 60px rgb(0 0 0 / .35); }
+@keyframes sheet-up { from { transform:translateY(100%) } }
+.out .scrim, .scrim.out { animation:vt-fade-out .2s both; }
+.out .sheet { animation:sheet-down .22s ease-in both; }
+@keyframes sheet-down { to { transform:translateY(100%) } }
+.out .shade { animation:shade-up .22s ease-in both; }
+@keyframes shade-up { to { transform:translateY(-100%) } }
+.out .sysdlg { animation:vt-fade-out .15s both; }
+.sheet .handle { width:36px; height:4px; border-radius:2px; background:var(--c-edge-strong); margin:0 auto 16px; }
+.sheet ul { list-style:none; padding:0; margin:14px 0; display:flex; flex-direction:column; gap:11px; }
+.sheet li { display:flex; gap:10px; align-items:flex-start; font-size:14px; color:var(--c-ink-soft); animation:fade-up .4s var(--ease) both; animation-delay:calc(var(--i) * 50ms + 150ms); }
+.sheet li .i { color:var(--c-accent-text); margin-top:1px; }
+.reason { padding:11px 13px; border-radius:14px; background:var(--c-raised); border:1px solid var(--c-edge); font-size:14px; color:var(--c-ink-soft); margin-top:14px; }
+.disclose { font-size:12.5px; color:var(--c-ink-faint); margin:4px 0 16px; display:flex; gap:8px; align-items:flex-start; }
+.btnrow { display:flex; gap:10px; }
+.btnrow .btn { flex:1; }
+.toast { position:absolute; left:16px; right:16px; bottom:100px; background:var(--c-ink); color:var(--c-canvas); border-radius:16px; padding:13px 16px; font-size:14px; display:flex; gap:10px; align-items:center; animation:toast-in .45s var(--spring) both; box-shadow:var(--shadow-pop); }
+.toast.low { bottom:24px; }
+@keyframes toast-in { from { transform:translateY(20px) scale(.96); opacity:0 } }
+
+/* Android's own UI (simplified One UI) */
+.sys { font-family:'Segoe UI',Roboto,system-ui,sans-serif; color:var(--sys-ink); }
+.sysdlg { position:absolute; left:12px; right:12px; bottom:20px; background:var(--sys-dialog); border-radius:26px; padding:24px 22px 12px; animation:sheet-up .35s var(--ease) both; box-shadow:0 10px 40px rgb(0 0 0 / .4); }
+.sysdlg h3 { margin:0 0 10px; font-size:18px; font-weight:600; }
+.sysdlg p { margin:0 0 14px; font-size:14.5px; color:var(--sys-muted); }
+.sysdlg .acts { display:flex; justify-content:space-around; border-top:1px solid rgb(128 128 128 / .2); }
+.sysdlg .acts button { flex:1; height:48px; color:var(--sys-accent); font-weight:600; font-size:15px; }
+.sysdlg .appline { display:flex; gap:12px; align-items:center; margin-bottom:12px; }
+.sysdlg .appline img { width:40px; height:40px; border-radius:12px; background:#0b111e; padding:5px; }
+.sysbar { height:4px; border-radius:2px; background:rgb(128 128 128 / .25); overflow:hidden; margin:6px 0 18px; }
+.sysbar span { display:block; height:100%; background:var(--sys-accent); width:0; animation:loadfill 1.6s linear forwards; }
+.dlbar { position:absolute; left:10px; right:10px; bottom:14px; background:var(--sys-dialog); border-radius:18px; padding:14px 16px; display:flex; align-items:center; gap:12px; animation:sheet-up .35s var(--ease) both; box-shadow:0 6px 24px rgb(0 0 0 / .35); }
+.sysscreen { flex:1; background:var(--sys-bg); display:flex; flex-direction:column; min-height:0; position:relative; }
+.sys-top { height:52px; display:flex; align-items:center; padding:0 6px; gap:4px; }
+.sys-big { font-size:30px; font-weight:400; padding:44px 24px 30px; }
+#ctlsys .sys-big { font-size:26px; padding:66px 24px 16px; }
+#ctlsys .sys-row { padding:13px 20px; }
+.sys-card { background:var(--sys-card); border-radius:22px; margin:0 12px 12px; overflow:hidden; }
+.sys-row { padding:16px 20px; display:flex; align-items:center; gap:14px; font-size:16px; transition:background-color .2s; }
+.sys-row.pressed { background:rgb(128 128 128 / .18); }
+.sys-row + .sys-row { border-top:1px solid rgb(128 128 128 / .14); }
+.sys-row .grow { flex:1; }
+.sys-row .s { font-size:13px; color:var(--sys-accent); }
+.sys-row .m { font-size:13px; color:var(--sys-muted); }
+.sys-sw { width:46px; height:26px; border-radius:13px; background:rgb(128 128 128 / .45); position:relative; flex:none; transition:background-color .25s; }
+.sys-sw::after { content:''; position:absolute; top:3px; left:3px; width:20px; height:20px; border-radius:50%; background:#fff; transition:transform .3s var(--spring); }
+.sys-sw.on { background:var(--sys-accent); }
+.sys-sw.on::after { transform:translateX(20px); }
+.sys-ic { width:34px; height:34px; border-radius:50%; display:grid; place-items:center; color:#fff; flex:none; }
+.sysmenu { position:absolute; right:12px; top:48px; background:var(--sys-dialog); border-radius:18px; padding:6px 0; min-width:230px; box-shadow:0 8px 30px rgb(0 0 0 / .4); animation:pop-in .18s var(--ease) both; transform-origin:top right; }
+.sysmenu button { display:block; width:100%; text-align:left; padding:13px 20px; font-size:15px; }
+.coach { position:absolute; background:var(--c-accent-fill); color:#fff; padding:8px 12px; border-radius:12px; font-size:13px; font-weight:500; box-shadow:0 6px 18px rgb(0 0 0 / .3); z-index:5; font-family:'Outfit',sans-serif; animation:coach 2.4s ease-in-out infinite, fade-up .35s var(--ease) both; }
+@keyframes coach { 50% { transform:translateY(-3px) } }
+.coach::after { content:''; position:absolute; width:10px; height:10px; background:inherit; transform:rotate(45deg); }
+.coach.up::after { top:-4px; right:18px; }
+.coach.down::after { bottom:-4px; left:30px; }
+
+/* Notification shade */
+.shade { position:absolute; left:0; right:0; top:0; background:var(--sys-bg); padding:14px 12px 18px; border-radius:0 0 30px 30px; animation:shade-down .45s var(--spring) both; box-shadow:0 10px 40px rgb(0 0 0 / .5); }
+@keyframes shade-down { from { transform:translateY(-100%) } }
+.shade .when { display:flex; justify-content:space-between; padding:0 12px 14px; font-size:13px; color:var(--sys-muted); }
+.shade .when b { font-size:26px; font-weight:400; color:var(--sys-ink); }
+.tiles { display:flex; justify-content:space-between; padding:0 10px 16px; }
+.tiles span { width:50px; height:50px; border-radius:50%; background:var(--sys-card); display:grid; place-items:center; color:var(--sys-muted); }
+.tiles span.on { background:var(--sys-accent); color:#fff; }
+.notif { background:var(--sys-card); border-radius:22px; padding:14px 16px 6px; margin-bottom:8px; animation:fade-up .4s var(--ease) .15s both; }
+.notif + .notif { animation-delay:.22s; }
+.notif .h { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--sys-muted); }
+.notif .h img { width:18px; height:18px; }
+.notif .tt { font-weight:600; font-size:15px; margin-top:6px; }
+.notif .bd { font-size:14px; color:var(--sys-muted); margin-top:2px; }
+.notif .bd code { color:var(--sys-ink); }
+.notif .na { display:flex; gap:4px; margin-top:6px; }
+.notif .na button { height:40px; padding:0 14px; font-weight:600; color:var(--sys-accent); font-size:14px; border-radius:20px; }
+.notif .na button:active { background:rgb(128 128 128 / .15); }
+.notif.quiet { padding-bottom:14px; }
+
+/* Phone control: the Celeste glow runs round the edge of the screen. */
+.ctl-border { position:absolute; inset:0; border-radius:inherit; z-index:35; padding:4px; background:conic-gradient(from var(--a), var(--glow-haze-1), var(--glow-haze-2), var(--glow-haze-3), #f5487f, var(--glow-wide-5), var(--glow-haze-1)); -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite:xor; mask-composite:exclude; animation:spin 4s linear infinite, vt-fade-up .5s both; }
+.ctl-glow { position:absolute; inset:0; border-radius:inherit; z-index:34; box-shadow:inset 0 0 36px rgb(160 75 216 / .45), inset 0 0 90px rgb(245 72 127 / .12); animation:ctl-breathe 3s ease-in-out infinite; }
+@keyframes ctl-breathe { 50% { opacity:.55 } }
+.ctl-stop { position:absolute; top:8px; left:50%; transform:translateX(-50%); z-index:36; background:rgb(17 17 17 / .92); backdrop-filter:blur(10px); color:#fff; border-radius:22px; height:44px; padding:0 7px 0 14px; display:flex; align-items:center; gap:10px; font-size:13.5px; box-shadow:0 6px 20px rgb(0 0 0 / .45); border:1px solid rgb(255 255 255 / .14); white-space:nowrap; animation:stop-in .5s var(--spring) both; }
+@keyframes stop-in { from { transform:translate(-50%, -30px); opacity:0 } }
+.ctl-stop img { width:20px; height:20px; }
+.ctl-stop button { background:#e5334f; color:#fff; height:32px; border-radius:16px; padding:0 13px; font-weight:600; display:flex; align-items:center; gap:5px; }
+.ctl-cap { position:absolute; left:16px; right:16px; bottom:28px; z-index:36; background:rgb(17 17 17 / .9); backdrop-filter:blur(10px); color:#fff; border-radius:18px; padding:12px 14px; font-size:13.5px; display:flex; gap:10px; align-items:center; font-family:'Outfit',sans-serif; }
+.ctl-cap .grow { flex:1; }
+.ctl-cap .txt { animation:fade-up .3s var(--ease) both; }
+.finger { position:absolute; width:44px; height:44px; margin:-22px 0 0 -22px; border-radius:50%; background:rgb(245 72 127 / .3); border:2px solid #f5487f; z-index:34; pointer-events:none; transition:left .55s var(--ease), top .55s var(--ease), opacity .3s; box-shadow:0 0 18px rgb(245 72 127 / .5); }
+.finger.tap { animation:tap .35s; }
+.finger.tap::after { content:''; position:absolute; inset:-2px; border-radius:50%; border:2px solid #f5487f; animation:ring .6s ease-out both; }
+@keyframes tap { 50% { transform:scale(.72); background:rgb(245 72 127 / .7) } }
+.paused { position:absolute; left:16px; right:16px; bottom:28px; z-index:37; background:var(--c-panel); border:1px solid var(--c-edge-strong); border-radius:22px; padding:16px; box-shadow:var(--shadow-pop); animation:toast-in .4s var(--spring) both; color:var(--c-ink); font-family:'Outfit',sans-serif; }
+
+/* Demo menu (mock only) */
+#demoBtn { position:absolute; left:calc(50% - 74px); top:5px; z-index:70; height:20px; padding:0 9px; border-radius:10px; background:rgb(128 128 128 / .22); color:var(--c-ink); font-size:10px; font-weight:700; letter-spacing:.06em; border:1px dashed rgb(128 128 128 / .6); }
+.bare #demoBtn { top:auto; bottom:calc(10px + env(safe-area-inset-bottom)); left:10px; opacity:.6; }
+.demo h3 { margin:0 0 4px; font-size:18px; }
+.demo button.sc { display:flex; width:100%; text-align:left; gap:12px; padding:11px 4px; border-bottom:1px solid var(--c-edge); align-items:center; }
+.demo button.sc .grow { flex:1; }
+.demo button.sc .s { font-size:12.5px; color:var(--c-ink-faint); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; }
+  .shimmer { animation-duration:2.2s !important; animation-iteration-count:infinite !important; }
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="g-core" gradientUnits="userSpaceOnUse" x1="110" y1="440" x2="460" y2="30">
+      <stop offset="0" style="stop-color:var(--glow-core-1);stop-opacity:0"/><stop offset=".14" style="stop-color:var(--glow-core-2);stop-opacity:.6"/>
+      <stop offset=".32" style="stop-color:var(--glow-core-3)"/><stop offset=".5" style="stop-color:var(--glow-core-4)"/>
+      <stop offset=".68" style="stop-color:var(--glow-core-5)"/><stop offset=".84" style="stop-color:var(--glow-core-6)"/><stop offset="1" style="stop-color:var(--glow-core-7)"/>
+    </linearGradient>
+    <linearGradient id="g-near" gradientUnits="userSpaceOnUse" x1="110" y1="440" x2="460" y2="30">
+      <stop offset="0" style="stop-color:var(--glow-haze-1);stop-opacity:0"/><stop offset=".2" style="stop-color:var(--glow-haze-2);stop-opacity:.5"/>
+      <stop offset=".45" style="stop-color:var(--glow-haze-3)"/><stop offset=".65" style="stop-color:var(--glow-haze-4)"/>
+      <stop offset=".85" style="stop-color:var(--glow-haze-6)"/><stop offset="1" style="stop-color:var(--glow-haze-7);stop-opacity:.8"/>
+    </linearGradient>
+    <linearGradient id="g-wide" gradientUnits="userSpaceOnUse" x1="110" y1="440" x2="460" y2="30">
+      <stop offset="0" style="stop-color:var(--glow-wide-1);stop-opacity:.5"/><stop offset=".3" style="stop-color:var(--glow-wide-2)"/>
+      <stop offset=".6" style="stop-color:var(--glow-wide-3)"/><stop offset=".85" style="stop-color:var(--glow-wide-4)"/><stop offset="1" style="stop-color:var(--glow-wide-5)"/>
+    </linearGradient>
+    <radialGradient id="g-lift" cx="330" cy="40" r="300" gradientUnits="userSpaceOnUse"><stop offset="0" style="stop-color:var(--glow-lift)"/><stop offset="1" style="stop-color:var(--glow-lift);stop-opacity:0"/></radialGradient>
+    <filter id="f-wide" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="26"/></filter>
+    <filter id="f-near" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="8"/></filter>
+    <filter id="f-bloom" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4"/></filter>
+  </defs>
+</svg>
+<div id="stage">
+  <div id="phone">
+    <div class="statusbar"><span id="clock">12:41</span><span class="cam"></span><span class="icons" id="sbicons"></span></div>
+    <div id="screen"></div>
+    <div class="gesture"><span></span></div>
+    <div id="overlay"></div>
+    <button id="demoBtn" data-a="demo" title="Mock scenarios (D)" aria-label="Mock scenarios">DEMO</button>
+  </div>
+  <div id="side">
+    <h2>Celeste for Android: mock</h2>
+    <p>A clickable mock for review. Nothing here talks to a real computer or phone.</p>
+    <p><b>On your phone:</b> run <code>npm run mock:phone</code> and scan the QR it prints (same Wi-Fi).</p>
+    <p><b>Here:</b> the frame is the Galaxy S24's size (360 × 780). The <b>DEMO</b> pill or <kbd>D</kbd> jumps to each scenario; <kbd>Esc</kbd> is Android's Back.</p>
+    <p>Greyish Android screens (installer, App info, Settings) are Android's own, drawn only to show the steps.</p>
+  </div>
+</div>
+<script>
+const ICONS = {
+  chat:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  workflow:'<rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/>',
+  phone:'<rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/>',
+  plus:'<path d="M5 12h14"/><path d="M12 5v14"/>',
+  mic:'<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/>',
+  up:'<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',
+  stop:'<rect width="12" height="12" x="6" y="6" rx="2" fill="currentColor"/>',
+  back:'<path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>',
+  right:'<path d="m9 18 6-6-6-6"/>',
+  arrow:'<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+  down:'<path d="m6 9 6 6 6-6"/>',
+  check:'<path d="M20 6 9 17l-5-5"/>',
+  x:'<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  search:'<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  bell:'<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+  pin:'<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
+  image:'<rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>',
+  cal:'<rect width="18" height="18" x="3" y="4" rx="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/>',
+  alarm:'<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M5 3 2 6"/><path d="m22 6-3-3"/>',
+  app:'<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 4v4"/><path d="M2 8h20"/><path d="M6 4v4"/>',
+  hand:'<path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>',
+  shield:'<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>',
+  monitor:'<rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/>',
+  more:'<circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>',
+  play:'<polygon points="7 4 20 12 7 20 7 4" fill="currentColor"/>',
+  terminal:'<polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/>',
+  file:'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>',
+  folder:'<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  pencil:'<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>',
+  wifi:'<path d="M12 20h.01"/><path d="M2 8.82a15 15 0 0 1 20 0"/><path d="M5 12.859a10 10 0 0 1 14 0"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/>',
+  download:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
+  alert:'<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  eye:'<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
+  clock:'<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  ban:'<circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>',
+  link:'<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+  sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>',
+  moon:'<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+  laptop:'<path d="M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16"/>',
+  sparkles:'<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/>',
+  battery:'<rect width="16" height="10" x="2" y="7" rx="2"/><line x1="22" x2="22" y1="11" y2="13"/><rect width="10" height="6" x="5" y="9" rx="1" fill="currentColor" stroke="none"/>',
+  signal:'<path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/>',
+  hotspot:'<circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49"/><path d="M7.76 16.24a6 6 0 0 1 0-8.49"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M4.93 19.07a10 10 0 0 1 0-14.14"/>',
+  bt:'<path d="m7 7 10 10-5 5V2l5 5L7 17"/>',
+  plane:'<path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/>',
+  sound:'<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>',
+};
+const I = (n, s = 20, cls = '') => `<svg class="i ${cls}" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n] || ''}</svg>`;
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const md = (s) => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
+const PC = 'DANA-PC', NAME = 'Dana';
+const LOGO = '<img src="logo.svg" alt="">';
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const buzz = (ms = 8) => { try { if (navigator.userActivation?.hasBeenActive) navigator.vibrate?.(ms); } catch {} };
+const BARE = new URLSearchParams(location.search).has('bare');
+if (BARE) document.documentElement.classList.add('bare');
+const greeting = () => { const h = new Date().getHours(); return h < 5 ? 'Good evening' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'; };
+
+/* The desktop's glow arc, rebuilt small: the edge of a planet from the lower left to the top right. */
+const ARC = 'M111 445 A330 330 0 0 1 459 31';
+function arc(cls = '') {
+  const stars = [[262, 76, 1.4, 0], [304, 128, 1.1, 1.1], [222, 150, 1.3, 2], [336, 58, 1, .6], [190, 98, 1, 1.7], [282, 190, .9, 2.6]];
+  return `<svg class="arc ${cls}" viewBox="0 0 360 430" preserveAspectRatio="xMaxYMin slice" aria-hidden="true">
+    <rect width="360" height="430" fill="url(#g-lift)" style="opacity:var(--glow-lift-opacity)"/>
+    <circle cx="430" cy="360" r="330" style="fill:var(--glow-planet);opacity:var(--glow-planet-opacity)"/>
+    <path class="wide" d="${ARC}" fill="none" stroke="url(#g-wide)" stroke-width="80" filter="url(#f-wide)"/>
+    <path class="near" d="${ARC}" fill="none" stroke="url(#g-near)" stroke-width="22" filter="url(#f-near)"/>
+    <g class="core"><path d="${ARC}" fill="none" stroke="url(#g-core)" stroke-width="9" opacity=".5" filter="url(#f-bloom)"/><path d="${ARC}" fill="none" stroke="url(#g-core)" stroke-width="1.8" stroke-linecap="round"/></g>
+    <path class="comet" d="${ARC}" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" filter="url(#f-bloom)"/>
+    ${stars.map(([x, y, r, d]) => `<circle class="star" cx="${x}" cy="${y}" r="${r}" style="animation-delay:${d}s"/>`).join('')}
+  </svg>`;
+}
+
+/* ---------- State ---------- */
+const S = {
+  screen: 'install', tab: 'chats', overlay: null, chatId: null, theme: 'system', enter: true,
+  dc: false, offline: false, found: false, unknownAllowed: false, streaming: false,
+  abilities: { notif: false, open: true, loc: false, files: true, cal: false, alarm: true },
+  control: false, stay: true, restrictedAllowed: false, notifAccess: false,
+  shade: null, toast: null, ctl: null, sysMenu: false, lastChat: null,
+};
+const chats = [
+  { id: 'tests', title: 'Fix the phone branch tests', project: 'celeste', time: '12:40', group: 'Today', status: 'needs', model: 'Opus 5.5', msgs: [
+    { t: 'user', text: 'The tests on the phone branch fail since this morning. Can you look?' },
+    { t: 'tool', icon: 'file', label: 'Read 3 files', detail: 'pairing.ts, pairing.test.ts, defaults.ts' },
+    { t: 'tool', icon: 'terminal', label: 'Ran npm test', detail: '2 failed, 212 passed', state: 'fail' },
+    { t: 'ai', text: 'The pairing test still expects a 16-byte secret, but the code now makes 32. I changed the test to read the length from `PAIRING_SECRET_BYTES`.' },
+    { t: 'tool', icon: 'pencil', label: 'Edited pairing.test.ts', detail: '+4 −2' },
+    { t: 'tool', icon: 'terminal', label: 'Ran npm test', detail: '214 passed', state: 'ok' },
+    { t: 'ai', text: 'All 214 tests pass. Shall I push the branch?' },
+    { t: 'approval', id: 'push', title: 'Run a command', code: 'git push origin phone', where: 'In celeste, on DANA-PC', state: 'pending' },
+  ] },
+  { id: 'mum', title: 'Tell Mum I’m late', project: 'No project', time: '12:31', group: 'Today', status: 'needs', model: 'Sonnet 5.5', msgs: [
+    { t: 'user', text: 'Reply to Mum’s WhatsApp that I’m running late, about 20 minutes.' },
+    { t: 'tool', icon: 'bell', label: 'Asked Galaxy S24 to reply to Mum (WhatsApp)', detail: 'Waiting for you on the phone', state: 'wait', action: 'shadeReply', id: 'mumtool', needs: 'Wants to reply to Mum on WhatsApp' },
+  ] },
+  { id: 'train', title: 'Hotspot for the laptop', project: 'No project', time: '12:05', group: 'Today', status: 'needs', model: 'Opus 5.5', msgs: [
+    { t: 'user', text: 'Turn on the hotspot on my phone, I need internet on the laptop.' },
+    { t: 'ai', text: 'There’s no phone ability for the hotspot, so I’ll ask to use your phone’s screen for a moment.' },
+    { t: 'tool', icon: 'hand', label: 'Asked to use Galaxy S24', detail: 'Waiting for you on the phone', state: 'wait', action: 'consent', id: 'traintool', needs: 'Wants to use this phone' },
+  ] },
+  { id: 'brief', title: 'Morning brief', project: 'Workflows', time: '08:00', group: 'Today', status: 'done', model: 'Sonnet 5.5', msgs: [
+    { t: 'tool', icon: 'workflow', label: 'Ran workflow Morning brief', detail: '4 steps · 38 s', state: 'ok' },
+    { t: 'ai', text: '**Today:** three meetings, the first at 10:30 (design review). Two emails need a reply. Rain after 16:00, so take a jacket.' },
+  ] },
+  { id: 'invoices', title: 'Rename the invoices', project: 'Documents', time: 'Yesterday', group: 'Earlier', status: 'done', model: 'Sonnet 5.5', msgs: [
+    { t: 'user', text: 'Rename the PDFs in Invoices to date-company-amount.' },
+    { t: 'tool', icon: 'file', label: 'Renamed 14 files', detail: 'Documents/Invoices', state: 'ok' },
+    { t: 'ai', text: 'Done. 14 files renamed, for example `2026-10-03-acme-1240.pdf`.' },
+  ] },
+  { id: 'ideas', title: 'Ideas for the phone app', project: 'celeste', time: 'Mon', group: 'Earlier', status: 'done', model: 'Opus 5.5', msgs: [
+    { t: 'user', text: 'Give me ideas for the phone app.' },
+    { t: 'ai', text: 'Five directions: a remote for your chats, phone abilities, phone control, a widget for approvals, and a share target so you can send anything to Celeste from any app.' },
+  ] },
+];
+const chat = (id) => chats.find((c) => c.id === id);
+const needsCount = () => chats.filter((c) => c.status === 'needs').length;
+
+/* ---------- Timers, render, navigation ---------- */
+let timers = [];
+const later = (fn, ms) => { const t = setTimeout(fn, ms); timers.push(t); return t; };
+const clearTimers = () => { timers.forEach(clearTimeout); timers = []; };
+const $screen = document.getElementById('screen');
+const $overlay = document.getElementById('overlay');
+let toastTimer;
+function toast(text, icon = 'check') { S.toast = { text, icon }; renderOverlay(); clearTimeout(toastTimer); toastTimer = setTimeout(() => { S.toast = null; renderOverlay(); }, 2800); }
+function applyTheme() {
+  const dark = S.theme === 'dark' || (S.theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  document.querySelector('meta[name=theme-color]').content = dark ? '#080c17' : '#f7f8fc';
+}
+function render() {
+  applyTheme();
+  document.getElementById('sbicons').innerHTML = (S.ctl?.running ? `<span style="color:#f5487f">${I('hand', 14)}</span>` : '') + I('wifi', 15) + I('signal', 15) + I('battery', 19);
+  const fn = SCREENS[S.screen];
+  $screen.className = S.enter ? 'entering' : '';
+  $screen.innerHTML = fn ? fn() : '';
+  S.enter = false;
+  chats.forEach((c) => c.msgs.forEach((m) => { delete m.fresh; }));
+  renderOverlay();
+  const msgs = $screen.querySelector('.msgs'); if (msgs) { const c = msgs.closest('.content'); c.scrollTop = c.scrollHeight; }
+  wire();
+}
+function renderOverlay() {
+  let h = '';
+  if (S.screen === 'control' && S.ctl && (S.ctl.running || S.ctl.paused)) h += '<div class="ctl-glow"></div><div class="ctl-border"></div>';
+  if (S.toast) h += `<div class="toast ${['home'].includes(S.screen) ? '' : 'low'}">${I(S.toast.icon, 18)}<span>${esc(S.toast.text)}</span></div>`;
+  if (S.overlay && OVERLAYS[S.overlay]) h += OVERLAYS[S.overlay]();
+  if (S.shade) h += shade();
+  $overlay.className = '';
+  $overlay.innerHTML = h;
+}
+/* Close the open sheet or shade with its exit animation, then run `then`. */
+function closeOverlay(then) {
+  if (reduced || (!S.overlay && !S.shade)) { S.overlay = null; S.shade = null; renderOverlay(); then?.(); return; }
+  $overlay.className = 'out';
+  setTimeout(() => { S.overlay = null; S.shade = null; renderOverlay(); then?.(); }, 210);
+}
+/* Navigate. `nav` picks the transition: forward (push), back (pop), tab (cross-fade), none. */
+function go(screen, extra = {}, nav = 'forward') {
+  clearTimers();
+  const apply = () => { Object.assign(S, { screen, overlay: null, sysMenu: false }, extra); S.enter = true; render(); START[screen]?.(); };
+  if (document.startViewTransition && !reduced && nav !== 'none') {
+    document.documentElement.dataset.nav = nav;
+    document.startViewTransition(apply);
+  } else apply();
+}
+/* After each render: the large title collapses into the app bar as the list scrolls; the FAB shrinks. */
+function wire() {
+  const content = $screen.querySelector('.content'); const bar = $screen.querySelector('.appbar'); const fab = $screen.querySelector('.fab');
+  if (content && bar && bar.dataset.collapse !== undefined) {
+    const on = () => { bar.classList.toggle('scrolled', content.scrollTop > 58); fab?.classList.toggle('compact', content.scrollTop > 120); };
+    content.addEventListener('scroll', on, { passive: true }); on();
+  }
+  const ta = document.getElementById('ta'); const send = $screen.querySelector('.sendbtn[data-a=send]');
+  if (ta && send) ta.addEventListener('input', () => { send.classList.toggle('ready', !!ta.value.trim()); ta.style.height = '42px'; ta.style.height = Math.min(ta.scrollHeight, 120) + 'px'; });
+}
+
+/* ---------- Screens ---------- */
+const SCREENS = {
+  install: () => `
+    <div class="browser">
+      <div class="b-bar"><div class="b-url">${I('alert', 15)}<span class="warn">Not secure</span><span>192.168.1.5:47123</span></div><span class="iconbtn">${I('more', 18)}</span></div>
+      <div class="b-page">
+        ${arc('soft')}
+        <div class="glowlogo float rise above" style="--i:0;margin:6px 0 4px"><img class="logo-xl" src="logo.svg" alt=""></div>
+        <h1 class="h-xl center rise above" style="--i:1">Celeste for <span class="grad">Android</span></h1>
+        <p class="muted center rise above" style="--i:2;margin:0">Shared by <b>${PC}</b> on your Wi-Fi.<br>Chat with Celeste from your phone, and let it help on the phone too.</p>
+        <div class="card apk rise above" style="--i:3"><img src="logo.svg" alt=""><div style="flex:1"><div style="font-weight:600">Celeste</div><div class="small muted">Version 1.2.0 · 9.4 MB</div><div class="small faint">The same version as ${PC}</div></div></div>
+        <button class="btn primary big block shine rise above" style="--i:4" data-a="install" id="installBtn"><span class="fill"></span>${I('download')} <span id="installLbl">Install</span></button>
+        <ol class="steps above">
+          <li class="rise" style="--i:5"><span class="n">1</span><span>Android may ask once whether Chrome can install apps. Switch it on, then go back.</span></li>
+          <li class="rise" style="--i:6"><span class="n">2</span><span>Tap <b>Install</b>, then <b>Open</b>.</span></li>
+          <li class="rise" style="--i:7"><span class="n">3</span><span>Celeste finds ${PC} by itself. Press <b>Allow</b> on the computer.</span></li>
+        </ol>
+        <span class="link small rise above" style="--i:8;margin-top:6px" data-a="noop">Or get it from GitHub Releases</span>
+      </div>
+    </div>`,
+
+  'sys-unknown': () => `
+    <div class="sysscreen sys">
+      <div class="sys-top"><button class="iconbtn" style="color:var(--sys-ink)" data-a="unknownBack">${I('back', 22)}</button></div>
+      <div class="sys-big">Install unknown apps</div>
+      <div class="sys-card"><div class="sys-row"><div class="sys-ic" style="background:#2a74e8">${I('app', 18)}</div><div class="grow">Chrome<div class="m">142.0.7444</div></div></div></div>
+      <div class="sys-card"><div class="sys-row" data-a="toggleUnknown" style="cursor:pointer"><div class="grow">Allow from this source</div><span class="sys-sw ${S.unknownAllowed ? 'on' : ''}"></span></div></div>
+      <p style="margin:6px 26px;font-size:13px;color:var(--sys-muted)">Your phone and personal data are more vulnerable to attack by unknown apps.</p>
+      ${S.unknownAllowed ? `<div class="coach down" style="left:12px;top:58px">Now go back</div>` : `<div class="coach up" style="right:16px;top:330px">Switch this on</div>`}
+    </div>`,
+
+  'pair-search': () => `
+    <div class="pair">
+      ${arc()}
+      <div class="spacer above"></div>
+      <div class="glowlogo above" style="margin-bottom:28px">${S.found ? '' : '<span class="rings"></span><span class="rings b"></span><span class="rings c"></span>'}<img class="logo-xl ${S.found ? '' : 'float'}" src="logo.svg" alt=""></div>
+      ${S.found ? `
+        <div class="overline above rise" style="--i:0">On your Wi-Fi</div>
+        <h1 class="h-l above rise" style="--i:1">Found your computer</h1>
+        <div class="card found above">${`<span class="ibox accent">${I('monitor')}</span>`}<div style="flex:1"><div style="font-weight:600;font-size:16px">${PC}</div><div class="small muted">Celeste 1.2.0 · ${I('wifi', 12, '').replace('class="i ', 'style="display:inline;vertical-align:-1px" class="i ')} same Wi-Fi</div></div></div>
+        <div class="spacer"></div>
+        <button class="btn primary big block shine above rise" style="--i:3" data-a="connect">Connect</button>
+        <span class="link small above rise" style="--i:4" data-a="noop">Not your computer? Scan its QR code</span>`
+      : `
+        <div class="overline above">First time here</div>
+        <h1 class="h-l above"><span class="shimmer">Looking for Celeste</span></h1>
+        <p class="muted above" style="margin:0">On your Wi-Fi network</p>
+        <div class="spacer"></div>
+        <p class="small faint above" style="margin:0">Keep Celeste open on your computer, on the same Wi-Fi.</p>`}
+    </div>`,
+
+  'pair-confirm': () => `
+    <div class="pair">
+      ${arc('soft')}
+      <div class="spacer above" style="flex:.5"></div>
+      <div class="link-viz above rise" style="--i:0">
+        <span class="end">${I('phone', 24)}</span>
+        <svg width="96" height="20" viewBox="0 0 96 20"><line x1="6" y1="10" x2="90" y2="10"/><circle class="pulse" cx="6" cy="10" r="3.5"/></svg>
+        <span class="end pc">${I('monitor', 24)}</span>
+      </div>
+      <h1 class="h-l above rise" style="--i:1">Check ${PC}</h1>
+      <p class="muted above rise" style="--i:2;margin:0">Your computer shows the same three pictures.<br>If they match, press <b>Allow</b> there.</p>
+      <div class="emoji above"><span>🦊</span><span>🌙</span><span>🎈</span></div>
+      <span class="waiting above"><span class="shimmer">Waiting for ${PC}</span></span>
+      <div class="spacer"></div>
+      <button class="demo-hint above" data-a="pcAllow">Mock: press Allow on ${PC}</button>
+      <button class="btn text above" data-a="cancelPair">Cancel</button>
+    </div>`,
+
+  connected: () => {
+    const cols = ['#f45f9d', '#c06ae0', '#8f8aff', '#31d0aa', '#f6c85f', '#55c7ff', '#f5487f', '#b45af0'];
+    return `
+    <div class="pair">
+      ${arc()}
+      <div class="spacer above" style="flex:.7"></div>
+      <div class="above" style="position:relative"><div class="okcircle">${I('check', 48, 'draw')}</div><div class="burst">${cols.map((c, i) => `<i style="--r:${i * 45 + 20}deg;--c:${c}"></i>`).join('')}</div></div>
+      <div class="overline above rise" style="--i:2;margin-top:10px">Paired with ${PC}</div>
+      <h1 class="h-xl above rise" style="--i:3">You’re <span class="grad">connected.</span></h1>
+      <p class="muted above rise" style="--i:4;margin:0">Chat with Celeste from here, and answer what it asks, even with the app closed.</p>
+      <div class="card above rise" style="--i:5;width:100%;text-align:left;margin-top:10px">
+        <div class="row"><span class="ibox accent">${I('hand')}</span><div class="grow"><div class="t">Celeste can help on this phone too</div><div class="s">You choose what, under This phone. It always asks first.</div></div></div>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn primary big block shine above rise" style="--i:6" data-a="toHome">Go to chats</button>
+    </div>`;
+  },
+
+  home: () => {
+    const tab = S.tab;
+    const title = { chats: 'Chats', workflows: 'Workflows', phone: 'This phone' }[tab];
+    const n = needsCount();
+    return `
+      ${S.dc ? dcStrip() : ''}
+      ${S.offline ? offStrip() : ''}
+      <div class="appbar" data-collapse><img class="logo" src="logo.svg" alt=""><h1>${title}</h1>
+        <button class="chip" data-a="tab" data-v="phone"><span class="dot live ${S.offline ? 'off' : ''}"></span>${PC}</button>
+      </div>
+      <div class="content">${TABS[tab]()}</div>
+      ${tab === 'chats' ? `<button class="fab ${S.offline ? 'disabled' : ''}" data-a="newChat">${I('plus', 22)}<span>New chat</span></button>` : ''}
+      <nav class="navbar">
+        ${[['chats', 'chat', 'Chats'], ['workflows', 'workflow', 'Workflows'], ['phone', 'phone', 'This phone']].map(([id, ic, l]) => `
+          <button class="${tab === id ? 'on' : ''}" data-a="tab" data-v="${id}"><span class="ind">${I(ic, 21)}</span>${l}${id === 'chats' && n ? `<span class="badge">${n}</span>` : ''}</button>`).join('')}
+      </nav>`;
+  },
+
+  chat: () => {
+    const c = chat(S.chatId);
+    return `
+      ${S.dc ? dcStrip() : ''}
+      ${S.offline ? offStrip() : ''}
+      <div class="chathead">
+        <button class="iconbtn" data-a="toHome" aria-label="Back">${I('back', 22)}</button>
+        <div class="ttl"><div class="a">${esc(c.title)}</div><div class="b"><span class="dot live ${S.offline ? 'off' : ''}" style="width:6px;height:6px"></span>${esc(c.project)} · on ${PC}</div></div>
+        <button class="iconbtn">${I('more', 20)}</button>
+      </div>
+      <div class="content">
+        ${c.msgs.length ? `<div class="msgs">${c.msgs.map((m, i) => msg(m, i)).join('')}</div>` : newChatBody()}
+      </div>
+      <div class="composer-wrap ${S.offline ? 'disabled' : ''}">
+        <div class="chips"><span class="chip">${I('sparkles', 14)} ${esc(c.model)} ${I('down', 14)}</span><span class="chip">${I('shield', 14)} Ask before changes ${I('down', 14)}</span>${c.id === 'new' ? `<span class="chip">${I('folder', 14)} celeste ${I('down', 14)}</span>` : ''}</div>
+        <div class="composer">
+          <button class="iconbtn" aria-label="Attach">${I('plus', 22)}</button>
+          <textarea id="ta" rows="1" placeholder="Message Celeste"></textarea>
+          ${S.streaming ? `<button class="sendbtn stop" data-a="stopTurn" aria-label="Stop">${I('stop', 18)}</button>`
+            : `<button class="iconbtn" aria-label="Voice">${I('mic', 21)}</button><button class="sendbtn" data-a="send" aria-label="Send">${I('up', 20)}</button>`}
+        </div>
+      </div>`;
+  },
+
+  guide: () => `
+    <div class="appbar"><button class="iconbtn" data-a="toPhoneTab">${I('back', 22)}</button><h1 style="opacity:1;transform:none">Notifications</h1></div>
+    <div class="content"><div class="guide">
+      <div class="overline rise" style="--i:0">About 20 seconds, once</div>
+      <h1 class="h-l rise" style="--i:1">One Android setting first</h1>
+      <p class="muted rise" style="--i:2;margin:0">Android adds a step for apps installed from your computer instead of a store.</p>
+      <div class="card gstep rise" style="--i:3"><span class="n">1</span><div><b>Tap Continue.</b> Android will say the setting is restricted. That’s expected: tap <b>OK</b>.</div></div>
+      <div class="card gstep rise" style="--i:4"><span class="n">2</span><div><b>In App info, tap ⋮ at the top right</b>, then <b>Allow restricted settings</b>, and confirm it’s you.
+        <div class="mini sys"><span class="mm hl">${I('more', 16)}</span><div style="font-size:15px;margin:2px 0 8px">App info</div><div class="menu"><span class="hl" style="padding:2px 4px">Allow restricted settings</span></div></div></div></div>
+      <div class="card gstep rise" style="--i:5"><span class="n">3</span><div><b>Switch on Celeste</b> in Notification access. Celeste brings you back here.</div></div>
+      <p class="small faint rise" style="--i:6;margin:0">Why: Android protects notification access from apps that didn’t come from a store. Celeste acts on a notification only when you allow it.</p>
+      <div class="btnrow rise" style="--i:7;margin-top:6px"><button class="btn tonal" data-a="toPhoneTab">Not now</button><button class="btn primary" data-a="guideGo">Continue</button></div>
+    </div></div>`,
+
+  'sys-notifaccess': () => `
+    <div class="sysscreen sys">
+      <div class="sys-top"><button class="iconbtn" style="color:var(--sys-ink)" data-a="toPhoneTab">${I('back', 22)}</button></div>
+      <div class="sys-big">Notification access</div>
+      <div class="sys-card">
+        <div class="sys-row" data-a="notifAccessToggle" style="cursor:pointer;${S.restrictedAllowed ? '' : 'opacity:.55'}"><div class="sys-ic" style="background:#0b111e;padding:5px">${LOGO}</div><div class="grow">Celeste${S.restrictedAllowed ? '' : '<div class="m">Restricted setting</div>'}</div><span class="sys-sw ${S.notifAccess ? 'on' : ''}"></span></div>
+        <div class="sys-row"><div class="sys-ic" style="background:#3a3a3c">${I('app', 16)}</div><div class="grow">Android Auto</div><span class="sys-sw on"></span></div>
+        <div class="sys-row"><div class="sys-ic" style="background:#3a3a3c">${I('app', 16)}</div><div class="grow">Galaxy Wearable</div><span class="sys-sw"></span></div>
+      </div>
+      ${S.restrictedAllowed && !S.notifAccess ? `<div class="coach up" style="right:16px;top:212px">Switch on Celeste</div>` : ''}
+    </div>`,
+
+  'sys-appinfo': () => `
+    <div class="sysscreen sys">
+      <div class="sys-top"><button class="iconbtn" style="color:var(--sys-ink)" data-a="toPhoneTab">${I('back', 22)}</button><span style="flex:1"></span><button class="iconbtn" style="color:var(--sys-ink)" data-a="sysMenu">${I('more', 22)}</button></div>
+      <div style="display:flex;flex-direction:column;align-items:center;padding:20px 0 26px;gap:8px"><img src="logo.svg" alt="" style="width:64px;height:64px;background:#0b111e;border-radius:18px;padding:9px"><div style="font-size:22px">Celeste</div><div style="font-size:13px;color:var(--sys-muted)">Version 1.2.0</div></div>
+      <div class="sys-card">
+        <div class="sys-row"><div class="grow">Notifications<div class="m">Allowed</div></div></div>
+        <div class="sys-row"><div class="grow">Permissions<div class="m">Nearby devices, Notifications</div></div></div>
+        <div class="sys-row"><div class="grow">Battery<div class="m">Optimised</div></div></div>
+        <div class="sys-row"><div class="grow">Storage<div class="m">31.2 MB used in internal storage</div></div></div>
+      </div>
+      ${S.sysMenu ? `<div class="sysmenu"><button data-a="allowRestricted">Allow restricted settings</button><button>Uninstall for all users</button></div>` : `<div class="coach up" style="right:8px;top:52px">Tap ⋮</div>`}
+    </div>`,
+
+  control: () => ctlScreen(),
+};
+const START = {
+  'pair-search': () => { if (!S.found) later(() => { S.found = true; S.enter = true; render(); buzz(12); }, 2200); },
+  'pair-confirm': () => later(() => A.pcAllow(), 7000),
+  connected: () => buzz(20),
+  control: () => ctlRun(),
+};
+
+/* ---------- Parts ---------- */
+function dcStrip() { return `<div class="strip dc">${I('monitor', 18)}<span class="grow"><b>Celeste is using ${PC}</b><br><span style="opacity:.85">14 min left · in “Tidy the desktop”</span></span><button data-a="dcStop">${I('stop', 14)} Stop</button></div>`; }
+function offStrip() { return `<div class="strip off">${I('wifi', 18)}<span class="grow">Can’t reach ${PC}. Is it on, and on this Wi-Fi?</span><button class="btn text sm" data-a="retry">Retry</button></div>`; }
+function msg(m) {
+  const fr = m.fresh ? ' fresh' : '';
+  if (m.t === 'user') return `<div class="m-user${fr}">${md(m.text)}</div>`;
+  if (m.t === 'ai') return `<div class="m-ai${fr}">${m.thinking ? '<span class="shimmer">Thinking</span>' : md(m.text) + (m.live ? '<span class="caret"></span>' : '')}</div>`;
+  if (m.t === 'tool') {
+    const st = { ok: I('check', 16), fail: I('x', 16), wait: I('clock', 16) }[m.state] || I('check', 16);
+    return `<div class="m-tool ${m.state || 'ok'}${fr}" ${m.state === 'wait' && m.action ? `data-a="${m.action}"` : ''}>${I(m.icon, 17)}<div class="grow"><div class="l">${esc(m.label)}</div><div class="d">${m.state === 'wait' ? `<span class="shimmer">${esc(m.detail)}</span>` : esc(m.detail)}</div></div><span class="st">${st}</span></div>`;
+  }
+  if (m.t === 'approval') {
+    const head = `<div class="hd">${I('terminal', 18)} ${esc(m.title)}<span class="faint">${m.state === 'pending' ? 'Needs you' : ''}</span></div><pre class="mono">${esc(m.code)}</pre><div class="where">${esc(m.where)}</div>`;
+    if (m.state === 'pending') return `<div class="approval pending${fr}">${head}<div class="acts"><button class="btn tonal" data-a="deny" data-v="${m.id}">Deny</button><button class="btn primary" data-a="approve" data-v="${m.id}">Approve</button></div></div>`;
+    const ok = m.state === 'approved';
+    return `<div class="approval done">${head}<div class="res" style="color:${ok ? 'var(--c-success)' : 'var(--c-ink-faint)'}">${I(ok ? 'check' : 'x', 16, 'draw')} ${ok ? 'Approved on Galaxy S24' : 'Denied'}</div></div>`;
+  }
+  return '';
+}
+function newChatBody() {
+  const sug = [['cal', 'What’s on my calendar today?'], ['bell', 'Summarise my unread notifications'], ['image', 'Send this morning’s whiteboard photo to my PC']];
+  return `<div class="newchat">${arc('soft')}
+      <div class="overline above rise" style="--i:0">Your AI workbench</div>
+      <h1 class="greet above rise" style="--i:1">${greeting()}, <span class="grad">${NAME}.</span></h1>
+      <p class="subline above rise" style="--i:2">What would you like to work on?</p></div>
+    <div class="suggest above">${sug.map(([ic, s], i) => `<button class="rise" style="--i:${i + 3}" data-a="suggest" data-v="${esc(s)}">${I(ic, 18)}<span>${esc(s)}</span>${I('arrow', 16)}</button>`).join('')}</div>`;
+}
+const TABS = {
+  chats: () => {
+    const n = needsCount();
+    return `
+      <div class="hero">${arc('soft')}
+        <div class="overline above rise" style="--i:0">Celeste on ${PC}</div>
+        <h1 class="greet above rise" style="--i:1">${greeting()}, <span class="grad">${NAME}.</span></h1>
+        <p class="subline above rise" style="--i:2">${n ? 'What would you like to work on?' : 'All quiet. What would you like to work on?'}</p>
+      </div>
+      <div class="search rise" style="--i:3">${I('search', 18)} Search chats</div>
+      ${n ? `<div class="needs rise" style="--i:4" data-a="openFirstNeeds"><span class="dot pink live"></span><div style="flex:1;position:relative"><div class="t">${n} ${n === 1 ? 'chat needs' : 'chats need'} you</div><div class="small muted">Approvals and questions from Celeste</div></div>${I('right', 18)}</div>` : ''}
+      ${['Today', 'Earlier'].map((g) => `<div class="group">${g}</div>` + chats.filter((c) => c.group === g).map((c, i) => chatItem(c, i + 5)).join('')).join('')}
+      <div style="height:96px"></div>`;
+  },
+  workflows: () => `
+    <div class="hero">${arc('soft')}
+      <div class="overline above rise" style="--i:0">Run on ${PC}</div>
+      <h1 class="bigtitle above rise" style="--i:1">Workflows</h1>
+    </div>
+    <div class="card runcard rise" style="--i:2">
+      <div style="display:flex;align-items:center;gap:10px"><span class="ibox accent">${I('workflow')}</span><div style="flex:1"><div style="font-weight:600">Weekly tidy</div><div class="small muted">Step 2 of 4 · <span class="shimmer">waiting for you</span></div></div></div>
+      <div class="progress"><span style="width:45%"></span></div>
+      <div class="q">Move <b>23 screenshots</b> older than a month from Desktop to Archive?</div>
+      <div class="btnrow" style="margin-top:12px"><button class="btn tonal sm" data-a="wfAnswer" data-v="no">No</button><button class="btn primary sm" data-a="wfAnswer" data-v="yes">Yes, move them</button></div>
+    </div>
+    <div class="section-title rise" style="--i:3">Your workflows</div>
+    <div class="card rise" style="--i:4;margin:0 16px">
+      ${[['Morning brief', 'Weekdays at 08:00 · ran today'], ['Weekly tidy', 'Fridays · running now'], ['Release check', 'When you run it'], ['Back up photos to the PC', 'When you run it · uses this phone']].map(([t, s]) => `
+        <div class="row"><span class="ibox">${I('workflow', 18)}</span><div class="grow"><div class="t">${t}</div><div class="s">${s}</div></div><button class="play" data-a="wfRun" data-v="${t}" aria-label="Run ${t}">${I('play', 16)}</button></div>`).join('')}
+    </div><div style="height:20px"></div>`,
+  phone: () => {
+    const ab = [
+      ['notif', 'bell', 'Notifications', 'Read them, and reply or dismiss when you allow'],
+      ['open', 'app', 'Open apps and links', ''],
+      ['loc', 'pin', 'Location', 'Where the phone is, once each time'],
+      ['files', 'image', 'Photos and files', 'Only the ones you pick'],
+      ['cal', 'cal', 'Calendar', 'Read and add events'],
+      ['alarm', 'alarm', 'Alarms and timers', ''],
+    ];
+    return `
+      <div class="hero">${arc('soft')}
+        <div class="overline above rise" style="--i:0">Galaxy S24</div>
+        <h1 class="bigtitle above rise" style="--i:1">This phone</h1>
+      </div>
+      <div class="card phonehead rise" style="--i:2"><span class="ibox accent" style="width:50px;height:50px;border-radius:15px">${I('phone', 24)}</span><div style="flex:1"><div style="font-weight:600;font-size:17px">Galaxy S24</div><div class="small muted" style="display:flex;align-items:center;gap:7px"><span class="dot live ${S.offline ? 'off' : ''}"></span>${S.offline ? 'Not connected' : 'Connected to ' + PC}</div></div></div>
+      <div class="section-title rise" style="--i:3">What Celeste may do here</div>
+      <p class="small muted rise" style="--i:3;margin:-4px 20px 10px">Each action still asks you on this phone first.</p>
+      <div class="card rise" style="--i:4;margin:0 16px">
+        ${ab.map(([k, ic, t, s]) => `<div class="row" data-a="ability" data-v="${k}" style="cursor:pointer"><span class="ibox">${I(ic, 18)}</span><div class="grow"><div class="t">${t}${k === 'notif' && !S.notifAccess ? ' <span class="pill-warn">1 setting</span>' : ''}</div>${s ? `<div class="s">${s}</div>` : ''}</div><span class="switch ${S.abilities[k] ? 'on' : ''}"></span></div>`).join('')}
+      </div>
+      <div class="section-title rise" style="--i:5">Phone control</div>
+      <div class="card rise" style="--i:6;margin:0 16px">
+        <div class="row" data-a="controlToggle" style="cursor:pointer"><span class="ibox accent">${I('hand', 18)}</span><div class="grow"><div class="t">See the screen, tap and type</div><div class="s" id="ctlSub">${ctlSub()}</div></div><span class="switch ${S.control ? 'on' : ''}"></span></div>
+        <div class="row"><span class="ibox">${I('ban', 18)}</span><div class="grow"><div class="t">Never these apps</div><div class="s">Banking, passwords, Settings › Security, and 3 more</div></div>${I('right', 18, 'faint')}</div>
+        <div class="row"><span class="ibox">${I('clock', 18)}</span><div class="grow"><div class="t">Time limit</div><div class="s">15 minutes each time</div></div>${I('right', 18, 'faint')}</div>
+      </div>
+      <div class="section-title">Computer</div>
+      <div class="card" style="margin:0 16px">
+        <div class="row"><span class="ibox">${I('monitor', 18)}</span><div class="grow"><div class="t">${PC}</div><div class="s">Celeste 1.2.0 · paired 9 Nov</div></div></div>
+        <div class="row" data-a="stayToggle" style="cursor:pointer"><span class="ibox">${I('wifi', 18)}</span><div class="grow"><div class="t">Stay connected on home Wi-Fi</div><div class="s">So approvals reach you with the app closed</div></div><span class="switch ${S.stay ? 'on' : ''}"></span></div>
+        <div class="row" style="color:var(--c-danger);cursor:pointer" data-a="noop"><span class="ibox" style="color:var(--c-danger)">${I('x', 18)}</span><div class="grow t">Disconnect this phone</div></div>
+      </div>
+      <div class="section-title">Appearance</div>
+      <div class="seg" style="margin:0 16px">${[['system', 'phone', 'System'], ['dark', 'moon', 'Dark'], ['light', 'sun', 'Light']].map(([t, ic, l]) => `<button class="${S.theme === t ? 'on' : ''}" data-a="theme" data-v="${t}">${I(ic, 15)}${l}</button>`).join('')}</div>
+      <div style="height:28px"></div>`;
+  },
+};
+const ctlSub = () => S.control ? 'On. Celeste asks each time, for up to 15 minutes.' : 'For things the list above can’t do. Off.';
+function chatItem(c, i) {
+  const prev = c.status === 'needs'
+    ? `<div class="prev needs-t"><span class="dot pink" style="width:7px;height:7px"></span>${esc(needsText(c))}</div>`
+    : `<div class="prev">${esc(lastText(c))}</div>`;
+  const vt = c.id === S.lastChat ? ' style="view-transition-name:chat-title"' : '';
+  return `<div class="chatitem rise" style="--i:${i}" data-a="open" data-v="${c.id}"><span class="avatar ${c.status === 'needs' ? 'needs-av' : ''}">${c.project === 'No project' ? I('chat', 18) : esc(c.project[0].toUpperCase())}</span><div style="flex:1;min-width:0"><div class="top"><span class="title"${vt}>${esc(c.title)}</span><span class="time">${c.time}</span></div>${prev}</div></div>`;
+}
+function needsText(c) { const a = c.msgs.find((m) => m.t === 'approval' && m.state === 'pending'); if (a) return 'Wants to run ' + a.code; const w = c.msgs.find((m) => m.state === 'wait'); return w ? (w.needs || w.label) : 'Needs you'; }
+function lastText(c) { const m = [...c.msgs].reverse().find((x) => x.t === 'ai' || x.t === 'user'); return m ? m.text.replace(/\*\*|`/g, '') : ''; }
+
+/* ---------- Overlays ---------- */
+const OVERLAYS = {
+  demo: () => `<div class="scrim" data-a="close"></div><div class="sheet demo"><div class="handle"></div><h3>Mock scenarios</h3><p class="small faint" style="margin:0 0 8px">Not part of the app. Jump to any step.</p>
+    ${[
+      ['scInstall', 'Install from the computer', 'QR → install page → Android steps'],
+      ['scPair', 'First launch: find and pair', 'mDNS, three pictures, Allow on the PC'],
+      ['scHome', 'Chats', 'The remote, connected'],
+      ['scApproval', 'Approval in a chat', 'Run a command on the PC'],
+      ['scNotifCmd', 'Approval as a notification', 'Answer without opening the app'],
+      ['scReply', 'Celeste wants to reply to a message', 'A phone ability, asked on the phone'],
+      ['scControl', 'Celeste asks to use the phone', 'Phone control: consent, glow, Stop'],
+      ['scDc', (S.dc ? 'Stop' : 'Start') + ' desktop control on the PC', 'The red strip with Stop'],
+      ['scRestricted', 'Turn on notifications', 'The restricted-settings guide'],
+      ['scOffline', (S.offline ? 'Reconnect' : 'Lose the connection'), 'Not on the same Wi-Fi'],
+    ].map(([a, t, s]) => `<button class="sc" data-a="${a}"><div class="grow"><div>${t}</div><div class="s">${s}</div></div>${I('right', 16, 'faint')}</button>`).join('')}
+  </div>`,
+  dl: () => `<div class="dlbar sys">${I('download', 22)}<div style="flex:1"><div style="font-weight:600;font-size:14.5px">celeste-1.2.0.apk</div><div style="font-size:12.5px;color:var(--sys-muted)">Download complete · 9.4 MB</div></div><button style="color:var(--sys-accent);font-weight:600;padding:8px" data-a="dlOpen">Open</button></div>`,
+  unknown: () => `<div class="scrim"></div><div class="sysdlg sys"><h3>Chrome</h3><p>For your security, your phone currently isn’t allowed to install unknown apps from this source. You can change this in Settings.</p><div class="acts"><button data-a="close">Cancel</button><button data-a="unknownSettings">Settings</button></div></div>`,
+  installer: () => `<div class="scrim"></div><div class="sysdlg sys"><div class="appline"><img src="logo.svg" alt=""><h3 style="margin:0">Celeste</h3></div><p>Do you want to install this app?</p><div class="acts"><button data-a="close">Cancel</button><button data-a="doInstall">Install</button></div></div>`,
+  installing: () => `<div class="scrim"></div><div class="sysdlg sys"><div class="appline"><img src="logo.svg" alt=""><h3 style="margin:0">Celeste</h3></div><p style="margin-bottom:4px">Installing…</p><div class="sysbar"><span></span></div></div>`,
+  installed: () => `<div class="scrim"></div><div class="sysdlg sys"><div class="appline"><img src="logo.svg" alt=""><h3 style="margin:0">Celeste</h3></div><p>App installed.</p><div class="acts"><button data-a="close">Done</button><button data-a="openApp">Open</button></div></div>`,
+  restricted: () => `<div class="scrim"></div><div class="sysdlg sys"><h3>Restricted setting</h3><p>For your security, this setting is currently unavailable.</p><div class="acts"><button data-a="restrictedOk">OK</button></div></div>`,
+  confirmIt: () => `<div class="scrim"></div><div class="sysdlg sys" style="text-align:center"><h3>Confirm it’s you</h3><p>Use your fingerprint or PIN</p><div style="margin:8px auto 18px;width:56px;height:56px;border-radius:50%;border:2px solid var(--sys-accent);display:grid;place-items:center;color:var(--sys-accent)">${I('shield', 26)}</div><div class="acts"><button data-a="close">Cancel</button><button data-a="confirmed">Use PIN</button></div></div>`,
+  consent: () => `<div class="scrim" data-a="close"></div><div class="sheet"><div class="handle"></div>
+    <div style="display:flex;gap:12px;align-items:center"><span class="ibox accent" style="width:50px;height:50px;border-radius:16px">${I('hand', 24)}</span><div><div class="overline" style="font-size:10px">Phone control</div><h1 class="h-l" style="font-size:20px">Let Celeste use this phone?</h1></div></div>
+    <div class="reason">“To turn on the Wi-Fi hotspot, as you asked in <b>Hotspot for the laptop</b>.”</div>
+    <ul>
+      <li style="--i:0">${I('eye', 18)}<span>Sees the screen, and can tap, swipe and type</span></li>
+      <li style="--i:1">${I('clock', 18)}<span>For up to <b>15 minutes</b>, for this chat only</span></li>
+      <li style="--i:2">${I('ban', 18)}<span>Never opens banking, password or security apps</span></li>
+      <li style="--i:3">${I('hand', 18)}<span>Touch the screen to pause it, or press Stop at any time</span></li>
+    </ul>
+    <div class="disclose">${I('alert', 15)}<span>What’s on screen goes to Anthropic while Celeste works.</span></div>
+    <div class="btnrow"><button class="btn tonal" data-a="consentNo">Not now</button><button class="btn primary shine" data-a="consentYes">Allow for 15 min</button></div>
+  </div>`,
+  controlOff: () => `<div class="scrim" data-a="close"></div><div class="sheet"><div class="handle"></div>
+    <h1 class="h-l" style="font-size:20px">Phone control is off</h1>
+    <p class="muted">Celeste asked to use the screen to turn on the hotspot. To allow that, turn on <b>Phone control</b> first. Android will ask for one accessibility setting.</p>
+    <div class="btnrow"><button class="btn tonal" data-a="consentNo">Not now</button><button class="btn primary" data-a="controlOn">Turn on</button></div></div>`,
+  ctlDone: () => `<div class="scrim"></div><div class="sheet"><div class="handle"></div>
+    <div style="display:flex;gap:14px;align-items:center"><div class="okcircle" style="width:52px;height:52px">${I('check', 26, 'draw')}</div><div><h1 class="h-l" style="font-size:20px">Mobile Hotspot is on</h1><div class="small muted">Celeste is done with your phone · 3 taps in 9 s</div></div></div>
+    <p class="small muted">Control ended by itself. Celeste would need to ask again to use the phone.</p>
+    <button class="btn primary block" data-a="ctlBack">Back to the chat</button></div>`,
+};
+function shade() {
+  const k = S.shade;
+  const d = new Date();
+  const n = k === 'reply'
+    ? `<div class="notif"><div class="h"><img src="logo.svg" alt="">Celeste · now</div><div class="tt">Reply to Mum on WhatsApp?</div><div class="bd">“I’m running late, about 20 minutes.”</div><div class="na"><button data-a="shadeNo">Deny</button><button data-a="shadeYes">Allow</button></div></div>`
+    : `<div class="notif"><div class="h"><img src="logo.svg" alt="">Celeste · ${PC} · now</div><div class="tt">Run a command?</div><div class="bd"><code>git push origin phone</code><br>In “Fix the phone branch tests”</div><div class="na"><button data-a="shadeNo">Deny</button><button data-a="shadeYes">Approve</button><button data-a="shadeOpen">Open</button></div></div>`;
+  return `<div class="scrim" data-a="shadeClose"></div><div class="shade sys">
+    <div class="when"><b>${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}</b><span>${d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</span></div>
+    <div class="tiles"><span class="on">${I('wifi', 20)}</span><span>${I('sound', 20)}</span><span>${I('bt', 20)}</span><span>${I('plane', 20)}</span><span>${I('hotspot', 20)}</span></div>
+    ${n}
+    <div class="notif quiet"><div class="h"><img src="logo.svg" alt="">Celeste</div><div class="bd" style="color:var(--sys-ink)">Connected to ${PC}</div></div>
+  </div>`;
+}
+
+/* ---------- Phone control (a pretend Settings app) ---------- */
+const CTL = [
+  { caption: 'Opening Settings', target: null },
+  { caption: 'Tapping Connections', target: 'conn' },
+  { caption: 'Tapping Mobile Hotspot and Tethering', target: 'hot' },
+  { caption: 'Switching on Mobile Hotspot', target: 'hsw' },
+];
+function ctlScreen() {
+  const c = S.ctl; const page = c.page;
+  const row = (id, ic, col, t, s) => `<div class="sys-row" data-ctl="${id}"><div class="sys-ic" style="background:${col}">${I(ic, 17)}</div><div class="grow">${t}${s ? `<div class="m">${s}</div>` : ''}</div></div>`;
+  let body = '';
+  if (page === 0) body = `<div class="sys-big">Settings</div>
+    <div class="sys-card">${row('acct', 'phone', '#5b5bd6', 'Galaxy S24', 'Samsung account')}</div>
+    <div class="sys-card">${row('conn', 'wifi', '#2f7cf6', 'Connections', 'Wi-Fi · Bluetooth · SIM manager')}${row('dev', 'bt', '#2f9df6', 'Connected devices', 'Quick Share · Android Auto')}${row('modes', 'clock', '#33a852', 'Modes and Routines', '')}</div>
+    <div class="sys-card">${row('sound', 'sound', '#9b59d0', 'Sounds and vibration', '')}${row('notif', 'bell', '#e0662d', 'Notifications', '')}${row('disp', 'sun', '#33a852', 'Display', '')}</div>`;
+  if (page === 1) body = `<div class="sys-big">Connections</div>
+    <div class="sys-card">${row('wifi', 'wifi', '#2f7cf6', 'Wi-Fi', 'Home-5G')}${row('bt', 'bt', '#2f7cf6', 'Bluetooth', '')}${row('nfc', 'link', '#2f7cf6', 'NFC and contactless payments', '')}${row('plane', 'plane', '#2f7cf6', 'Flight mode', '')}</div>
+    <div class="sys-card">${row('sim', 'phone', '#2f7cf6', 'SIM manager', '')}${row('net', 'signal', '#2f7cf6', 'Mobile networks', '')}${row('data', 'signal', '#2f7cf6', 'Data usage', '')}${row('hot', 'hotspot', '#2f7cf6', 'Mobile Hotspot and Tethering', '')}</div>`;
+  if (page === 2) body = `<div class="sys-big">Mobile Hotspot and Tethering</div>
+    <div class="sys-card"><div class="sys-row" data-ctl="hsw"><div class="grow">Mobile Hotspot<div class="s">${c.on ? 'On · Galaxy S24 hotspot' : 'Off'}</div></div><span class="sys-sw ${c.on ? 'on' : ''}"></span></div></div>
+    <div class="sys-card"><div class="sys-row"><div class="grow">USB tethering</div><span class="sys-sw"></span></div><div class="sys-row"><div class="grow">Bluetooth tethering</div><span class="sys-sw"></span></div></div>`;
+  return `<div class="sysscreen sys" id="ctlsys" data-a="ctlTouch">${body}</div>
+    ${c.running || c.paused ? `<div class="ctl-stop">${LOGO}<span>Celeste · 14:51</span><button data-a="ctlStop">${I('stop', 12)} Stop</button></div>` : ''}
+    <div class="finger" id="finger" style="opacity:0;left:${c.fx || 180}px;top:${c.fy || 600}px"></div>
+    ${c.paused ? `<div class="paused"><b>Paused because you touched the screen</b><p class="small muted" style="margin:6px 0 12px">Celeste waits until you say so.</p><div class="btnrow"><button class="btn tonal sm" data-a="ctlStop">Stop</button><button class="btn primary sm" data-a="ctlContinue">Continue</button></div></div>`
+      : c.running ? `<div class="ctl-cap"><span class="dots" style="color:#f5487f"><i></i><i></i><i></i></span><span class="grow txt">${esc(CTL[c.step]?.caption || '')}</span></div>` : ''}`;
+}
+function ctlRun() {
+  const c = S.ctl; if (!c || !c.running || c.paused || S.screen !== 'control') return;
+  render();
+  const step = CTL[c.step];
+  if (!step) return;
+  if (!step.target) { later(() => { c.step++; ctlRun(); }, 1300); return; }
+  later(() => {
+    const el = $screen.querySelector(`[data-ctl="${step.target}"]`);
+    const f = document.getElementById('finger');
+    if (!el || !f) return;
+    const sr = $screen.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    const x = (step.target === 'hsw' ? r.right - 40 : r.left + 70) - sr.left;
+    const y = r.top + r.height / 2 - sr.top;
+    f.style.opacity = 1; f.style.left = x + 'px'; f.style.top = y + 'px';
+    c.fx = x; c.fy = y;
+    later(() => {
+      f.classList.add('tap'); el.classList.add('pressed');
+      later(() => {
+        if (step.target === 'conn') c.page = 1;
+        if (step.target === 'hot') c.page = 2;
+        if (step.target === 'hsw') c.on = true;
+        c.step++;
+        if (c.step >= CTL.length) { c.running = false; render(); buzz(15); later(() => { S.overlay = 'ctlDone'; renderOverlay(); }, 800); }
+        else ctlRun();
+      }, 380);
+    }, 700);
+  }, 900);
+}
+
+/* ---------- Chat behaviour ---------- */
+const REPLIES = [
+  'Here’s your day: the design review at 10:30, then lunch with Noa at 13:00. Nothing after 16:00.',
+  'Done. I’ve put the summary in this chat on the computer as well.',
+  'On it. I’ll ask here before doing anything on the phone.',
+];
+let replyN = 0;
+function stream(c, text, after) {
+  const m = { t: 'ai', text: '', live: true, thinking: true, fresh: true }; c.msgs.push(m); S.streaming = true; render();
+  const words = text.split(' '); let i = 0;
+  const box = () => S.screen === 'chat' && S.chatId === c.id ? $screen.querySelector('.msgs .m-ai:last-child') : null;
+  const tick = () => {
+    if (!S.streaming) { m.live = false; m.thinking = false; render(); return; }
+    m.thinking = false;
+    m.text += (i ? ' ' : '') + words[i++];
+    if (i >= words.length) { m.live = false; S.streaming = false; render(); after?.(); return; }
+    const b = box(); if (b) { b.innerHTML = md(m.text) + '<span class="caret"></span>'; b.closest('.content').scrollTop = 1e6; }
+    later(tick, 45 + Math.random() * 40);
+  };
+  later(tick, 900);
+}
+function approvePush(how) {
+  const c = chat('tests'); const a = c.msgs.find((m) => m.id === 'push');
+  if (!a || a.state !== 'pending') return;
+  a.state = how; buzz(how === 'approved' ? 12 : 6);
+  c.status = 'done';
+  if (how === 'approved') {
+    c.msgs.push({ t: 'tool', icon: 'terminal', label: 'Ran git push origin phone', detail: 'To github.com/AmossDvir1/celeste · phone', state: 'ok', fresh: true });
+    const reply = 'Pushed to `phone`. The checks are running on GitHub; I’ll tell you here when they finish.';
+    if (S.screen === 'chat' && S.chatId === 'tests') stream(c, reply);
+    else c.msgs.push({ t: 'ai', text: reply });
+  } else c.msgs.push({ t: 'ai', text: 'OK, I won’t push. The fix stays committed on `phone` on the computer.', fresh: true });
+}
+function resolveTool(chatId, toolId, ok, label, detail, reply) {
+  const c = chat(chatId); const t = c.msgs.find((m) => m.id === toolId);
+  if (t) { t.state = ok ? 'ok' : 'fail'; t.label = label; t.detail = detail; delete t.action; }
+  c.status = 'done';
+  if (reply) c.msgs.push({ t: 'ai', text: reply, fresh: true });
+}
+
+/* ---------- Actions ---------- */
+const A = {
+  noop() { toast('Not part of this mock', 'alert'); },
+  demo() { if (S.overlay === 'demo') closeOverlay(); else { S.overlay = 'demo'; renderOverlay(); } },
+  close() { closeOverlay(); },
+  tab(v) { if (S.screen === 'home' && S.tab === v) { $screen.querySelector('.content')?.scrollTo({ top: 0, behavior: 'smooth' }); return; } go('home', { tab: v }, S.screen === 'home' ? 'tab' : 'back'); },
+  toHome() { S.streaming = false; go('home', {}, 'back'); },
+  toPhoneTab() { go('home', { tab: 'phone' }, 'back'); },
+  theme(v, el, e) {
+    if (S.theme === v) return;
+    const apply = () => { S.theme = v; render(); };
+    if (!document.startViewTransition || reduced) return apply();
+    const r = el.getBoundingClientRect();
+    const root = document.documentElement;
+    root.style.setProperty('--rx', r.left + r.width / 2 + 'px'); root.style.setProperty('--ry', r.top + r.height / 2 + 'px');
+    root.dataset.nav = 'theme'; root.classList.add('vt-flat');
+    const t = document.startViewTransition(apply);
+    t.finished.finally(() => root.classList.remove('vt-flat'));
+  },
+  // Install
+  install(v, el) {
+    if (el.classList.contains('loading')) return;
+    el.classList.add('loading'); document.getElementById('installLbl').textContent = 'Downloading…';
+    later(() => { el.classList.remove('loading'); document.getElementById('installLbl').textContent = 'Install'; S.overlay = 'dl'; renderOverlay(); }, 1250);
+  },
+  dlOpen() { S.overlay = S.unknownAllowed ? 'installer' : 'unknown'; renderOverlay(); },
+  unknownSettings() { go('sys-unknown'); },
+  toggleUnknown(v, el) { S.unknownAllowed = !S.unknownAllowed; el.querySelector('.sys-sw').classList.toggle('on', S.unknownAllowed); later(render, 320); },
+  unknownBack() { go('install', { overlay: S.unknownAllowed ? 'installer' : null }, 'back'); },
+  doInstall() { S.overlay = 'installing'; renderOverlay(); later(() => { S.overlay = 'installed'; renderOverlay(); buzz(10); }, 1700); },
+  openApp() { go('pair-search', { found: false }); },
+  connect() { go('pair-confirm'); },
+  cancelPair() { go('pair-search', { found: false }, 'back'); },
+  pcAllow() { go('connected'); },
+  // Home
+  open(v, el) {
+    document.querySelectorAll('.chatitem .title').forEach((t) => { t.style.viewTransitionName = ''; });
+    el.querySelector('.title').style.viewTransitionName = 'chat-title';
+    S.lastChat = v; go('chat', { chatId: v });
+  },
+  openFirstNeeds() { const c = chats.find((x) => x.status === 'needs'); if (c) { const el = $screen.querySelector(`.chatitem[data-v="${c.id}"]`); el ? A.open(c.id, el) : go('chat', { chatId: c.id }); } },
+  newChat() {
+    let c = chat('new');
+    if (!c) { c = { id: 'new', title: 'New chat', project: 'celeste', time: 'now', group: 'Today', status: 'done', model: 'Opus 5.5', msgs: [] }; chats.unshift(c); }
+    S.lastChat = null; go('chat', { chatId: 'new' });
+  },
+  suggest(v) { const ta = document.getElementById('ta'); ta.value = v; A.send(); },
+  send() {
+    const ta = document.getElementById('ta'); const text = ta?.value.trim(); if (!text) return;
+    buzz(6);
+    const c = chat(S.chatId); c.msgs.push({ t: 'user', text, fresh: true }); if (c.id === 'new' && c.title === 'New chat') c.title = text.slice(0, 40);
+    c.time = 'now'; stream(c, REPLIES[replyN++ % REPLIES.length]);
+  },
+  stopTurn() { S.streaming = false; buzz(8); toast('Stopped', 'stop'); render(); },
+  approve() { approvePush('approved'); render(); },
+  deny() { approvePush('denied'); render(); },
+  dcStop() { S.dc = false; buzz(15); toast(`Stopped desktop control on ${PC}`, 'stop'); render(); },
+  retry() { S.offline = false; toast(`Connected to ${PC}`, 'wifi'); render(); },
+  // Workflows
+  wfAnswer(v) { buzz(8); toast(v === 'yes' ? 'Answered. Weekly tidy carries on.' : 'Answered. Nothing was moved.'); },
+  wfRun(v) { buzz(8); toast(`Started “${v}” on ${PC}`, 'play'); },
+  // This phone: switches flip in place, so they animate.
+  ability(v, el) {
+    if (v === 'notif' && !S.abilities.notif && !S.notifAccess) { go('guide'); return; }
+    S.abilities[v] = !S.abilities[v]; buzz(5); el.querySelector('.switch').classList.toggle('on', S.abilities[v]);
+  },
+  controlToggle(v, el) {
+    S.control = !S.control; buzz(5); el.querySelector('.switch').classList.toggle('on', S.control);
+    const s = document.getElementById('ctlSub'); s.style.opacity = 0; setTimeout(() => { s.textContent = ctlSub(); s.style.opacity = 1; }, 180);
+  },
+  controlOn() { S.control = true; S.overlay = 'consent'; renderOverlay(); },
+  stayToggle(v, el) { S.stay = !S.stay; buzz(5); el.querySelector('.switch').classList.toggle('on', S.stay); },
+  // Restricted settings
+  guideGo() { go('sys-notifaccess', { overlay: 'restricted' }); },
+  restrictedOk() { go('sys-appinfo', {}, 'none'); },
+  sysMenu() { S.sysMenu = true; render(); },
+  allowRestricted() { S.sysMenu = false; S.overlay = 'confirmIt'; render(); },
+  confirmed() { S.restrictedAllowed = true; go('sys-notifaccess', {}, 'back'); },
+  notifAccessToggle(v, el) {
+    if (!S.restrictedAllowed) { S.overlay = 'restricted'; renderOverlay(); return; }
+    S.notifAccess = true; S.abilities.notif = true; el.querySelector('.sys-sw').classList.add('on'); $screen.querySelector('.coach')?.remove();
+    later(() => { go('home', { tab: 'phone' }, 'back'); later(() => toast('Notifications are on'), 400); }, 700);
+  },
+  // Notifications from Celeste
+  shadeClose() { closeOverlay(); },
+  shadeYes() {
+    const k = S.shade;
+    closeOverlay(() => {
+      if (k === 'reply') { resolveTool('mum', 'mumtool', true, 'Replied to Mum on WhatsApp', 'From Galaxy S24 · you allowed it', 'Done. I told Mum you’ll be about 20 minutes late.'); toast('Reply sent'); }
+      else { approvePush('approved'); toast('Approved on ' + PC); }
+      render();
+    });
+    buzz(12);
+  },
+  shadeNo() {
+    const k = S.shade;
+    closeOverlay(() => {
+      if (k === 'reply') { resolveTool('mum', 'mumtool', false, 'Reply to Mum not sent', 'You said no on Galaxy S24', 'OK, I didn’t send it.'); toast('Not sent', 'x'); }
+      else { approvePush('denied'); toast('Denied', 'x'); }
+      render();
+    });
+  },
+  shadeOpen() { closeOverlay(() => go('chat', { chatId: 'tests' })); },
+  shadeReply() { S.shade = 'reply'; renderOverlay(); },
+  // Phone control
+  consent() { S.overlay = S.control ? 'consent' : 'controlOff'; renderOverlay(); },
+  consentNo() { closeOverlay(() => { resolveTool('train', 'traintool', false, 'Not allowed to use Galaxy S24', 'You said not now', 'No problem. You can turn it on in Settings › Connections › Mobile Hotspot and Tethering.'); render(); }); },
+  consentYes() { buzz(15); S.ctl = { page: 0, step: 0, on: false, running: true, paused: false }; closeOverlay(() => go('control', {}, 'none')); },
+  ctlTouch(v, el, e) { const c = S.ctl; if (!c || !c.running || c.paused) return; clearTimers(); c.paused = true; buzz(20); render(); },
+  ctlContinue() { S.ctl.paused = false; ctlRun(); },
+  ctlStop() {
+    clearTimers(); buzz(25); const c = S.ctl;
+    resolveTool('train', 'traintool', false, 'Stopped using Galaxy S24', 'You pressed Stop on the phone', c.on ? null : 'Stopped. I didn’t finish: the hotspot is still off.');
+    S.ctl = null; go('chat', { chatId: 'train' }, 'back'); later(() => toast('Stopped. Celeste has to ask again.', 'stop'), 300);
+  },
+  ctlBack() {
+    resolveTool('train', 'traintool', true, 'Used Galaxy S24', '3 taps in 9 s · control ended', 'The hotspot is on: connect the laptop to **Galaxy S24 hotspot**.');
+    S.ctl = null; closeOverlay(() => go('chat', { chatId: 'train' }, 'back'));
+  },
+  // Demo scenarios
+  scInstall() { S.unknownAllowed = false; go('install', {}, 'tab'); },
+  scPair() { go('pair-search', { found: false }, 'tab'); },
+  scHome() { go('home', { tab: 'chats' }, 'tab'); },
+  scApproval() { const c = chat('tests'); const a = c.msgs.find((m) => m.id === 'push'); a.state = 'pending'; c.status = 'needs'; c.msgs = c.msgs.slice(0, c.msgs.indexOf(a) + 1); go('chat', { chatId: 'tests' }, 'tab'); },
+  scNotifCmd() { const c = chat('tests'); const a = c.msgs.find((m) => m.id === 'push'); a.state = 'pending'; c.status = 'needs'; c.msgs = c.msgs.slice(0, c.msgs.indexOf(a) + 1); go('home', { tab: 'chats', shade: 'command' }, 'tab'); },
+  scReply() { go('home', { tab: 'chats', shade: 'reply' }, 'tab'); },
+  scControl() { go('chat', { chatId: 'train' }, 'tab'); later(() => { S.overlay = S.control ? 'consent' : 'controlOff'; renderOverlay(); }, 500); },
+  scDc() { S.dc = !S.dc; S.overlay = null; if (S.screen !== 'home' && S.screen !== 'chat') S.screen = 'home'; render(); },
+  scRestricted() { S.notifAccess = false; S.restrictedAllowed = false; S.abilities.notif = false; go('home', { tab: 'phone' }, 'tab'); },
+  scOffline() { S.offline = !S.offline; S.overlay = null; if (S.screen !== 'home' && S.screen !== 'chat') S.screen = 'home'; render(); },
+};
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-a]'); if (!el) return;
+  const fn = A[el.dataset.a]; if (fn) { e.stopPropagation(); fn(el.dataset.v, el, e); }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.target.id === 'ta' && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); A.send(); return; }
+  if (e.target.tagName === 'TEXTAREA') return;
+  if (e.key === 'd' || e.key === 'D') A.demo();
+  if (e.key === 'Escape') {
+    if (S.shade || S.overlay) return closeOverlay();
+    if (S.screen === 'chat') return A.toHome();
+    if (['guide', 'sys-appinfo', 'sys-notifaccess'].includes(S.screen)) return A.toPhoneTab();
+  }
+});
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', render);
+const tickClock = () => { const d = new Date(); document.getElementById('clock').textContent = d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0'); };
+tickClock(); setInterval(tickClock, 10000);
+render();
+</script>
+</body>
+</html>

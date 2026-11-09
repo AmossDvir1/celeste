@@ -1,7 +1,7 @@
 // The Core process: database, sessions and the assistant. Started by the main process as a utility process,
 // so a slow or crashing agent can never freeze or take down the window.
-import { mkdirSync } from 'node:fs'
-import { homedir, userInfo } from 'node:os'
+import { existsSync, mkdirSync } from 'node:fs'
+import { homedir, hostname, userInfo } from 'node:os'
 import { join } from 'node:path'
 import type { MessagePortMain } from 'electron'
 import type { CoreApi, CoreMessage, CorePush, CoreRequest } from '@shared/api'
@@ -39,8 +39,33 @@ import { Worktrees } from './worktrees'
 import { SessionService } from './service'
 import { VendorService } from './vendors'
 import { SqliteStore } from './sqlite-store'
+import { PhoneBridge } from './phone/bridge'
+import { phoneCalls } from './phone/calls'
+import { PhoneTools } from './phone/tools'
+import { PHONE_PROTOCOL, PHONE_SERVICE } from '@shared/phone'
 
 const parent = process.parentPort
+
+/** The Android app to hand out to phones: a copy put next to the data, the one shipped with Celeste, or a development build. */
+function findPhoneApk(dataDir: string): string | null {
+  const resources = (process as { resourcesPath?: string }).resourcesPath
+  const candidates = [
+    process.env['CELESTE_PHONE_APK'],
+    join(dataDir, 'phone', 'celeste.apk'),
+    resources ? join(resources, 'phone', 'celeste.apk') : undefined,
+    join(process.cwd(), 'phone', 'android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk'),
+    join(process.cwd(), 'phone', 'android', 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk')
+  ]
+  return candidates.find((f): f is string => !!f && existsSync(f)) ?? null
+}
+
+/** Announces `_celeste._tcp` on the local network, so the phone app finds this computer without an address. */
+async function announcePhone(port: number, name: string, id: string): Promise<() => Promise<void>> {
+  const { Bonjour } = await import('bonjour-service')
+  const bonjour = new Bonjour()
+  bonjour.publish({ name: `Celeste on ${name}`, type: PHONE_SERVICE, port, txt: { id, v: String(PHONE_PROTOCOL) } })
+  return () => new Promise<void>((resolve) => bonjour.unpublishAll(() => bonjour.destroy(() => resolve())))
+}
 
 /** The first name for the greeting: the operating system's user name, capitalised. */
 function friendlyName(): string {
@@ -54,7 +79,11 @@ function friendlyName(): string {
 
 const ports = new Set<MessagePortMain>()
 const send = (port: MessagePortMain, message: CoreMessage) => port.postMessage(message)
-const push = (p: CorePush) => ports.forEach((port) => send(port, { kind: 'push', push: p }))
+let phoneRef: PhoneBridge | undefined
+const push = (p: CorePush) => {
+  ports.forEach((port) => send(port, { kind: 'push', push: p }))
+  phoneRef?.broadcast(p)
+}
 
 let service: SessionService | undefined
 let devices: DeviceService | undefined
@@ -167,6 +196,7 @@ async function start(): Promise<void> {
     onSessionStopped: (id) => {
       tools.cancel(id)
       desktopRef?.sessionGone(id)
+      phoneRef?.cancel(id)
     },
     push,
     defaults: {
@@ -262,7 +292,9 @@ async function start(): Promise<void> {
     record: (sessionId, event) => (service as SessionService).recordDesktop(sessionId, event)
   })
   desktopRef = desktopControl
-  servers.setExtraTools(new CombinedTools([new WorkflowTools(db, runner, (sessionId) => (service as SessionService).workFolder(sessionId)), desktopControl]))
+  // The phone's abilities, listed only while a phone is paired; each asks on the phone (src/core/phone/tools.ts).
+  const phoneTools = new PhoneTools(() => phoneRef, (sessionId) => db.listSessions().find((s) => s.id === sessionId)?.title ?? 'a chat')
+  servers.setExtraTools(new CombinedTools([new WorkflowTools(db, runner, (sessionId) => (service as SessionService).workFolder(sessionId)), desktopControl, phoneTools]))
   const workflows = new WorkflowService(db, runner, undefined, () => push({ type: 'workflows' }), dataDir, async () => (await mcp.resolved()).map((s) => s.key), (sessionId) => (service as SessionService).workFolder(sessionId), (source) =>
     // The assistant only has to write; it is in plan mode, so anything it asks to do is refused, and it has three minutes.
     draftWorkflow(source.kind === 'text' ? source : { kind: 'conversation', transcript: (service as SessionService).transcriptOf(source.sessionId) }, {
@@ -276,7 +308,23 @@ async function start(): Promise<void> {
   )
   const terminals = new TerminalService({ folderOf: (id) => (service as SessionService).projectFolder(id), push })
   terminalsRef = terminals
+  // Phones on the same Wi-Fi, when Settings → Phone is on. They reach a short list of methods only (src/shared/phone.ts).
+  const phone = new PhoneBridge({
+    store: db,
+    call: phoneCalls(() => api as CoreApi, () => hostname()),
+    computerName: () => hostname(),
+    version: process.env['CELESTE_VERSION'] ?? '0.0.0',
+    apkFile: () => findPhoneApk(dataDir),
+    onStatus: () => push({ type: 'phone' }),
+    onPairing: (request) => push({ type: 'phonePairing', request }),
+    announce: announcePhone
+  })
+  phoneRef = phone
   api = {
+    'phone.status': () => phone.status(),
+    'phone.setEnabled': (on) => phone.setEnabled(on),
+    'phone.remove': (id) => phone.remove(id),
+    'phone.answer': (pairId, allow) => phone.answer(pairId, allow),
     ...service.api,
     'app.checkUpdate': () => checkForUpdate(process.env['CELESTE_VERSION'] ?? '0.0.0'),
     // A removed session takes its shell with it.
@@ -299,6 +347,7 @@ async function start(): Promise<void> {
     }, (path) => (service as SessionService).stopWorkingIn(path)),
     'devices.toolServer': async (sessionId) => servers.info(sessionId)
   }
+  void phone.start().then(() => push({ type: 'phone' }))
   parent.postMessage({ type: 'ready' })
 }
 
@@ -350,6 +399,7 @@ parent.on('message', (event) => {
     desktopRef?.stop('Celeste closed.')
     service?.close()
     void (async () => {
+      await phoneRef?.stop().catch(() => undefined)
       await devices?.close().catch(() => undefined)
       terminalsRef?.closeAll()
       await toolServer?.stop().catch(() => undefined)

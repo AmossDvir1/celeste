@@ -15,6 +15,7 @@ import type {
   TestResult
 } from './devices'
 import type { ProducedFile } from './produced'
+import type { PhonePairRequest, PhoneStatus } from './phone'
 import type { RunSummary, StoredRunEvent, WorkflowDefinition, WorkflowFull, WorkflowSummary } from './workflow'
 import type {
   AgentEvent,
@@ -457,6 +458,15 @@ export interface CoreApi {
 
   /** Whether a folder exists, and which git branch it is on. For Develop's project picker. */
   'project.inspect': (path: string) => Promise<{ exists: boolean; branch: string | null }>
+
+  /** Settings → Phone: whether phones may connect, the address for the QR code, and the paired phones (docs/PHONE_PLAN.md). */
+  'phone.status': () => PhoneStatus
+  /** Starts or stops listening for phones on the local network. */
+  'phone.setEnabled': (on: boolean) => Promise<PhoneStatus>
+  /** Forgets a phone. It is cut off at once and must pair again. */
+  'phone.remove': (phoneId: string) => PhoneStatus
+  /** The person's answer to a phone asking to connect, after comparing the three pictures. */
+  'phone.answer': (pairId: string, allow: boolean) => PhoneStatus
 }
 
 export type DeviceApi = { [K in keyof CoreApi as K extends `devices.${string}` ? K : never]: CoreApi[K] }
@@ -465,8 +475,9 @@ export type TerminalApi = { [K in keyof CoreApi as K extends `terminal.${string}
 export type McpApi = { [K in keyof CoreApi as K extends `mcp.${string}` ? K : never]: CoreApi[K] }
 export type VendorLinkApi = { [K in keyof CoreApi as K extends `vendor.${string}` ? K : never]: CoreApi[K] }
 export type ProjectApi = { [K in keyof CoreApi as K extends `project.${string}` ? K : never]: CoreApi[K] }
+export type PhoneApi = { [K in keyof CoreApi as K extends `phone.${string}` ? K : never]: CoreApi[K] }
 /** The methods the session service answers. The device service and the vendor service answer the rest. */
-export type SessionApi = Omit<CoreApi, keyof DeviceApi | keyof VendorLinkApi | keyof ProjectApi | keyof McpApi | keyof TerminalApi | keyof WorkflowApi | 'app.checkUpdate'>
+export type SessionApi = Omit<CoreApi, keyof DeviceApi | keyof VendorLinkApi | keyof ProjectApi | keyof McpApi | keyof TerminalApi | keyof WorkflowApi | keyof PhoneApi | 'app.checkUpdate'>
 
 export type CoreMethod = keyof CoreApi
 export type CoreParams<M extends CoreMethod> = Parameters<CoreApi[M]>
@@ -487,6 +498,10 @@ export type CorePush =
   | { type: 'event'; sessionId: string; stored: StoredEvent }
   | { type: 'summary'; session: SessionSummary }
   | { type: 'removed'; id: string }
+  /** Settings → Phone changed: a phone was added, removed or seen, or listening started or stopped. */
+  | { type: 'phone' }
+  /** A phone is asking to connect (the person compares the pictures and answers), or no longer is (null). */
+  | { type: 'phonePairing'; request: PhonePairRequest | null }
 
 /** Wire format over the message port between the window and Core. */
 export type CoreRequest = { id: number; method: CoreMethod; params: unknown[] }

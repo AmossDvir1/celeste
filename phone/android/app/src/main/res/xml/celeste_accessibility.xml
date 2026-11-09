@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Phone control (docs/PHONE_PLAN.md, step A3). It reads the screen and acts only during a grant the person gave on this
+     phone; the rest of the time it does nothing. -->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/control_description"
+    android:summary="@string/control_summary"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows|flagIncludeNotImportantViews|flagRequestFilterKeyEvents"
+    android:canPerformGestures="true"
+    android:canRetrieveWindowContent="true"
+    android:canRequestFilterKeyEvents="true"
+    android:canTakeScreenshot="true"
+    android:isAccessibilityTool="false"
+    android:notificationTimeout="200" />

@@ -1,0 +1,20 @@
+{
+  "appId": "io.github.amossdvir1.celeste",
+  "appName": "Celeste",
+  "webDir": "dist",
+  "loggingBehavior": "none",
+  "server": {
+    "androidScheme": "http",
+    "cleartext": true
+  },
+  "android": {
+    "backgroundColor": "#080c17",
+    "adjustMarginsForEdgeToEdge": "force"
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_celeste",
+      "iconColor": "#F5487F"
+    }
+  }
+}

@@ -43,6 +43,7 @@
     "verify:workflows-chat": "electron-vite build && node scripts/workflows-chat-check.mjs",
     "verify:workflows-ai": "electron-vite build && node scripts/workflows-ai-check.mjs",
     "verify:desktop": "electron-vite build && node scripts/desktop-check.mjs",
+    "verify:phone": "electron-vite build && npm --prefix phone run build && node scripts/phone-check.mjs",
     "verify:mcp": "electron-vite build && node scripts/mcp-check.mjs",
     "verify:ui": "electron-vite build && node scripts/ui-check.mjs",
     "verify:claude": "electron-vite build && node scripts/claude-check.mjs",
@@ -54,7 +55,8 @@
     "dist:dir": "electron-vite build && node scripts/stage.mjs && electron-builder --config.directories.app=release/stage --dir --publish never",
     "dist:win": "electron-vite build && node scripts/stage.mjs && electron-builder --config.directories.app=release/stage --win --publish never",
     "dist:mac": "electron-vite build && node scripts/stage.mjs && electron-builder --config.directories.app=release/stage --mac --publish never",
-    "installer-check": "node scripts/installer-check.mjs"
+    "installer-check": "node scripts/installer-check.mjs",
+    "mock:phone": "node scripts/phone-mock.mjs"
   },
   "devDependencies": {
     "@electron/asar": "^3.4.1",
