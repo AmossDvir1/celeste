@@ -1,6 +1,8 @@
 // Desktop control, in the real built app, with the real mouse and keyboard, against a window of our own (scripts/lib/desktop-target.cjs):
 // off until switched on, a consent card of Celeste's own, a click and typing that really arrive, Celeste's own windows refused,
-// Stop and the stop key end it, the bar is gone afterwards, a "no" is remembered.   npm run verify:desktop   (Windows only; no account, no cost)
+// Stop and the stop key end it, the bar is gone afterwards, a "no" is remembered; and, in step 2, one window only (a window in front is
+// refused and painted over), no typing into a password field, a second yes before a button called Delete, a pause when the person moves
+// the mouse, and a program on the never list.   npm run verify:desktop   (Windows only; no account, no cost)
 //
 // Setting CELESTE_ENTRY to the app.asar of a packed build (npm run dist:dir makes one) runs it against that instead.
 // It MOVES THE REAL MOUSE and types for about a minute. Leave the mouse and keyboard alone while it runs.
@@ -34,6 +36,17 @@ const KEYBD = koffi.struct('CHKKEYBDINPUT', { wVk: 'uint16', wScan: 'uint16', dw
 const MOUSE = koffi.struct('CHKMOUSEINPUT', { dx: 'int32', dy: 'int32', mouseData: 'uint32', dwFlags: 'uint32', time: 'uint32', dwExtraInfo: 'uintptr' })
 const INPUT = koffi.struct('CHKINPUT', { type: 'uint32', u: koffi.union({ mi: MOUSE, ki: KEYBD }) })
 const SendInput = user32.func('uint32 __stdcall SendInput(uint32 n, CHKINPUT *inputs, int size)')
+const dwm = koffi.load('dwmapi.dll')
+const CHKRECT = koffi.struct('CHKRECT', { left: 'int32', top: 'int32', right: 'int32', bottom: 'int32' })
+const DwmGetWindowAttribute = dwm.func('int32 __stdcall DwmGetWindowAttribute(intptr h, uint32 attr, _Out_ CHKRECT *out, uint32 size)')
+const SetCursorPos = user32.func('bool __stdcall SetCursorPos(int x, int y)')
+/** The visible frame of an Electron app's first window, on the screen, the way Windows reports it. */
+const frameOf = async (electronApp) => {
+  const hwnd = Number(await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getNativeWindowHandle().readBigUInt64LE(0).toString()))
+  const r = { left: 0, top: 0, right: 0, bottom: 0 }
+  DwmGetWindowAttribute(hwnd, 9, r, 16)
+  return { id: hwnd, x: r.left, y: r.top, w: r.right - r.left, h: r.bottom - r.top }
+}
 function pressStopKey() {
   const k = (vk, up) => ({ type: 1, u: { ki: { wVk: vk, wScan: 0, dwFlags: up ? 2 : 0, time: 0, dwExtraInfo: 0 } } })
   SendInput(6, [k(0x11), k(0x12), k(0x1b), k(0x1b, 1), k(0x12, 1), k(0x11, 1)], koffi.sizeof(INPUT))
@@ -41,7 +54,27 @@ function pressStopKey() {
 
 // --- what the stand-in assistant does, round by round ---
 const tool = (name, input) => ({ type: 'tool_use', name: `mcp__celeste-devices__${name}`, input })
-const plan = { shotW: 0, shotH: 0, phys: { w: 0, h: 0 }, button: { x: 0, y: 0 }, field: { x: 0, y: 0 }, celeste: { x: 0, y: 0 } }
+const plan = {
+  shotW: 0,
+  shotH: 0,
+  phys: { w: 0, h: 0 },
+  button: { x: 0, y: 0 },
+  field: { x: 0, y: 0 },
+  celeste: { x: 0, y: 0 },
+  secret: { x: 0, y: 0 },
+  del: { x: 0, y: 0 },
+  covered: { x: 0, y: 0 },
+  frame: { id: 0, x: 0, y: 0, w: 0, h: 0 },
+  coverId: 0
+}
+/** A point on the screen as a point in a picture of one window only (the picture is that window's frame, scaled). */
+const inFrame = (p) => ({ x: Math.round(((p.x - plan.frame.x) * plan.shotW) / plan.frame.w), y: Math.round(((p.y - plan.frame.y) * plan.shotH) / plan.frame.h) })
+const requestArgs = { scoped: { window: 'Desktop control target' }, hour: { window: 'Desktop control target' }, never: {} }
+const dims = (text) => {
+  const m = /(\d+) by (\d+) pixels/.exec(text)
+  plan.shotW = Number(m?.[1] ?? 0)
+  plan.shotH = Number(m?.[2] ?? 0)
+}
 const inPicture = (p) => ({ x: Math.round((p.x * plan.shotW) / plan.phys.w), y: Math.round((p.y * plan.shotH) / plan.phys.h) })
 const results = []
 let round = ''
@@ -65,6 +98,60 @@ const rounds = {
     if (s === 7) return [tool('desktop_release_control', {})]
     return [{ type: 'text', text: 'Round work is over.' }]
   },
+  scoped: (s, text) => {
+    if (s === 1) return [tool('desktop_screenshot', {})]
+    if (s === 2) {
+      dims(text)
+      return [tool('desktop_click', inFrame(plan.button))]
+    }
+    if (s === 3) return [tool('desktop_click', inFrame(plan.covered))]
+    if (s === 4) return [tool('desktop_list_windows', {})]
+    if (s === 5) return [tool('desktop_focus_window', { id: plan.coverId })]
+    if (s === 6) return [tool('desktop_release_control', {})]
+    return [{ type: 'text', text: 'Round scoped is over.' }]
+  },
+  secret: (s, text) => {
+    if (s === 1) return [tool('desktop_screenshot', {})]
+    if (s === 2) {
+      dims(text)
+      return [tool('desktop_click', inPicture(plan.secret))]
+    }
+    if (s === 3) return [tool('desktop_type', { text: 'hunter2' })]
+    if (s === 4) return [tool('desktop_release_control', {})]
+    return [{ type: 'text', text: 'Round secret is over.' }]
+  },
+  confirm: (s, text) => {
+    if (s === 1) return [tool('desktop_screenshot', {})]
+    if (s === 2) {
+      dims(text)
+      return [tool('desktop_click', inPicture(plan.del))]
+    }
+    if (s === 3) return [tool('desktop_click', inPicture(plan.del))]
+    if (s === 4) return [tool('desktop_release_control', {})]
+    return [{ type: 'text', text: 'Round confirm is over.' }]
+  },
+  moved: (s, text) => {
+    if (s === 1) return [tool('desktop_screenshot', {})]
+    if (s === 2) {
+      dims(text)
+      return [tool('desktop_click', inPicture(plan.button))]
+    }
+    if (s === 3) return [tool('desktop_wait', { seconds: 4 })]
+    if (s === 4) return [tool('desktop_click', inPicture(plan.button))]
+    if (s === 5) return [tool('desktop_release_control', {})]
+    return [{ type: 'text', text: 'Round moved is over.' }]
+  },
+  never: (s, text) => {
+    if (s === 1) return [tool('desktop_screenshot', {})]
+    if (s === 2) {
+      dims(text)
+      return [tool('desktop_click', inPicture(plan.button))]
+    }
+    if (s === 3) return [tool('desktop_release_control', {})]
+    return [{ type: 'text', text: 'Round never is over.' }]
+  },
+  wholeoff: () => [{ type: 'text', text: 'Round wholeoff is over.' }],
+  hour: (s) => (s === 1 ? [tool('desktop_release_control', {})] : [{ type: 'text', text: 'Round hour is over.' }]),
   stopbutton: (s) => (s === 1 ? [tool('desktop_wait', { seconds: 10 })] : [{ type: 'text', text: 'Round stopbutton is over.' }]),
   hotkey: (s) => (s === 1 ? [tool('desktop_wait', { seconds: 10 })] : [{ type: 'text', text: 'Round hotkey is over.' }])
 }
@@ -74,7 +161,7 @@ const script = (r) => {
     if (!m) return echo(r)
     round = m[1]
     step = 0
-    return [tool('desktop_request_control', { reason: `Round ${round}: press the button in the test window` })]
+    return [tool('desktop_request_control', { reason: `Round ${round}: press the button in the test window`, ...(requestArgs[round] ?? {}) })]
   }
   step++
   results.push({ round, step, text: r.last.text, isError: r.last.isError })
@@ -85,6 +172,7 @@ const resultOf = (rnd, s) => results.find((r) => r.round === rnd && r.step === s
 let stub
 let app
 let target
+let cover
 try {
   stub = await startStub(script)
   app = await launch({ width: 900, height: 700, theme: null, profile, env: stub.env, entry: process.env.CELESTE_ENTRY || undefined })
@@ -115,7 +203,7 @@ try {
       const r = document.getElementById(id).getBoundingClientRect()
       return { x: r.x + r.width / 2, y: r.y + r.height / 2 }
     }
-    return { btn: c('btn'), field: c('box') }
+    return { btn: c('btn'), field: c('box'), secret: c('pw'), del: c('del') }
   })
   const phys = (appHandle, p) =>
     appHandle.evaluate(({ BrowserWindow, screen }, pt) => {
@@ -124,11 +212,25 @@ try {
     }, p)
   plan.button = await phys(target, rects.btn)
   plan.field = await phys(target, rects.field)
+  plan.secret = await phys(target, rects.secret)
+  plan.del = await phys(target, rects.del)
+  // A second window over the lower right of the target, in front of it.
+  cover = await electron.launch({ args: [join(import.meta.dirname, 'lib', 'desktop-target.cjs')], env: { ...process.env, TARGET_X: '1420', TARGET_Y: '520', TARGET_W: '360', TARGET_H: '260', TARGET_TITLE: 'Cover window' } })
+  const cp = await cover.firstWindow()
+  await cp.waitForLoadState('domcontentloaded')
+  await sleep(500)
+  plan.frame = await frameOf(target)
+  plan.coverId = (await frameOf(cover)).id
+  plan.covered = { x: 1500, y: 600 }
   const settingsBtn = await page.getByRole('button', { name: 'Settings', exact: true }).boundingBox()
   plan.celeste = await phys(app.app, { x: settingsBtn.x + settingsBtn.width / 2, y: settingsBtn.y + settingsBtn.height / 2 })
 
   const send = async (text) => {
     const box = page.getByRole('textbox', { name: 'Message' })
+    // The last turn may still be finishing, and Enter does nothing until it is.
+    await page.getByRole('button', { name: 'Stop', exact: true }).waitFor({ state: 'detached', timeout: 20_000 }).catch(async () => {
+      console.log('NOTE  a Stop button stayed on the page: ' + (await page.getByRole('button', { name: 'Stop', exact: true }).evaluateAll((els) => els.map((e) => e.outerHTML.slice(0, 160)))).join(' | '))
+    })
     await box.fill(text)
     await box.press('Enter')
   }
@@ -139,8 +241,32 @@ try {
   const answerCard = async (button) => {
     const card = page.getByRole('group', { name: 'Approval needed' }).last()
     await card.waitFor({ timeout: 30_000 })
+    const text = await card.innerText()
     await card.getByRole('button', { name: button, exact: true }).click()
+    return text
   }
+  // The pictures the assistant was given, oldest first (each request repeats the earlier ones).
+  const pictures = () => [...new Set([...JSON.stringify(stub.requests.map((r) => r.body)).matchAll(/"data":"(\/9j\/[A-Za-z0-9+/=]+)"/g)].map((m) => m[1]))]
+  // How bright a spot of a picture is, 0 black to 255 white.
+  const brightness = (b64, p) =>
+    app.app.evaluate(
+      ({ nativeImage }, { b64, p }) => {
+        const img = nativeImage.createFromBuffer(Buffer.from(b64, 'base64'))
+        const { width, height } = img.getSize()
+        const bm = img.toBitmap()
+        let sum = 0
+        let n = 0
+        for (let y = Math.max(0, p.y - 3); y <= Math.min(height - 1, p.y + 3); y++) {
+          for (let x = Math.max(0, p.x - 3); x <= Math.min(width - 1, p.x + 3); x++) {
+            const i = (y * width + x) * 4
+            sum += (bm[i] + bm[i + 1] + bm[i + 2]) / 3
+            n++
+          }
+        }
+        return sum / n
+      },
+      { b64, p }
+    )
   const barWindow = async () => {
     for (let i = 0; i < 40; i++) {
       for (const w of app.app.windows()) {
@@ -176,7 +302,7 @@ try {
   const card = page.getByRole('group', { name: 'Approval needed' }).last()
   await card.waitFor({ timeout: 30_000 })
   const cardText = await card.innerText()
-  check('with it on, the assistant’s request raises a card of Celeste’s own, with the reason and the warning', /control this computer for 15 minutes/.test(cardText) && /Round deny: press the button/.test(cardText) && /see everything on your screen/.test(cardText), cardText.slice(0, 200))
+  check('with it on, the assistant’s request raises a card of Celeste’s own, with the reason and the warning', /control this computer for 15 minutes/.test(cardText) && /Round deny: press the button/.test(cardText) && /see everything on your main screen/.test(cardText), cardText.slice(0, 200))
   await page.screenshot({ path: join(out, 'desktop-consent.png') })
   await answerCard('Deny')
   await page.getByText('Round deny is over.').waitFor({ timeout: 60_000 })
@@ -219,6 +345,88 @@ try {
   if (shot) writeFileSync(join(out, 'desktop-screenshot.jpg'), Buffer.from(shot[1], 'base64'))
   check('the assistant was given a picture of the screen', !!shot)
 
+  console.log('\n# One window only (step 2)')
+  const clicksBefore = await tp.evaluate(() => window.clicks)
+  await newChat()
+  await send('ROUND:scoped use the screen')
+  const scopedCard = await answerCard('Allow')
+  check('the card names the window and says it is the only thing', /use “Desktop control target” for 15 minutes/.test(scopedCard) && /and nothing else/.test(scopedCard) && !/see everything/.test(scopedCard), scopedCard.slice(0, 300))
+  const scopedBar = await barWindow()
+  check('the bar says what it may use', /Can use: only the window “Desktop control target”/.test((await scopedBar?.locator('body').innerText()) ?? ''))
+  await page.getByText('Round scoped is over.').waitFor({ timeout: 90_000 })
+  check('the request told the assistant it is limited to that window', /only the window “Desktop control target”/.test(resultOf('scoped', 1)?.text ?? ''), resultOf('scoped', 1)?.text)
+  check('the picture is the window only: its size', Math.abs(plan.shotW - plan.frame.w) <= 3 && Math.abs(plan.shotH - plan.frame.h) <= 3, plan.shotW + ' by ' + plan.shotH + ' for a window of ' + plan.frame.w + ' by ' + plan.frame.h)
+  check('a click in it pressed the button', (await tp.evaluate(() => window.clicks)) === clicksBefore + 1)
+  check('a click where another window is in front was refused, naming it', resultOf('scoped', 4)?.isError === true && /outside what you were given/.test(resultOf('scoped', 4)?.text ?? '') && /Cover window/.test(resultOf('scoped', 4)?.text ?? ''), resultOf('scoped', 4)?.text)
+  check('and never reached the window in front', (await cp.evaluate(() => window.clicks)) === 0)
+  const listed = resultOf('scoped', 5)?.text ?? ''
+  check('the list of windows has only that window (not the cover, not Celeste)', /Desktop control target/.test(listed) && !/Cover window|Celeste/.test(listed), listed)
+  check('bringing the other window to the front was refused', resultOf('scoped', 6)?.isError === true && /outside what you were given/.test(resultOf('scoped', 6)?.text ?? ''), resultOf('scoped', 6)?.text)
+  const scopedShot = pictures().at(-1)
+  if (scopedShot) writeFileSync(join(out, 'desktop-scoped.jpg'), Buffer.from(scopedShot, 'base64'))
+  const coveredAt = inFrame(plan.covered)
+  const buttonAt = inFrame(plan.button)
+  check('in the picture the window in front is painted black', !!scopedShot && (await brightness(scopedShot, coveredAt)) < 40, scopedShot ? String(await brightness(scopedShot, coveredAt)) : 'no picture')
+  check('and the window itself is shown', !!scopedShot && (await brightness(scopedShot, { x: buttonAt.x, y: Math.max(0, buttonAt.y - 40) })) > 120)
+  await sleep(800)
+  check('and nothing is left on the screen afterwards', windowCount() === 1)
+
+  console.log('\n# A password field, and a button called Delete')
+  await newChat()
+  await send('ROUND:secret use the screen')
+  await answerCard('Allow')
+  await page.getByText('Round secret is over.').waitFor({ timeout: 90_000 })
+  check('typing into a password field was refused, and says why', resultOf('secret', 4)?.isError === true && /password field/.test(resultOf('secret', 4)?.text ?? ''), resultOf('secret', 4)?.text)
+  check('and nothing was typed', (await tp.evaluate(() => document.getElementById('pw').value)) === '')
+  const secretCard = await page.getByRole('group', { name: 'Desktop control' }).last().innerText()
+  check('and the conversation does not show what it tried to type', /Refused: Type into a password field/.test(secretCard) && !/hunter2/.test(secretCard), secretCard)
+
+  await newChat()
+  await send('ROUND:confirm use the screen')
+  await answerCard('Allow')
+  const askedDeny = await answerCard('Deny')
+  check('before pressing Delete everything, the person is asked, with a warning', /Let the assistant press “Delete everything”/.test(askedDeny) && /cannot be taken back/.test(askedDeny), askedDeny.slice(0, 300))
+  await answerCard('Allow')
+  await page.getByText('Round confirm is over.').waitFor({ timeout: 90_000 })
+  check('on Deny it was not pressed, and the assistant was told not to try again', resultOf('confirm', 3)?.isError === true && /did not allow pressing/.test(resultOf('confirm', 3)?.text ?? ''), resultOf('confirm', 3)?.text)
+  check('on Allow it was pressed, once', resultOf('confirm', 4)?.isError === false && (await tp.evaluate(() => window.deletes)) === 1, String(await tp.evaluate(() => window.deletes)))
+
+  console.log('\n# The person moves the mouse')
+  const before = await tp.evaluate(() => window.clicks)
+  await newChat()
+  await send('ROUND:moved use the screen')
+  await answerCard('Allow')
+  for (let i = 0; i < 200 && !resultOf('moved', 3); i++) await sleep(100)
+  // The assistant is waiting for four seconds. Now the person takes the mouse.
+  SetCursorPos(200, 750)
+  const pausedBar = await barWindow()
+  const goButton = pausedBar?.getByRole('button', { name: 'Continue' })
+  await goButton?.waitFor({ timeout: 20_000 })
+  check('the bar says the mouse was moved and offers Continue', /You moved the mouse/.test((await pausedBar?.locator('body').innerText()) ?? ''))
+  await pausedBar?.screenshot({ path: join(out, 'desktop-bar-paused.png') }).catch(() => undefined)
+  await sleep(600)
+  check('the next click did not happen while it is paused', (await tp.evaluate(() => window.clicks)) === before + 1)
+  await goButton?.click()
+  await page.getByText('Round moved is over.').waitFor({ timeout: 60_000 })
+  check('after Continue the same click was made', (await tp.evaluate(() => window.clicks)) === before + 2 && resultOf('moved', 5)?.isError === false, resultOf('moved', 5)?.text)
+  const movedCard = await page.getByRole('group', { name: 'Desktop control' }).last().innerText()
+  check('the conversation says it was paused and that the person continued', /You moved the mouse: paused/.test(movedCard) && /You pressed Continue/.test(movedCard), movedCard)
+
+  console.log('\n# A program the person never wants touched')
+  await saveSettings(page, { desktopNeverApps: ['Desktop control target'] })
+  const clicksNever = await tp.evaluate(() => window.clicks)
+  await newChat()
+  await send('ROUND:never use the screen')
+  const neverCard = await answerCard('Allow')
+  check('the card says what stays hidden', /Hidden and never touched, whatever it asks: Desktop control target\./.test(neverCard), neverCard.slice(0, 400))
+  await page.getByText('Round never is over.').waitFor({ timeout: 90_000 })
+  check('a click on it was refused, even with the whole screen given', resultOf('never', 3)?.isError === true && /never controlled/.test(resultOf('never', 3)?.text ?? ''), resultOf('never', 3)?.text)
+  check('and did not arrive', (await tp.evaluate(() => window.clicks)) === clicksNever)
+  const neverShot = pictures().at(-1)
+  const buttonInPicture = inPicture(plan.button)
+  check('and it is painted black in what the assistant saw', !!neverShot && (await brightness(neverShot, buttonInPicture)) < 40, neverShot ? String(await brightness(neverShot, buttonInPicture)) : 'no picture')
+  await saveSettings(page, { desktopNeverApps: [] })
+
   console.log('\n# Stop, from the bar and from the keyboard')
   await newChat()
   await send('ROUND:stopbutton use the screen')
@@ -244,12 +452,36 @@ try {
   await sleep(800)
   check('and takes the bar away', windowCount() === 1)
   check('and the conversation says it was the stop key', /Ended: You pressed the stop key\./.test(await page.getByRole('group', { name: 'Desktop control' }).last().innerText()))
-  await saveSettings(page, { desktopControl: false })
+
+  console.log('\n# How long, the whole screen, and the list of recent grants')
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Desktop control' }).click()
+  const length = page.getByLabel('How long one yes lasts')
+  check('Settings offers how long one yes lasts, 15 minutes to start with', (await length.inputValue()) === '15')
+  const whole = page.getByRole('switch', { name: 'Let it ask for the whole screen' })
+  check('and whether it may ask for the whole screen, which is on to start with', (await whole.getAttribute('aria-checked')) === 'true')
+  const listText = await page.getByText('Recent times the assistant had the screen').locator('xpath=..').innerText()
+  check('and lists the recent times it had the screen, with why, what and how it ended', /Round hotkey/.test(listText) && /the whole main screen/.test(listText) && /You pressed the stop key./.test(listText) && /Round scoped/.test(listText) && /only the window “Desktop control target”/.test(listText), listText.slice(0, 400))
+  await length.selectOption('60')
+  await whole.click()
+  check('the whole screen can be switched off, and the length changed', (await whole.getAttribute('aria-checked')) === 'false' && (await length.inputValue()) === '60')
+  await page.keyboard.press('Escape')
+  await newChat()
+  await send('ROUND:wholeoff use the screen')
+  await page.getByText('Round wholeoff is over.').waitFor({ timeout: 60_000 })
+  check('with the whole screen off, a request that names no window is refused before any card', /not allowed control of the whole screen/.test(resultOf('wholeoff', 1)?.text ?? '') && (await page.getByRole('group', { name: 'Approval needed' }).count()) === 0, resultOf('wholeoff', 1)?.text)
+  await newChat()
+  await send('ROUND:hour use the screen')
+  const hourCard = await answerCard('Allow')
+  check('naming a window still works, and the card says it lasts 1 hour', /use “Desktop control target” for 1 hour/.test(hourCard), hourCard.slice(0, 200))
+  await page.getByText('Round hour is over.').waitFor({ timeout: 60_000 })
+  await saveSettings(page, { desktopControl: false, desktopMinutes: 15, desktopWholeScreen: true })
 } catch (err) {
   console.error(err)
   failures.push('the script itself failed')
   await app?.page.screenshot({ path: join(out, 'desktop-failure.png') }).catch(() => undefined)
 } finally {
+  await cover?.close().catch(() => undefined)
   await target?.close().catch(() => undefined)
   await app?.close().catch(() => undefined)
   await stub?.stop().catch(() => undefined)

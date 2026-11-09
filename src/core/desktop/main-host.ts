@@ -1,4 +1,4 @@
-import type { DesktopAction, DesktopBarState, DesktopResult, DesktopShot } from '@shared/desktop'
+import type { DesktopAction, DesktopBarState, DesktopResult, DesktopShot, Inspection, WindowInfo } from '@shared/desktop'
 import type { DesktopHost } from './control'
 
 /**
@@ -44,6 +44,18 @@ export class MainDesktopHost implements DesktopHost {
 
   act(action: DesktopAction): Promise<DesktopResult> {
     return this.call<DesktopResult>('act', action, 30_000)
+  }
+
+  windows(never: string[]): Promise<WindowInfo[]> {
+    return this.call<WindowInfo[]>('windows', { never })
+  }
+
+  focus(id: number): Promise<{ ok: true; title: string; app: string } | { ok: false; reason: string }> {
+    return this.call('focus', { id })
+  }
+
+  inspect(action: DesktopAction): Promise<Inspection> {
+    return this.call<Inspection>('inspect', action)
   }
 
   async bar(state: DesktopBarState | null): Promise<void> {

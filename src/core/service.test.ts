@@ -235,6 +235,26 @@ describe('sessions and their log', () => {
     first.service.close()
     expect(setup(first.store).api['app.bootstrap']().settings.sidebarWidth).toBe(280)
   })
+
+  it('keeps the settings of desktop control, and refuses a length of time that is not one of the choices', () => {
+    const first = setup()
+    const settings = first.api['app.bootstrap']().settings
+    expect([settings.desktopControl, settings.desktopMinutes, settings.desktopWholeScreen, settings.desktopNeverApps]).toEqual([false, 15, true, []])
+    first.api['settings.patch']({ desktopMinutes: 60, desktopWholeScreen: false, desktopNeverApps: [' KeePass ', 'my bank', 'keepass', ''] })
+    expect(() => first.api['settings.patch']({ desktopMinutes: 7 })).toThrow()
+    expect(() => first.api['settings.patch']({ desktopNeverApps: 'keepass' as never })).toThrow()
+    expect(() => first.api['settings.patch']({ desktopNeverApps: new Array(51).fill('x') })).toThrow()
+    first.service.close()
+    const again = setup(first.store).api['app.bootstrap']().settings
+    expect([again.desktopMinutes, again.desktopWholeScreen, again.desktopNeverApps]).toEqual([60, false, ['KeePass', 'my bank', 'keepass']])
+  })
+
+  it('lists the recent times the assistant had the screen, newest first', () => {
+    const first = setup()
+    expect(first.api['desktop.grants']()).toEqual([])
+    first.store.setSetting('desktopGrants', [{ at: 1 }, { at: 2 }])
+    expect(first.api['desktop.grants']().map((g) => g.at)).toEqual([2, 1])
+  })
 })
 
 describe('delete and undo', () => {

@@ -22,7 +22,8 @@ const core = new CoreProcess()
 // The assistant's use of this computer's mouse and keyboard (docs/DESKTOP_CONTROL_PLAN.md). Core decides; this does it, and shows the bar.
 const desktop = new DesktopService({
   stop: (why) => core.send({ type: 'desktop-stop', why }),
-  extend: () => core.send({ type: 'desktop-extend' })
+  extend: () => core.send({ type: 'desktop-extend' }),
+  resume: () => core.send({ type: 'desktop-resume' })
 })
 core.setDesktop(desktop)
 const flushed = new WeakSet<BrowserWindow>()

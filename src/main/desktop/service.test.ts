@@ -1,6 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DesktopBarState, Rect } from '@shared/desktop'
 
+interface Rec {
+  id: number
+  ownerId: number
+  pid: number
+  title: string
+  app: string
+  bounds: Rect
+  minimized: boolean
+}
+
 // The real service, with the screen, the windows, the keyboard hook and the input stood in for. What is checked is what the service
 // decides: what it refuses, what it converts, and that it is always possible to stop it.
 const s = vi.hoisted(() => {
@@ -20,10 +30,14 @@ const s = vi.hoisted(() => {
     registerOk: true,
     barFails: false,
     bar: null as unknown,
-    barHandlers: undefined as undefined | { onStop(): void; onExtend(): void },
+    barHandlers: undefined as undefined | { onStop(): void; onExtend(): void; onResume(): void },
     capture: { shot: { mime: 'image/jpeg' as const, data: 'AAAA', width: 1500, height: 844 }, geometry: { origin: { x: 0, y: 0 }, scaleX: 1.28, scaleY: 1.28, width: 1500, height: 844 } },
+    captures: [] as unknown[][],
     calls: [] as string[],
-    driverFails: false
+    driverFails: false,
+    cursor: { x: 0, y: 0 },
+    // What Windows says: the windows topmost first, who has the keyboard, and what is under a click or in the field with the keyboard.
+    win: { list: [] as Rec[], fg: null as Rec | null, fields: [{}] as { label?: string; password?: boolean }[], fieldCalls: 0, element: {} as { label?: string; password?: boolean }, focusOk: true, focused: 0 }
   }
 })
 
@@ -37,12 +51,12 @@ vi.mock('electron', () => ({
     },
     unregister: (key: string) => void s.shortcuts.delete(key)
   },
-  screen: { dipToScreenRect: (_w: unknown, r: Rect) => r }
+  screen: { dipToScreenRect: (_w: unknown, r: Rect) => r, getPrimaryDisplay: () => ({ id: 1, bounds: { x: 0, y: 0, width: 1920, height: 1080 } }) }
 }))
 
 vi.mock('./bar', () => ({
   ControlBar: class {
-    constructor(handlers: { onStop(): void; onExtend(): void }) {
+    constructor(handlers: { onStop(): void; onExtend(): void; onResume(): void }) {
       s.barHandlers = handlers
     }
     windows() {
@@ -62,13 +76,37 @@ vi.mock('./bar', () => ({
   }
 }))
 
-vi.mock('./screen', () => ({ captureMain: async () => s.capture }))
+vi.mock('./screen', () => ({
+  capture: async (...args: unknown[]) => {
+    s.captures.push(args)
+    return s.capture
+  },
+  displayOf: () => ({ id: 1 })
+}))
+
+vi.mock('./windows', () => ({
+  createWindowsApi: () => ({
+    list: () => s.win.list,
+    foreground: () => s.win.fg,
+    at: (p: { x: number; y: number }) => s.win.list.find((w) => p.x >= w.bounds.x && p.y >= w.bounds.y && p.x < w.bounds.x + w.bounds.width && p.y < w.bounds.y + w.bounds.height) ?? null,
+    byId: (id: number) => s.win.list.find((w) => w.id === id) ?? null,
+    focus: (id: number) => {
+      s.win.focused = id
+      return s.win.focusOk
+    },
+    focusedField: () => s.win.fields[Math.min(s.win.fieldCalls++, s.win.fields.length - 1)] ?? {},
+    elementAt: () => s.win.element
+  })
+}))
 
 vi.mock('./driver', async (original) => ({
   ...(await original<typeof import('./driver')>()),
   createWindowsDriver: () => ({
-    cursor: () => ({ x: 0, y: 0 }),
-    move: (p: { x: number; y: number }) => void s.calls.push(`move ${p.x},${p.y}`),
+    cursor: () => s.cursor,
+    move: (p: { x: number; y: number }) => {
+      s.cursor = p
+      s.calls.push(`move ${p.x},${p.y}`)
+    },
     button: (b: string, down: boolean) => {
       if (s.driverFails && !down) throw new Error('stuck')
       s.calls.push(`${b} ${down ? 'down' : 'up'}`)
@@ -96,10 +134,22 @@ const fakeWindow = (bounds: Rect, focused = false) => ({
 // Celeste's window covers the left of the screen; its Allow button is at (500, 400). The bar is at the top.
 const CELESTE: Rect = { x: 0, y: 0, width: 900, height: 700 }
 const BAR: Rect = { x: 700, y: 12, width: 520, height: 132 }
-const state: DesktopBarState = { sessionId: 's1', until: Date.now() + 900_000, lines: [] }
+const state: DesktopBarState = { sessionId: 's1', until: Date.now() + 900_000, lines: [], scope: { kind: 'screen' }, never: [], paused: null }
+const rec = (id: number, title: string, app: string, bounds: Rect, over: Partial<Rec> = {}): Rec => ({ id, ownerId: id, pid: 5000 + id, title, app, bounds, minimized: false, ...over })
+// Programs, topmost first. Their screen positions are chosen so that a point in the picture (1.28 screen pixels each) lands in only one.
+const NOTEPAD = rec(10, 'notes.txt - Notepad', 'notepad', { x: 1000, y: 200, width: 640, height: 480 })
+const SAVE_AS = rec(11, 'Save As', 'notepad', { x: 1100, y: 300, width: 300, height: 200 }, { ownerId: 10 })
+const BROWSER = rec(20, 'Inbox - Mail', 'chrome', { x: 1000, y: 800, width: 500, height: 200 })
+const VAULT = rec(30, 'KeePass', 'keepass', { x: 1700, y: 100, width: 200, height: 300 })
+// Where those are in the picture.
+const IN_NOTEPAD = { x: 900, y: 300 }
+const IN_BROWSER = { x: 900, y: 700 }
+const IN_VAULT = { x: 1360, y: 150 }
+const scoped = (scope: DesktopBarState['scope'], never: string[] = []): DesktopBarState => ({ ...state, scope, never })
 
 let stops: string[]
 let extended: number
+let resumed: number
 let service: DesktopService
 const call = (method: string, arg?: unknown) => service.handle(method, arg)
 // The picture is 1500 wide for a 1920 screen: a point in it is 1.28 screen pixels per picture pixel.
@@ -116,7 +166,11 @@ beforeEach(() => {
   s.driverFails = false
   stops = []
   extended = 0
-  service = new DesktopService({ stop: (why) => stops.push(why), extend: () => void extended++ })
+  s.captures = []
+  s.cursor = { x: 0, y: 0 }
+  s.win = { list: [], fg: null, fields: [{}], fieldCalls: 0, element: {}, focusOk: true, focused: 0 }
+  resumed = 0
+  service = new DesktopService({ stop: (why) => stops.push(why), extend: () => void extended++, resume: () => void resumed++ })
 })
 
 describe('starting', () => {
@@ -316,5 +370,268 @@ describe('closing', () => {
     await call('bar', state)
     expect(service.owns(bar as never)).toBe(true)
     expect(service.owns(s.windows[0] as never)).toBe(false)
+  })
+})
+
+describe('scope: one window, one program, or the whole screen', () => {
+  const act = (kind: 'click' | 'type' | 'key', at = IN_NOTEPAD) =>
+    kind === 'click' ? call('act', { type: 'click', at, button: 'left', count: 1 }) : kind === 'type' ? call('act', { type: 'type', text: 'hello' }) : call('act', { type: 'key', keys: 'enter' })
+
+  beforeEach(() => {
+    s.win.list = [SAVE_AS, NOTEPAD, BROWSER, VAULT]
+    s.win.fg = NOTEPAD
+  })
+
+  describe('a window', () => {
+    beforeEach(async () => {
+      await call('bar', scoped({ kind: 'window', id: 10, title: NOTEPAD.title, app: 'notepad' }))
+      await call('screenshot')
+    })
+
+    it('clicks inside it, and types while it has the keyboard', async () => {
+      expect(await act('click')).toEqual({ ok: true })
+      expect(await act('type')).toEqual({ ok: true })
+      expect(await act('key')).toEqual({ ok: true })
+    })
+
+    it('refuses a click on another window, and says which and why', async () => {
+      const r = await act('click', IN_BROWSER)
+      expect(r).toMatchObject({ ok: false, reason: expect.stringContaining('Inbox - Mail') })
+      expect(r).toMatchObject({ reason: expect.stringContaining('outside what you were given') })
+      expect(s.calls).toEqual([])
+    })
+
+    it('refuses a click where there is no window at all', async () => {
+      expect(await act('click', { x: 100, y: 800 })).toMatchObject({ ok: false, reason: expect.stringContaining('not in any window') })
+    })
+
+    it('refuses a drag that ends outside, and a scroll over another window', async () => {
+      expect(await call('act', { type: 'drag', from: IN_NOTEPAD, to: IN_BROWSER })).toMatchObject({ ok: false })
+      expect(await call('act', { type: 'scroll', at: IN_BROWSER, dx: 0, dy: 3 })).toMatchObject({ ok: false })
+      expect(s.calls).toEqual([])
+    })
+
+    it('allows a dialog the window opened, which is owned by it', async () => {
+      expect(await act('click', { x: 1000, y: 300 })).toEqual({ ok: true }) // (1280, 384): inside Save As
+      s.win.fg = SAVE_AS
+      expect(await act('type')).toEqual({ ok: true })
+    })
+
+    it('refuses typing and keys while another window has the keyboard', async () => {
+      s.win.fg = BROWSER
+      expect(await act('type')).toMatchObject({ ok: false, reason: expect.stringContaining('The keyboard') })
+      expect(await act('key')).toMatchObject({ ok: false })
+      expect(s.calls).toEqual([])
+    })
+
+    it('refuses everything when the window has been closed', async () => {
+      s.win.list = [BROWSER]
+      expect(await act('click')).toMatchObject({ ok: false, reason: expect.stringContaining('has been closed') })
+      await expect(call('screenshot')).rejects.toThrow(/is closed/)
+    })
+
+    it('takes a picture of the window only, with everything else painted over', async () => {
+      s.captures = []
+      await call('screenshot')
+      const [, crop, redaction] = s.captures[0] as [unknown, Rect, { base: string; layers: { rect: Rect; show: boolean }[] }]
+      // The window and the dialog it owns, as one box.
+      expect(crop).toEqual({ x: 1000, y: 200, width: 640, height: 480 })
+      expect(redaction.base).toBe('hide')
+      // Bottom to top, so what is in front paints over what is behind. Only the window and its dialog are shown.
+      expect(redaction.layers.map((l) => l.show)).toEqual([false, false, true, true])
+      expect(redaction.layers[0]).toMatchObject({ rect: VAULT.bounds })
+    })
+
+    it('says so when the window is minimized instead of giving a picture of nothing', async () => {
+      s.win.list = [{ ...NOTEPAD, minimized: true }, BROWSER]
+      await expect(call('screenshot')).rejects.toThrow(/minimized or not open/)
+    })
+  })
+
+  describe('a program', () => {
+    beforeEach(async () => {
+      await call('bar', scoped({ kind: 'app', app: 'notepad' }))
+      await call('screenshot')
+    })
+
+    it('allows all its windows and nothing else', async () => {
+      expect(await act('click')).toEqual({ ok: true })
+      expect(await act('click', IN_BROWSER)).toMatchObject({ ok: false })
+    })
+
+    it('takes a picture of the whole display with the other programs painted over', async () => {
+      s.captures = []
+      await call('screenshot')
+      const [, crop, redaction] = s.captures[0] as [unknown, unknown, { base: string; layers: { show: boolean }[] }]
+      expect(crop).toBeUndefined()
+      expect(redaction.base).toBe('hide')
+      expect(redaction.layers.filter((l) => l.show).length).toBe(2)
+    })
+  })
+
+  describe('the never list', () => {
+    it('refuses a program on it even when the whole screen was given', async () => {
+      await call('bar', scoped({ kind: 'screen' }, ['keepass']))
+      await call('screenshot')
+      expect(await act('click', IN_VAULT)).toMatchObject({ ok: false, reason: expect.stringContaining('never controlled') })
+      expect(await act('click')).toEqual({ ok: true })
+      s.win.fg = VAULT
+      expect(await act('type')).toMatchObject({ ok: false })
+    })
+
+    it('matches a word in a window title too, in any case', async () => {
+      await call('bar', scoped({ kind: 'screen' }, ['INBOX']))
+      await call('screenshot')
+      expect(await act('click', IN_BROWSER)).toMatchObject({ ok: false })
+    })
+
+    it('paints it over in the picture of the whole screen, and leaves the rest', async () => {
+      await call('bar', scoped({ kind: 'screen' }, ['keepass']))
+      s.captures = []
+      await call('screenshot')
+      const [, , redaction] = s.captures[0] as [unknown, unknown, { base: string; layers: { rect: Rect; show: boolean }[] }]
+      expect(redaction.base).toBe('show')
+      expect(redaction.layers).toEqual([{ rect: VAULT.bounds, show: false }])
+    })
+
+    it('has no redaction at all when the screen is given and the list is empty', async () => {
+      await call('bar', scoped({ kind: 'screen' }))
+      s.captures = []
+      await call('screenshot')
+      expect((s.captures[0] as unknown[])[2]).toBeUndefined()
+    })
+
+    it('is checked when the person changes it in Settings, at the next update of the bar', async () => {
+      await call('bar', scoped({ kind: 'screen' }))
+      await call('screenshot')
+      expect(await act('click', IN_VAULT)).toEqual({ ok: true })
+      await call('bar', scoped({ kind: 'screen' }, ['keepass']))
+      expect(await act('click', IN_VAULT)).toMatchObject({ ok: false })
+    })
+  })
+
+  describe('the list of windows and bringing one to the front', () => {
+    beforeEach(() => {
+      s.win.list = [NOTEPAD, BROWSER, VAULT, rec(40, 'Celeste', 'electron', { x: 0, y: 0, width: 900, height: 700 }, { pid: process.pid })]
+    })
+
+    it('leaves out Celeste’s own windows and the never list, and says which is in front', async () => {
+      const list = (await call('windows', { never: ['keepass'] })) as { id: number; focused: boolean }[]
+      expect(list.map((w) => w.id)).toEqual([10, 20])
+      expect(list.find((w) => w.id === 10)?.focused).toBe(true)
+    })
+
+    it('only lists what is inside the scope while control is on', async () => {
+      await call('bar', scoped({ kind: 'app', app: 'chrome' }))
+      expect(((await call('windows', { never: [] })) as { id: number }[]).map((w) => w.id)).toEqual([20])
+    })
+
+    it('brings a window of the scope to the front', async () => {
+      await call('bar', scoped({ kind: 'screen' }))
+      expect(await call('focus', { id: 20 })).toEqual({ ok: true, title: 'Inbox - Mail', app: 'chrome' })
+      expect(s.win.focused).toBe(20)
+    })
+
+    it('refuses a window outside the scope, a never-list window, a Celeste window and one that is gone', async () => {
+      await call('bar', scoped({ kind: 'window', id: 10, title: NOTEPAD.title, app: 'notepad' }, ['keepass']))
+      expect(await call('focus', { id: 20 })).toMatchObject({ ok: false, reason: expect.stringContaining('outside what you were given') })
+      await call('bar', scoped({ kind: 'screen' }, ['keepass']))
+      expect(await call('focus', { id: 30 })).toMatchObject({ ok: false, reason: expect.stringContaining('never controlled') })
+      expect(await call('focus', { id: 40 })).toMatchObject({ ok: false, reason: expect.stringContaining('Celeste') })
+      expect(await call('focus', { id: 99 })).toMatchObject({ ok: false })
+      expect(s.win.focused).toBe(0)
+    })
+
+    it('says so when Windows will not bring it forward', async () => {
+      await call('bar', scoped({ kind: 'screen' }))
+      s.win.focusOk = false
+      expect(await call('focus', { id: 20 })).toMatchObject({ ok: false, reason: expect.stringContaining('did not bring') })
+    })
+
+    it('does nothing while control is not on', async () => {
+      expect(await call('focus', { id: 20 })).toMatchObject({ ok: false, reason: 'Control is not on.' })
+    })
+  })
+})
+
+describe('what is under an action', () => {
+  beforeEach(async () => {
+    s.win.list = [NOTEPAD]
+    await call('bar', state)
+    await call('screenshot')
+    s.win.fieldCalls = 0 // the picture asked once already
+  })
+
+  it('tells what a click would press', async () => {
+    s.win.element = { label: 'Delete', password: false }
+    expect(await call('inspect', { type: 'click', at: IN_NOTEPAD, button: 'left', count: 1 })).toEqual({ label: 'Delete', password: false })
+  })
+
+  it('looks twice at the field that has the keyboard before typing, because a page only describes itself when asked', async () => {
+    s.win.fields = [{}, { label: 'Password', password: true }]
+    expect(await call('inspect', { type: 'type', text: 'x' })).toEqual({ password: true, label: 'Password' })
+    expect(s.win.fieldCalls).toBe(2)
+  })
+
+  it('says it is not a password field when neither look says so', async () => {
+    s.win.fields = [
+      { label: 'Name', password: false },
+      { label: 'Name', password: false }
+    ]
+    expect(await call('inspect', { type: 'type', text: 'x' })).toMatchObject({ password: false })
+  })
+
+  it('looks at the field for Enter and Space, and at nothing for other keys and moves', async () => {
+    s.win.fields = [{ label: 'Send' }]
+    expect(await call('inspect', { type: 'key', keys: 'enter' })).toEqual({ label: 'Send' })
+    expect(await call('inspect', { type: 'key', keys: 'ctrl+c' })).toEqual({})
+    expect(await call('inspect', { type: 'move', at: IN_NOTEPAD })).toEqual({})
+    expect(await call('inspect', { nonsense: true })).toEqual({})
+  })
+
+  it('answers nothing while control is not on', async () => {
+    await call('bar', null)
+    expect(await call('inspect', { type: 'type', text: 'x' })).toEqual({})
+  })
+})
+
+describe('when the person moves the mouse', () => {
+  beforeEach(async () => {
+    await call('bar', state)
+    await call('screenshot')
+    await click(1000, 500)
+  })
+
+  it('holds the next action back and says why, so Core can pause', async () => {
+    s.cursor = { x: s.cursor.x + 200, y: s.cursor.y }
+    s.calls = []
+    expect(await click(1000, 500)).toMatchObject({ ok: false, moved: true })
+    expect(s.calls).toEqual([])
+  })
+
+  it('holds back typing too: the person is using the computer', async () => {
+    s.cursor = { x: 5, y: 700 }
+    expect(await call('act', { type: 'type', text: 'x' })).toMatchObject({ ok: false, moved: true })
+  })
+
+  it('does not take a small shift of the pointer for the person', async () => {
+    s.cursor = { x: s.cursor.x + 6, y: s.cursor.y }
+    expect(await click(1000, 500)).toEqual({ ok: true })
+  })
+
+  it('carries on from where the mouse is when the person presses Continue', async () => {
+    s.cursor = { x: 5, y: 700 }
+    expect(await click(1000, 500)).toMatchObject({ moved: true })
+    s.barHandlers?.onResume()
+    expect(resumed).toBe(1)
+    expect(await click(1000, 500)).toEqual({ ok: true })
+  })
+
+  it('forgets where the mouse was when control ends, so the next time starts clean', async () => {
+    await call('bar', null)
+    s.cursor = { x: 5, y: 700 }
+    await call('bar', state)
+    await call('screenshot')
+    expect(await click(1000, 500)).toEqual({ ok: true })
   })
 })

@@ -47,6 +47,12 @@ export interface AppSettings {
   ownPrograms: boolean
   /** The assistant may ask to use this computer's mouse and keyboard. Off until the person switches it on. */
   desktopControl: boolean
+  /** How long one yes to desktop control lasts, in minutes: 15, 60 or 720 ("until I stop it"). */
+  desktopMinutes: number
+  /** Whether the assistant may ask for the whole screen. Off: it must name a program or a window. */
+  desktopWholeScreen: boolean
+  /** Programs, or words in a window's title, that desktop control never sees or touches (a password manager, a bank). */
+  desktopNeverApps: string[]
   /** Models the person pinned to the top of the model menu, in the order they were pinned. */
   pinnedModels: string[]
   defaults: { model: string; approval: ApprovalMode; projectsFolder: string }
@@ -171,7 +177,7 @@ export type LogEvent =
   /** The assistant was allowed to use this computer's mouse and keyboard (see docs/DESKTOP_CONTROL_PLAN.md). `until` is when it ends unless extended. */
   | { type: 'desktop.started'; grantId: string; reason: string; until: number }
   /** One thing it did, or was refused (`ok` false). */
-  | { type: 'desktop.action'; grantId: string; text: string; ok: boolean; /** Set when the action was more time: when control now ends. */ until?: number }
+  | { type: 'desktop.action'; grantId: string; text: string; ok: boolean; /** A fact rather than an action: the person paused it, or let it carry on. */ note?: boolean; /** Set when the action was more time: when control now ends. */ until?: number }
   /** Control ended, and why. */
   | { type: 'desktop.ended'; grantId: string; why: string; actions: number }
   /** Chat: files the agent wrote in its private folder during the turn that just ended. `more` is how many further files are not listed. */
@@ -306,12 +312,29 @@ export interface UpdateInfo {
   newer: boolean
 }
 
+/** One time the assistant had control of the screen, for the list in Settings. */
+export interface DesktopGrantRecord {
+  /** When it started, in milliseconds since 1970. */
+  at: number
+  sessionId: string
+  reason: string
+  /** What it could use, in words. */
+  scope: string
+  /** How long it lasted. */
+  ms: number
+  actions: number
+  /** How it ended. */
+  why: string
+}
+
 /** The methods of Core. Return types are what the caller receives, wrapped in a Promise by the transport. */
 export interface CoreApi {
   'app.bootstrap': () => Bootstrap
   /** Asks GitHub which release is newest. Only when the person asks: Celeste never looks by itself. */
   'app.checkUpdate': () => Promise<UpdateInfo>
   'settings.patch': (patch: SettingsPatch) => AppSettings
+  /** The last times the assistant had the screen, newest first. */
+  'desktop.grants': () => DesktopGrantRecord[]
   'vendors.set': (id: VendorId, record: VendorRecord | null) => void
 
   /** Whether the vendor's agent is ready, without starting a sign-in. Starts its program if it is on this computer. */

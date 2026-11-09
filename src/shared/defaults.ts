@@ -13,6 +13,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoTitle: true,
   ownPrograms: true,
   desktopControl: false,
+  desktopMinutes: 15,
+  desktopWholeScreen: true,
+  desktopNeverApps: [],
   pinnedModels: [],
   defaults: { model: 'copilot-auto', approval: 'auto', projectsFolder: '' }
 }

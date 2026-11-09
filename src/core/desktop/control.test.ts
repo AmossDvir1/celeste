@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DESKTOP_LIMITS, type DesktopAction, type DesktopBarState, type DesktopResult } from '@shared/desktop'
+import { DESKTOP_LIMITS, PAUSED_APPROVAL, PAUSED_MOUSE, type DesktopAction, type DesktopBarState, type DesktopResult, type Inspection, type WindowInfo } from '@shared/desktop'
 import { DesktopControl, type DesktopHost, type DesktopLogEvent } from './control'
 
 class FakeHost implements DesktopHost {
@@ -10,6 +10,26 @@ class FakeHost implements DesktopHost {
   refuse: string | null = null
   crash = false
   barFails = false
+  windowList: WindowInfo[] = []
+  windowCalls: string[][] = []
+  focusResult: { ok: true; title: string; app: string } | { ok: false; reason: string } = { ok: true, title: 'Notes', app: 'notepad' }
+  focused: number[] = []
+  inspection: Inspection = {}
+  inspected: DesktopAction[] = []
+  /** How many of the next actions say the person moved the mouse. */
+  moved = 0
+  async windows(never: string[]) {
+    this.windowCalls.push(never)
+    return this.windowList
+  }
+  async focus(id: number) {
+    this.focused.push(id)
+    return this.focusResult
+  }
+  async inspect(action: DesktopAction) {
+    this.inspected.push(action)
+    return this.inspection
+  }
   async unsupported() {
     return this.unsupportedReason
   }
@@ -19,6 +39,10 @@ class FakeHost implements DesktopHost {
   }
   async act(action: DesktopAction): Promise<DesktopResult> {
     if (this.crash) throw new Error('the driver fell over')
+    if (this.moved > 0) {
+      this.moved--
+      return { ok: false, reason: 'The person moved the mouse.', moved: true }
+    }
     this.acted.push({ action, at: Date.now() })
     return this.refuse ? { ok: false, reason: this.refuse } : { ok: true }
   }
@@ -33,6 +57,8 @@ let enabled: boolean
 let answer: boolean
 let cards: { sessionId: string; title: string; detail: string }[]
 let log: { sessionId: string; event: DesktopLogEvent }[]
+let neverList: string[]
+let pending: number
 let control: DesktopControl
 
 const make = () =>
@@ -43,6 +69,8 @@ const make = () =>
       cards.push({ sessionId, ...request })
       return answer
     },
+    never: () => neverList,
+    pendingApprovals: () => pending,
     record: (sessionId, event) => log.push({ sessionId, event }),
     clock: () => 'noon'
   })
@@ -66,6 +94,8 @@ beforeEach(() => {
   answer = true
   cards = []
   log = []
+  neverList = []
+  pending = 0
   control = make()
 })
 afterEach(() => {
@@ -80,6 +110,8 @@ describe('the tools', () => {
       'desktop_request_control',
       'desktop_release_control',
       'desktop_screenshot',
+      'desktop_list_windows',
+      'desktop_focus_window',
       'desktop_move',
       'desktop_click',
       'desktop_double_click',
@@ -125,7 +157,7 @@ describe('asking', () => {
     await grant()
     expect(cards).toHaveLength(1)
     expect(cards[0]?.detail).toContain('Change the default browser')
-    expect(cards[0]?.detail).toContain('see everything on your screen')
+    expect(cards[0]?.detail).toContain('see everything on your main screen')
     expect(cards[0]?.title).toContain('15 minutes')
     expect(host.bars.at(-1)).toMatchObject({ sessionId: 's1', lines: [] })
     expect(events('desktop.started')).toHaveLength(1)
@@ -182,6 +214,8 @@ describe('asking', () => {
       enabled: () => true,
       host,
       askConsent: () => new Promise<boolean>((resolve) => (release = resolve)),
+      never: () => [],
+      pendingApprovals: () => 0,
       record: (sessionId, event) => log.push({ sessionId, event })
     })
     const first = control.call('s1', 'desktop_request_control', { reason: 'x' })
@@ -434,5 +468,429 @@ describe('stopping', () => {
     control.stop('done')
     expect((await control.call('s1', 'desktop_request_control', { reason: 'again' })).isError).toBe(false)
     expect(cards).toHaveLength(2)
+  })
+})
+
+const WINDOWS: WindowInfo[] = [
+  { id: 10, title: 'notes.txt - Notepad', app: 'notepad', focused: true },
+  { id: 20, title: 'Inbox - Mail', app: 'chrome', focused: false }
+]
+
+describe('scope', () => {
+  beforeEach(() => {
+    host.windowList = WINDOWS
+  })
+
+  it('limits control to one window found by part of its title, and says so on the card, the bar and to the agent', async () => {
+    const r = await control.call('s1', 'desktop_request_control', { reason: 'Save the note', window: 'notepad' })
+    expect(r.isError).toBe(false)
+    expect(r.text).toContain('only the window “notes.txt - Notepad” (notepad)')
+    expect(cards[0]?.title).toBe('Let the assistant use “notes.txt - Notepad” for 15 minutes')
+    expect(cards[0]?.detail).toContain('and nothing else')
+    expect(cards[0]?.detail).not.toContain('see everything')
+    expect(host.bars.at(-1)?.scope).toEqual({ kind: 'window', id: 10, title: 'notes.txt - Notepad', app: 'notepad' })
+  })
+
+  it('limits control to one program', async () => {
+    const r = await control.call('s1', 'desktop_request_control', { reason: 'Mail', app: 'Chrome.exe' })
+    expect(r.isError).toBe(false)
+    expect(host.bars.at(-1)?.scope).toEqual({ kind: 'app', app: 'chrome' })
+    expect(cards[0]?.title).toBe('Let the assistant use chrome for 15 minutes')
+  })
+
+  it('without either, asks for the whole screen, warns more, and suggests one window', async () => {
+    await grant()
+    expect(host.bars.at(-1)?.scope).toEqual({ kind: 'screen' })
+    expect(cards[0]?.detail).toContain('ask it to work in one window')
+  })
+
+  it('refuses a window or a program that is not open before any card is raised, and does not say which windows are open', async () => {
+    const a = await control.call('s1', 'desktop_request_control', { reason: 'x', window: 'banking' })
+    expect(a).toMatchObject({ isError: true, text: expect.stringContaining('No open window has “banking”') })
+    expect(a.text).not.toContain('Inbox')
+    const b = await control.call('s1', 'desktop_request_control', { reason: 'x', app: 'photoshop' })
+    expect(b).toMatchObject({ isError: true, text: expect.stringContaining('No open window belongs to a program called “photoshop”') })
+    expect(cards).toEqual([])
+    expect(control.active()).toBe(false)
+  })
+
+  it('refuses both an app and a window at once', async () => {
+    expect(await control.call('s1', 'desktop_request_control', { reason: 'x', app: 'a', window: 'b' })).toMatchObject({ isError: true })
+    expect(cards).toEqual([])
+  })
+
+  it('does not offer a window that is on the never list: it asks the host without it', async () => {
+    neverList = ['mail']
+    await control.call('s1', 'desktop_request_control', { reason: 'x', window: 'inbox' })
+    expect(host.windowCalls[0]).toEqual(['mail'])
+  })
+
+  it('says on the card which programs stay hidden, and gives the list to the host with the bar', async () => {
+    neverList = ['keepass', 'my bank']
+    await grant()
+    expect(cards[0]?.detail).toContain('Hidden and never touched, whatever it asks: keepass, my bank.')
+    expect(host.bars.at(-1)?.never).toEqual(['keepass', 'my bank'])
+  })
+
+  it('reads the never list again whenever the bar is updated, so a change in Settings counts at once', async () => {
+    await grant()
+    neverList = ['vault']
+    await run('desktop_click', { x: 1, y: 1 })
+    expect(host.bars.at(-1)?.never).toEqual(['vault'])
+  })
+
+  it('does not start when the windows cannot be read', async () => {
+    host.windows = async () => {
+      throw new Error('no windows today')
+    }
+    expect(await control.call('s1', 'desktop_request_control', { reason: 'x', app: 'notepad' })).toMatchObject({ isError: true, text: expect.stringContaining('no windows today') })
+    expect(cards).toEqual([])
+  })
+})
+
+describe('the windows', () => {
+  beforeEach(async () => {
+    host.windowList = WINDOWS
+    await grant()
+  })
+
+  it('lists them with their numbers, and which is in front', async () => {
+    const r = await run('desktop_list_windows')
+    expect(r.isError).toBe(false)
+    expect(r.text).toBe('10: “notes.txt - Notepad” (notepad) — in front\n20: “Inbox - Mail” (chrome)')
+    expect(host.windowCalls.at(-1)).toEqual([])
+  })
+
+  it('says when there are none, and when they cannot be listed', async () => {
+    host.windowList = []
+    expect(await run('desktop_list_windows')).toMatchObject({ isError: false, text: expect.stringContaining('No window') })
+    host.windows = async () => {
+      throw new Error('boom')
+    }
+    expect(await run('desktop_list_windows')).toMatchObject({ isError: true, text: expect.stringContaining('boom') })
+  })
+
+  it('needs control, like every other tool', async () => {
+    control.stop('done')
+    expect(await control.call('s1', 'desktop_list_windows', {})).toMatchObject({ isError: true, text: expect.stringContaining('desktop_request_control') })
+    expect(await control.call('s1', 'desktop_focus_window', { id: 10 })).toMatchObject({ isError: true })
+    expect(host.focused).toEqual([])
+  })
+
+  it('brings a window to the front, and records it like any action', async () => {
+    const r = await run('desktop_focus_window', { id: 20 })
+    expect(r).toMatchObject({ isError: false, text: expect.stringContaining('Bring “Notes” to the front') })
+    expect(host.focused).toEqual([20])
+    expect(events('desktop.action').at(-1)?.event).toMatchObject({ text: 'Bring “Notes” to the front', ok: true })
+  })
+
+  it('passes on a refusal and records it as refused', async () => {
+    host.focusResult = { ok: false, reason: 'That window is outside what you were given.' }
+    const r = await run('desktop_focus_window', { id: 20 })
+    expect(r).toMatchObject({ isError: true, text: 'Refused: That window is outside what you were given.' })
+    expect(events('desktop.action').at(-1)?.event).toMatchObject({ ok: false })
+  })
+
+  it('wants a whole number', async () => {
+    expect(await run('desktop_focus_window', { id: 'the mail one' })).toMatchObject({ isError: true, text: expect.stringContaining('Invalid arguments') })
+    expect(host.focused).toEqual([])
+  })
+})
+
+describe('passwords, and buttons that cannot be taken back', () => {
+  beforeEach(async () => grant())
+
+  it('does not type into a password field, says so, and records it as refused', async () => {
+    host.inspection = { password: true, label: 'Password' }
+    const r = await run('desktop_type', { text: 'hunter2' })
+    expect(r).toMatchObject({ isError: true, text: expect.stringContaining('password field') })
+    expect(host.acted).toEqual([])
+    expect(events('desktop.action').at(-1)?.event).toMatchObject({ ok: false })
+    // What it tried to type is a secret: it is not kept, and not shown on the bar either.
+    expect(JSON.stringify(log)).not.toContain('hunter2')
+    expect(host.bars.at(-1)?.lines).toEqual(['Refused: Type into a password field'])
+  })
+
+  it('types as normal into any other field, and when the system cannot say what it is', async () => {
+    host.inspection = { password: false, label: 'Name' }
+    expect((await run('desktop_type', { text: 'Dana' })).isError).toBe(false)
+    host.inspection = {}
+    expect((await run('desktop_type', { text: 'Dana' })).isError).toBe(false)
+    host.inspect = async () => {
+      throw new Error('UI Automation is not available.')
+    }
+    expect((await run('desktop_type', { text: 'Dana' })).isError).toBe(false)
+    expect(host.acted).toHaveLength(3)
+  })
+
+  it('asks the person before pressing a button called Delete, and presses it only on yes', async () => {
+    host.inspection = { label: 'Delete all my files' }
+    answer = true
+    const r = await run('desktop_click', { x: 1, y: 1 })
+    expect(r.isError).toBe(false)
+    expect(cards.at(-1)?.title).toBe('Let the assistant press “Delete all my files”')
+    expect(cards.at(-1)?.detail).toContain('cannot be taken back')
+    expect(host.acted).toHaveLength(1)
+  })
+
+  it('does not press it on no, and tells the assistant not to try again', async () => {
+    host.inspection = { label: 'Send' }
+    answer = false
+    const r = await run('desktop_click', { x: 1, y: 1 })
+    expect(r).toMatchObject({ isError: true, text: expect.stringContaining('did not allow pressing “Send”') })
+    expect(host.acted).toEqual([])
+    expect(events('desktop.action').at(-1)?.event).toMatchObject({ ok: false, text: expect.stringContaining('not allowed') })
+    expect(control.active('s1')).toBe(true)
+  })
+
+  it('does not ask about an ordinary button, a right click, or a key that presses nothing', async () => {
+    host.inspection = { label: 'Open' }
+    await run('desktop_click', { x: 1, y: 1 })
+    host.inspection = { label: 'Delete' }
+    await run('desktop_click', { x: 1, y: 1, button: 'right' })
+    await run('desktop_key', { keys: 'ctrl+c' })
+    await run('desktop_move', { x: 1, y: 1 })
+    expect(cards).toHaveLength(1) // only the card that started control
+    expect(host.acted).toHaveLength(4)
+  })
+
+  it('asks for Enter and Space as well, since they press what has the keyboard', async () => {
+    host.inspection = { label: 'Submit order' }
+    answer = false
+    expect((await run('desktop_key', { keys: 'enter' })).isError).toBe(true)
+    expect((await run('desktop_key', { keys: 'space' })).isError).toBe(true)
+    expect(cards).toHaveLength(3)
+    expect(host.acted).toEqual([])
+  })
+
+  it('shows on the bar that it is waiting for an answer while the question is open, and stops waiting after it', async () => {
+    host.inspection = { label: 'Buy now' }
+    let release: (v: boolean) => void = () => undefined
+    let asked = 0
+    control = new DesktopControl({
+      enabled: () => true,
+      host,
+      askConsent: (sessionId, request) => {
+        cards.push({ sessionId, ...request })
+        return ++asked === 1 ? Promise.resolve(true) : new Promise<boolean>((resolve) => (release = resolve))
+      },
+      never: () => [],
+      pendingApprovals: () => 0,
+      record: (sessionId, event) => log.push({ sessionId, event })
+    })
+    await grant()
+    const p = control.call('s1', 'desktop_click', { x: 1, y: 1 })
+    await vi.advanceTimersByTimeAsync(DESKTOP_LIMITS.minGapMs + 10)
+    expect(host.bars.at(-1)?.paused).toBe(PAUSED_APPROVAL)
+    release(true)
+    expect((await p).isError).toBe(false)
+    expect(host.bars.at(-1)?.paused).toBeNull()
+  })
+
+  it('does not end control when the person says no', async () => {
+    host.inspection = { label: 'Delete' }
+    answer = false
+    await run('desktop_click', { x: 1, y: 1 })
+    host.inspection = {}
+    expect((await run('desktop_click', { x: 2, y: 2 })).isError).toBe(false)
+  })
+})
+
+describe('the person’s own hand wins', () => {
+  beforeEach(async () => grant())
+
+  it('pauses when the person moved the mouse, shows it on the bar, and carries on after Continue with the same action', async () => {
+    host.moved = 1
+    const p = control.call('s1', 'desktop_click', { x: 4, y: 4 })
+    await vi.advanceTimersByTimeAsync(DESKTOP_LIMITS.minGapMs + 10)
+    expect(host.bars.at(-1)?.paused).toBe(PAUSED_MOUSE)
+    expect(host.acted).toEqual([])
+    control.resume()
+    await vi.advanceTimersByTimeAsync(500)
+    expect(await p).toMatchObject({ isError: false })
+    expect(host.acted.map((a) => a.action)).toEqual([{ type: 'click', at: { x: 4, y: 4 }, button: 'left', count: 1 }])
+    expect(host.bars.at(-1)?.paused).toBeNull()
+    expect(events('desktop.action').map((e) => (e.event as { text: string }).text)).toEqual(['You moved the mouse: paused', 'You pressed Continue', 'Click at (4, 4)'])
+    expect(events('desktop.action').slice(0, 2).map((e) => (e.event as { note?: boolean }).note)).toEqual([true, true])
+  })
+
+  it('makes the next calls wait while it is paused, and gives the agent a message if the person does not come back', async () => {
+    host.moved = 1
+    const first = control.call('s1', 'desktop_click', { x: 1, y: 1 })
+    await vi.advanceTimersByTimeAsync(DESKTOP_LIMITS.minGapMs + 10)
+    const second = control.call('s1', 'desktop_type', { text: 'a' })
+    await vi.advanceTimersByTimeAsync(61_000)
+    expect(await first).toMatchObject({ isError: true, text: expect.stringContaining('moved the mouse and has not pressed Continue') })
+    // The second waited its turn, and then waits for its own minute.
+    await vi.advanceTimersByTimeAsync(61_000)
+    expect(await second).toMatchObject({ isError: true, text: expect.stringContaining('has not pressed Continue') })
+    expect(host.acted).toEqual([])
+    // Still paused: Continue is still what the person has to press.
+    expect(host.bars.at(-1)?.paused).toBe(PAUSED_MOUSE)
+    control.resume()
+    expect((await run('desktop_click', { x: 1, y: 1 })).isError).toBe(false)
+  })
+
+  it('ends the wait when control ends', async () => {
+    host.moved = 1
+    const p = control.call('s1', 'desktop_click', { x: 1, y: 1 })
+    await vi.advanceTimersByTimeAsync(DESKTOP_LIMITS.minGapMs + 10)
+    control.stop('You pressed Stop.')
+    expect(await p).toMatchObject({ isError: true, text: 'Control has ended.' })
+    expect(host.acted).toEqual([])
+  })
+
+  it('ignores Continue when it is not paused', async () => {
+    control.resume()
+    expect(events('desktop.action')).toEqual([])
+  })
+
+  it('waits while a question in Celeste is open, and goes on when it is answered', async () => {
+    pending = 1
+    const p = control.call('s1', 'desktop_click', { x: 1, y: 1 })
+    await vi.advanceTimersByTimeAsync(DESKTOP_LIMITS.minGapMs + 10)
+    expect(host.acted).toEqual([])
+    expect(host.bars.at(-1)?.paused).toBe(PAUSED_APPROVAL)
+    pending = 0
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(await p).toMatchObject({ isError: false })
+    expect(host.acted).toHaveLength(1)
+    expect(host.bars.at(-1)?.paused).toBeNull()
+  })
+
+  it('gives the agent a message when the question is still open after a minute', async () => {
+    pending = 1
+    const p = control.call('s1', 'desktop_click', { x: 1, y: 1 })
+    await vi.advanceTimersByTimeAsync(61_000)
+    expect(await p).toMatchObject({ isError: true, text: expect.stringContaining('answer a question in Celeste') })
+    expect(host.acted).toEqual([])
+    expect(control.active('s1')).toBe(true)
+  })
+
+  it('does not count other chats’ questions', async () => {
+    const seen: string[] = []
+    control = new DesktopControl({
+      enabled: () => true,
+      host,
+      askConsent: async () => true,
+      never: () => [],
+      pendingApprovals: (sessionId) => {
+        seen.push(sessionId)
+        return sessionId === 'other' ? 5 : 0
+      },
+      record: (sessionId, event) => log.push({ sessionId, event })
+    })
+    await grant()
+    expect((await run('desktop_click', { x: 1, y: 1 })).isError).toBe(false)
+    expect(new Set(seen)).toEqual(new Set(['s1']))
+  })
+})
+
+describe('how long, the whole screen, and the list of grants', () => {
+  let length: number | undefined
+  let whole: boolean | undefined
+  let kept: unknown[]
+  const makeWith = () =>
+    new DesktopControl({
+      enabled: () => true,
+      host,
+      askConsent: async (sessionId, request) => {
+        cards.push({ sessionId, ...request })
+        return true
+      },
+      never: () => [],
+      duration: length === undefined ? undefined : () => length as number,
+      wholeScreen: whole === undefined ? undefined : () => whole as boolean,
+      logGrant: (entry) => kept.push(entry),
+      pendingApprovals: () => 0,
+      record: (sessionId, event) => log.push({ sessionId, event }),
+      clock: () => 'noon'
+    })
+  beforeEach(() => {
+    length = undefined
+    whole = undefined
+    kept = []
+  })
+
+  it('lasts as long as Settings says, and says so on the card', async () => {
+    length = 60 * 60_000
+    control = makeWith()
+    const before = Date.now()
+    await grant()
+    expect(cards[0]?.title).toBe('Let the assistant control this computer for 1 hour')
+    expect(host.bars.at(-1)?.until).toBeGreaterThanOrEqual(before + 60 * 60_000)
+    await vi.advanceTimersByTimeAsync(59 * 60_000)
+    // Nothing was done for five minutes, which ends it whatever the length.
+    expect(await control.call('s1', 'desktop_click', { x: 1, y: 1 })).toMatchObject({ isError: true, text: expect.stringContaining('nothing was done') })
+  })
+
+  it('stays on for the long choice as long as it is used, and the card says “until you stop it”', async () => {
+    length = DESKTOP_LIMITS.longGrantMs
+    control = makeWith()
+    await grant()
+    expect(cards[0]?.title).toBe('Let the assistant control this computer until you stop it')
+    for (let i = 0; i < 4; i++) {
+      await vi.advanceTimersByTimeAsync(4 * 60_000)
+      expect((await run('desktop_click', { x: 1, y: 1 })).isError).toBe(false)
+    }
+    expect(control.active('s1')).toBe(true)
+  })
+
+  it('names a window with the length too', async () => {
+    host.windowList = [{ id: 10, title: 'notes.txt - Notepad', app: 'notepad', focused: true }]
+    length = 60 * 60_000
+    control = makeWith()
+    await control.call('s1', 'desktop_request_control', { reason: 'x', window: 'notepad' })
+    expect(cards[0]?.title).toBe('Let the assistant use “notes.txt - Notepad” for 1 hour')
+  })
+
+  it('does not shorten a long grant when +15 min is pressed', async () => {
+    length = 60 * 60_000
+    control = makeWith()
+    await grant()
+    const before = host.bars.at(-1)?.until as number
+    control.extend()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(host.bars.at(-1)?.until).toBe(before)
+  })
+
+  it('refuses the whole screen when Settings does not allow it, before any card, and still allows one program or window', async () => {
+    whole = false
+    host.windowList = [{ id: 10, title: 'notes.txt - Notepad', app: 'notepad', focused: true }]
+    control = makeWith()
+    expect(await control.call('s1', 'desktop_request_control', { reason: 'x' })).toMatchObject({ isError: true, text: expect.stringContaining('not allowed control of the whole screen') })
+    expect(cards).toEqual([])
+    expect((await control.call('s1', 'desktop_request_control', { reason: 'x', app: 'notepad' })).isError).toBe(false)
+  })
+
+  it('keeps a record of each grant when it ends: when, why, what it could use, how long, how many actions, how it ended', async () => {
+    host.windowList = [{ id: 10, title: 'notes.txt - Notepad', app: 'notepad', focused: true }]
+    control = makeWith()
+    const start = Date.now()
+    await control.call('s1', 'desktop_request_control', { reason: 'Save the note', window: 'notepad' })
+    await run('desktop_click', { x: 1, y: 1 })
+    await vi.advanceTimersByTimeAsync(2 * 60_000)
+    control.stop('You pressed Stop.')
+    control.stop('again')
+    expect(kept).toEqual([{ at: start, sessionId: 's1', reason: 'Save the note', scope: 'only the window “notes.txt - Notepad” (notepad)', ms: expect.any(Number), actions: 1, why: 'You pressed Stop.' }])
+    expect((kept[0] as { ms: number }).ms).toBeGreaterThanOrEqual(2 * 60_000)
+  })
+
+  it('ends normally when keeping the record fails', async () => {
+    control = new DesktopControl({
+      enabled: () => true,
+      host,
+      askConsent: async () => true,
+      never: () => [],
+      logGrant: () => {
+        throw new Error('disk full')
+      },
+      pendingApprovals: () => 0,
+      record: (sessionId, event) => log.push({ sessionId, event })
+    })
+    await grant()
+    control.stop('done')
+    expect(control.active()).toBe(false)
+    expect(events('desktop.ended')).toHaveLength(1)
   })
 })

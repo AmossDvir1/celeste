@@ -9,6 +9,12 @@ All notable changes to Celeste. The format follows [Keep a Changelog](https://ke
 - The assistant can ask to see and use this computer's screen, mouse and keyboard, for tasks that have no command or tool. It is **off until you switch it on** in Settings, and even then it can do nothing until you press Allow on a card in the conversation.
 - It lasts 15 minutes in one chat. A bar stays on screen with **Stop** and **+15 min**, and **Ctrl+Alt+Esc** stops it at once from anywhere. It cannot click or type into Celeste's own windows, and Celeste's windows are left out of the pictures it sees.
 - Everything it does is listed in the conversation. What it sees on the screen goes to your AI vendor, so close anything private first.
+- It can be limited to **one window or one program**: the rest of the screen is painted black in what it sees, and clicks or typing anywhere else are refused. A window in front of the one it was given is refused too.
+- **Never touch these** (Settings, Desktop control): programs, or words in a window's title, that it never sees or touches, even when you let it use the whole screen.
+- It does not type into a **password field**, and it asks you again before pressing a button called Send, Buy, Delete, Allow and the like.
+- If you **move the mouse**, it pauses until you press Continue on the bar. It also waits while a question is open in Celeste.
+- New tools to list the open windows and bring one to the front.
+- Settings: how long one yes lasts (15 minutes, 1 hour, or until you stop it), whether it may ask for the whole screen, and a list of the recent times it had the screen.
 
 ## [1.0.0] - 2026-11-08
 

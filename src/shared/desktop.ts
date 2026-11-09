@@ -35,20 +35,45 @@ export interface DesktopShot {
   height: number
 }
 
-export type DesktopResult = { ok: true } | { ok: false; reason: string }
+/** `moved` is set when the action was held back because the person moved the mouse since the last action. */
+export type DesktopResult = { ok: true } | { ok: false; reason: string; moved?: true }
 
-/** What the control bar shows while control is on. */
+/** What the assistant may see and use: the whole main screen, one program's windows, or one window (and the dialogs it opens). */
+export type DesktopScope = { kind: 'screen' } | { kind: 'app'; app: string } | { kind: 'window'; id: number; title: string; app: string }
+
+/** A window on the screen, as the assistant is told about it. `id` is what `desktop_focus_window` takes. `app` is the program's name in lower case, without ".exe". */
+export interface WindowInfo {
+  id: number
+  title: string
+  app: string
+  focused: boolean
+}
+
+/** What is under an action: the name of the button or field it would press, and whether the field takes a password. */
+export interface Inspection {
+  label?: string
+  password?: boolean
+}
+
+/** What the control bar shows while control is on. It is also how Core tells the main process the rules of the grant. */
 export interface DesktopBarState {
   sessionId: string
   /** When control ends if nothing extends it, in milliseconds since 1970. */
   until: number
   /** The last few things done, newest last. */
   lines: string[]
+  scope: DesktopScope
+  /** Programs (or parts of a window title) that are never touched, from Settings. */
+  never: string[]
+  /** Why control is waiting for the person (they moved the mouse, an approval is open), or null. */
+  paused: string | null
 }
 
 export const DESKTOP_LIMITS = {
-  /** How long a grant lasts. */
+  /** How long a grant lasts, and how much the bar's +15 min adds. */
   grantMs: 15 * 60_000,
+  /** The longest "until I stop it" lasts, so a grant that is forgotten still ends. */
+  longGrantMs: 12 * 60 * 60_000,
   /** A grant with no action for this long ends. */
   idleMs: 5 * 60_000,
   /** The most actions in one grant. */
@@ -61,6 +86,20 @@ export const DESKTOP_LIMITS = {
   shotLongSide: 1500,
   barLines: 3
 } as const
+
+/** How long one yes lasts, in minutes: the choices in Settings. 720 is "until I stop it" (twelve hours at most, and still ends after five minutes of nothing). */
+export const DESKTOP_MINUTES = [15, 60, 720] as const
+
+/** "15 minutes", "1 hour", "until you stop it". */
+export function describeDuration(ms: number): string {
+  if (ms >= DESKTOP_LIMITS.longGrantMs) return 'until you stop it'
+  const minutes = Math.round(ms / 60_000)
+  return minutes === 60 ? '1 hour' : minutes % 60 === 0 ? `${minutes / 60} hours` : `${minutes} minutes`
+}
+
+/** Why control is waiting, as the control bar says it. The first has a Continue button; the second ends by itself when the question is answered. */
+export const PAUSED_MOUSE = 'You moved the mouse. Press Continue to let the assistant carry on, or Stop.'
+export const PAUSED_APPROVAL = 'Waiting for you to answer a question in Celeste. Nothing happens until you do.'
 
 /** The key that ends control at once, from anywhere. Celeste registers it; the assistant cannot press it (it is refused as a key). */
 export const DESKTOP_HOTKEY = 'Control+Alt+Esc'
@@ -168,6 +207,86 @@ export function describeAction(a: DesktopAction): string {
     case 'key':
       return `Press ${a.keys}`
   }
+}
+
+/* ---------- scope, the never list, and what needs a second yes ---------- */
+
+/** "C:\Program Files\KeePass\KeePass.exe" as "keepass". */
+export function appName(exePath: string): string {
+  const base = exePath.split(/[\\/]/).pop() ?? ''
+  return base.replace(/\.exe$/i, '').toLowerCase()
+}
+
+const normApp = (s: string) => s.trim().toLowerCase().replace(/\.exe$/, '')
+
+/** Whether a window is one of the programs or titles the person put on the never list. */
+export function neverMatches(never: string[], w: { app: string; title: string }): boolean {
+  const title = w.title.toLowerCase()
+  return never.some((entry) => {
+    const e = normApp(entry)
+    return e !== '' && (w.app === e || title.includes(e))
+  })
+}
+
+/** One line for the card, the bar and the conversation. */
+export function describeScope(scope: DesktopScope): string {
+  switch (scope.kind) {
+    case 'screen':
+      return 'the whole main screen'
+    case 'app':
+      return `only the windows of ${scope.app}`
+    case 'window':
+      return `only the window “${scope.title.length > 60 ? `${scope.title.slice(0, 60)}…` : scope.title}” (${scope.app})`
+  }
+}
+
+/**
+ * The scope the assistant asked for, matched against the windows that are open now (newest first, as the system lists them, and without
+ * Celeste's own and the never list's). It is not told which windows exist when none matches: their titles can be private.
+ */
+export function chooseScope(request: { app?: string; window?: string }, windows: WindowInfo[]): { ok: true; scope: DesktopScope } | { ok: false; reason: string } {
+  const app = request.app?.trim()
+  const title = request.window?.trim()
+  if (app && title) return { ok: false, reason: 'Give either an app or a window, not both.' }
+  if (title) {
+    const t = title.toLowerCase()
+    const w = windows.find((x) => x.title.toLowerCase().includes(t))
+    if (!w) return { ok: false, reason: `No open window has “${title}” in its title. Open the app first, or ask for the whole screen if the task really needs it.` }
+    return { ok: true, scope: { kind: 'window', id: w.id, title: w.title, app: w.app } }
+  }
+  if (app) {
+    const a = normApp(app)
+    const w = windows.find((x) => x.app === a) ?? windows.find((x) => x.app.startsWith(a))
+    if (!w) return { ok: false, reason: `No open window belongs to a program called “${app}”. Open the app first, or ask for the whole screen if the task really needs it.` }
+    return { ok: true, scope: { kind: 'app', app: w.app } }
+  }
+  return { ok: true, scope: { kind: 'screen' } }
+}
+
+/** Whether a window, by its program and title, is inside the scope. Owned windows (a dialog the program opened) are the same program. */
+export function inScope(scope: DesktopScope, w: { id: number; app: string; ownerId: number }): boolean {
+  switch (scope.kind) {
+    case 'screen':
+      return true
+    case 'app':
+      return w.app === scope.app
+    case 'window':
+      return w.id === scope.id || w.ownerId === scope.id
+  }
+}
+
+const CONSEQUENTIAL =
+  /\b(send|buy|purchase|pay|checkout|order|delete|remove|erase|discard|uninstall|install|format|reset|empty|confirm|submit|sign|transfer|post|publish|share|accept|agree|allow|grant|authori[sz]e|approve)\b/i
+
+/** Whether the name of a button or field is one whose press has a result that cannot be taken back. A net, not a guarantee. */
+export function isConsequential(label: string | undefined): boolean {
+  return !!label && label.length <= 200 && CONSEQUENTIAL.test(label)
+}
+
+/** Keys that press what has the keyboard (so what has it is checked against the list above). */
+export function pressesFocused(keys: string): boolean {
+  const p = parseKeys(keys)
+  return p.ok && (p.key === 'enter' || p.key === 'space') && !p.mods.includes('alt') && !p.mods.includes('win')
 }
 
 /* ---------- Celeste's own windows ---------- */

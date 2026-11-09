@@ -10,6 +10,7 @@ import {
   type CheckpointReview,
   type CorePush,
   type CreateSessionInput,
+  type DesktopGrantRecord,
   type DraftState,
   type LogEvent,
   type NewAttachment,
@@ -20,6 +21,7 @@ import {
   type VendorRecords
 } from '@shared/api'
 import { SIDEBAR_WIDTH } from '@shared/defaults'
+import { DESKTOP_MINUTES } from '@shared/desktop'
 import { nextStatus } from '@shared/status'
 import type { AttachmentRow, FileStore, SessionRow, Store } from './store'
 import type { Snapshots } from './snapshots'
@@ -98,7 +100,7 @@ const APPROVALS: ApprovalMode[] = ['auto', 'edits', 'ask', 'plan']
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const THEMES = ['dark', 'light', 'system']
 const VENDOR_IDS: VendorId[] = ['copilot', 'claude', 'openai', 'gemini']
-const SETTINGS_KEYS = ['theme', 'userName', 'wizardDone', 'sidebarCollapsed', 'sidebarWidth', 'autoTitle', 'ownPrograms', 'desktopControl', 'pinnedModels', 'defaults'] as const
+const SETTINGS_KEYS = ['theme', 'userName', 'wizardDone', 'sidebarCollapsed', 'sidebarWidth', 'autoTitle', 'ownPrograms', 'desktopControl', 'desktopMinutes', 'desktopWholeScreen', 'desktopNeverApps', 'pinnedModels', 'defaults'] as const
 const MAX_PINNED = 100
 const TRANSCRIPT_LIMIT = 24_000
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
@@ -183,6 +185,7 @@ export class SessionService {
   readonly api: SessionApi = {
     'app.bootstrap': () => this.bootstrap(),
     'settings.patch': (patch) => this.patchSettings(patch),
+    'desktop.grants': () => [...((this.store.settings().desktopGrants as DesktopGrantRecord[] | undefined) ?? [])].reverse(),
     'vendors.set': (id, record) => this.setVendor(id, record),
 
     'sessions.create': (input) => this.create(input),
@@ -231,6 +234,9 @@ export class SessionService {
       autoTitle: (stored.autoTitle as boolean | undefined) ?? d.autoTitle,
       ownPrograms: (stored.ownPrograms as boolean | undefined) ?? d.ownPrograms,
       desktopControl: (stored.desktopControl as boolean | undefined) ?? d.desktopControl,
+      desktopMinutes: (stored.desktopMinutes as number | undefined) ?? d.desktopMinutes,
+      desktopWholeScreen: (stored.desktopWholeScreen as boolean | undefined) ?? d.desktopWholeScreen,
+      desktopNeverApps: (stored.desktopNeverApps as string[] | undefined) ?? d.desktopNeverApps,
       pinnedModels: (stored.pinnedModels as string[] | undefined) ?? d.pinnedModels,
       defaults: { ...d.defaults, ...(stored.defaults as Partial<AppSettings['defaults']> | undefined) }
     }
@@ -262,6 +268,15 @@ export class SessionService {
     if (patch.autoTitle !== undefined) next.autoTitle = patch.autoTitle === true
     if (patch.ownPrograms !== undefined) next.ownPrograms = patch.ownPrograms === true
     if (patch.desktopControl !== undefined) next.desktopControl = patch.desktopControl === true
+    if (patch.desktopMinutes !== undefined) {
+      if (!(DESKTOP_MINUTES as readonly number[]).includes(patch.desktopMinutes)) throw new Error('Invalid length of time')
+      next.desktopMinutes = patch.desktopMinutes
+    }
+    if (patch.desktopWholeScreen !== undefined) next.desktopWholeScreen = patch.desktopWholeScreen === true
+    if (patch.desktopNeverApps !== undefined) {
+      if (!Array.isArray(patch.desktopNeverApps) || patch.desktopNeverApps.length > 50) throw new Error('Invalid list of programs')
+      next.desktopNeverApps = [...new Set(patch.desktopNeverApps.map((name) => text(name, 'program', 100).trim()).filter(Boolean))]
+    }
     if (patch.sidebarWidth !== undefined) {
       if (typeof patch.sidebarWidth !== 'number' || !Number.isFinite(patch.sidebarWidth)) throw new Error('Invalid sidebar width')
       next.sidebarWidth = Math.round(Math.min(SIDEBAR_WIDTH.max, Math.max(SIDEBAR_WIDTH.min, patch.sidebarWidth)))
@@ -759,6 +774,13 @@ export class SessionService {
     // Not tied to the running agent: the answer goes to whoever is waiting, not to the vendor.
     this.record(sessionId, { type: 'approval.requested', requestId, kind: request.kind, title: request.title, detail: request.detail }, { text: '' })
     return new Promise((resolve) => this.toolApprovals.set(requestId, { sessionId, resolve }))
+  }
+
+  /** How many questions in a session wait for the person: the agent's own approvals and questions, and Celeste's cards. */
+  pendingApprovals(sessionId: string): number {
+    let n = this.live.get(sessionId)?.pending.size ?? 0
+    for (const waiting of this.toolApprovals.values()) if (waiting.sessionId === sessionId) n++
+    return n
   }
 
   /** Says no to every approval a session is waiting on, so the calls behind them finish instead of hanging. */

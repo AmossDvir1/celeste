@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Bot, Database, Info, Monitor, MousePointer2, Moon, Palette, Plug, Settings as SettingsIcon, Sun, Laptop, X, Plug2 } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Modal } from '@/components/Dialog'
@@ -7,7 +7,7 @@ import { Button, IconButton, Kbd, Switch, TextInput } from '@/components/ui'
 import { APPROVAL_OPTIONS, VENDORS, VENDOR_ORDER } from '@/lib/vendors'
 import { useModels } from '@/stores/models'
 import { core, revealDataFolder } from '@/api'
-import type { UpdateInfo } from '@shared/api'
+import type { DesktopGrantRecord, UpdateInfo } from '@shared/api'
 import { useSessions } from '@/stores/sessions'
 import { useSettings, type ThemePref } from '@/stores/settings'
 import { useUi, type SettingsSection } from '@/stores/ui'
@@ -38,6 +38,58 @@ function Section({ title, description, children }: { title: string; description?
       {description && <p className="mt-1 text-sm text-ink-muted">{description}</p>}
       <div className="mt-6 space-y-6">{children}</div>
     </div>
+  )
+}
+
+/** The last times the assistant had the screen: when, what for, what it could use, how long, how many actions, how it ended. */
+function RecentGrants() {
+  const [grants, setGrants] = useState<DesktopGrantRecord[] | null>(null)
+  useEffect(() => {
+    let live = true
+    void core.call('desktop.grants').then((list) => live && setGrants(list), () => live && setGrants([]))
+    return () => {
+      live = false
+    }
+  }, [])
+  if (!grants?.length) return <p className="text-[13px] text-ink-faint">Recent times the assistant had the screen will be listed here.</p>
+  return (
+    <div className="space-y-1.5">
+      <div className="text-[13px] text-ink-muted">Recent times the assistant had the screen</div>
+      <ul className="space-y-1.5 text-[12.5px] leading-snug text-ink-muted">
+        {grants.slice(0, 8).map((g) => (
+          <li key={g.at} className="rounded-lg bg-field px-3 py-2">
+            <div className="text-ink">{g.reason}</div>
+            <div>
+              {new Date(g.at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })} · {g.scope} · {Math.max(1, Math.round(g.ms / 60_000))} min · {g.actions} {g.actions === 1 ? 'action' : 'actions'} · {g.why}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+/** Programs the assistant never sees or touches, whatever it was allowed. Saved when the box loses the keyboard, so a half-typed name is not saved. */
+function NeverApps() {
+  const saved = useSettings((st) => st.desktopNeverApps)
+  const set = useSettings((st) => st.set)
+  const [text, setText] = useState(saved.join(', '))
+  return (
+    <Field label="Never touch these" hint="Program names or words in a window's title, separated by commas. They are painted over in what the assistant sees, and clicks and typing into them are refused. Only as good as what you add.">
+      {(id) => (
+        <TextInput
+          id={id}
+          value={text}
+          placeholder="keepass, 1password, bitwarden, my bank"
+          onChange={(e) => setText(e.target.value)}
+          onBlur={() => {
+            const list = [...new Set(text.split(',').map((x) => x.trim()).filter(Boolean))].slice(0, 50)
+            setText(list.join(', '))
+            set({ desktopNeverApps: list })
+          }}
+        />
+      )}
+    </Field>
   )
 }
 
@@ -255,9 +307,24 @@ function Content({ section }: { section: SettingsSection }) {
           <Row title="Let the assistant ask to control this computer" description="Off by default. Even when this is on, it can do nothing until you press Allow on a card in the conversation.">
             <Switch label="Let the assistant ask to control this computer" checked={settings.desktopControl} onCheckedChange={(desktopControl) => settings.set({ desktopControl })} />
           </Row>
+          <Field label="How long one yes lasts" hint="After this it ends by itself, and it also ends after five minutes with nothing done. The bar's +15 min adds time. “Until I stop it” still ends after twelve hours.">
+            {(id) => (
+              <SelectField id={id} value={settings.desktopMinutes} onChange={(e) => settings.set({ desktopMinutes: Number(e.target.value) })} className="max-w-xs">
+                <option value={15}>15 minutes</option>
+                <option value={60}>1 hour</option>
+                <option value={720}>Until I stop it</option>
+              </SelectField>
+            )}
+          </Field>
+          <Row title="Let it ask for the whole screen" description="Off: it has to name one program or window, and the rest of the screen stays hidden from it. Recommended for anything that is not a quick job.">
+            <Switch label="Let it ask for the whole screen" checked={settings.desktopWholeScreen} onCheckedChange={(desktopWholeScreen) => settings.set({ desktopWholeScreen })} />
+          </Row>
+          <NeverApps />
+          <RecentGrants />
           <div className="space-y-2 text-[13px] leading-relaxed text-ink-muted">
             <p>When you allow it, it lasts 15 minutes in that one chat. A bar stays on screen with a Stop button, and Ctrl+Alt+Esc stops it at once from anywhere. It cannot click or type into Celeste's own windows, or press the stop key.</p>
-            <p>While it is on, the assistant can see everything on your screen and can click and type anywhere you can, so it could send a message, delete something or change a setting. What it sees is sent to your AI vendor, like any attachment. Celeste's checkpoints cannot undo a click.</p>
+            <p>It can be limited to one program or one window, which hides the rest of the screen from it and is what it is told to ask for. If you let it use the whole screen, it can see everything and click and type anywhere you can, so it could send a message, delete something or change a setting. What it sees is sent to your AI vendor, like any attachment. Celeste's checkpoints cannot undo a click.</p>
+            <p>It asks you again before it presses a button called Send, Buy, Delete, Allow and the like (a net, not a guarantee), it does not type into fields that Windows says take a password, and it pauses when you move the mouse.</p>
             <p>Websites, documents and emails on the screen can contain text that tries to steer it. For anything sensitive, close it first, or use a separate user account or a virtual machine, which is also what AI vendors advise for this kind of tool.</p>
             <p className="text-ink-faint">Works on Windows for now. It cannot control programs that run as an administrator, the sign-in screen or the lock screen.</p>
           </div>

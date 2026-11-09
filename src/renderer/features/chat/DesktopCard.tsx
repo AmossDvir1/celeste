@@ -1,4 +1,4 @@
-import { Check, MousePointer2, X } from 'lucide-react'
+import { Check, MousePointer2, Pause, X } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import type { TimelineItem } from '@/stores/types'
 
@@ -24,8 +24,8 @@ export function DesktopCard({ item }: { item: Extract<TimelineItem, { kind: 'des
           {hidden > 0 && <li className="text-ink-faint">… {hidden} earlier {hidden === 1 ? 'action' : 'actions'}</li>}
           {shown.map((a, i) => (
             <li key={i} className="flex items-start gap-2 text-ink">
-              {a.ok ? <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" /> : <X className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />}
-              <span className="min-w-0 break-words">{a.ok ? a.text : `Refused: ${a.text}`}</span>
+              {a.note ? <Pause className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ink-muted" /> : a.ok ? <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" /> : <X className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />}
+              <span className="min-w-0 break-words">{a.ok || a.note ? a.text : `Refused: ${a.text}`}</span>
             </li>
           ))}
         </ul>

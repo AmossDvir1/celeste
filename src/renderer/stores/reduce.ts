@@ -79,7 +79,7 @@ export function reduceEvent(s: Session, e: LogEvent, at: number): Session {
       return {
         ...s,
         items: s.items.map((it) =>
-          it.kind === 'desktop' && it.grantId === e.grantId ? { ...it, until: e.until ?? it.until, actions: e.until ? it.actions : [...it.actions, { text: e.text, ok: e.ok }] } : it
+          it.kind === 'desktop' && it.grantId === e.grantId ? { ...it, until: e.until ?? it.until, actions: e.until ? it.actions : [...it.actions, { text: e.text, ok: e.ok, note: e.note }] } : it
         )
       }
 

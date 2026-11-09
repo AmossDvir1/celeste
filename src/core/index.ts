@@ -240,6 +240,11 @@ async function start(): Promise<void> {
     enabled: () => db.settings().desktopControl === true,
     host: desktopHost,
     askConsent: (sessionId, request) => (service as SessionService).requestApproval(sessionId, { kind: 'other', ...request }),
+    never: () => (db.settings().desktopNeverApps as string[] | undefined) ?? [],
+    duration: () => ((db.settings().desktopMinutes as number | undefined) ?? 15) * 60_000,
+    wholeScreen: () => db.settings().desktopWholeScreen !== false,
+    logGrant: (entry) => db.setSetting('desktopGrants', [...((db.settings().desktopGrants as unknown[] | undefined) ?? []), entry].slice(-20)),
+    pendingApprovals: (sessionId) => (service as SessionService).pendingApprovals(sessionId),
     record: (sessionId, event) => (service as SessionService).recordDesktop(sessionId, event)
   })
   desktopRef = desktopControl
@@ -315,6 +320,8 @@ parent.on('message', (event) => {
     desktopRef?.stop(typeof (message as { why?: string }).why === 'string' ? ((message as { why: string }).why) : 'You pressed Stop.')
   } else if (message?.type === 'desktop-extend') {
     desktopRef?.extend()
+  } else if (message?.type === 'desktop-resume') {
+    desktopRef?.resume()
   } else if (message?.type === 'secret-reply' && typeof message.id === 'number') {
     waitingForSecret.get(message.id)?.(message.value ?? null)
     waitingForSecret.delete(message.id)

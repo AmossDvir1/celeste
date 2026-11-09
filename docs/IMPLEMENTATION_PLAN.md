@@ -1138,7 +1138,7 @@ Bring the Workflows tab back, empty and real: schema, runner, Tool and Agent ste
 
 **Features still to build, roughly in the order proposed**
 
-1. **Desktop mouse and keyboard control** (decision 15, [DESKTOP_CONTROL_PLAN.md](DESKTOP_CONTROL_PLAN.md)): chosen by the owner as the next thing (9 November 2026). **Step 0 (spike) and step 1 (the safe core, Windows, off by default) are built**; scoping, password and confirmation checks, macOS and Linux are the later steps.
+1. **Desktop mouse and keyboard control** (decision 15, [DESKTOP_CONTROL_PLAN.md](DESKTOP_CONTROL_PLAN.md)): chosen by the owner as the next thing (9 November 2026). **Step 0 (spike), step 1 (the safe core) and most of step 2 (scope by window or program, a never list, password fields, a second yes before Send/Delete/Buy and the like, a pause when the person moves the mouse) are built for Windows, off by default**; a setting for the stop key, macOS, Linux and the accessibility-tree tool are the later steps.
 2. **OpenAI and Gemini adapters** (their cards say "Coming soon"); Gemini first.
 3. **Mobile companion** (decisions 9 to 11, Phase 9). With no Apple account, **Android first**; iPhone and iPad wait for an Apple Developer account. Phone screen designs are still to be decided (decision 10). No push notifications in v1 (decision 11).
 4. Workflows later: branches, schedules, templates, "don't ask again" for approvals.
