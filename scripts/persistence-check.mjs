@@ -31,7 +31,8 @@ function inkPixels(picture) {
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
 
 const stub = await startStub()
-const open = () => launch({ width: 1440, height: 900, theme: null, profile, env: stub.env })
+// Copilot gets a data folder of its own, so a message sent without a model named never reaches a Copilot signed in on this computer.
+const open = () => launch({ width: 1440, height: 900, theme: null, profile, env: stub.env, copilotKnowsNoOne: true })
 const row = (page, name) => page.locator('div.group').filter({ has: page.getByRole('button', { name }) })
 const textbox = (page) => page.getByRole('textbox', { name: 'Message' })
 const sidebar = (page, name) => page.getByRole('button', { name })
@@ -116,10 +117,11 @@ try {
   await drag(400)
   check('dragged wider it stops at the limit, one and a half times the usual width', (await sidebarWidth(page)) === 348, String(await sidebarWidth(page)))
   await drag(-800)
-  check('dragged narrower it stops at its limit too', (await sidebarWidth(page)) === 160, String(await sidebarWidth(page)))
+  // The limits are SIDEBAR_WIDTH in src/shared/defaults.ts (192, 232, 348); an arrow key moves 16 pixels.
+  check('dragged narrower it stops at its limit too', (await sidebarWidth(page)) === 192, String(await sidebarWidth(page)))
   await handle.focus()
   for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowRight')
-  check('the arrow keys change it too, a step at a time', (await sidebarWidth(page)) === 240, String(await sidebarWidth(page)))
+  check('the arrow keys change it too, a step at a time', (await sidebarWidth(page)) === 272, String(await sidebarWidth(page)))
   check('a long session title is cut short with an ellipsis, not run into the menu button', await page.locator('aside[aria-label="Sessions"] button span.truncate').first().evaluate((el) => getComputedStyle(el).textOverflow === 'ellipsis'))
 
   await page.getByRole('button', { name: /^Revenue chat/ }).click()
@@ -171,7 +173,7 @@ try {
   page = app.page
   await ready(page)
   check('the wizard does not come back', (await page.getByRole('dialog', { name: 'Set up Celeste' }).count()) === 0)
-  check('the width of the session list is kept', (await sidebarWidth(page)) === 240, String(await sidebarWidth(page)))
+  check('the width of the session list is kept', (await sidebarWidth(page)) === 272, String(await sidebarWidth(page)))
   check('the theme is kept', (await page.evaluate(() => document.documentElement.dataset.theme)) === 'light')
   check('the name is kept', (await page.getByRole('heading', { level: 1 }).first().innerText()).includes('Dana'))
   check('the renamed session is there', (await sidebar(page, /^Revenue chat/).count()) > 0)
