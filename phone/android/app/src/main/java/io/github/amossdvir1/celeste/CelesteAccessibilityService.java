@@ -304,6 +304,56 @@ public class CelesteAccessibilityService extends AccessibilityService {
         return null;
     }
 
+    /** What the person would read as the label of the button at (x, y), read fresh from the screen: "" when there is none. */
+    String labelAt(int x, int y) {
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root == null) return "";
+        AccessibilityNodeInfo hit = null, n = root;
+        Rect r = new Rect();
+        // Down through the children under the point; the deepest tappable one is what a tap there presses.
+        for (int depth = 0; n != null && depth < 40; depth++) {
+            if (n.isClickable() || n.isLongClickable()) hit = n;
+            AccessibilityNodeInfo next = null;
+            for (int i = n.getChildCount() - 1; i >= 0 && next == null; i--) {
+                AccessibilityNodeInfo c = n.getChild(i);
+                if (c == null || !c.isVisibleToUser()) continue;
+                c.getBoundsInScreen(r);
+                if (r.contains(x, y)) next = c;
+            }
+            if (next == null && hit == null) hit = n;
+            n = next;
+        }
+        return hit != null ? labelOf(hit) : "";
+    }
+
+    /** The text and description of a node and what is inside it (a button's words are often in a child). */
+    static String labelOf(AccessibilityNodeInfo n) {
+        StringBuilder b = new StringBuilder();
+        collect(n, b, 0);
+        return b.toString().trim();
+    }
+
+    private static void collect(AccessibilityNodeInfo n, StringBuilder b, int depth) {
+        if (n == null || depth > 6 || b.length() > 200) return;
+        if (!n.isPassword()) {
+            if (n.getText() != null) b.append(n.getText()).append(' ');
+            if (n.getContentDescription() != null) b.append(n.getContentDescription()).append(' ');
+        }
+        for (int i = 0; i < n.getChildCount(); i++) collect(n.getChild(i), b, depth + 1);
+    }
+
+    /** Calls back once the app on screen is no longer `before` (a key's animation has finished), or after `maxMs`. */
+    void afterChange(String before, long minMs, long maxMs, Runnable done) {
+        long start = System.currentTimeMillis();
+        main.postDelayed(new Runnable() {
+            @Override public void run() {
+                long gone = System.currentTimeMillis() - start;
+                if (gone >= maxMs || !before.equals(foregroundPackage())) main.postDelayed(done, 250);
+                else main.postDelayed(this, 100);
+            }
+        }, minMs);
+    }
+
     /** A picture of the screen, scaled to 720 pixels wide, as base64 JPEG. Calls back with null when it cannot. */
     void screenshot(java.util.function.Consumer<String> done) {
         if (Build.VERSION.SDK_INT < 30) {

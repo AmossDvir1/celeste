@@ -72,14 +72,17 @@ Two lists, so nothing is lost: what is left in the phone app and its link to the
 
 ### In the phone app (and the bridge it talks to)
 
-**Check on the owner's real phone** (only they can; none of it is tried on a real phone yet):
-- touching the screen pauses control, and Continue on the phone lets the held request go on (emulator only so far; the emulator missed the first touch once, right after a fresh install)
-- Stop while a request is held
-- the second yes before buttons like Send, and the password-field refusal
-- the volume-down-three-times stop
-- replying to a real message notification
-- Wi-Fi discovery, and Chrome's handling of the APK download
-- the model picker with Copilot connected (checks never use a real Copilot account)
+**Checked on the owner's real phone** (Galaxy S24, Android 17, 9 November 2026):
+- ✅ touching the screen pauses control (pulling down the notification shade too), and Continue on the phone lets the held request go on (held 13 seconds, then answered)
+- ✅ Stop while a request is held: the held request is answered "the user pressed Stop"
+- ✅ the second yes before buttons like Send, by element number; ✅ the password-field refusal
+- ✅ the volume-down-three-times stop
+- ✅ Celeste's own app is refused (it is on the fixed never list); Home still works there, as the way out
+- ✅ Wi-Fi discovery: the app's own search found "Celeste on Amoss" at its Wi-Fi address
+- ✅ Chrome and the APK over plain `http` from the Wi-Fi: it warns the file "can be harmful" and offers **Download anyway**. The install page now says so in its steps.
+- ✅ the model picker with Copilot connected: the computer's models are listed, and a change sticks
+- Fixed after the check: a tap **by point** on a Send button did not ask again (only taps by element number did); it now reads the words on what is under the point. And the screen read straight after Home was still the closing app; `phone_key` now waits for the app on screen to change.
+- Not tried: replying to a real message notification (the owner chose to skip it, as it sends a real message).
 
 **Phone control, left over:**
 - turning the accessibility service off between grants
@@ -116,7 +119,7 @@ Two lists, so nothing is lost: what is left in the phone app and its link to the
 ### Before it ships
 
 1. **Away from home must use a Cloudflare relay, not Tailscale.** Tailscale asks every person to make a Tailscale account and install it on both devices: fine for people who already use it, but not an experience a public app can rely on. A relay makes the app work away from home with nothing to set up, and it can wake a closed app (section 7). Tailscale stays as the advanced option for people who already have it, and as what the owner uses while the app is experimental. The relay brings work of its own, listed in section 7: someone has to run it (a Cloudflare account of the project's), its free-tier limits are shared by every user (**Verify**, and it may need Cloudflare's paid plan if the app grows), it must carry only encrypted bytes with rate limits against abuse, and the privacy statement has to say it sees who is online and when. Decision P-6 is changed accordingly, and P-8 asks for the owner's go-ahead.
-2. **Every item in "Check on the owner's real phone" is checked**, phone control above all.
+2. **Every item in "Checked on the owner's real phone" is checked**, phone control above all (done on 9 November 2026, except replying to a real message notification).
 3. **A security review** of the bridge, the pairing, and the accessibility service (`/security-review`), with the plan's rails (5.1) as the checklist.
 4. **A signed APK from CI**, with updates that install over the old app.
 5. **The main-app list above is done**: at least the APK in releases, the secret-store key, the network checks and the docs.
@@ -286,7 +289,7 @@ Phone abilities send only their result (a notification's text, a location, a fil
 ### 6.1 Install and connect (start of A1)
 - An empty Capacitor app built locally (needs the JDK and Android SDK on this PC **Verify**) and in CI.
 - Served by Celeste on the Wi-Fi from the QR.
-- **Verify** whether Chrome warns about or blocks an APK downloaded over plain `http` from a private address. If it does: offer the GitHub Release link (`https`) on the same page, or serve the page over `https` with a certificate the app later pins.
+- **Checked** (Galaxy S24, Chrome, November 2026): Chrome warns that an APK downloaded over plain `http` from a private address "can be harmful", and offers **Download anyway**; it does not block it. The install page says so in its steps. An `https` GitHub Release link on the same page stays an option.
 - Installed on the owner's phone, finds the computer by mDNS (**Verify** on the owner's router; fallback: the computer's address is in the QR link, and the app can read it when opened from an App Link), and pairs.
 - Windows Firewall's first-run prompt for Electron (**Verify** the wording).
 - Exit: a message typed in the app appears in a chat on the computer, and the reply streams back.

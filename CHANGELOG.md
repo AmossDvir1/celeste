@@ -20,7 +20,7 @@ All notable changes to Celeste. The format follows [Keep a Changelog](https://ke
     - Touching the screen pauses it until you press Continue.
     - It never types into password fields, never touches password managers or Android's installer, and does nothing while the phone is locked.
     - **Apps Celeste never uses**: add your bank or anything private in the app. Celeste won't read their notifications or touch their screens.
-    - It asks again before buttons like Send, Pay or Delete.
+    - If you switch it on, it asks again before pressing buttons like Send, Pay or Delete.
 
 ## [1.1.0] - 2026-11-09
 

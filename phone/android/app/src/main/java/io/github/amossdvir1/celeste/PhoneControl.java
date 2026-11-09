@@ -248,10 +248,14 @@ final class PhoneControl {
                     if (s.onStop(x, y)) { Abilities.reply(line, id, false, "That spot is under Celeste's own Stop button, which only the user may press. Tap somewhere else."); return; }
                     s.tap(x, y, longPress, () -> Abilities.reply(line, id, true, (longPress ? "Long-pressed " : "Tapped ") + what + ". Call phone_screen to see what changed."));
                 });
-                String label = e != null ? e.text : "";
-                if (Abilities.controlConfirm(ctx) && RISKY.matcher(label).find()) {
-                    ask(ctx, line, id, "Let Celeste press “" + label + "”?", "In " + s.foregroundPackage() + ". Buttons like this can send, pay or delete something.", go,
-                            () -> Abilities.reply(line, id, false, "The user said no to pressing \"" + label + "\"."));
+                String under = s.labelAt(x, y);
+                String label = e != null && !e.text.isEmpty() ? e.text : under;
+                if (label.length() > 60) label = label.substring(0, 59) + "…";
+                String shown = label;
+                // By number or by point alike: the words on what is under the point decide whether it asks again.
+                if (Abilities.controlConfirm(ctx) && (RISKY.matcher(label).find() || RISKY.matcher(under).find())) {
+                    ask(ctx, line, id, "Let Celeste press “" + shown + "”?", "In " + s.foregroundPackage() + ". Buttons like this can send, pay or delete something.", go,
+                            () -> Abilities.reply(line, id, false, "The user said no to pressing \"" + shown + "\"."));
                 } else go.run();
                 return;
             }
@@ -279,8 +283,12 @@ final class PhoneControl {
                         : "recents".equals(k) ? android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_RECENTS
                         : "notifications".equals(k) ? android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_NOTIFICATIONS
                         : android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK;
+                String before = s.foregroundPackage();
                 boolean ok = s.performGlobalAction(g);
-                MAIN.postDelayed(() -> Abilities.reply(line, id, ok, ok ? "Pressed " + k + "." : "Android did not press " + k + "."), 600);
+                // Wait for the animation: read straight after Home, the screen is still the app that is closing.
+                Runnable done = () -> Abilities.reply(line, id, ok, ok ? "Pressed " + k + "." : "Android did not press " + k + ".");
+                if (ok) s.afterChange(before, 300, 1500, done);
+                else done.run();
                 return;
             }
             default:

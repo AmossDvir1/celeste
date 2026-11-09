@@ -636,6 +636,6 @@ ol{text-align:left;color:#aeb8d1;font-size:14px;padding-left:20px;margin:4px 0 0
 <p>Shared by <b>${computer}</b> on your Wi-Fi. Chat with Celeste from your phone, and answer what it asks.</p>
 ${apk ? `<div class="card"><b>Celeste</b><br><span style="color:#aeb8d1;font-size:14px">Version ${version}, the same as ${computer}</span></div>
 <a class="btn" href="/celeste.apk">Install</a>
-<ol><li>Android may ask once whether your browser can install apps. Switch it on, then go back.</li><li>Tap <b>Install</b>, then <b>Open</b>.</li><li>Celeste finds ${computer} by itself. Press <b>Allow</b> on the computer.</li></ol>`
+<ol><li>Chrome may say the file can be harmful, because it comes from your Wi-Fi and not from a store. It is the app ${computer} is sharing: tap <b>Download anyway</b>.</li><li>Android may ask once whether your browser can install apps. Switch it on, then go back.</li><li>Tap <b>Install</b>, then <b>Open</b>.</li><li>Celeste finds ${computer} by itself. Press <b>Allow</b> on the computer.</li></ol>`
   : `<div class="card">The app is not on this computer yet. Ask whoever set up Celeste, or build it from the project (phone/README.md).</div>`}
 </main></body></html>`
