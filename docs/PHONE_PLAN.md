@@ -68,7 +68,7 @@
   - typing into password fields (it says to ask the person)
   - the never list: Celeste itself, Android's installer and permission screens, common password managers and authenticators
   - anything while the phone is locked
-- **Asked again**: before buttons named Send, Pay, Buy, Delete, Install, Allow and the like.
+- **Asked again** (a switch under Phone control in This phone, **off by default**, the owner's choice on 10 November 2026, so one Allow covers the whole task): before buttons named Send, Pay, Buy, Delete, Install, Allow and the like.
 - **Screen text** is labelled as information, not instructions.
 - **The person's touch wins**: the Stop pill's window watches for touches outside it (`FLAG_WATCH_OUTSIDE_TOUCH`). A touch from the person pauses control: the border fades and Continue shows beside Stop (and on the notification). A request that arrives while paused is **held on the phone** (up to two minutes), not refused, so the assistant never has to ask in the chat (the first version refused, Claude asked in the chat, and Continue on the phone could not answer it). On Continue, reading the screen goes ahead; an action is answered "not done, look again", because the screen may have changed. Stop, or two minutes, ends the wait. Celeste's own gestures are told apart by time; touches while a card waits, for three seconds after one is answered, or in Celeste itself, don't pause. Each pause writes a line to the log (`CelesteControl`: the app on screen and the time since Celeste's last action), because the owner's first real task paused once with no clear cause (an Approve tap on a card is the suspect; one touch gives the pill's window exactly one outside-touch event, checked on the emulator). Celeste can't press Continue.
 - **The person's never list**: This phone → Apps Celeste never uses, a searchable list of the phone's apps. Those apps' notifications are left out, and control refuses their screens. Home, Back and Recents still work there, as the way out.
@@ -101,6 +101,12 @@ Two lists, so nothing is lost: what is left in the phone app and its link to the
 - turning the accessibility service off between grants
 - showing control's state in the computer's chat ("paused on the phone", "10 minutes left") beyond the tool rows
 - what is on screen in an app that is not on the never list goes to the AI vendor (the consent card says so); decide whether a "hide private fields" option is wanted
+- with "Ask again before Send, Pay or Delete" on, a tap on an empty spot reads the whole screen's text (`labelAt` falls back to the screen's root), so a word like "send" anywhere on screen can ask needlessly; stop at the deepest element under the point instead (found in review, 10 November 2026)
+- if control pauses with nobody touching the phone again, read the `CelesteControl` line in the phone's log (it names the app on screen and the time since Celeste's last action)
+
+**Abilities, small fixes (found in review, 10 November 2026):**
+- `phone_photos` shows up to 10 photos to the assistant in one answer, each under 2 MB, with no cap on the total; cap the total so one answer stays within what the AI vendors accept
+- `PhoneTools` remembers every chat that used the phone (to end a workflow step's requests), and only forgets workflow steps; forget chats too
 
 **More abilities (A2):**
 - ✅ location (once, when asked)
@@ -279,7 +285,7 @@ Phone control follows `DESKTOP_CONTROL_PLAN.md` section 3, adapted:
 | The person's own touch wins | A touch from the person pauses control until they tap Continue (spike 6.3: the hard part). |
 | Never these apps | Defaults: Celeste itself, Android's installer and its security and accessibility settings, recognised password managers and authenticator apps. The person adds their bank. Never-list apps aren't shown to the assistant. |
 | Passwords | Typing into a password field is refused ("ask the person to type it"). |
-| A second yes | Buttons named Send, Pay, Buy, Delete, Install, Allow and the like ask again. |
+| A second yes | Optional, off by default (the owner's choice, 10 November 2026): with "Ask again before Send, Pay or Delete" on, buttons named Send, Pay, Buy, Delete, Install, Allow and the like ask again. Off, the one grant covers the task, and Stop, the touch pause and the never list are the person's rails. |
 | Locked phone | Nothing happens while the phone is locked. |
 | Action log | Every action is in the chat; screenshots are not kept. |
 
@@ -406,7 +412,7 @@ Each step ends with tests, a real-app check, this plan updated with what was and
 | Google tightens the rules again | The remote and the abilities don't need accessibility; phone control is one part that can be turned off. Watch AppFunctions. |
 | The restricted-settings step puts people off | Asked only for phone control and notifications, with a picture guide; everything else works without it. |
 | Phone makers kill the background connection | Opt-in "Stay connected", the battery-optimisation prompt only then; otherwise the app connects when opened. |
-| Prompt injection from the screen or notifications | Approvals on the phone, a second yes for consequential buttons, never-list apps hidden, nothing while locked, notification text treated as data. |
+| Prompt injection from the screen or notifications | Approvals on the phone, never-list apps hidden, nothing while locked, notification text treated as data, the touch pause and Stop, and a second yes for consequential buttons for people who switch it on (off by default, so a grant to control the phone trusts the assistant with the task). |
 | Someone else on the Wi-Fi | Nothing answers before the handshake; a new phone needs **Allow** on the computer with matching emoji. |
 | Battery and data | Element list before screenshots, screenshots only when asked, a cap on actions per grant. |
 | The relay (to ship) is a service someone must run | A Cloudflare account of the project's; sealed messages so it sees no content; rate limits per pairing; free-tier limits watched (**Verify**); and the app still works on the home Wi-Fi if the relay is down. |
