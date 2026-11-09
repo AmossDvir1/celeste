@@ -4,6 +4,8 @@ All notable changes to Celeste. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-09
+
 ### Desktop control (Windows, off by default)
 
 - The assistant can ask to see and use this computer's screen, mouse and keyboard, for tasks that have no command or tool. It is **off until you switch it on** in Settings, and even then it can do nothing until you press Allow on a card in the conversation.
@@ -17,6 +19,11 @@ All notable changes to Celeste. The format follows [Keep a Changelog](https://ke
 - Workflows: a **Use the computer** step, which asks you on the run's card before it uses the screen, and `/computer` in the message box.
 - Workflows: each assistant step is now told what the steps before it were asked and what they produced, so “go to my friends list” after “go to my Facebook” knows which list. Before, every step started knowing only its own words.
 - Settings: how long one yes lasts (15 minutes, 1 hour, or until you stop it), whether it may ask for the whole screen, and a list of the recent times it had the screen.
+
+### Known limits
+
+- Desktop control works on Windows only; on a Mac the assistant is told it is not available yet.
+- It has been tried with a stand-in for the assistant on one screen at 100% scaling, not yet with a real assistant, on other monitors, at higher scaling, or with programs run as administrator.
 
 ## [1.0.0] - 2026-11-08
 
