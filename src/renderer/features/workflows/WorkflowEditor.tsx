@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Bot, Clock, FileText, Globe, History, MoreHorizontal, Play, Plug, Plus, Save, Share2, Sparkles, Terminal, Trash2 } from 'lucide-react'
+import { ArrowLeft, Bot, Clock, FileText, Globe, History, MoreHorizontal, MousePointer2, Play, Plug, Plus, Save, Share2, Sparkles, Terminal, Trash2 } from 'lucide-react'
 import { Background, Controls, MarkerType, ReactFlow, ReactFlowProvider, useReactFlow, type Edge, type Node, type NodeChange } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { core } from '@/api'
@@ -109,7 +109,8 @@ const ADD: { label: string; icon: typeof Terminal; step: NewStep }[] = [
   { label: 'Call a web address', icon: Globe, step: { type: 'tool', kind: 'http' } },
   { label: 'Read or write a file', icon: FileText, step: { type: 'tool', kind: 'file' } },
   { label: 'Use a tool from your tools', icon: Plug, step: { type: 'tool', kind: 'mcp' } },
-  { label: 'Ask the assistant', icon: Sparkles, step: { type: 'agent' } }
+  { label: 'Ask the assistant', icon: Sparkles, step: { type: 'agent' } },
+  { label: 'Use the computer', icon: MousePointer2, step: { type: 'agent', computer: true } }
 ]
 
 function AddStep() {

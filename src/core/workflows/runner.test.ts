@@ -391,7 +391,37 @@ describe('an agent step', () => {
     await until(run.id, 'waiting')
     approve(run.id)
     expect((await until(run.id, 'completed')).output).toBe('They are old.')
-    expect(asked[0]).toMatchObject({ prompt: 'Summarize: three old files', model: 'm1', approval: 'edits', cwd: folder })
+    expect(asked[0]).toMatchObject({ model: 'm1', approval: 'edits', cwd: folder })
+    // The step's own words come last, after a note of what the step before it did and found.
+    expect(asked[0]?.prompt.endsWith('Summarize: three old files')).toBe(true)
+    expect(asked[0]?.prompt).toContain('Ran the command: x')
+  })
+
+  it('knows what the steps before it did, so “it” and “there” mean what they were about', async () => {
+    const first: WorkflowNode = { id: 'open', type: 'agent', name: 'Open Facebook', prompt: 'go to my facebook through browser' }
+    const second: WorkflowNode = { id: 'friends', type: 'agent', name: 'Friends', prompt: 'go to my friends list' }
+    const { begin, until, approve, asked } = setup(chain(start(), first, second, end()), { agent: async (r) => (r.prompt.includes('friends list') ? 'On the friends list.' : 'Facebook is open in Edge.') })
+    const run = await begin()
+    await until(run.id, 'waiting')
+    approve(run.id)
+    expect((await until(run.id, 'completed')).output).toBe('On the friends list.')
+    // The first step has nothing before it, so its prompt is its own words.
+    expect(asked[0]?.prompt).toBe('go to my facebook through browser')
+    // The second is told what the first was asked and what it produced, then given its own words unchanged.
+    const second_ = asked[1]?.prompt ?? ''
+    expect(second_).toContain('go to my facebook through browser')
+    expect(second_).toContain('Facebook is open in Edge.')
+    expect(second_.endsWith('go to my friends list')).toBe(true)
+  })
+
+  it('is told only about steps that have run, with results filled in and a skipped step shown as nothing', async () => {
+    const bad = tool('bad', { kind: 'shell', command: 'fail' }, { onError: 'continue' })
+    const { begin, until, approve, asked } = setup(chain(start(), bad, agent({ prompt: 'Carry on' }), end()), { deps: { exec: async () => ok('', 1, 'no') } })
+    const run = await begin()
+    await until(run.id, 'waiting')
+    approve(run.id)
+    await until(run.id, 'completed')
+    expect(asked[0]?.prompt).toContain('Result: (nothing)')
   })
 
   it('shows the assistant’s own prompt on the card, with the approval mode it will use', async () => {
@@ -452,6 +482,66 @@ describe('an agent step', () => {
     runner.respondApproval(run.id, (card as { requestId: string }).requestId, false)
     expect((await until(run.id, 'completed')).output).toBe('did not')
     expect(allowed).toBe(false)
+  })
+
+  describe('a step that uses the computer', () => {
+    const computerStep = (computer: Extract<WorkflowNode, { type: 'agent' }>['computer'] = {}): WorkflowNode => ({ id: 'use', type: 'agent', name: 'Use the computer', prompt: 'open the friends list', computer })
+
+    it('is told to ask first, for the program or window it was given, and to give the computer back', async () => {
+      const { begin, until, approve, asked } = setup(chain(start(), computerStep({ app: 'chrome' }), end()))
+      const run = await begin()
+      await until(run.id, 'waiting')
+      approve(run.id)
+      await until(run.id, 'completed')
+      const prompt = asked[0]?.prompt ?? ''
+      expect(prompt).toContain('desktop_request_control with app “chrome”')
+      expect(prompt).toContain('desktop_release_control')
+      expect(prompt).toContain('Never type a password')
+      expect(prompt.endsWith('open the friends list')).toBe(true)
+    })
+
+    it('names a window or the whole screen in what it is told', async () => {
+      const w = setup(chain(start(), computerStep({ window: 'Inbox - Mail' }), end()))
+      const r1 = await w.begin()
+      await w.until(r1.id, 'waiting')
+      w.approve(r1.id)
+      await w.until(r1.id, 'completed')
+      expect(w.asked[0]?.prompt).toContain('with window “Inbox - Mail”')
+      const all = setup(chain(start(), computerStep({}), end()))
+      const r2 = await all.begin()
+      await all.until(r2.id, 'waiting')
+      all.approve(r2.id)
+      await all.until(r2.id, 'completed')
+      expect(all.asked[0]?.prompt).toContain('for the whole screen')
+    })
+
+    it('says on the card, before anything is done, that it will use the computer and what of it', async () => {
+      const { begin, until, events } = setup(chain(start(), computerStep({ window: 'Inbox - Mail' }), end()))
+      const run = await begin()
+      await until(run.id, 'waiting')
+      expect(events(run.id)[1]).toMatchObject({ type: 'approval.requested', actions: [{ kind: 'agent', text: expect.stringContaining('Use the computer (only the window “Inbox - Mail”; you are asked when it starts)') }] })
+    })
+
+    it('does not start when Desktop control is switched off, and says where to switch it on', async () => {
+      const { begin } = setup(chain(start(), computerStep(), end()), { deps: { desktop: { enabled: () => false, wholeScreen: () => true } } })
+      await expect(begin()).rejects.toThrow(/Desktop control is switched off/)
+    })
+
+    it('does not start with the whole screen when Settings does not allow it, but does with a program', async () => {
+      const deps = { desktop: { enabled: () => true, wholeScreen: () => false } }
+      await expect(setup(chain(start(), computerStep({}), end()), { deps }).begin()).rejects.toThrow(/does not allow/)
+      const ok = setup(chain(start(), computerStep({ app: 'chrome' }), end()), { deps })
+      expect((await ok.begin()).status).toBeDefined()
+    })
+
+    it('is not told about the computer when the step does not use it', async () => {
+      const { begin, until, approve, asked } = setup(chain(start(), agent(), end()))
+      const run = await begin()
+      await until(run.id, 'waiting')
+      approve(run.id)
+      await until(run.id, 'completed')
+      expect(asked[0]?.prompt).not.toContain('desktop_request_control')
+    })
   })
 
   it('stops waiting for a question when the run is cancelled', async () => {

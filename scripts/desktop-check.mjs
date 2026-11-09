@@ -69,7 +69,7 @@ const plan = {
 }
 /** A point on the screen as a point in a picture of one window only (the picture is that window's frame, scaled). */
 const inFrame = (p) => ({ x: Math.round(((p.x - plan.frame.x) * plan.shotW) / plan.frame.w), y: Math.round(((p.y - plan.frame.y) * plan.shotH) / plan.frame.h) })
-const requestArgs = { scoped: { window: 'Desktop control target' }, hour: { window: 'Desktop control target' }, never: {} }
+const requestArgs = { scoped: { window: 'Desktop control target' }, hour: { window: 'Desktop control target' }, wfcomputer: { window: 'Desktop control target' }, never: {} }
 const dims = (text) => {
   const m = /(\d+) by (\d+) pixels/.exec(text)
   plan.shotW = Number(m?.[1] ?? 0)
@@ -152,15 +152,27 @@ const rounds = {
   },
   wholeoff: () => [{ type: 'text', text: 'Round wholeoff is over.' }],
   hour: (s) => (s === 1 ? [tool('desktop_release_control', {})] : [{ type: 'text', text: 'Round hour is over.' }]),
+  wfone: () => [{ type: 'text', text: 'Facebook is open.' }],
+  wfcomputer: (s, text) => {
+    if (s === 1) return [tool('desktop_screenshot', {})]
+    if (s === 2) {
+      dims(text)
+      return [tool('desktop_click', inFrame(plan.button))]
+    }
+    if (s === 3) return [tool('desktop_release_control', {})]
+    return [{ type: 'text', text: 'Pressed it.' }]
+  },
   stopbutton: (s) => (s === 1 ? [tool('desktop_wait', { seconds: 10 })] : [{ type: 'text', text: 'Round stopbutton is over.' }]),
   hotkey: (s) => (s === 1 ? [tool('desktop_wait', { seconds: 10 })] : [{ type: 'text', text: 'Round hotkey is over.' }])
 }
 const script = (r) => {
   if (r.last.kind === 'text') {
-    const m = /ROUND:(\w+)/.exec(r.last.text)
+    const m = [...r.last.text.matchAll(/ROUND:(\w+)/g)].at(-1)
     if (!m) return echo(r)
     round = m[1]
     step = 0
+    // A step of a workflow that only talks answers at once.
+    if (round === 'wfone') return rounds.wfone()
     return [tool('desktop_request_control', { reason: `Round ${round}: press the button in the test window`, ...(requestArgs[round] ?? {}) })]
   }
   step++
@@ -175,7 +187,8 @@ let target
 let cover
 try {
   stub = await startStub(script)
-  app = await launch({ width: 900, height: 700, theme: null, profile, env: stub.env, entry: process.env.CELESTE_ENTRY || undefined })
+  // Copilot is given a data folder that knows no one: nothing in this check may reach a real account, and a step that names no model would otherwise pick it.
+  app = await launch({ width: 900, height: 700, theme: null, profile, env: stub.env, entry: process.env.CELESTE_ENTRY || undefined, copilotKnowsNoOne: true })
   const { page } = app
   await page.getByRole('dialog', { name: 'Set up Celeste' }).waitFor({ timeout: 20_000 })
   await saveSettings(page, { wizardDone: true, userName: 'Dana' })
@@ -426,6 +439,65 @@ try {
   const buttonInPicture = inPicture(plan.button)
   check('and it is painted black in what the assistant saw', !!neverShot && (await brightness(neverShot, buttonInPicture)) < 40, neverShot ? String(await brightness(neverShot, buttonInPicture)) : 'no picture')
   await saveSettings(page, { desktopNeverApps: [] })
+
+  console.log('\n# A workflow with a step that uses the computer, after a step it has to remember')
+  const wfFolder = mkdtempSync(join(tmpdir(), 'celeste-desktop-wf-'))
+  const wfClicks = await tp.evaluate(() => window.clicks)
+  const wfFrom = stub.requests.length
+  const wf = await page.evaluate(() =>
+    window.celeste.core.call('workflows.save', [
+      {
+        name: 'Open and press',
+        definition: {
+          nodes: [
+            { id: 'start', type: 'start', name: 'Start', inputs: [] },
+            { id: 'open', type: 'agent', name: 'Open the page', prompt: 'ROUND:wfone open the page', approval: 'auto', vendor: 'claude', model: 'claude:default' },
+            { id: 'press', type: 'agent', name: 'Press the button', prompt: 'ROUND:wfcomputer press the button there', approval: 'auto', vendor: 'claude', model: 'claude:default', computer: { window: 'Desktop control target' } },
+            { id: 'end', type: 'end', name: 'End' }
+          ],
+          edges: [{ from: 'start', to: 'open' }, { from: 'open', to: 'press' }, { from: 'press', to: 'end' }]
+        }
+      }
+    ])
+  )
+  const wfRun = await page.evaluate(([id, folder]) => window.celeste.core.call('workflows.run', [id, {}, { folder }]), [wf.id, wfFolder])
+  const answered = new Set()
+  const askedInRun = []
+  let wfStatus = ''
+  for (let i = 0; i < 600 && !['completed', 'failed', 'cancelled'].includes(wfStatus); i++) {
+    await sleep(300)
+    const got = await page.evaluate((id) => window.celeste.core.call('runs.get', [id]), wfRun.id)
+    wfStatus = got?.summary.status ?? ''
+    for (const item of got?.events ?? []) {
+      const e = item.event
+      if ((e.type === 'approval.requested' || e.type === 'agent.approval') && !answered.has(e.requestId)) {
+        answered.add(e.requestId)
+        askedInRun.push(e.type === 'agent.approval' ? e.title : 'the run')
+        const expected = e.type === 'approval.requested' || /^Let the assistant use “Desktop control target”/.test(e.title)
+        if (!expected) console.log('NOTE  refused something the assistant asked in the run: ' + e.title)
+        await page.evaluate(([run, req, allow]) => window.celeste.core.call('runs.respondApproval', [run, req, allow]), [wfRun.id, e.requestId, expected])
+      }
+    }
+  }
+  if (wfStatus !== 'completed') {
+    const got = await page.evaluate((id) => window.celeste.core.call('runs.get', [id]), wfRun.id)
+    const lastUser = (b) => { const m = [...(b?.messages ?? [])].reverse().find((x) => x.role === 'user'); const c = Array.isArray(m?.content) ? m.content : [{ type: 'text', text: String(m?.content ?? '') }]; return c.map((x) => (x.type === 'tool_result' ? 'RESULT ' : '') + JSON.stringify(x.text ?? x.content ?? '').slice(0, 90)).join(' + ') }
+    console.log('NOTE  what the stand-in was asked: ' + JSON.stringify(stub.requests.slice(wfFrom).map((r) => lastUser(r.body))))
+    console.log('NOTE  rounds seen by the stand-in: ' + JSON.stringify(results.filter((r) => r.round.startsWith('wf')).map((r) => r.round + ':' + r.step + ':' + r.text.slice(0, 80))))
+    console.log('NOTE  the run is ' + wfStatus + '; its events: ' + JSON.stringify((got?.events ?? []).map((x) => x.event.type + (x.event.nodeId ? ':' + x.event.nodeId : '') + (x.event.error ? ' ' + x.event.error : '') + (x.event.questions ? ' ' + JSON.stringify(x.event.questions).slice(0, 300) : ''))))
+  }
+  check('the run finished', wfStatus === 'completed', wfStatus)
+  check('the card asking to use the computer appeared in the run, naming the window', askedInRun.some((t) => /Let the assistant use “Desktop control target”/.test(t)), askedInRun.join(' | '))
+  check('and the step then pressed the button in that window', (await tp.evaluate(() => window.clicks)) === wfClicks + 1)
+  const wfBodies = JSON.stringify(stub.requests.map((r) => r.body))
+  check('the second step was told what the first was asked and found, so it knows what “there” is', /Result: Facebook is open\./.test(wfBodies) && /open the page/.test(wfBodies))
+  await sleep(800)
+  check('control ended with the step, and the bar is gone', windowCount() === 1)
+  try {
+    rmSync(wfFolder, { recursive: true, force: true })
+  } catch {
+    /* the run's program may still hold the folder for a moment; it is a temporary one */
+  }
 
   console.log('\n# Stop, from the bar and from the keyboard')
   await newChat()

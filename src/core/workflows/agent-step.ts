@@ -12,6 +12,11 @@ export function createAgentStepRunner(deps: {
   adapter: AdapterFactory
   /** Used when a step names neither vendor nor model: the first vendor that is ready, and a model of its own choosing. */
   defaults: () => Promise<{ vendor: VendorId; model: string }>
+  /**
+   * Desktop control asks the person on a card, and a step has no chat to show one in. While a step runs, its session is registered here
+   * with the way to ask the person in the run, so the card appears in the run instead, and control ends with the step.
+   */
+  desktop?: { register(sessionId: string, ask: (title: string, detail?: string) => Promise<boolean>): void; unregister(sessionId: string): void }
 }): AgentStepRunner {
   return {
     async run(req) {
@@ -29,6 +34,7 @@ export function createAgentStepRunner(deps: {
         attachmentPath: () => undefined
       }
       const session = deps.adapter(ctx)
+      deps.desktop?.register(ctx.sessionId, req.askApproval)
       const stop = () => void session.interrupt().catch(() => undefined)
       req.signal.addEventListener('abort', stop, { once: true })
       try {
@@ -59,6 +65,7 @@ export function createAgentStepRunner(deps: {
         throw new Error('The assistant stopped without answering.')
       } finally {
         req.signal.removeEventListener('abort', stop)
+        deps.desktop?.unregister(ctx.sessionId)
         await session.close().catch(() => undefined)
       }
     }

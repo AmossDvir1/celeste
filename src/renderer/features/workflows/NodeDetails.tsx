@@ -6,7 +6,7 @@ import { blankTool, moveStep, orderedNodes, referencesAvailable, removeStep, ren
 import { cn } from '@/lib/cn'
 import { Field, SelectField, TextArea } from '@/components/form'
 import { PanelCard } from '@/components/PanelCard'
-import { Button, Checkbox, IconButton, TextInput } from '@/components/ui'
+import { Button, Checkbox, IconButton, Switch, TextInput } from '@/components/ui'
 import { APPROVAL_OPTIONS, VENDORS } from '@/lib/vendors'
 import { useDevices } from '@/stores/devices'
 import { useMcp } from '@/stores/mcp'
@@ -229,6 +229,43 @@ function ToolForm({ node, def, patch }: { node: ToolNode; def: WorkflowDefinitio
   )
 }
 
+/** Whether the step may use this computer's screen, mouse and keyboard, and how much of it. */
+function ComputerSettings({ node, patch }: { node: AgentNode; patch: (change: Partial<AgentNode>) => void }) {
+  const on = !!node.computer
+  const kind = node.computer?.app !== undefined ? 'app' : node.computer?.window !== undefined ? 'window' : 'screen'
+  const value = node.computer?.app ?? node.computer?.window ?? ''
+  const set = (k: 'screen' | 'app' | 'window', v: string) => patch({ computer: k === 'screen' ? {} : k === 'app' ? { app: v } : { window: v } })
+  return (
+    <section className="space-y-3 rounded-xl border border-edge bg-field/50 p-3.5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-[14px] text-ink">Use the computer</div>
+          <p className="mt-0.5 text-xs text-ink-faint">The assistant may see the screen and use the mouse and keyboard in this step. You are asked when the step starts, and a bar with Stop stays on screen. Needs “Desktop control” switched on in Settings.</p>
+        </div>
+        <Switch label="Use the computer" checked={on} onCheckedChange={(v) => patch({ computer: v ? {} : undefined })} />
+      </div>
+      {on && (
+        <>
+          <Field label="It may use" hint="One program or window hides the rest of the screen from it, and is safer.">
+            {(id) => (
+              <SelectField id={id} value={kind} onChange={(e) => set(e.target.value as 'screen' | 'app' | 'window', '')}>
+                <option value="screen">The whole screen</option>
+                <option value="app">One program</option>
+                <option value="window">One window</option>
+              </SelectField>
+            )}
+          </Field>
+          {kind !== 'screen' && (
+            <Field label={kind === 'app' ? 'Program' : 'Part of the window’s title'} hint={kind === 'app' ? 'For example: chrome, notepad, excel. It must be open when the step starts.' : 'It must be open when the step starts.'}>
+              {(id) => <TextInput id={id} value={value} placeholder={kind === 'app' ? 'chrome' : 'Inbox - Mail'} onChange={(e) => set(kind, e.target.value)} />}
+            </Field>
+          )}
+        </>
+      )}
+    </section>
+  )
+}
+
 function AgentForm({ node, def, patch }: { node: AgentNode; def: WorkflowDefinition; patch: (change: Partial<AgentNode>) => void }) {
   const vendors = useVendors((s) => s.vendors)
   const models = useModels((s) => s.list)
@@ -242,6 +279,7 @@ function AgentForm({ node, def, patch }: { node: AgentNode; def: WorkflowDefinit
       <p className="-mt-1 text-xs text-ink-faint">
         <Refs def={def} id={node.id} />
       </p>
+      <ComputerSettings node={node} patch={patch} />
       <Field label="Model" hint="Automatic uses the first assistant that is connected.">
         {(id) => (
           <SelectField

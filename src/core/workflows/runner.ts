@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, appendFileSync, writeFileSync, statSync } from 'node:fs'
 import { dirname, resolve, sep } from 'node:path'
+import { stepContext, type StepRecord } from './context'
 import type { ApprovalMode, AskAnswers, Effort, Question, VendorId } from '@shared/agent'
 import type { CorePush } from '@shared/api'
 import type { DeviceRecord } from '@shared/devices'
@@ -31,6 +32,8 @@ import { runProcess, textOf, type Exec } from '../devices/exec'
  */
 
 const DEFAULT_TIMEOUT_SEC = 300
+/** A step that uses the computer waits for a person's answer and then works through a screen, which is slower. */
+const COMPUTER_TIMEOUT_SEC = 900
 const OUTPUT_LIMIT = 200_000
 const READ_LIMIT = 1_000_000
 
@@ -48,6 +51,23 @@ export interface AgentStepRequest {
   /** The assistant asks the person a question. */
   askQuestions(questions: Question[]): Promise<AskAnswers>
 }
+/** What a step that uses the computer may see and use, in words. */
+function computerScope(c: NonNullable<AgentNode['computer']>): string {
+  return c.app?.trim() ? `only ${c.app.trim()}` : c.window?.trim() ? `only the window “${c.window.trim()}”` : 'the whole screen'
+}
+
+/** The instruction that goes ahead of a step that uses the computer: ask first, say why, name what is needed, and give it back. */
+function computerNote(c: NonNullable<AgentNode['computer']>): string {
+  const app = c.app?.trim()
+  const window = c.window?.trim()
+  const how = app ? `with app “${app}”` : window ? `with window “${window}”` : 'for the whole screen'
+  return [
+    'This step is done on the computer, with its screen, mouse and keyboard.',
+    `Start by calling desktop_request_control ${how} and a one-sentence reason. The person is asked, and it may be refused: then stop and say so.`,
+    'Then take a screenshot, do the step with the desktop tools, and call desktop_release_control when it is done. Never type a password or other secret.'
+  ].join(' ')
+}
+
 export interface AgentStepRunner {
   run(request: AgentStepRequest): Promise<string>
 }
@@ -76,6 +96,8 @@ export interface RunnerDeps {
   /** How long to wait before trying a step again. Tests make it instant. */
   pause?: (ms: number) => Promise<void>
   platform?: NodeJS.Platform
+  /** Whether a step may use the computer: the switches in Settings, Desktop control. Checked before a run starts. */
+  desktop?: { enabled(): boolean; wholeScreen(): boolean }
 }
 
 export interface StartRequest {
@@ -100,6 +122,8 @@ interface Active {
   /** Cards the run is waiting on, so that cancelling can answer them. */
   waiting: Map<string, (answer: unknown) => void>
   finished: Promise<void>
+  /** The steps that have run so far, which the next assistant step is told about. */
+  history: StepRecord[]
 }
 
 const clip = (text: string) => (text.length > OUTPUT_LIMIT ? `${text.slice(0, OUTPUT_LIMIT)}\n[cut: only the first ${OUTPUT_LIMIT} characters are kept]` : text)
@@ -167,7 +191,7 @@ export class WorkflowRunner {
       startedAt: this.now()
     }
     store.insertRun(run)
-    const active: Active = { run, forceApproval: req.forceApproval === true, abort: new AbortController(), waiting: new Map(), finished: Promise.resolve() }
+    const active: Active = { run, forceApproval: req.forceApproval === true, abort: new AbortController(), waiting: new Map(), finished: Promise.resolve(), history: [] }
     this.active.set(id, active)
     this.deps.push({ type: 'run', run })
     this.record(id, { type: 'run.started', inputs })
@@ -178,6 +202,12 @@ export class WorkflowRunner {
   /** What would make a run fail before it began, found now so nothing is half done: missing tools, devices that are read only. */
   private async checkReady(order: WorkflowNode[]): Promise<void> {
     for (const node of order) {
+      if (node.type === 'agent' && node.computer) {
+        if (this.deps.desktop && !this.deps.desktop.enabled()) throw new Error(`“${node.name}” uses the computer, but Desktop control is switched off. Switch it on in Settings, Desktop control.`)
+        if (this.deps.desktop && !this.deps.desktop.wholeScreen() && !node.computer.app?.trim() && !node.computer.window?.trim()) {
+          throw new Error(`“${node.name}” uses the whole screen, which Settings, Desktop control does not allow. Name a program or a window in the step.`)
+        }
+      }
       if (node.type !== 'tool') continue
       const t = node.tool
       if (t.kind === 'mcp' && !(await this.deps.mcp.find(t.server))) {
@@ -273,6 +303,7 @@ export class WorkflowRunner {
         }
         const output = await this.runStep(a, node, ctx)
         ctx.nodes[node.id] = { output }
+        a.history.push({ name: node.name, task: this.describeTask(node, ctx), output })
         last = output
       }
       throw new Error('The workflow has no End step.')
@@ -297,8 +328,9 @@ export class WorkflowRunner {
       if (a.abort.signal.aborted) throw new Stopped()
       this.record(a.run.id, { type: 'node.started', nodeId: node.id, attempt })
       const limit = new AbortController()
-      const timeoutMs = (node.timeoutSec ?? DEFAULT_TIMEOUT_SEC) * 1000
-      const timer = setTimeout(() => limit.abort(new Error(`It took longer than ${node.timeoutSec ?? DEFAULT_TIMEOUT_SEC} seconds.`)), timeoutMs)
+      const seconds = node.timeoutSec ?? (node.type === 'agent' && node.computer ? COMPUTER_TIMEOUT_SEC : DEFAULT_TIMEOUT_SEC)
+      const timeoutMs = seconds * 1000
+      const timer = setTimeout(() => limit.abort(new Error(`It took longer than ${seconds} seconds.`)), timeoutMs)
       const signal = AbortSignal.any([a.abort.signal, limit.signal])
       try {
         const output = clip(node.type === 'tool' ? await this.runTool(node.tool, ctx, a, signal, timeoutMs) : await this.runAgent(node, ctx, a, signal))
@@ -341,7 +373,7 @@ export class WorkflowRunner {
         else if (t.kind === 'file' && t.op !== 'read') out.push({ ...base, kind: 'file', text: `${t.op === 'write' ? 'Write' : 'Add to'} ${fill(t.path)}` })
         else if (t.kind === 'mcp') out.push({ ...base, kind: 'mcp', text: `${t.server}: ${t.tool}` })
       } else if (node.type === 'agent') {
-        out.push({ nodeId: node.id, nodeName: node.name, kind: 'agent', text: `Ask the assistant (tools: ${node.approval ?? 'ask'}): ${fill(node.prompt).slice(0, 300)}` })
+        out.push({ nodeId: node.id, nodeName: node.name, kind: 'agent', text: `${node.computer ? `Use the computer (${computerScope(node.computer)}; you are asked when it starts)` : 'Ask the assistant'} (tools: ${node.approval ?? 'ask'}): ${fill(node.prompt).slice(0, 300)}` })
       }
     }
     return out
@@ -414,8 +446,24 @@ export class WorkflowRunner {
     }
   }
 
+  /** What a step was asked to do, in a line or two, for the steps after it. */
+  private describeTask(node: ToolNode | AgentNode, ctx: TemplateContext): string {
+    try {
+      if (node.type === 'agent') return renderTemplate(node.prompt, ctx)
+      const t = node.tool
+      const fill = (text: string) => renderTemplate(text, ctx)
+      if (t.kind === 'shell') return `Ran the command: ${fill(t.command)}`
+      if (t.kind === 'http') return `${t.method} ${fill(t.url)}`
+      if (t.kind === 'file') return `${t.op === 'read' ? 'Read' : t.op === 'write' ? 'Wrote' : 'Added to'} the file ${fill(t.path)}`
+      return `Used the tool ${t.tool} of ${t.server}`
+    } catch {
+      return node.name
+    }
+  }
+
   private async runAgent(node: AgentNode, ctx: TemplateContext, a: Active, signal: AbortSignal): Promise<string> {
-    const prompt = renderTemplate(node.prompt, ctx) + (node.outputFormat === 'json' ? '\n\nAnswer with one JSON value and nothing else.' : '')
+    const before = stepContext(a.history)
+    const prompt = (before ? `${before}\n` : '') + (node.computer ? `${computerNote(node.computer)}\n\n` : '') + renderTemplate(node.prompt, ctx) + (node.outputFormat === 'json' ? '\n\nAnswer with one JSON value and nothing else.' : '')
     const text = await this.deps.agent.run({
       prompt,
       vendor: node.vendor,

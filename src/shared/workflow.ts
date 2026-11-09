@@ -72,6 +72,11 @@ export interface AgentNode extends NodeBase, StepOptions {
   approval?: ApprovalMode
   /** `json`: the answer must be one JSON value, which later steps can read field by field. */
   outputFormat?: 'text' | 'json'
+  /**
+   * The step may use this computer's screen, mouse and keyboard (desktop control). The person is asked when the step reaches it, on the
+   * run's own card, and it is refused if the switch in Settings is off. `app` or `window` limits it to one program or one window.
+   */
+  computer?: { app?: string; window?: string }
 }
 
 export interface EndNode extends NodeBase {
@@ -246,6 +251,13 @@ export function validateWorkflow(input: unknown): string[] {
       case 'agent':
         if (!str(raw.prompt) || !raw.prompt.trim()) problems.push(`${label}: the prompt is empty.`)
         if (raw.outputFormat !== undefined && !['text', 'json'].includes(raw.outputFormat as string)) problems.push(`${label}: the answer format must be text or json.`)
+        if (raw.computer !== undefined) {
+          const c = raw.computer
+          if (!isObject(c)) problems.push(`${label}: the computer setting is not valid.`)
+          else if ((c.app !== undefined && !str(c.app)) || (c.window !== undefined && !str(c.window))) problems.push(`${label}: the program or window to use must be text.`)
+          else if (c.app !== undefined && c.window !== undefined) problems.push(`${label}: name either a program or a window to use, not both.`)
+          else if ((str(c.app) && !c.app.trim()) || (str(c.window) && !c.window.trim())) problems.push(`${label}: say which program or window it may use, or choose the whole screen.`)
+        }
         break
       case 'end':
         break

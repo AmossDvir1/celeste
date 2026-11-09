@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Plus, Search, Settings, Workflow, X } from 'lucide-react'
+import { MousePointer2, Plus, Search, Settings, Workflow, X } from 'lucide-react'
 import { checkInputs, slugify, type InputDef } from '@shared/workflow'
 import { core } from '@/api'
 import { cn } from '@/lib/cn'
 import { TextInput } from '@/components/ui'
 import { useRuns } from '@/stores/runs'
+import { useSettings } from '@/stores/settings'
 import { useSessions } from '@/stores/sessions'
 import { useUi } from '@/stores/ui'
 import { useWorkflows } from '@/stores/workflows'
@@ -28,7 +29,11 @@ export interface SlashItem {
 interface Command extends SlashItem {
   source: 'Celeste'
   run: () => void
+  /** Text the command puts in the message box for the person to finish, instead of doing something at once. */
+  insert?: string
 }
+
+const desktopControlOn = () => useSettings.getState().desktopControl
 
 /** Celeste's own commands. Their names are reserved: a workflow with the same short name still shows, tagged with where it is from. */
 function commands(): Command[] {
@@ -41,6 +46,10 @@ function commands(): Command[] {
     } },
     { id: 'cmd-workflows', slug: 'workflows', label: 'Workflows', description: 'Open your workflows', source: 'Celeste', icon: Workflow, run: () => ui.setMode('workflows') },
     { id: 'cmd-settings', slug: 'settings', label: 'Settings', description: 'Open Celeste’s settings', source: 'Celeste', icon: Settings, run: () => ui.openSettings() },
+    // With desktop control off there is nothing to ask for, so this opens the switch instead of starting a sentence.
+    desktopControlOn()
+      ? { id: 'cmd-computer', slug: 'computer', label: 'Use my computer', description: 'Ask the assistant to do something on screen. You are asked before it starts.', source: 'Celeste', icon: MousePointer2, insert: 'Use my computer to ', run: () => undefined }
+      : { id: 'cmd-computer', slug: 'computer', label: 'Use my computer', description: 'Switch on desktop control first, in Settings', source: 'Celeste', icon: MousePointer2, run: () => ui.openSettings('desktop') },
     { id: 'cmd-search', slug: 'search', label: 'Search', description: 'Search chats and sessions', source: 'Celeste', icon: Search, run: () => ui.setSearchOpen(true) }
   ]
 }
@@ -133,7 +142,7 @@ export function useSlash(text: string, sessionId: string | undefined) {
 /** The list above the message box. Keyboard: arrows, Enter or Tab to choose, Escape to leave it. */
 export function SlashList({ id, items, index, onPick, onHover }: { id: string; items: SlashItem[]; index: number; onPick: (i: number) => void; onHover: (i: number) => void }) {
   return (
-    <div role="listbox" id={id} aria-label="Workflows and commands" className="absolute right-0 bottom-full left-0 z-30 mb-2 max-h-72 overflow-y-auto rounded-xl border border-edge-strong bg-raised-2 p-1.5 shadow-pop">
+    <div role="listbox" id={id} aria-label="Workflows and commands" className="absolute right-0 bottom-full left-0 z-30 mb-2 max-h-96 overflow-y-auto rounded-xl border border-edge-strong bg-raised-2 p-1.5 shadow-pop">
       {items.map((item, i) => {
         const Icon = item.icon
         return (

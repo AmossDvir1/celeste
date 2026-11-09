@@ -239,8 +239,8 @@ export class DesktopControl implements ExtraTools {
   }
 
   /** A chat was stopped or deleted: its control ends with it, and a refusal is forgotten. */
-  sessionGone(sessionId: string): void {
-    if (this.grant?.sessionId === sessionId) this.stop('You stopped the chat.')
+  sessionGone(sessionId: string, why = 'You stopped the chat.'): void {
+    if (this.grant?.sessionId === sessionId) this.stop(why)
   }
 
   forget(sessionId: string): void {

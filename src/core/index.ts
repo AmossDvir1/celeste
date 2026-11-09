@@ -200,8 +200,17 @@ async function start(): Promise<void> {
       })
     }
   }
+  // A workflow step has no chat to show a card in, so what desktop control asks it asks in the run, while the step is going.
+  const stepAsk = new Map<string, (title: string, detail?: string) => Promise<boolean>>()
   const agentSteps = createAgentStepRunner({
       adapter: adapterFor,
+      desktop: {
+        register: (sessionId, ask) => void stepAsk.set(sessionId, ask),
+        unregister: (sessionId) => {
+          stepAsk.delete(sessionId)
+          desktopRef?.sessionGone(sessionId, 'The workflow step ended.')
+        }
+      },
       // A step that names no model uses the first vendor that is ready, with the model that vendor calls automatic or lists first.
       defaults: async () => {
         for (const vendor of ['copilot', 'claude'] as const) {
@@ -218,6 +227,7 @@ async function start(): Promise<void> {
     store: db,
     push: runPush,
     agent: agentSteps,
+    desktop: { enabled: () => db.settings().desktopControl === true, wholeScreen: () => db.settings().desktopWholeScreen !== false },
     mcp: {
       find: async (name) => (await mcp.resolved()).find((s) => s.key === serverKey(name) || s.key === name),
       call: (server, tool, args, timeoutMs, signal) => callTool(server, tool, args, timeoutMs, signal)
@@ -239,7 +249,11 @@ async function start(): Promise<void> {
   const desktopControl = new DesktopControl({
     enabled: () => db.settings().desktopControl === true,
     host: desktopHost,
-    askConsent: (sessionId, request) => (service as SessionService).requestApproval(sessionId, { kind: 'other', ...request }),
+    askConsent: (sessionId, request) => {
+      // A step of a workflow asks in its run. One that is gone, or that is not in a run any more, is a no.
+      if (sessionId.startsWith('wf-')) return stepAsk.get(sessionId)?.(request.title, request.detail) ?? Promise.resolve(false)
+      return (service as SessionService).requestApproval(sessionId, { kind: 'other', ...request })
+    },
     never: () => (db.settings().desktopNeverApps as string[] | undefined) ?? [],
     duration: () => ((db.settings().desktopMinutes as number | undefined) ?? 15) * 60_000,
     wholeScreen: () => db.settings().desktopWholeScreen !== false,

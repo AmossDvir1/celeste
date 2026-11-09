@@ -100,7 +100,8 @@ export function Composer({
   function pickItem(i: number) {
     const item = slash.items[i]
     if (!item) return
-    onText('')
+    // A command may leave the start of a sentence to finish ("Use my computer to ").
+    onText('insert' in item && typeof item.insert === 'string' ? item.insert : '')
     slash.pick(item)
   }
 

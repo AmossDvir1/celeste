@@ -140,7 +140,7 @@ Multiple monitors and mixed DPI are handled in the driver: coordinates given to 
 | **Devices** (section 7.11 of the main plan) | Different thing. Devices are other machines reached by SSH; this is the screen of the computer Celeste runs on. A later extension could control a VM's screen through the hypervisor's console, which has the same tools and rails. |
 | **Shared sessions** (7.13) | A guest can never grant, use or see a desktop control grant. The feature is host-only, and screenshots would not be shown to guests unless the host chooses. |
 | **Phone companion** (7.12, Phase 9) | Control cannot be granted from a phone. The consent must be given at the computer, because a stolen or compromised phone must not be able to hand an agent the mouse. A phone may see that control is active and press Stop. |
-| **Workflows** (7.10) | A workflow step cannot use desktop control unattended. A run that starts from `/` in a chat uses that chat's grant, if there is one. |
+| **Workflows** (7.10) | A step can use the computer (a **Use the computer** step, built: section 11c), but never unattended: the person is asked on the run's own card each time the step starts, the Settings switches apply, and control ends with the step. A run that starts from `/` in a chat gets its own grant per step, not the chat's. |
 | **Checkpoints and review** (Phase 6) | Cover the project folder, not the desktop. A click cannot be undone by Revert. The consent card says so. |
 | **Vendors** | The same tools for all. Models without image input cannot use the screen tools. |
 
@@ -229,6 +229,14 @@ An organisation that does not want this at all can disable it for everyone throu
 **Left out (still to do):** a setting for the stop key (it is Ctrl+Alt+Esc, fixed); a small image kept with each action card; changing the scope on the card (today the person denies and asks again); other monitors for the whole-screen scope (a window's picture is taken from the monitor it is on); choosing a window that is minimized (the assistant is told to bring it forward, but cannot ask for it as the scope); the accessibility tree tool (step 5); macOS and Linux (steps 3 and 4).
 
 **Not verified:** a real vendor's agent using any of this (as in 11a); a display scaled above 100%; programs run as administrator; a browser page's password field in Chrome or Edge rather than our own Electron page (same engine, not tried); a password field in a program whose controls do not report it; rounded window corners (the black boxes are rectangles); what the names of buttons are in languages other than English (the net is English words).
+
+## 11c. In workflows and in chats (9 November 2026)
+
+- **A "Use the computer" step.** An assistant step with a switch, **Use the computer**, and a choice of the whole screen, one program or one window (the palette's "Use the computer" makes one). Before the step runs, the run's card lists it ("Use the computer (only the window “…”; you are asked when it starts)"). The step is told to call `desktop_request_control` with that program or window and a reason, and to release when done. The person's yes is asked **on the run's own card** (a step has no chat); a no ends the step's use of the screen. The run refuses to start when Desktop control is off in Settings, or when the step asks for the whole screen and Settings does not allow it. Control ends with the step. Such a step has fifteen minutes before it times out (the usual five for others), since it waits for a person and then works through a screen.
+- **Any step** that asks for control by itself (it has the tools like a chat does) is asked the same way in the run; before this, its card went to a chat that does not exist and the step would have hung.
+- **A shared workflow file** with such a step says on opening that it will ask to use the screen.
+- **In chats** the tools were already there. `/computer` in the message box starts a sentence ("Use my computer to "), or opens Settings, Desktop control when it is off.
+- **Not done:** the run's panel does not list the actions (the bar on screen and the grant list in Settings do); desktop control does not pause for a question that is open in a run; a schedule or other unattended start cannot use it, and must not.
 
 ## 12. Risks
 

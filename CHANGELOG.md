@@ -14,6 +14,8 @@ All notable changes to Celeste. The format follows [Keep a Changelog](https://ke
 - It does not type into a **password field**, and it asks you again before pressing a button called Send, Buy, Delete, Allow and the like.
 - If you **move the mouse**, it pauses until you press Continue on the bar. It also waits while a question is open in Celeste.
 - New tools to list the open windows and bring one to the front.
+- Workflows: a **Use the computer** step, which asks you on the run's card before it uses the screen, and `/computer` in the message box.
+- Workflows: each assistant step is now told what the steps before it were asked and what they produced, so “go to my friends list” after “go to my Facebook” knows which list. Before, every step started knowing only its own words.
 - Settings: how long one yes lasts (15 minutes, 1 hour, or until you stop it), whether it may ask for the whole screen, and a list of the recent times it had the screen.
 
 ## [1.0.0] - 2026-11-08
