@@ -98,7 +98,7 @@ const APPROVALS: ApprovalMode[] = ['auto', 'edits', 'ask', 'plan']
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const THEMES = ['dark', 'light', 'system']
 const VENDOR_IDS: VendorId[] = ['copilot', 'claude', 'openai', 'gemini']
-const SETTINGS_KEYS = ['theme', 'userName', 'wizardDone', 'sidebarCollapsed', 'sidebarWidth', 'autoTitle', 'ownPrograms', 'pinnedModels', 'defaults'] as const
+const SETTINGS_KEYS = ['theme', 'userName', 'wizardDone', 'sidebarCollapsed', 'sidebarWidth', 'autoTitle', 'ownPrograms', 'desktopControl', 'pinnedModels', 'defaults'] as const
 const MAX_PINNED = 100
 const TRANSCRIPT_LIMIT = 24_000
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
@@ -230,6 +230,7 @@ export class SessionService {
       sidebarWidth: (stored.sidebarWidth as number | undefined) ?? d.sidebarWidth,
       autoTitle: (stored.autoTitle as boolean | undefined) ?? d.autoTitle,
       ownPrograms: (stored.ownPrograms as boolean | undefined) ?? d.ownPrograms,
+      desktopControl: (stored.desktopControl as boolean | undefined) ?? d.desktopControl,
       pinnedModels: (stored.pinnedModels as string[] | undefined) ?? d.pinnedModels,
       defaults: { ...d.defaults, ...(stored.defaults as Partial<AppSettings['defaults']> | undefined) }
     }
@@ -260,6 +261,7 @@ export class SessionService {
     if (patch.sidebarCollapsed !== undefined) next.sidebarCollapsed = patch.sidebarCollapsed === true
     if (patch.autoTitle !== undefined) next.autoTitle = patch.autoTitle === true
     if (patch.ownPrograms !== undefined) next.ownPrograms = patch.ownPrograms === true
+    if (patch.desktopControl !== undefined) next.desktopControl = patch.desktopControl === true
     if (patch.sidebarWidth !== undefined) {
       if (typeof patch.sidebarWidth !== 'number' || !Number.isFinite(patch.sidebarWidth)) throw new Error('Invalid sidebar width')
       next.sidebarWidth = Math.round(Math.min(SIDEBAR_WIDTH.max, Math.max(SIDEBAR_WIDTH.min, patch.sidebarWidth)))
@@ -587,6 +589,12 @@ export class SessionService {
 
   /** Writes what a workflow run did into the conversation it was started from. Nothing happens for a conversation that is gone. */
   recordWorkflow(id: string, event: Extract<LogEvent, { type: 'workflow.started' | 'workflow.finished' }>): void {
+    if (!this.store.getSession(id)) return
+    this.record(id, event, this.live.get(id) ?? { text: '' })
+  }
+
+  /** Writes what desktop control did into the conversation. Nothing happens for a conversation that is gone. */
+  recordDesktop(id: string, event: Extract<LogEvent, { type: 'desktop.started' | 'desktop.action' | 'desktop.ended' }>): void {
     if (!this.store.getSession(id)) return
     this.record(id, event, this.live.get(id) ?? { text: '' })
   }

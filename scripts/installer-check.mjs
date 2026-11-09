@@ -47,6 +47,7 @@ try {
   const res = win ? join(home, 'resources') : join(macApp, 'Contents', 'Resources')
   check('with the app in one archive', existsSync(join(res, 'app.asar')))
   check('the terminal’s pty is outside the archive, where it can run', existsSync(join(res, 'app.asar.unpacked', 'node_modules', '@lydell')))
+  check('koffi’s binary, which sends the mouse and keyboard of desktop control, is outside the archive too', existsSync(join(res, 'app.asar.unpacked', 'node_modules', '@koromix')))
   check('the licence, the notices of other people’s software and the privacy statement come with it', ['LICENSE.txt', 'THIRD_PARTY_NOTICES.md', 'PRIVACY.md'].every((f) => existsSync(join(res, f))))
   check('Electron’s own licences are there', win ? existsSync(join(home, 'LICENSE.electron.txt')) && existsSync(join(home, 'LICENSES.chromium.html')) : true)
   const packed = listPackage(join(res, 'app.asar'))

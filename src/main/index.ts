@@ -5,6 +5,7 @@ import { canOpenFile } from '@shared/produced'
 import { resolveChatFile } from './chat-files'
 import { registerAttachmentScheme, serveAttachments } from './attachments-protocol'
 import { CoreProcess } from './core-process'
+import { DesktopService } from './desktop/service'
 import { secrets } from './secrets'
 
 const DEV_URL = process.env['ELECTRON_RENDERER_URL']
@@ -18,6 +19,12 @@ app.setName('Celeste')
 registerAttachmentScheme()
 
 const core = new CoreProcess()
+// The assistant's use of this computer's mouse and keyboard (docs/DESKTOP_CONTROL_PLAN.md). Core decides; this does it, and shows the bar.
+const desktop = new DesktopService({
+  stop: (why) => core.send({ type: 'desktop-stop', why }),
+  extend: () => core.send({ type: 'desktop-extend' })
+})
+core.setDesktop(desktop)
 const flushed = new WeakSet<BrowserWindow>()
 
 /** Asks the window to save whatever it is holding (unsent text) and waits briefly for its answer. */
@@ -61,6 +68,11 @@ function createWindow(): void {
   })
 
   win.once('ready-to-show', () => win.show())
+
+  // Control ends with the last of Celeste's own windows: nothing may be left controlling the computer with no chat in view.
+  win.on('closed', () => {
+    if (!BrowserWindow.getAllWindows().some((w) => !desktop.owns(w))) desktop.stopAll('You closed Celeste.')
+  })
 
   // Closing the window first saves what it holds, so the last keystrokes are not lost.
   win.on('close', (event) => {
@@ -222,6 +234,7 @@ if (!app.requestSingleInstanceLock()) {
     if (quitting) return
     event.preventDefault()
     quitting = true
+    desktop.stopAll('Celeste closed.')
     void Promise.all(BrowserWindow.getAllWindows().map(flushWindow))
       .then(() => core.shutdown())
       .finally(() => app.quit())

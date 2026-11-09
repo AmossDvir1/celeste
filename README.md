@@ -175,10 +175,11 @@ The Copilot live tests are opt-in (`CELESTE_LIVE_COPILOT=1`) because they use a 
 ## Roadmap
 
 1. **Done in 1.0:** design, storage and sessions, devices, Copilot, Claude, tools (MCP), Develop (review, revert, worktrees, terminal), Chat file cards, workflows, Windows and macOS installers
-2. OpenAI and Gemini adapters (their cards say Coming soon)
-3. Signed installers, automatic updates, Linux
-4. Branches, schedules and templates for workflows; letting the assistant use the mouse and keyboard, after asking
-5. A companion app for phones that controls your desktop Celeste
+2. Letting the assistant use the mouse and keyboard, after asking (next)
+3. OpenAI and Gemini adapters (their cards say Coming soon)
+4. Signed installers (Windows first), automatic updates, Linux
+5. Branches, schedules and templates for workflows
+6. A companion app for phones that controls your desktop Celeste (Android first)
 
 ## License
 

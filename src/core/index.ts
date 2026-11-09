@@ -30,7 +30,9 @@ import { createAgentStepRunner } from './workflows/agent-step'
 import { draftWorkflow } from './workflows/draft'
 import { WorkflowRunner } from './workflows/runner'
 import { WorkflowService } from './workflows/service'
-import { WorkflowTools } from './workflows/tools'
+import { CombinedTools, WorkflowTools } from './workflows/tools'
+import { DesktopControl } from './desktop/control'
+import { MainDesktopHost } from './desktop/main-host'
 import type { AdapterFactory } from './adapters/types'
 import { TerminalService } from './terminal'
 import { Worktrees } from './worktrees'
@@ -62,6 +64,8 @@ let claude: ClaudeHost | undefined
 let api: CoreApi | undefined
 let store: SqliteStore | undefined
 let terminalsRef: TerminalService | undefined
+let desktopRef: DesktopControl | undefined
+const desktopHost = new MainDesktopHost((message) => parent.postMessage(message))
 
 // Passwords and key passphrases live in the main process. Core asks for one only when it is about to connect.
 let nextSecretId = 0
@@ -160,7 +164,10 @@ async function start(): Promise<void> {
     titler: {
       title: (vendor, text) => (vendor === 'claude' ? claudeTitle(text) : vendor === 'copilot' ? copilotTitle(text) : Promise.resolve(undefined))
     },
-    onSessionStopped: (id) => tools.cancel(id),
+    onSessionStopped: (id) => {
+      tools.cancel(id)
+      desktopRef?.sessionGone(id)
+    },
     push,
     defaults: {
       ...DEFAULT_SETTINGS,
@@ -228,7 +235,15 @@ async function start(): Promise<void> {
   })
   runner.markAbandoned()
   // The workflows the person allowed the assistant to run are tools of Celeste's own tool server.
-  servers.setExtraTools(new WorkflowTools(db, runner, (sessionId) => (service as SessionService).workFolder(sessionId)))
+  // The assistant's use of the mouse and keyboard is off until switched on in Settings, and always asks first on a card of Celeste's own.
+  const desktopControl = new DesktopControl({
+    enabled: () => db.settings().desktopControl === true,
+    host: desktopHost,
+    askConsent: (sessionId, request) => (service as SessionService).requestApproval(sessionId, { kind: 'other', ...request }),
+    record: (sessionId, event) => (service as SessionService).recordDesktop(sessionId, event)
+  })
+  desktopRef = desktopControl
+  servers.setExtraTools(new CombinedTools([new WorkflowTools(db, runner, (sessionId) => (service as SessionService).workFolder(sessionId)), desktopControl]))
   const workflows = new WorkflowService(db, runner, undefined, () => push({ type: 'workflows' }), dataDir, async () => (await mcp.resolved()).map((s) => s.key), (sessionId) => (service as SessionService).workFolder(sessionId), (source) =>
     // The assistant only has to write; it is in plan mode, so anything it asks to do is refused, and it has three minutes.
     draftWorkflow(source.kind === 'text' ? source : { kind: 'conversation', transcript: (service as SessionService).transcriptOf(source.sessionId) }, {
@@ -294,7 +309,13 @@ function onRequest(port: MessagePortMain, data: unknown): void {
 
 parent.on('message', (event) => {
   const message = event.data as { type?: string; id?: number; value?: string | null } | null
-  if (message?.type === 'secret-reply' && typeof message.id === 'number') {
+  if (message?.type === 'desktop-reply') {
+    desktopHost.reply(message as { id?: number; ok?: boolean; result?: unknown; error?: string })
+  } else if (message?.type === 'desktop-stop') {
+    desktopRef?.stop(typeof (message as { why?: string }).why === 'string' ? ((message as { why: string }).why) : 'You pressed Stop.')
+  } else if (message?.type === 'desktop-extend') {
+    desktopRef?.extend()
+  } else if (message?.type === 'secret-reply' && typeof message.id === 'number') {
     waitingForSecret.get(message.id)?.(message.value ?? null)
     waitingForSecret.delete(message.id)
   } else if (message?.type === 'connect') {
@@ -305,6 +326,7 @@ parent.on('message', (event) => {
     port.on('close', () => ports.delete(port))
     port.start()
   } else if (message?.type === 'shutdown') {
+    desktopRef?.stop('Celeste closed.')
     service?.close()
     void (async () => {
       await devices?.close().catch(() => undefined)

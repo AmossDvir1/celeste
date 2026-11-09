@@ -18,9 +18,30 @@ export interface ExtraTool {
   readOnly: boolean
 }
 
+export interface ToolResult {
+  text: string
+  isError: boolean
+  /** A picture the tool returns (a screenshot). */
+  image?: { mime: string; data: string }
+}
+
 export interface ExtraTools {
   list(): ExtraTool[]
-  call(sessionId: string, name: string, args: unknown): Promise<{ text: string; isError: boolean }>
+  call(sessionId: string, name: string, args: unknown): Promise<ToolResult>
+}
+
+/** Several sets of extra tools as one. A call goes to the set that lists the name. */
+export class CombinedTools implements ExtraTools {
+  constructor(private readonly parts: ExtraTools[]) {}
+
+  list(): ExtraTool[] {
+    return this.parts.flatMap((p) => p.list())
+  }
+
+  call(sessionId: string, name: string, args: unknown): Promise<ToolResult> {
+    const part = this.parts.find((p) => p.list().some((t) => t.name === name))
+    return part ? part.call(sessionId, name, args) : Promise.resolve({ text: `There is no tool called ${name}.`, isError: true })
+  }
 }
 
 const MAX_WAIT_MS = 30 * 60_000
@@ -69,7 +90,7 @@ export class WorkflowTools implements ExtraTools {
     ]
   }
 
-  async call(sessionId: string, name: string, args: unknown): Promise<{ text: string; isError: boolean }> {
+  async call(sessionId: string, name: string, args: unknown): Promise<ToolResult> {
     if (name === 'workflows_list') {
       const found = this.allowed()
       if (found.length === 0) return { text: 'There is no workflow you may run. The user can allow one in that workflow’s menu, with “Allow the assistant to run this”.', isError: false }

@@ -45,6 +45,8 @@ export interface AppSettings {
   autoTitle: boolean
   /** Use a vendor's program that is already on this computer when it passes Celeste's check, instead of downloading one. */
   ownPrograms: boolean
+  /** The assistant may ask to use this computer's mouse and keyboard. Off until the person switches it on. */
+  desktopControl: boolean
   /** Models the person pinned to the top of the model menu, in the order they were pinned. */
   pinnedModels: string[]
   defaults: { model: string; approval: ApprovalMode; projectsFolder: string }
@@ -166,6 +168,12 @@ export type LogEvent =
   | { type: 'workflow.started'; runId: string; workflowId: string; name: string; startedBy?: 'you' | 'menu' | 'assistant' }
   /** That run ended. `output` is its result, which the assistant is told with the person's next message. */
   | { type: 'workflow.finished'; runId: string; name: string; status: 'completed' | 'failed' | 'cancelled'; output?: string; error?: string; startedBy?: 'you' | 'menu' | 'assistant' }
+  /** The assistant was allowed to use this computer's mouse and keyboard (see docs/DESKTOP_CONTROL_PLAN.md). `until` is when it ends unless extended. */
+  | { type: 'desktop.started'; grantId: string; reason: string; until: number }
+  /** One thing it did, or was refused (`ok` false). */
+  | { type: 'desktop.action'; grantId: string; text: string; ok: boolean; /** Set when the action was more time: when control now ends. */ until?: number }
+  /** Control ended, and why. */
+  | { type: 'desktop.ended'; grantId: string; why: string; actions: number }
   /** Chat: files the agent wrote in its private folder during the turn that just ended. `more` is how many further files are not listed. */
   | { type: 'files.produced'; files: ProducedFile[]; more: number }
   /** The folder was put back as it was at checkpoint `id`. `undoId` goes back to how it was just before. */

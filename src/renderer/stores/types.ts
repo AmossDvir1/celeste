@@ -55,6 +55,8 @@ export type TimelineItem =
   | { kind: 'workflow'; id: string; runId: string; workflowId: string; name: string }
   /** Chat: files the agent wrote during the turn, offered to open. */
   | { kind: 'files'; id: string; files: ProducedFile[]; more: number }
+  /** The assistant was allowed to use this computer's mouse and keyboard: what it did, and how it ended. */
+  | { kind: 'desktop'; id: string; grantId: string; reason: string; until: number; actions: { text: string; ok: boolean }[]; ended?: { why: string; actions: number } }
   /** The folder was put back to a checkpoint. `undoId` goes back to how it was just before. */
   | { kind: 'reverted'; id: string; restored: number; removed: number; undoId: string }
 

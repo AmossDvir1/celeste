@@ -29,6 +29,7 @@ import { useSessions } from '@/stores/sessions'
 import { AttachmentStrip } from './attachments'
 import { AskUserCard } from './AskUserCard'
 import { ContextStrip } from './context'
+import { DesktopCard } from './DesktopCard'
 import { FileCards } from './FileCards'
 import { WorkflowRunCard } from './WorkflowRunCard'
 import type { Session, TimelineItem } from '@/stores/types'
@@ -403,6 +404,8 @@ export function Timeline({
             return <UserMessage key={it.id} item={it} canRevert={idle} onRevert={setTarget} onReview={setReviewing} />
           case 'workflow':
             return <WorkflowRunCard key={it.id} runId={it.runId} name={it.name} workflowId={it.workflowId} />
+          case 'desktop':
+            return <DesktopCard key={it.id} item={it} />
           case 'files':
             return <FileCards key={it.id} sessionId={session.id} files={it.files} more={it.more} />
           case 'reverted':

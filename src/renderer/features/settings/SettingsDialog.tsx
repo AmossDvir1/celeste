@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { Bot, Database, Info, Monitor, Moon, Palette, Plug, Settings as SettingsIcon, Sun, Laptop, X, Plug2 } from 'lucide-react'
+import { Bot, Database, Info, Monitor, MousePointer2, Moon, Palette, Plug, Settings as SettingsIcon, Sun, Laptop, X, Plug2 } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Modal } from '@/components/Dialog'
 import { Field, SelectField } from '@/components/form'
@@ -17,12 +17,15 @@ import { McpSettings } from '@/features/tools/McpSettings'
 import { SeparateCopies } from './SeparateCopies'
 import { VendorCard } from './VendorCard'
 
+const AUTHOR_URL = 'https://github.com/AmossDvir1'
+
 const SECTIONS: { id: SettingsSection; label: string; icon: typeof Bot }[] = [
   { id: 'general', label: 'General', icon: SettingsIcon },
   { id: 'appearance', label: 'Appearance', icon: Palette },
   { id: 'vendors', label: 'AI vendors', icon: Plug2 },
   { id: 'agent', label: 'Agent defaults', icon: Bot },
   { id: 'tools', label: 'Tools & Integrations', icon: Plug },
+  { id: 'desktop', label: 'Desktop control', icon: MousePointer2 },
   { id: 'devices', label: 'Devices', icon: Monitor },
   { id: 'data', label: 'Data', icon: Database },
   { id: 'about', label: 'About', icon: Info }
@@ -246,6 +249,20 @@ function Content({ section }: { section: SettingsSection }) {
           </p>
         </Section>
       )
+    case 'desktop':
+      return (
+        <Section title="Desktop control" description="Lets the assistant ask to use this computer's screen, mouse and keyboard, for tasks that have no command or tool, such as clicking through a settings page.">
+          <Row title="Let the assistant ask to control this computer" description="Off by default. Even when this is on, it can do nothing until you press Allow on a card in the conversation.">
+            <Switch label="Let the assistant ask to control this computer" checked={settings.desktopControl} onCheckedChange={(desktopControl) => settings.set({ desktopControl })} />
+          </Row>
+          <div className="space-y-2 text-[13px] leading-relaxed text-ink-muted">
+            <p>When you allow it, it lasts 15 minutes in that one chat. A bar stays on screen with a Stop button, and Ctrl+Alt+Esc stops it at once from anywhere. It cannot click or type into Celeste's own windows, or press the stop key.</p>
+            <p>While it is on, the assistant can see everything on your screen and can click and type anywhere you can, so it could send a message, delete something or change a setting. What it sees is sent to your AI vendor, like any attachment. Celeste's checkpoints cannot undo a click.</p>
+            <p>Websites, documents and emails on the screen can contain text that tries to steer it. For anything sensitive, close it first, or use a separate user account or a virtual machine, which is also what AI vendors advise for this kind of tool.</p>
+            <p className="text-ink-faint">Works on Windows for now. It cannot control programs that run as an administrator, the sign-in screen or the lock screen.</p>
+          </div>
+        </Section>
+      )
     case 'agent':
       return (
         <Section title="Agent defaults" description="What a new chat starts with. You can change these in any chat, from the box where you type.">
@@ -356,6 +373,13 @@ function Content({ section }: { section: SettingsSection }) {
       return (
         <Section title="About Celeste" description={`Version ${version || '…'}. Works with GitHub Copilot and Claude; OpenAI and Gemini are coming soon.`}>
           <UpdateCheck />
+          <p className="text-[13.5px] leading-relaxed text-ink-muted">
+            Created by{' '}
+            <button type="button" onClick={() => openExternal(AUTHOR_URL)} className="text-accent-text underline underline-offset-2 hover:brightness-110">
+              Amoss Dvir
+            </button>{' '}
+            on GitHub.
+          </p>
           <p className="text-[13px] leading-relaxed text-ink-faint">
             Celeste has no server of its own and collects nothing: your chats, workflows and settings stay on this computer, and what you ask goes from here to your own account with each vendor. It looks for a new version only when you press the button above.
           </p>

@@ -42,6 +42,7 @@
     "verify:workflows": "electron-vite build && node scripts/workflows-check.mjs",
     "verify:workflows-chat": "electron-vite build && node scripts/workflows-chat-check.mjs",
     "verify:workflows-ai": "electron-vite build && node scripts/workflows-ai-check.mjs",
+    "verify:desktop": "electron-vite build && node scripts/desktop-check.mjs",
     "verify:mcp": "electron-vite build && node scripts/mcp-check.mjs",
     "verify:ui": "electron-vite build && node scripts/ui-check.mjs",
     "verify:claude": "electron-vite build && node scripts/claude-check.mjs",
@@ -100,6 +101,7 @@
     "@lydell/node-pty": "1.1.0",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "bonjour-service": "^1.4.4",
+    "koffi": "3.3.4",
     "ssh2": "^1.17.0"
   },
   "author": "The Celeste contributors"

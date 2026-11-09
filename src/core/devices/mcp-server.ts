@@ -101,7 +101,13 @@ export class DeviceToolServer {
     for (const tool of this.extra?.list() ?? []) {
       server.registerTool(tool.name, { title: tool.title, description: tool.description, inputSchema: tool.shape, annotations: { readOnlyHint: tool.readOnly } }, async (args: unknown) => {
         const out = await (this.extra as ExtraTools).call(sessionId, tool.name, args)
-        return { content: [{ type: 'text' as const, text: out.text }], isError: out.isError }
+        return {
+          content: [
+            { type: 'text' as const, text: out.text },
+            ...(out.image ? [{ type: 'image' as const, data: out.image.data, mimeType: out.image.mime }] : [])
+          ],
+          isError: out.isError
+        }
       })
     }
     return server

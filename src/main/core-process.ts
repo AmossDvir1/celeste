@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, MessageChannelMain, utilityProcess, type UtilityProcess, type WebContents } from 'electron'
+import type { DesktopService } from './desktop/service'
 import { secrets } from './secrets'
 
 // Core may ask for the password or key passphrase of a device, and for nothing else.
@@ -14,6 +15,17 @@ export class CoreProcess {
   private child: UtilityProcess | null = null
   private shuttingDown = false
   private exits: number[] = []
+  private desktop: DesktopService | null = null
+
+  /** The real computer, for Core's desktop tools. Core asks it by message; it asks Core to stop by message. */
+  setDesktop(desktop: DesktopService): void {
+    this.desktop = desktop
+  }
+
+  /** A message to Core that is not a request from a window. */
+  send(message: unknown): void {
+    this.child?.postMessage(message)
+  }
 
   start(): void {
     const child = utilityProcess.fork(join(__dirname, 'core.js'), [], {
@@ -22,7 +34,20 @@ export class CoreProcess {
     })
     this.child = child
 
-    child.on('message', (message: { type?: string; message?: string; id?: number; name?: string }) => {
+    child.on('message', (message: { type?: string; message?: string; id?: number; name?: string; method?: string; arg?: unknown }) => {
+      if (message?.type === 'desktop-call' && typeof message.id === 'number' && typeof message.method === 'string') {
+        const id = message.id
+        const desktop = this.desktop
+        if (!desktop) {
+          child.postMessage({ type: 'desktop-reply', id, ok: false, error: 'Desktop control is not available.' })
+          return
+        }
+        desktop.handle(message.method, message.arg).then(
+          (result) => child.postMessage({ type: 'desktop-reply', id, ok: true, result }),
+          (err: unknown) => child.postMessage({ type: 'desktop-reply', id, ok: false, error: err instanceof Error ? err.message : String(err) })
+        )
+        return
+      }
       if (message?.type === 'secret-request' && typeof message.id === 'number') {
         const allowed = typeof message.name === 'string' && DEVICE_SECRET.test(message.name)
         child.postMessage({ type: 'secret-reply', id: message.id, value: allowed ? secrets.get(message.name as string) : null })
@@ -36,6 +61,8 @@ export class CoreProcess {
     })
 
     child.on('exit', (code) => {
+      // Whatever Core had granted is gone with it: take the bar down, so nothing says control is on when it is not.
+      this.desktop?.reset()
       if (this.shuttingDown) return
       console.error(`[main] Core exited unexpectedly (code ${code})`)
       const now = Date.now()

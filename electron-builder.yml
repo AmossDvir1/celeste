@@ -18,6 +18,8 @@ asar: true
 # The terminal's pty has a program and a native library that cannot run from inside an archive.
 asarUnpack:
   - node_modules/@lydell/node-pty-*/**
+  # koffi's binary, which sends the mouse and keyboard input of desktop control (a native file cannot be loaded from inside the archive).
+  - node_modules/@koromix/koffi-*/**
 
 extraResources:
   - from: LICENSE

@@ -72,6 +72,20 @@ export function reduceEvent(s: Session, e: LogEvent, at: number): Session {
     case 'workflow.finished':
       return s
 
+    case 'desktop.started':
+      return { ...s, items: [...s.items, { kind: 'desktop', id: itemId(), grantId: e.grantId, reason: e.reason, until: e.until, actions: [] }] }
+
+    case 'desktop.action':
+      return {
+        ...s,
+        items: s.items.map((it) =>
+          it.kind === 'desktop' && it.grantId === e.grantId ? { ...it, until: e.until ?? it.until, actions: e.until ? it.actions : [...it.actions, { text: e.text, ok: e.ok }] } : it
+        )
+      }
+
+    case 'desktop.ended':
+      return { ...s, items: s.items.map((it) => (it.kind === 'desktop' && it.grantId === e.grantId ? { ...it, ended: { why: e.why, actions: e.actions } } : it)) }
+
     case 'files.produced':
       return { ...s, items: [...s.items, { kind: 'files', id: itemId(), files: e.files, more: e.more }] }
 

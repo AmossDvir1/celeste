@@ -1,6 +1,6 @@
 # Celeste: Desktop Control Plan
 
-> **Status: draft for your review, 8 November 2026. Not scheduled.** This is a plan, not a promise to build. Nothing in it exists in the app yet. It is referenced from `IMPLEMENTATION_PLAN.md` (decision 15 and section 7.14).
+> **Status, 9 November 2026: step 0 (the spike) and step 1 (the safe core, Windows only) are built, behind a switch that is off by default. Steps 2 to 5 are not.** The owner chose this as the next feature after 1.0.0 and accepted the defaults of D1 to D8. What step 1 is, and what it left out on purpose, is in section 11a. Referenced from `IMPLEMENTATION_PLAN.md` (decision 15 and section 7.14).
 
 ## 1. Summary
 
@@ -185,6 +185,26 @@ An organisation that does not want this at all can disable it for everyone throu
 - **Contract suite:** the desktop tools join the vendor contract tests (a call from each vendor's agent reaches the tool server and is refused or allowed correctly).
 - **A manual safety review** before release: the checklist in section 3, tried by hand on a clean Windows account and a clean Mac.
 
+## 11a. Step 1: what is built (9 November 2026)
+
+**Built and tried (Windows):**
+
+- **The tools** on Celeste's own tool server (so every vendor has them): `desktop_request_control`, `desktop_release_control`, `desktop_screenshot`, `desktop_move`, `desktop_click`, `desktop_double_click`, `desktop_drag`, `desktop_scroll`, `desktop_type`, `desktop_key`, `desktop_wait`. None is marked read only, so an agent that is only planning cannot use them.
+- **Off until switched on**: Settings, Desktop control (off by default). With it off, every call is refused with the reason.
+- **Consent is Celeste's own card** (the same kind of card the device commands use, which Auto-approve never answers): the reason, what the screen can show, where the stop is. Choices today: **Allow** (15 minutes, one chat) and **Deny**. A "no" is remembered for that chat. "Until I stop it" is **not built**: the bar's **+15 min** button extends instead.
+- **The rails:** one chat at a time; 15 minutes, 5 minutes idle, 500 actions; at least 250 ms between actions (a loop is slowed, not refused); one action at a time; the stop ends it and drops anything waiting; control ends with the chat, with Celeste's last window, and when Core restarts.
+- **A stop the assistant cannot press:** the control bar (always on top, not focusable, with **Stop** and **+15 min**, the time left and the last three actions), a border round the screen, and a global **Ctrl+Alt+Esc**. If the key is taken by another program, control does not start. The assistant cannot send that key, Win+L or Ctrl+Alt+Delete.
+- **Celeste's windows are untouchable:** a click, move, scroll or drag that starts or ends inside any Celeste window (the bar included) is refused, and so is typing or a key while one has the keyboard. While control is on, every Celeste window is left out of screenshots (Windows' capture exclusion). Checked in the real app: a click on Celeste's own Settings button was refused and Settings did not open.
+- **The record:** `desktop.started`, `desktop.action` and `desktop.ended` events in the session log, shown as one card in the conversation (why it asked, each action or refusal, how it ended). Screenshots are not stored.
+- **Seeing and aiming:** the main display only, as a JPEG with the longer side at most 1,500 pixels; the assistant aims in the picture's pixels and Celeste converts them (a display scaled above 100% is handled in the conversion, **not yet tried on one**).
+- **Input** by koffi calling `SendInput` (decision D4), behind one driver interface; koffi's binary is unpacked from the archive (checked in the packed app and by the installer check).
+
+**Tried:** 54 + 28 unit tests (the rails with a fake computer; the main-process decisions with the screen, windows and input stood in for) and `npm run verify:desktop`, which runs the built app (and, with `CELESTE_ENTRY`, a packed one) and the real mouse and keyboard against a window of its own: off by default, the card, a "no" remembered, a real click and real typing arriving, a click on Celeste refused, the stop key refused as a key, Stop on the bar and Ctrl+Alt+Esc each ending it at once, no window left behind. It moves the real mouse for about a minute and is not part of CI.
+
+**Left out of step 1 on purpose (steps 2 to 5):** scoping to one window or app (the whole main display today); other monitors; `desktop_list_windows`, `desktop_focus_window` and the accessibility tree; **password-field detection** (today only the instructions and the card's warning); the **confirmation list** for send, buy, pay, delete and similar; **pausing when the person moves the mouse**; pausing control while another approval card is waiting; the settings for default scope, duration, hotkey and the never-control list; the log of recent grants; "until I stop it"; a small image kept with each action card; macOS and Linux (on those the request says plainly that it works on Windows for now).
+
+**Not verified:** a real vendor's agent using it (the checks use a stand-in for Anthropic's API, which returns the screenshot as an image in a tool result; whether each real model reads it well, and how Copilot treats an image from a tool, is still **Verify**); a display scaled above 100%; programs running as administrator (expected to be refused by Windows, and the tool says so if `SendInput` is rejected); antivirus products' reaction to `SendInput` from an installed copy; vendor terms (section 12).
+
 ## 12. Risks
 
 | Risk | Mitigation |
@@ -210,6 +230,19 @@ An organisation that does not want this at all can disable it for everyone throu
 | D6 | Allow unattended control (screen locked, person away)? | No |
 | D7 | Windows UIAccess (control elevated windows) | No; say plainly that elevated windows cannot be controlled |
 | D8 | Where it sits in the phases | Proposed after Phase 7 (Workflows), as its own phase, starting with the spike |
+
+## 13a. Spike log
+
+**9 November 2026, step 0 started.**
+
+- **nut.js fork: not healthy.** `@nut-tree-fork/nut-js` 4.2.6 and its native part `libnut` were last published on 15 March 2025, about twenty months ago, and the native part has to match Electron's version. D4's default ("native helper if it is not healthy") applies.
+- **A third option found: `koffi`** (MIT, no dependencies, prebuilt for Windows, macOS and Linux, last published 5 November 2026). It lets Node call the system's own functions (Windows `user32.dll`: `SetCursorPos`, `SendInput`, `GetCursorPos`) with no compiling and no helper program to sign. It fits behind the one driver interface, and the same library can later call `CGEvent` on macOS and XTest on Linux.
+- **Worked:** from plain Node on this PC, koffi read the pointer position, moved it 40 pixels and put it back exactly.
+- **Worked, inside Electron 45.2.3 on this PC, against a test window of our own** (a throwaway script outside the repo): a real `SendInput` click on a button (the page counted one click); a click into a text field and typing `Hello from Celeste ✓` as Unicode key events (it arrived intact, including the tick mark); capture of that one window with `desktopCapturer` (1500 pixels wide, and the window's media source id matched, so one window can be picked out of eleven); and Ctrl+Alt+Esc registered with `globalShortcut` and fired when the keys were sent by `SendInput`.
+- **Worked from a packaged archive:** koffi and its Windows binary packed into an `app.asar` with `*.node` unpacked, then run by Electron from the archive: `GetCursorPos` returned the pointer. So the packaging need is the same `asarUnpack` as for the terminal's pty.
+- **Packaging detail:** koffi 3 keeps its binary in a per-platform package (`@koromix/koffi-win32-x64`, and one each for the other systems), the same shape as the packages that broke `npm ci` on CI earlier. The lockfile must list every platform's package, and `scripts/lib/runtime-packages.mjs` must carry the right one into each installer.
+- **Decision for D4:** koffi behind our own driver interface. No helper program.
+- **Not yet proven:** a display scaled above 100% (this PC is at 100%, so the DPI conversion is untested), macOS and Linux calls, how antivirus products treat `SendInput` from an installed copy, and the installed app rather than a script. A screen-capture size cap and the window-list call (`EnumWindows`) are step 1 work.
 
 ## 14. Sources
 

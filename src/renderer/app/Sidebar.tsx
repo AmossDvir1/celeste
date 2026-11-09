@@ -338,9 +338,9 @@ export function Sidebar() {
         }}
       />
       <div className="flex gap-2 px-0.5">
-        <Button variant="secondary" className="h-10 flex-1 justify-start gap-2.5 px-3.5" onClick={startNew}>
-          <Plus className="h-[18px] w-[18px]" />
-          {sessionMode === 'develop' ? 'New session' : 'New chat'}
+        <Button variant="secondary" className="h-10 min-w-0 flex-1 shrink justify-start gap-2.5 overflow-hidden px-3.5" onClick={startNew}>
+          <Plus className="h-[18px] w-[18px] shrink-0" />
+          <span className="truncate">{sessionMode === 'develop' ? 'New session' : 'New chat'}</span>
         </Button>
         <IconButton label="Hide sidebar (Ctrl+B)" className="h-10 w-10 border border-edge-strong" onClick={() => set({ sidebarCollapsed: true })}>
           <PanelLeft className="h-[18px] w-[18px]" />

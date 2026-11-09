@@ -37,7 +37,7 @@ Each has a default that I'll use unless you say otherwise. The last column says 
 | 6 | Should a device follow the global auto-approve setting? | **Confirmed by you on 7 November: devices need approval.** A new device starts **Read only**, commands on it ask first, and the global auto-approve default doesn't apply. A device can still be set to **Full** (no asking) behind a warning badge. That option is easy to remove if you'd rather not offer it | Settled |
 | 7 | iPhone and iPad as devices? | Not as a remote shell, because Apple doesn't allow one. Two supported routes: a limited helper (open-source libimobiledevice tools: media files, logs and app install, after a USB pairing), and the Celeste Companion app (section 7.12), which shares folders and things you send, while it is open. A spike in Phase 3 decides whether the helper ships | Phase 3 |
 | 8 | Which ways of connecting in v1? | SSH (Linux, Mac, Windows with OpenSSH Server), PowerShell Direct for Hyper-V VMs on this PC, and Android wireless debugging. WinRM, mounting remote drives, and Develop on a remote folder come later if wanted | Phase 3 |
-| 9 | How should Celeste run on iPhone, iPad and Android? | A companion app that controls your desktop Celeste, not the full app, which can't run on a phone (section 7.12). Built with Capacitor from the same React interface, after the first public release. It needs an Apple Developer account (US$99 a year **Verify**) and a macOS builder | Before Phase 9 |
+| 9 | How should Celeste run on iPhone, iPad and Android? | A companion app that controls your desktop Celeste, not the full app, which can't run on a phone (section 7.12). Built with Capacitor from the same React interface, after the first public release. It needs an Apple Developer account (US$99 a year **Verify**) and a macOS builder. **9 November 2026: there is no Apple account, so Android goes first and iPhone and iPad wait** | Before Phase 9 |
 | 10 | Designs for the phone screens | Do you have designs, or want to make them? If not, I'll adapt the desktop design to a small screen and you review it | Phase 9 |
 | 11 | Push notifications to the phone | None in v1. Apple and Google need a provider key that can't ship inside open-source code, so push needs a small relay run by the project. Without it the phone shows what needs you when you open the app | Phase 9 |
 | 12 | **How do the vendors' programs reach the user: bundled in the installer, or downloaded?** | **Not decided.** Until you decide, Celeste downloads each vendor's program on first Connect (option A in section 6.4), started as soon as the vendor is picked in the wizard. The five options and what each costs are listed in section 6.4 | Before Phase 8; Claude's download is built under the default |
@@ -1107,7 +1107,7 @@ Bring the Workflows tab back, empty and real: schema, runner, Tool and Agent ste
 
 ### Phase 8: Public release (L)
 
-**Status (8 November 2026): the first release, 1.0.0, is prepared and not yet published.** Built: electron-builder installers for Windows (NSIS `.exe`, per user, no administrator rights; and an `.msi` for IT departments) and macOS (`.dmg` and `.zip`, Apple silicon and Intel), made from a staged folder (`scripts/stage.mjs`) that holds the built app and exactly the run-time libraries, so the vendors' large programs stay out (the installer is about 120 MB); `THIRD_PARTY_NOTICES.md` (made by `npm run notices`), `PRIVACY.md`, the licence and Electron's licences inside every installer; a manual "Check for updates" in Settings, About (GitHub's API, only when pressed); the release workflow (a tag makes a **draft** release with the installers, checksums and the changelog's notes; a person publishes); CI that builds both installers on every push and runs the installed app; `RELEASING.md`; `CHANGELOG.md`. **Tried:** the Windows installer was really installed, run (window, database, the terminal's pty from outside the archive) and uninstalled with the person's data left alone, on this PC. **Not done:** signing and notarization (they need certificates and an Apple Developer account, which are the owner's to buy; the workflow uses them as soon as the secrets exist), automatic updates (macOS needs a signed app for them), Linux installers, a person trying the macOS installer by hand, and Anthropic's confirmations of section 6.2.
+**Status (9 November 2026): the first release, 1.0.0, is published** (by the owner, from the draft the release workflow made), unsigned, for Windows and macOS (Apple silicon and Intel). The list of what is still open after it is at the end of this phase. What was built for it: electron-builder installers for Windows (NSIS `.exe`, per user, no administrator rights; and an `.msi` for IT departments) and macOS (`.dmg` and `.zip`, Apple silicon and Intel), made from a staged folder (`scripts/stage.mjs`) that holds the built app and exactly the run-time libraries, so the vendors' large programs stay out (the installer is about 120 MB); `THIRD_PARTY_NOTICES.md` (made by `npm run notices`), `PRIVACY.md`, the licence and Electron's licences inside every installer; a manual "Check for updates" in Settings, About (GitHub's API, only when pressed); the release workflow (a tag makes a **draft** release with the installers, checksums and the changelog's notes; a person publishes); CI that builds both installers on every push and runs the installed app; `RELEASING.md`; `CHANGELOG.md`. **Tried:** the Windows installer was really installed, run (window, database, the terminal's pty from outside the archive) and uninstalled with the person's data left alone, on this PC. **Not done:** signing and notarization (they need certificates and an Apple Developer account, which are the owner's to buy; the workflow uses them as soon as the secrets exist), automatic updates (macOS needs a signed app for them), Linux installers, a person trying the macOS installer by hand, and Anthropic's confirmations of section 6.2.
 
 - **Distribution:** Windows and Mac installers, code signing and Mac notarization, auto-update, then Linux. Unsigned apps trigger security warnings that would put off public users.
 - **Vendor sign-off:** the confirmations in section 6.2 answered, and only approved sign-ins enabled.
@@ -1117,6 +1117,34 @@ Bring the Workflows tab back, empty and real: schema, runner, Tool and Agent ste
 - **Support:** user documentation and a place to report problems.
 
 **Done when:** clean Windows and Mac machines can install Celeste, finish the wizard and run a session with every sign-in that ships.
+
+#### Open after 1.0.0 (listed 9 November 2026)
+
+**Release and legal**
+
+| Item | State |
+|---|---|
+| Windows code signing (a certificate, or a free open-source programme such as SignPath) | Not done. Windows shows a SmartScreen warning until then. The release workflow signs as soon as the secrets exist |
+| macOS signing and notarization | **Skipped for now: no Apple Developer account.** Mac users must right-click, Open the first time. Needed before macOS desktop control (its permissions are lost on each unsigned update) and before automatic updates on Mac |
+| Automatic updates | Not done. Only the manual "Check for updates" exists |
+| Linux installers | Not done (AppImage and `.deb`); also the Linux checks on a real desktop |
+| A person installing on a real Mac | Not done. CI installs and runs the Mac app, but nobody has used it by hand on Mac hardware |
+| Vendor sign-off (section 6.2): Anthropic's confirmations and the Claude Agent SDK licence terms | Not answered. Claude works with the user's own Claude Code; a note on what is allowed stays in the README |
+| Trademark check and policy for the name "Celeste"; rights review of `design/` | Not done |
+| Opt-in crash reporting | Not built |
+| Testing behind a company proxy | Not done; no proxy setting yet |
+| User guide and a place for support | Only README and Issues |
+| Claude run against a real account | Not done in automated checks (a stand-in API is used); Copilot has had a live run |
+
+**Features still to build, roughly in the order proposed**
+
+1. **Desktop mouse and keyboard control** (decision 15, [DESKTOP_CONTROL_PLAN.md](DESKTOP_CONTROL_PLAN.md)): chosen by the owner as the next thing (9 November 2026). **Step 0 (spike) and step 1 (the safe core, Windows, off by default) are built**; scoping, password and confirmation checks, macOS and Linux are the later steps.
+2. **OpenAI and Gemini adapters** (their cards say "Coming soon"); Gemini first.
+3. **Mobile companion** (decisions 9 to 11, Phase 9). With no Apple account, **Android first**; iPhone and iPad wait for an Apple Developer account. Phone screen designs are still to be decided (decision 10). No push notifications in v1 (decision 11).
+4. Workflows later: branches, schedules, templates, "don't ask again" for approvals.
+5. Vendor commands in the `/` menu.
+6. Mermaid `show_diagram` (decision 16, section 7.15).
+7. Shared sessions (decision 14, section 7.13).
 
 ### Phase 9: Mobile companion for iPhone, iPad and Android (L)
 

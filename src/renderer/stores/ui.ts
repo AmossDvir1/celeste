@@ -6,7 +6,7 @@ import { useSettings } from '@/stores/settings'
 
 export type AppMode = 'chat' | 'develop' | 'workflows'
 export type RightPanel = null | 'tools' | 'changes' | 'terminal' | 'files'
-export type SettingsSection = 'general' | 'appearance' | 'vendors' | 'agent' | 'tools' | 'devices' | 'data' | 'about'
+export type SettingsSection = 'general' | 'appearance' | 'vendors' | 'agent' | 'tools' | 'desktop' | 'devices' | 'data' | 'about'
 
 /** Settings of the composer before a session exists. A new session copies them. */
 export interface Draft {
