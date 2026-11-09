@@ -35,15 +35,15 @@ describe('a step’s session and desktop control', () => {
       adapter: fakeAdapter(done, seen),
       defaults: async () => ({ vendor: 'claude', model: 'claude:default' }),
       desktop: {
-        register: (id, ask) => {
-          calls.push(`register ${id.startsWith('wf-')}`)
+        register: (id, ask, label) => {
+          calls.push(`register ${id.startsWith('wf-')} ${label}`)
           expect(typeof ask).toBe('function')
         },
         unregister: (id) => calls.push(`unregister ${id === seen.sessionId}`)
       }
     })
-    expect(await runner.run(request())).toBe('It is open.')
-    expect(calls).toEqual(['register true', 'unregister true'])
+    expect(await runner.run({ ...request(), label: 'Morning: Check the phone' })).toBe('It is open.')
+    expect(calls).toEqual(['register true Morning: Check the phone', 'unregister true'])
     expect(seen.closed).toBe(true)
   })
 

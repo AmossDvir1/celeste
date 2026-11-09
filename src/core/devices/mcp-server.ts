@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from 'node:net'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
-import type { ExtraTools } from '../workflows/tools'
+import { resultImages, type ExtraTools } from '../workflows/tools'
 import { TOOLS, type DeviceTools, type ToolName } from './tools'
 
 const MAX_BODY = 2 * 1024 * 1024
@@ -102,10 +102,7 @@ export class DeviceToolServer {
       server.registerTool(tool.name, { title: tool.title, description: tool.description, inputSchema: tool.shape, annotations: { readOnlyHint: tool.readOnly } }, async (args: unknown) => {
         const out = await (this.extra as ExtraTools).call(sessionId, tool.name, args)
         return {
-          content: [
-            { type: 'text' as const, text: out.text },
-            ...(out.image ? [{ type: 'image' as const, data: out.image.data, mimeType: out.image.mime }] : [])
-          ],
+          content: [{ type: 'text' as const, text: out.text }, ...resultImages(out)],
           isError: out.isError
         }
       })

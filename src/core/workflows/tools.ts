@@ -23,7 +23,12 @@ export interface ToolResult {
   isError: boolean
   /** A picture the tool returns (a screenshot). */
   image?: { mime: string; data: string }
+  /** More pictures, after `image` (photos picked on the phone). */
+  images?: { mime: string; data: string }[]
 }
+
+/** The pictures of a result, in order, as MCP content. */
+export const resultImages = (r: ToolResult) => [...(r.image ? [r.image] : []), ...(r.images ?? [])].map((i) => ({ type: 'image' as const, data: i.data, mimeType: i.mime }))
 
 export interface ExtraTools {
   list(): ExtraTool[]

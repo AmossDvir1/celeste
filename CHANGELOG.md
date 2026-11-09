@@ -13,7 +13,13 @@ All notable changes to Celeste. The format follows [Keep a Changelog](https://ke
   - **Security**: everything is encrypted end to end, with no server in between. A phone can't change settings, sign-ins or devices, and Remove cuts it off at once.
   - **Develop from the phone**: start a Develop session in a project you already used on the computer, optionally in a separate copy.
   - **Choose the model on the phone**: pick the model and thinking effort for a new chat, or change them in an open one.
-  - **Celeste can use the phone**: it can read your notifications and reply to messages, open an app or a link, or set an alarm or timer. Each ability has a switch in the app, and every request asks you on the phone first.
+  - **Celeste can use the phone**: it can read your notifications, reply to messages or clear them, open an app or a link, or set an alarm or timer. Each ability has a switch in the app, and every request asks you on the phone first.
+    - **Location**: where the phone is, once each time you allow it.
+    - **Photos and files**: you pick them on the phone, and they're copied to the computer for the assistant.
+    - **Calendar**: read your next events, and add one.
+    - **Texts and calls**: the messaging or phone app opens with everything filled in. You press Send or Call yourself.
+  - **Use the phone in workflows**: a workflow step can use your phone, like **Use the computer**. The run checks the phone is connected before it starts, and the phone's cards name the step.
+  - **`/phone`** in the chat starts a request for your phone, or opens Settings → Phone when none is connected.
   - **Phone control**: when no other tool can do a task, Celeste can ask to see your phone's screen and tap, swipe and type.
     - It asks on the phone, for 15 minutes at most.
     - While it works, a coloured border and a Stop button stay on screen. Pressing volume down three times also stops it.

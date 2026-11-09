@@ -14,9 +14,10 @@ export function createAgentStepRunner(deps: {
   defaults: () => Promise<{ vendor: VendorId; model: string }>
   /**
    * Desktop control asks the person on a card, and a step has no chat to show one in. While a step runs, its session is registered here
-   * with the way to ask the person in the run, so the card appears in the run instead, and control ends with the step.
+   * with the way to ask the person in the run, so the card appears in the run instead, and control ends with the step. The label names
+   * the step on cards shown elsewhere (the phone's).
    */
-  desktop?: { register(sessionId: string, ask: (title: string, detail?: string) => Promise<boolean>): void; unregister(sessionId: string): void }
+  desktop?: { register(sessionId: string, ask: (title: string, detail?: string) => Promise<boolean>, label?: string): void; unregister(sessionId: string): void }
 }): AgentStepRunner {
   return {
     async run(req) {
@@ -34,7 +35,7 @@ export function createAgentStepRunner(deps: {
         attachmentPath: () => undefined
       }
       const session = deps.adapter(ctx)
-      deps.desktop?.register(ctx.sessionId, req.askApproval)
+      deps.desktop?.register(ctx.sessionId, req.askApproval, req.label)
       const stop = () => void session.interrupt().catch(() => undefined)
       req.signal.addEventListener('abort', stop, { once: true })
       try {

@@ -41,6 +41,12 @@ export interface AbilityState {
   notifications: boolean
   open: boolean
   alarm: boolean
+  location: boolean
+  /** Photos and files the person picks. */
+  files: boolean
+  calendar: boolean
+  /** Texts and calls: the messaging or phone app opens ready, and the person presses Send or Call. */
+  messages: boolean
   control: boolean
   notificationAccess: boolean
   /** Celeste phone control is switched on in Android's Accessibility settings. */
@@ -67,7 +73,7 @@ const Native = registerPlugin<CelesteNativePlugin>('CelesteNative', {
     stopService: async () => undefined,
     setLine: async () => undefined,
     handleRequest: async () => undefined,
-    abilities: async () => ({ notifications: false, open: false, alarm: false, control: false, notificationAccess: false, controlAccess: false, controlConfirm: false, never: 0 }),
+    abilities: async () => ({ notifications: false, open: false, alarm: false, location: false, files: false, calendar: false, messages: false, control: false, notificationAccess: false, controlAccess: false, controlConfirm: false, never: 0 }),
     apps: async () => ({ apps: [] }),
     setNever: async () => undefined,
     setAbility: async () => undefined,
@@ -139,7 +145,7 @@ export async function handlePhoneRequest(request: unknown): Promise<void> {
 
 export const abilities = {
   get: (): Promise<AbilityState> =>
-    Native.abilities().catch(() => ({ notifications: false, open: false, alarm: false, control: false, notificationAccess: false, controlAccess: false, controlConfirm: false, never: 0 })),
+    Native.abilities().catch(() => ({ notifications: false, open: false, alarm: false, location: false, files: false, calendar: false, messages: false, control: false, notificationAccess: false, controlAccess: false, controlConfirm: false, never: 0 })),
   set: (ability: string, on: boolean): Promise<void> => Native.setAbility({ ability, on }).catch(() => undefined),
   apps: (): Promise<PhoneApp[]> => Native.apps().then((r) => r.apps, () => []),
   setNever: (pkg: string, on: boolean): Promise<void> => Native.setNever({ pkg, on }),

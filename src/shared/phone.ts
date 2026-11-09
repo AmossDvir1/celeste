@@ -29,6 +29,7 @@ export const PHONE_METHODS = [
   'phone.setModel',
   'phone.reply',
   'phone.ack',
+  'phone.attach',
   'sessions.get',
   'sessions.send',
   'sessions.interrupt',
@@ -110,8 +111,18 @@ export type PhoneAbility =
   | 'status'
   | 'notifications'
   | 'notification_reply'
+  | 'notification_dismiss'
   | 'open'
   | 'alarm'
+  | 'location'
+  /** Photos and files the person picks on the phone; they arrive with `phone.attach` before the reply. */
+  | 'photos'
+  | 'files'
+  | 'calendar'
+  | 'calendar_add'
+  /** Texts and calls: the phone's own app opens with everything filled in, and the person presses Send or Call. */
+  | 'message'
+  | 'call'
   /** Phone control (step A3): asked for once, on the phone, for a limited time; then the actions below need no card each. */
   | 'control_request'
   | 'control_screen'
@@ -137,6 +148,8 @@ export interface PhoneCancelPush {
   type: 'phoneCancel'
   ids: string[]
   endControl: boolean
+  /** Why control ends, for the phone to show. Left out: Stop was pressed in the chat. */
+  why?: string
 }
 
 /** The phone's answer, with `phone.reply`. */
@@ -147,6 +160,30 @@ export interface PhoneReply {
   /** A screenshot, for phone control: JPEG, base64. */
   image?: { mime: string; data: string }
 }
+
+/**
+ * Part of a file the person picked on the phone (a photo or a document), with `phone.attach`, sent before the
+ * `phone.reply` that answers the request. Files go one after another, each in parts, in order.
+ */
+export interface PhoneAttachPart {
+  /** The request it answers. */
+  id: string
+  /** Which file, from 0. */
+  file: number
+  name: string
+  mime: string
+  /** Which part of the file, from 0. */
+  part: number
+  /** The part's bytes, base64. */
+  data: string
+  /** The file's last part. */
+  last: boolean
+}
+/** Bytes in one part: base64 twice over (here, then sealed), a part stays well under the bridge's 4 MB limit on a call. */
+export const PHONE_ATTACH_PART = 1_048_576
+export const PHONE_ATTACH_MAX_FILES = 10
+/** All the files for one request together. */
+export const PHONE_ATTACH_MAX_BYTES = 40 * 1_048_576
 
 /** A pairing waiting for the person at the computer. */
 export interface PhonePairRequest {

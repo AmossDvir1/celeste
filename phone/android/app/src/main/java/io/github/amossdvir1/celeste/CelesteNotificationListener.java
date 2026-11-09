@@ -101,6 +101,18 @@ public class CelesteNotificationListener extends NotificationListenerService {
         return false;
     }
 
+    /** Clears the notification, as swiping it away would. */
+    static boolean dismiss(String key) {
+        CelesteNotificationListener l = live;
+        if (l == null) return false;
+        try {
+            l.cancelNotification(key);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     private static Notification.Action replyAction(Notification n) {
         if (n.actions == null) return null;
         for (Notification.Action a : n.actions) {

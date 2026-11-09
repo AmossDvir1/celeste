@@ -723,7 +723,7 @@ A phone whose app is closed shows as asleep, and the assistant is told so instea
 | Away from home (decision 17) | The Cloudflare relay in `relay/`: a transport the computer opens outward, the same sealed messages on top, rate limits per pairing, and its free-tier limits watched. Needed before shipping |
 | Keys | The phone bridge's key moves from Celeste's settings to the system's secret store (Electron `safeStorage`) |
 | Networks | Windows: Public-network profile check and the firewall prompt. macOS: Local Network permission. Linux: a firewall note |
-| Workflows and devices | A **Use the phone** step in the workflow engine, and a `phone` device kind beside `ssh`, `hyperv` and `adb` |
+| Workflows and devices | ✅ The **Use the phone** step in the workflow engine (9 November 2026). Still to do: a `phone` device kind beside `ssh`, `hyperv` and `adb` |
 | Docs and legal | README and install guide, a privacy statement (what the phone sends to the computer, what goes on to the AI vendor, what the relay sees), third-party notices for the app's libraries, and the CHANGELOG at release |
 | Merge and release | The `phone` branch is merged when the owner decides, and the owner publishes the release |
 

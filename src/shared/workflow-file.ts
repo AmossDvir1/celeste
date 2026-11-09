@@ -42,6 +42,7 @@ function clean(node: WorkflowNode): WorkflowNode {
         ...(node.approval ? { approval: node.approval } : {}),
         ...(node.outputFormat ? { outputFormat: node.outputFormat } : {}),
         ...(node.computer ? { computer: { ...(node.computer.app?.trim() ? { app: node.computer.app.trim() } : {}), ...(node.computer.window?.trim() ? { window: node.computer.window.trim() } : {}) } } : {}),
+        ...(node.phone ? { phone: {} } : {}),
         ...options(node)
       } satisfies AgentNode
     case 'tool': {
@@ -117,6 +118,7 @@ export function fromFile(text: string, known: { mcpServers?: string[] } = {}): R
   const servers = new Set((known.mcpServers ?? []).map((s) => s.toLowerCase()))
   for (const node of definition.nodes) {
     if (node.type === 'agent' && node.computer) notes.push(`“${node.name}” uses the computer. It works only with Desktop control switched on in Settings, and asks you each time it runs.`)
+    if (node.type === 'agent' && node.phone) notes.push(`“${node.name}” uses your phone. It works only with a phone connected in Settings, Phone, and the phone asks you before each thing it does.`)
     if (node.type !== 'tool') continue
     const t = node.tool
     // A device is a thing on one computer: a file from another one cannot name one that is here.

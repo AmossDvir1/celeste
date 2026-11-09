@@ -37,12 +37,13 @@
             android:name=".ApprovalReceiver"
             android:exported="false" />
 
-        <!-- Phone abilities: Allow runs the one thing in this invisible activity; Deny tells the computer no. -->
+        <!-- Phone abilities: Allow runs the one thing in this invisible activity; Deny tells the computer no.
+             It may open a picker or ask for Android's permission, and stays until their answer comes back. -->
         <activity
             android:name=".AbilityActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode|density"
             android:exported="false"
             android:excludeFromRecents="true"
-            android:noHistory="true"
             android:taskAffinity=""
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
@@ -102,6 +103,13 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Phone abilities: set an alarm or timer in the clock app; find an app to open by its name. -->
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <!-- More phone abilities, each asked for by Android the first time it is used: where the phone is (once, while
+         Celeste is on screen), the calendar, and a contact's number to text or call. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />

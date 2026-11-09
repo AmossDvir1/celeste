@@ -11,6 +11,7 @@ import { APPROVAL_OPTIONS, VENDORS } from '@/lib/vendors'
 import { useDevices } from '@/stores/devices'
 import { useMcp } from '@/stores/mcp'
 import { useModels } from '@/stores/models'
+import { usePhone } from '@/stores/phone'
 import { useVendors } from '@/stores/vendors'
 import { useWorkflows } from '@/stores/workflows'
 import { metaOf } from './steps'
@@ -266,6 +267,26 @@ function ComputerSettings({ node, patch }: { node: AgentNode; patch: (change: Pa
   )
 }
 
+/** Whether the step may use the person's phone, through the phone's abilities. */
+function PhoneStepSettings({ node, patch }: { node: AgentNode; patch: (change: Partial<AgentNode>) => void }) {
+  const status = usePhone((s) => s.status)
+  const ready = !!status?.enabled && status.phones.length > 0
+  return (
+    <section className="space-y-3 rounded-xl border border-edge bg-field/50 p-3.5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-[14px] text-ink">Use the phone</div>
+          <p className="mt-0.5 text-xs text-ink-faint">
+            The assistant may use your phone in this step: its notifications, apps, alarms, location, photos and files, calendar, texts and calls, and, when nothing else will do, its screen. The phone asks you before each
+            thing, and only abilities you switched on in its This phone tab can be used.{ready ? '' : ' Needs a phone connected in Settings, Phone.'}
+          </p>
+        </div>
+        <Switch label="Use the phone" checked={!!node.phone} onCheckedChange={(v) => patch({ phone: v ? {} : undefined })} />
+      </div>
+    </section>
+  )
+}
+
 function AgentForm({ node, def, patch }: { node: AgentNode; def: WorkflowDefinition; patch: (change: Partial<AgentNode>) => void }) {
   const vendors = useVendors((s) => s.vendors)
   const models = useModels((s) => s.list)
@@ -280,6 +301,7 @@ function AgentForm({ node, def, patch }: { node: AgentNode; def: WorkflowDefinit
         <Refs def={def} id={node.id} />
       </p>
       <ComputerSettings node={node} patch={patch} />
+      <PhoneStepSettings node={node} patch={patch} />
       <Field label="Model" hint="Automatic uses the first assistant that is connected.">
         {(id) => (
           <SelectField

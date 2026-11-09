@@ -544,6 +544,48 @@ describe('an agent step', () => {
     })
   })
 
+  describe('a step that uses the phone', () => {
+    const phoneStep = (): WorkflowNode => ({ id: 'use', type: 'agent', name: 'Check the phone', prompt: 'read my texts', phone: {} })
+    const ready = { phone: { problem: () => null } }
+
+    it('is told to use the phone’s own tools first and its screen only when they will not do, and names the step for the phone', async () => {
+      const { begin, until, approve, asked } = setup(chain(start(), phoneStep(), end()), { deps: ready })
+      const run = await begin()
+      await until(run.id, 'waiting')
+      approve(run.id)
+      await until(run.id, 'completed')
+      const prompt = asked[0]?.prompt ?? ''
+      expect(prompt).toContain('phone tools')
+      expect(prompt).toContain('phone_request_control')
+      expect(prompt).toContain('Never type a password')
+      expect(prompt).not.toContain('desktop_request_control')
+      expect(prompt.endsWith('read my texts')).toBe(true)
+      expect(asked[0]?.label).toBe('Update KBs: Check the phone')
+    })
+
+    it('says on the card, before anything is done, that it will use the phone', async () => {
+      const { begin, until, events } = setup(chain(start(), phoneStep(), end()), { deps: ready })
+      const run = await begin()
+      await until(run.id, 'waiting')
+      expect(events(run.id)[1]).toMatchObject({ type: 'approval.requested', actions: [{ kind: 'agent', text: expect.stringContaining('Use the phone (the phone asks you before each thing)') }] })
+    })
+
+    it('does not start when the phone cannot be used, and says why', async () => {
+      const off = setup(chain(start(), phoneStep(), end()), { deps: { phone: { problem: () => 'phones are switched off. Switch them on in Settings, Phone.' } } })
+      await expect(off.begin()).rejects.toThrow('“Check the phone” uses the phone, but phones are switched off. Switch them on in Settings, Phone.')
+      await expect(setup(chain(start(), phoneStep(), end())).begin()).rejects.toThrow(/uses the phone, but Phones are not available here/)
+    })
+
+    it('is not told about the phone when the step does not use it', async () => {
+      const { begin, until, approve, asked } = setup(chain(start(), agent(), end()), { deps: ready })
+      const run = await begin()
+      await until(run.id, 'waiting')
+      approve(run.id)
+      await until(run.id, 'completed')
+      expect(asked[0]?.prompt).not.toContain('phone_')
+    })
+  })
+
   it('stops waiting for a question when the run is cancelled', async () => {
     const { begin, until, approve, runner, waitForCard } = setup(chain(start(), agent(), end()), {
       agent: async (r) => {

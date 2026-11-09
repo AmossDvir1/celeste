@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
-import { AlarmClock, AppWindow, Bell, ChevronRight, Hand, Code2, Laptop, MessageSquare, Monitor, Moon, Plus, Search, ShieldOff, Smartphone, Sun, Unplug, Wifi, Workflow } from 'lucide-react'
+import { AlarmClock, AppWindow, Bell, CalendarDays, ChevronRight, Hand, Code2, Images, Laptop, MapPin, MessageSquare, Monitor, Moon, Phone, Plus, Search, ShieldOff, Smartphone, Sun, Unplug, Wifi, Workflow } from 'lucide-react'
 import type { Session } from '@/stores/types'
 import { abilities, notificationsAllowed, type AbilityState } from '../native'
 import { NeverAppsSheet } from '../NeverApps'
@@ -255,9 +255,13 @@ function AbilitiesCard() {
   }, [])
   if (!state) return null
   const rows: [keyof Omit<AbilityState, 'notificationAccess' | 'controlAccess' | 'never'>, typeof Bell, string, string][] = [
-    ['notifications', Bell, 'Notifications', 'Read them, and reply to messages'],
+    ['notifications', Bell, 'Notifications', 'Read them, reply to messages, and clear them'],
     ['open', AppWindow, 'Open apps and links', ''],
     ['alarm', AlarmClock, 'Alarms and timers', 'In your clock app'],
+    ['location', MapPin, 'Location', 'Where this phone is, once each time'],
+    ['files', Images, 'Photos and files', 'Only the ones you pick'],
+    ['calendar', CalendarDays, 'Calendar', 'Read your events, and add new ones'],
+    ['messages', Phone, 'Texts and calls', 'Written in for you; you press Send or Call'],
     ['control', Hand, 'Phone control', 'See the screen, tap and type, for up to 15 minutes when you allow it']
   ]
   const needsAccess = state.notifications && !state.notificationAccess

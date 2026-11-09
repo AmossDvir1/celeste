@@ -1,4 +1,4 @@
-import { Check, CircleAlert, FileText, Flag, Globe, Minus, MousePointer2, Play, Plug, Sparkles, Terminal } from 'lucide-react'
+import { Check, CircleAlert, FileText, Flag, Globe, Minus, MousePointer2, Play, Plug, Smartphone, Sparkles, Terminal } from 'lucide-react'
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 import type { WorkflowNode } from '@shared/workflow'
 import type { NodeState } from '@shared/workflow-run'
@@ -24,7 +24,12 @@ export function metaOf(step: WorkflowNode): StepMeta {
     case 'end':
       return { icon: Flag, label: 'End', tone: PINK, tile: 'bg-accent-soft text-accent-text' }
     case 'agent':
-      return { icon: step.computer ? MousePointer2 : Sparkles, label: step.computer ? 'Computer step' : 'Assistant step', tone: VIOLET, tile: 'bg-[#8b7bff]/15 text-[#a99dff]' }
+      return {
+        icon: step.computer ? MousePointer2 : step.phone ? Smartphone : Sparkles,
+        label: step.computer ? 'Computer step' : step.phone ? 'Phone step' : 'Assistant step',
+        tone: VIOLET,
+        tile: 'bg-[#8b7bff]/15 text-[#a99dff]'
+      }
     case 'tool': {
       const t = step.tool
       const icon = t.kind === 'shell' ? Terminal : t.kind === 'http' ? Globe : t.kind === 'file' ? FileText : Plug

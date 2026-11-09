@@ -1,6 +1,6 @@
 # Celeste: Phone Plan (Android)
 
-> **Status, 9 November 2026: step A1 (the app as a remote) is built, on the `phone` branch, not merged.** See "What A1 built" below. The owner wants two-way control between Celeste and a phone on the same Wi-Fi: the person drives the assistant from the phone, and the assistant does things on the phone with the person's approval. Second version of this plan: the owner chose **an app, not a web page**, and **Android only** for now. Android's wireless debugging (what Celeste has today, `IMPLEMENTATION_PLAN.md` section 7.11) works, but it needs Developer options and isn't simple, so it stays only as an advanced option. This plan updates section 7.12 of `IMPLEMENTATION_PLAN.md` and borrows the safety design of `DESKTOP_CONTROL_PLAN.md`.
+> **Status, 9 November 2026: step A1 (the app as a remote) is built, and so are A2 (phone abilities and the Use the phone step, without the `phone` device kind) and A3 (phone control), on the `phone` branch, not merged.** See "What A1 built" below. The owner wants two-way control between Celeste and a phone on the same Wi-Fi: the person drives the assistant from the phone, and the assistant does things on the phone with the person's approval. Second version of this plan: the owner chose **an app, not a web page**, and **Android only** for now. Android's wireless debugging (what Celeste has today, `IMPLEMENTATION_PLAN.md` section 7.11) works, but it needs Developer options and isn't simple, so it stays only as an advanced option. This plan updates section 7.12 of `IMPLEMENTATION_PLAN.md` and borrows the safety design of `DESKTOP_CONTROL_PLAN.md`.
 
 ### What A1 built
 
@@ -38,7 +38,20 @@
   - **On the computer** (`src/core/phone/tools.ts`): listed while Settings → Phone is on. A request goes on the phone's stream, and the answer comes back with `phone.reply`, only from that phone. There's no second card on the computer.
   - **On the phone** (`Abilities`, `AbilityActivity`, `AbilityReceiver`, `CelesteNotificationListener`): each ability has a switch in This phone. Every request shows a card with Approve and Deny.
 - **Checked on the emulator**: an alarm was set, notifications were read, and Settings was opened, each approved from the card. Replying to a notification is not checked yet (it needs a messaging app's notification).
-- **Not in this slice**: location, calendar, photos and files.
+- **Not in this slice**: location, calendar, photos and files (added in the second slice below).
+
+### More abilities and the Use the phone step (A2, second slice, 9 November 2026)
+
+- **New tools**: `phone_notification_dismiss`, `phone_location`, `phone_photos`, `phone_files`, `phone_calendar`, `phone_calendar_add`, `phone_message` and `phone_call`. Each asks on the phone first, as before.
+- **New switches in This phone**: Location, Photos and files, Calendar, and Texts and calls. Dismissing goes with the Notifications switch. Android's own permission is asked when the person first approves a request.
+  - **Location**: one fix each time, with how close it is, when it was taken, the address when the phone can tell, and a map link. If no fresh fix comes within 15 seconds, the last known one, saying so.
+  - **Photos and files**: Android's own picker, so only what the person picks leaves the phone. Photos come as smaller JPEG copies (1600 px), shown to the assistant and saved; files come as they are, saved only.
+  - **Calendar**: the events from a day (today unless asked) for 7 days (31 at most), and adding one after the person approves its title, time and place.
+  - **Texts and calls**: the messaging or phone app opens with the number and text filled in. The person presses Send or Call; Celeste never sends or calls by itself. A contact's name is looked up on the phone.
+- **Files to the computer**: the phone sends them in 1 MB parts (`phone.attach`), up to 10 files and 40 MB per request, then answers with `phone.reply`. The computer saves them in Celeste's data folder, under `phone/received/<date>/`, and tells the assistant where.
+- **Use the phone step** in workflows, like **Use the computer**: a switch on an AI step, or **Use the phone** in the Add list. A run is refused at the start, with the reason, when phones are off, no phone is paired, or the paired phone isn't connected. The step gets the phone tools and a note to use the typed abilities first and phone control only when none will do. The phone's cards name the workflow and the step, and when the step ends, anything it left waiting on the phone is cancelled with the reason.
+- **`/phone`** in the chat's slash menu: starts "Use my phone to …" when a phone is connected, or opens Settings → Phone.
+- **Checked**: the tool and step tests, and the new switches on the S24. Each new ability's request, card and answer still needs a real-phone check (listed in Remaining work).
 
 ### Phone control (A3, first version)
 
@@ -90,12 +103,22 @@ Two lists, so nothing is lost: what is left in the phone app and its link to the
 - what is on screen in an app that is not on the never list goes to the AI vendor (the consent card says so); decide whether a "hide private fields" option is wanted
 
 **More abilities (A2):**
-- location (once, when asked)
-- photos and files the person picks
-- calendar: read the next events, and add one
+- ✅ location (once, when asked)
+- ✅ photos and files the person picks
+- ✅ calendar: read the next events, and add one
+- ✅ dismissing a notification
+- ✅ sending an SMS or making a call by opening the app with everything filled in
+- ✅ a **Use the phone** step in workflows
+- a `phone` device kind beside `ssh`, `hyperv` and `adb` (left for later)
+
+**To check on the owner's real phone** (built 9 November 2026, after the restart that loads the new tools):
+- location, approved from the card (Android's permission asked the first time)
+- photos: pick two, and they show in the chat and in `phone/received/`
+- files: pick a PDF, and it arrives whole
+- calendar: read the next events; add one, and it shows in the calendar app
+- a text and a call: the app opens filled in, and nothing is sent or dialled
 - dismissing a notification
-- sending an SMS or making a call by opening the app with everything filled in
-- a `phone` device kind beside `ssh`, `hyperv` and `adb`, and a **Use the phone** step in workflows
+- a workflow with a **Use the phone** step: the card names the step, and Stop in the run cancels what waits on the phone
 
 **In the app:**
 - send things to the assistant from the share sheet (files, photos, links, text)
@@ -111,7 +134,7 @@ Two lists, so nothing is lost: what is left in the phone app and its link to the
 - **Serving the APK**: the computer fetches the released APK and caches it (today it looks for a local build), with GitHub Releases and Obtainium as the other ways in (P-3).
 - **The computer's key**: the phone bridge's key is kept in Celeste's settings; move it to the system's secret store (Electron `safeStorage`).
 - **Network checks, per desktop**: Windows Public-network profile check and the firewall prompt; macOS Local Network permission **Verify**; Linux firewall note.
-- **Workflows engine**: the **Use the phone** step.
+- ✅ **Workflows engine**: the **Use the phone** step (9 November 2026).
 - **Devices**: the `phone` device kind.
 - **Docs and legal**: README and install guide, the privacy statement (what the phone sends to the computer and what the computer sends to the AI vendor), third-party notices for what the app bundles (Capacitor, `@noble/curves`, lucide, and the rest of `phone/package.json`), and the CHANGELOG at release.
 - **Merging**: the `phone` branch is merged only when the owner decides; the owner publishes the release.
@@ -349,12 +372,13 @@ Exit: "open Settings and turn on the hotspot", done by the stand-in agent on the
 | `phone_location` | Where the phone is, once |
 | `phone_photos` / `phone_files` | The person picks; nothing is browsed without them |
 | `phone_calendar` / `phone_calendar_add` | Read the next events; add one |
+| `phone_message` / `phone_call` | Open the messaging or phone app filled in; the person presses Send or Call |
 | `phone_alarm` | Set an alarm or timer |
 | `phone_request_control` / `phone_release_control` | Ask for and hand back phone control |
 | `phone_screen` | The element list as text, plus a screenshot when asked |
 | `phone_tap`, `phone_type`, `phone_swipe`, `phone_key` | Act, while control is granted |
 
-Sending an SMS or making a call opens the messaging or phone app with everything filled in, and the person presses Send.
+All of these are built (9 November 2026). Sending an SMS or making a call opens the messaging or phone app with everything filled in, and the person presses Send or Call.
 
 ## 9. Build plan
 
@@ -362,7 +386,7 @@ Sending an SMS or making a call opens the messaging or phone app with everything
 |---|---|---|
 | **A0** | Clearer wording for today's wireless-debugging tab: "scan from inside **Wireless debugging → Pair device with QR code**, not the camera"; the pairing code as the default; rename it **Developer connection (advanced)**. | S |
 | **A1** | **The app as a remote**, after spikes 6.1 and 6.2: scopes on Core methods; the phone bridge; install from the QR; mDNS pairing; Settings → Phone; the app's chats, chat, cards, Stop and workflows; APK in CI and releases; self-update. | L |
-| **A2** | **Phone abilities**: the ability tools with approval cards on the phone, notification access with the restricted-settings guide, the `phone` device kind, and the **Use the phone** step. | L |
+| **A2** | **Phone abilities**: the ability tools with approval cards on the phone, notification access with the restricted-settings guide, the `phone` device kind, and the **Use the phone** step. ✅ Built, except the `phone` device kind (9 November 2026). | L |
 | **A3** | **Phone control**, after spike 6.3: accessibility service, the rails of 5.1, the action tools and the never list. | L |
 | **A4** | **Away from home**: Tailscale steps now, for the experiment; **the Cloudflare relay before shipping** (section 7, P-8). | S–M |
 

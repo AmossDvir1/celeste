@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { MousePointer2, Plus, Search, Settings, Workflow, X } from 'lucide-react'
+import { MousePointer2, Plus, Search, Settings, Smartphone, Workflow, X } from 'lucide-react'
 import { checkInputs, slugify, type InputDef } from '@shared/workflow'
 import { core } from '@/api'
 import { cn } from '@/lib/cn'
 import { TextInput } from '@/components/ui'
 import { useRuns } from '@/stores/runs'
+import { usePhone } from '@/stores/phone'
 import { useSettings } from '@/stores/settings'
 import { useSessions } from '@/stores/sessions'
 import { useUi } from '@/stores/ui'
@@ -34,6 +35,10 @@ interface Command extends SlashItem {
 }
 
 const desktopControlOn = () => useSettings.getState().desktopControl
+const phonePaired = () => {
+  const s = usePhone.getState().status
+  return !!s?.enabled && s.phones.length > 0
+}
 
 /** Celeste's own commands. Their names are reserved: a workflow with the same short name still shows, tagged with where it is from. */
 function commands(): Command[] {
@@ -50,6 +55,10 @@ function commands(): Command[] {
     desktopControlOn()
       ? { id: 'cmd-computer', slug: 'computer', label: 'Use my computer', description: 'Ask the assistant to do something on screen. You are asked before it starts.', source: 'Celeste', icon: MousePointer2, insert: 'Use my computer to ', run: () => undefined }
       : { id: 'cmd-computer', slug: 'computer', label: 'Use my computer', description: 'Switch on desktop control first, in Settings', source: 'Celeste', icon: MousePointer2, run: () => ui.openSettings('desktop') },
+    // The same for the phone: with none connected, this opens Settings, Phone.
+    phonePaired()
+      ? { id: 'cmd-phone', slug: 'phone', label: 'Use my phone', description: 'Ask the assistant to do something on your phone. The phone asks you first.', source: 'Celeste', icon: Smartphone, insert: 'Use my phone to ', run: () => undefined }
+      : { id: 'cmd-phone', slug: 'phone', label: 'Use my phone', description: 'Connect your phone first, in Settings', source: 'Celeste', icon: Smartphone, run: () => ui.openSettings('phone') },
     { id: 'cmd-search', slug: 'search', label: 'Search', description: 'Search chats and sessions', source: 'Celeste', icon: Search, run: () => ui.setSearchOpen(true) }
   ]
 }

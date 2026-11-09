@@ -231,14 +231,21 @@ async function start(): Promise<void> {
     }
   }
   // A workflow step has no chat to show a card in, so what desktop control asks it asks in the run, while the step is going.
+  // The phone shows its own cards, and names the workflow and step on them.
   const stepAsk = new Map<string, (title: string, detail?: string) => Promise<boolean>>()
+  const stepLabels = new Map<string, string>()
   const agentSteps = createAgentStepRunner({
       adapter: adapterFor,
       desktop: {
-        register: (sessionId, ask) => void stepAsk.set(sessionId, ask),
+        register: (sessionId, ask, label) => {
+          stepAsk.set(sessionId, ask)
+          if (label) stepLabels.set(sessionId, label)
+        },
         unregister: (sessionId) => {
           stepAsk.delete(sessionId)
+          stepLabels.delete(sessionId)
           desktopRef?.sessionGone(sessionId, 'The workflow step ended.')
+          phoneTools.ended(sessionId)
         }
       },
       // A step that names no model uses the first vendor that is ready, with the model that vendor calls automatic or lists first.
@@ -258,6 +265,15 @@ async function start(): Promise<void> {
     push: runPush,
     agent: agentSteps,
     desktop: { enabled: () => db.settings().desktopControl === true, wholeScreen: () => db.settings().desktopWholeScreen !== false },
+    phone: {
+      problem: () => {
+        const b = phoneRef
+        if (!b?.enabled) return 'phones are switched off. Switch them on in Settings, Phone.'
+        if (!b.phones().length) return 'no phone is paired with Celeste. Connect one in Settings, Phone.'
+        if (!b.listening().length) return 'the phone is not connected. Open Celeste on it, or switch on “Stay connected” in its This phone tab.'
+        return null
+      }
+    },
     mcp: {
       find: async (name) => (await mcp.resolved()).find((s) => s.key === serverKey(name) || s.key === name),
       call: (server, tool, args, timeoutMs, signal) => callTool(server, tool, args, timeoutMs, signal)
@@ -293,7 +309,11 @@ async function start(): Promise<void> {
   })
   desktopRef = desktopControl
   // The phone's abilities, listed only while a phone is paired; each asks on the phone (src/core/phone/tools.ts).
-  const phoneTools = new PhoneTools(() => phoneRef, (sessionId) => db.listSessions().find((s) => s.id === sessionId)?.title ?? 'a chat')
+  const phoneTools = new PhoneTools(
+    () => phoneRef,
+    (sessionId) => stepLabels.get(sessionId) ?? db.listSessions().find((s) => s.id === sessionId)?.title ?? 'a chat',
+    () => join(dataDir, 'phone', 'received')
+  )
   servers.setExtraTools(new CombinedTools([new WorkflowTools(db, runner, (sessionId) => (service as SessionService).workFolder(sessionId)), desktopControl, phoneTools]))
   const workflows = new WorkflowService(db, runner, undefined, () => push({ type: 'workflows' }), dataDir, async () => (await mcp.resolved()).map((s) => s.key), (sessionId) => (service as SessionService).workFolder(sessionId), (source) =>
     // The assistant only has to write; it is in plan mode, so anything it asks to do is refused, and it has three minutes.

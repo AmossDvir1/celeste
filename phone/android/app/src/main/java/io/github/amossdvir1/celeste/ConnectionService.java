@@ -152,11 +152,11 @@ public class ConnectionService extends Service {
         }
     }
 
-    /** Stop was pressed in the chat on the computer: its cards go, and phone control ends. */
+    /** Stop was pressed in the chat on the computer, or a workflow step that used the phone ended: its cards go, and phone control ends. */
     static void cancelled(Context ctx, JSONObject push) {
         JSONArray ids = push.optJSONArray("ids");
         if (ids != null) for (int i = 0; i < ids.length(); i++) Cards.forget(ctx, ids.optString(i));
-        if (push.optBoolean("endControl")) PhoneControl.end(ctx, "The user pressed Stop in the chat on the computer.");
+        if (push.optBoolean("endControl")) PhoneControl.end(ctx, push.optString("why", "The user pressed Stop in the chat on the computer."));
     }
 
     static void notifyApproval(Context ctx, String sessionId, String requestId, String chat, String text) {

@@ -22,7 +22,7 @@ export function lay(nodes: WorkflowNode[]): WorkflowDefinition {
   }
 }
 
-export type NewStep = { type: 'tool'; kind: 'shell' | 'http' | 'file' | 'mcp' } | { type: 'agent'; computer?: boolean }
+export type NewStep = { type: 'tool'; kind: 'shell' | 'http' | 'file' | 'mcp' } | { type: 'agent'; computer?: boolean; phone?: boolean }
 
 /** A tool step of the given kind with nothing filled in yet. */
 export function blankTool(kind: 'shell' | 'http' | 'file' | 'mcp'): ToolNode['tool'] {
@@ -37,6 +37,7 @@ export function blankTool(kind: 'shell' | 'http' | 'file' | 'mcp'): ToolNode['to
 
 export function makeStep(step: NewStep, taken: Iterable<string>): ToolNode | AgentNode {
   if (step.type === 'agent' && step.computer) return { id: nodeIdFrom('Use the computer', taken), type: 'agent', name: 'Use the computer', prompt: '', computer: {} }
+  if (step.type === 'agent' && step.phone) return { id: nodeIdFrom('Use the phone', taken), type: 'agent', name: 'Use the phone', prompt: '', phone: {} }
   if (step.type === 'agent') return { id: nodeIdFrom('Ask the assistant', taken), type: 'agent', name: 'Ask the assistant', prompt: '' }
   const tool = blankTool(step.kind)
   const name = { shell: 'Run a command', http: 'Call a web address', file: 'Read a file', mcp: 'Use a tool' }[step.kind]

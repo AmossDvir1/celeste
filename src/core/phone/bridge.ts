@@ -18,6 +18,9 @@ import type { CorePush } from '@shared/api'
 import {
   LABEL,
   PHONE_MAX_SKEW_MS,
+  PHONE_ATTACH_MAX_BYTES,
+  PHONE_ATTACH_MAX_FILES,
+  PHONE_ATTACH_PART,
   PHONE_PROTOCOL,
   PHONE_PUSHES,
   commitment,
@@ -29,6 +32,7 @@ import {
   seal,
   sessionKey,
   type PhoneAbility,
+  type PhoneAttachPart,
   type PhoneHello,
   type PhoneMethod,
   type PhonePairRequest,
@@ -74,11 +78,28 @@ const WAIT_MS = 25_000
 const HEARTBEAT_MS = 20_000
 const MAX_BODY = 4_000_000
 
+/** A file the person picked on the phone, as it arrived. */
+export interface PhoneFile {
+  name: string
+  mime: string
+  data: Buffer
+}
+
 /** A phone's answer to a request: what happened, and a screenshot when phone control was asked for one. */
 export interface PhoneAnswer {
   ok: boolean
   text: string
   image?: { mime: string; data: string }
+  /** The files the person picked (phone_photos, phone_files), whole. */
+  files?: PhoneFile[]
+}
+
+/** A file arriving in parts, with `phone.attach`. */
+interface Incoming {
+  name: string
+  mime: string
+  parts: Buffer[]
+  done: boolean
 }
 
 /** The computer's addresses on the local network, home networks first. */
@@ -133,7 +154,7 @@ export class PhoneBridge {
   private lastError: string | undefined
   private seenSaved = 0
   /** Requests sent to a phone, waiting for its reply. */
-  private readonly asked = new Map<string, { phoneId: string; sessionId: string; done: (r: PhoneAnswer) => void; acked: () => void }>()
+  private readonly asked = new Map<string, { phoneId: string; sessionId: string; done: (r: PhoneAnswer) => void; acked: () => void; files: Incoming[]; bytes: number }>()
 
   constructor(private readonly deps: PhoneBridgeDeps) {}
 
@@ -347,23 +368,54 @@ export class PhoneBridge {
         if (!this.asked.delete(id)) return
         resolve(r)
       }
-      this.asked.set(id, { phoneId, sessionId, done: finish, acked: () => clearTimeout(noAck) })
+      this.asked.set(id, { phoneId, sessionId, done: finish, acked: () => clearTimeout(noAck), files: [], bytes: 0 })
       this.sendTo(phoneId, push)
     })
   }
 
-  /** Stop was pressed in a chat: its requests waiting on the phone end now, their cards go, and phone control ends. */
-  cancel(sessionId: string): void {
+  /**
+   * Stop was pressed in a chat, or a workflow step that used the phone ended: its requests waiting on the phone end now, their
+   * cards go, and phone control ends.
+   */
+  cancel(sessionId: string, why?: string): void {
     const byPhone = new Map<string, string[]>()
     for (const [id, a] of [...this.asked]) {
       if (a.sessionId !== sessionId) continue
       byPhone.set(a.phoneId, [...(byPhone.get(a.phoneId) ?? []), id])
-      a.done({ ok: false, text: 'The user stopped it.' })
+      a.done({ ok: false, text: why ?? 'The user stopped it.' })
     }
     for (const phone of this.listening()) {
-      const push: PhoneCancelPush = { type: 'phoneCancel', ids: byPhone.get(phone.id) ?? [], endControl: true }
+      const push: PhoneCancelPush = { type: 'phoneCancel', ids: byPhone.get(phone.id) ?? [], endControl: true, ...(why ? { why } : {}) }
       this.sendTo(phone.id, push)
     }
+  }
+
+  /**
+   * Part of a file for a request waiting on this phone. Files come one after another and each in order, within the limits;
+   * anything else is refused, and the reply then carries only the files that arrived whole.
+   */
+  private attach(phoneId: string, p: Partial<PhoneAttachPart> | undefined): string | null {
+    const waiting = typeof p?.id === 'string' ? this.asked.get(p.id) : undefined
+    if (!p || !waiting || waiting.phoneId !== phoneId) return 'Nothing is waiting for that file.'
+    if (typeof p.data !== 'string' || p.data.length > Math.ceil(PHONE_ATTACH_PART / 3) * 4 || !/^[A-Za-z0-9+/]*={0,2}$/.test(p.data)) return 'That part is not right.'
+    const data = Buffer.from(p.data, 'base64')
+    const files = waiting.files
+    let file = files[files.length - 1]
+    if (p.file === files.length && (!file || file.done) && p.part === 0) {
+      if (files.length >= PHONE_ATTACH_MAX_FILES) return `At most ${PHONE_ATTACH_MAX_FILES} files at a time.`
+      const name = typeof p.name === 'string' ? p.name.slice(0, 200) : ''
+      const mime = typeof p.mime === 'string' && /^[\w.+-]+\/[\w.+-]+$/.test(p.mime) ? p.mime.slice(0, 100) : 'application/octet-stream'
+      file = { name, mime, parts: [], done: false }
+      files.push(file)
+    } else if (!file || file.done || p.file !== files.length - 1 || p.part !== file.parts.length) return 'That part came out of order.'
+    if (waiting.bytes + data.length > PHONE_ATTACH_MAX_BYTES) {
+      files.pop()
+      return `The files are too large together (at most ${PHONE_ATTACH_MAX_BYTES / 1_048_576} MB).`
+    }
+    waiting.bytes += data.length
+    file.parts.push(data)
+    file.done = p.last === true
+    return null
   }
 
   private sendTo(phoneId: string, value: PhoneRequestPush | PhoneCancelPush): void {
@@ -518,13 +570,17 @@ export class PhoneBridge {
       const waiting = typeof r?.id === 'string' ? this.asked.get(r.id) : undefined
       if (waiting && waiting.phoneId === phone.id) waiting.acked()
       reply = { id: call.id, ok: true, result: null }
+    } else if (call.method === 'phone.attach') {
+      const error = this.attach(phone.id, call.params[0] as Partial<PhoneAttachPart> | undefined)
+      reply = error ? { id: call.id, ok: false, error } : { id: call.id, ok: true, result: null }
     } else if (call.method === 'phone.reply') {
       // The answer to a request this computer sent: only the phone it was sent to can answer it.
       const r = call.params[0] as Partial<PhoneReply> | undefined
       const waiting = typeof r?.id === 'string' ? this.asked.get(r.id) : undefined
       if (waiting && waiting.phoneId === phone.id) {
         const image = r?.image && typeof r.image.data === 'string' && r.image.data.length < 3_000_000 && /^image\/(jpeg|png)$/.test(String(r.image.mime)) ? { mime: String(r.image.mime), data: r.image.data } : undefined
-        waiting.done({ ok: r?.ok === true, text: typeof r?.text === 'string' ? r.text.slice(0, 100_000) : '', ...(image ? { image } : {}) })
+        const files = waiting.files.filter((f) => f.done).map((f) => ({ name: f.name, mime: f.mime, data: Buffer.concat(f.parts) }))
+        waiting.done({ ok: r?.ok === true, text: typeof r?.text === 'string' ? r.text.slice(0, 100_000) : '', ...(image ? { image } : {}), ...(files.length ? { files } : {}) })
         reply = { id: call.id, ok: true, result: null }
       } else reply = { id: call.id, ok: false, error: 'Nothing is waiting for that answer.' }
     } else {

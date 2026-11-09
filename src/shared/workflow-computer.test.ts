@@ -43,3 +43,27 @@ describe('a step that uses the computer', () => {
     expect(text).not.toContain('computer')
   })
 })
+
+describe('a step that uses the phone', () => {
+  const phoneStep = (phone: unknown): WorkflowNode => ({ id: 'check', type: 'agent', name: 'Check it', prompt: 'Read my texts', phone } as WorkflowNode)
+
+  it('is valid with an empty phone setting, and not with anything else', () => {
+    expect(validateWorkflow(chain(start, phoneStep({}), end))).toEqual([])
+    expect(validateWorkflow(chain(start, phoneStep('yes'), end))[0]).toContain('phone setting is not valid')
+    expect(validateWorkflow(chain(start, phoneStep({ id: 'p1' }), end))[0]).toContain('phone setting is not valid')
+  })
+
+  it('is made by “Use the phone”, which is an assistant step that may use the phone, with nothing filled in', () => {
+    expect(makeStep({ type: 'agent', phone: true }, ['start', 'end'])).toEqual({ id: 'use_the_phone', type: 'agent', name: 'Use the phone', prompt: '', phone: {} })
+    expect(makeStep({ type: 'agent' }, [])).not.toHaveProperty('phone')
+  })
+
+  it('goes into a shared file and comes back, and whoever opens it is told it uses their phone', () => {
+    const { text } = toFile('W', '', chain(start, phoneStep({}), end))
+    expect(JSON.parse(text).definition.nodes[1].phone).toEqual({})
+    const back = fromFile(text)
+    expect((back.definition.nodes[1] as { phone?: unknown }).phone).toEqual({})
+    expect(back.notes.join(' ')).toContain('uses your phone')
+    expect(toFile('W', '', chain(start, { id: 'a', type: 'agent', name: 'A', prompt: 'x' }, end)).text).not.toContain('phone')
+  })
+})

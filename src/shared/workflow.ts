@@ -77,6 +77,12 @@ export interface AgentNode extends NodeBase, StepOptions {
    * run's own card, and it is refused if the switch in Settings is off. `app` or `window` limits it to one program or one window.
    */
   computer?: { app?: string; window?: string }
+  /**
+   * The step may use the person's paired phone, with Celeste's phone tools. Each thing it does there is asked on the phone first, and
+   * a run will not start while phones are switched off or no phone is connected. Empty for now; it is an object so that it can say
+   * more later (which phone, say).
+   */
+  phone?: Record<string, never>
 }
 
 export interface EndNode extends NodeBase {
@@ -258,6 +264,7 @@ export function validateWorkflow(input: unknown): string[] {
           else if (c.app !== undefined && c.window !== undefined) problems.push(`${label}: name either a program or a window to use, not both.`)
           else if ((str(c.app) && !c.app.trim()) || (str(c.window) && !c.window.trim())) problems.push(`${label}: say which program or window it may use, or choose the whole screen.`)
         }
+        if (raw.phone !== undefined && (!isObject(raw.phone) || Object.keys(raw.phone).length > 0)) problems.push(`${label}: the phone setting is not valid.`)
         break
       case 'end':
         break
