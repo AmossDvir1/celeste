@@ -137,6 +137,41 @@ describe('phone bridge', () => {
     expect((await fetch(`${t.base}/rpc`, { method: 'POST', body: JSON.stringify({ phone: 'nobody', box: 'x' }) })).status).toBe(401)
   })
 
+  it('starts the stream again when it goes quiet past the pings, and pushes reach the new one', async () => {
+    const { pairing, bridge } = await paired()
+    const got: (CorePush | PhoneRequestPush | PhoneCancelPush)[] = []
+    const states: LinkState[] = []
+    // The bridge pings every 20 s: a phone that expects to hear something every 300 ms takes the line for dead.
+    const stop = new PhoneLink(pairing, { silentMs: 300 }).listen((p) => got.push(p), (s) => states.push(s))
+    await waitFor(() => states.filter((s) => s === 'connected').length >= 2)
+    // Quietly: the app never shows itself offline for it.
+    expect(states.slice(0, 3)).toEqual(['connecting', 'connected', 'connected'])
+    bridge.broadcast({ type: 'removed', id: 'after' })
+    await waitFor(() => got.length === 1)
+    expect(bridge.listening()).toHaveLength(1)
+    stop()
+  })
+
+  it('opens a new stream at once when asked, without going offline, and pushes reach it', async () => {
+    const { pairing, bridge } = await paired()
+    const got: (CorePush | PhoneRequestPush | PhoneCancelPush)[] = []
+    const states: LinkState[] = []
+    const link = new PhoneLink(pairing)
+    const stop = link.listen((p) => got.push(p), (s) => states.push(s))
+    await waitFor(() => states.includes('connected'))
+    link.reopen()
+    await waitFor(() => states.filter((s) => s === 'connected').length === 2)
+    expect(states).toEqual(['connecting', 'connected', 'connected'])
+    await waitFor(() => bridge.listening().length === 1)
+    bridge.broadcast({ type: 'removed', id: 'after' })
+    await waitFor(() => got.length === 1)
+    // Once stopped, asking again does nothing.
+    stop()
+    link.reopen()
+    await new Promise((r) => setTimeout(r, 100))
+    expect(states).toEqual(['connecting', 'connected', 'connected'])
+  })
+
   it('stops listening when turned off', async () => {
     const t = await started()
     await t.bridge.setEnabled(false)

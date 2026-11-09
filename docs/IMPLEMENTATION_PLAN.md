@@ -45,6 +45,7 @@ Each has a default that I'll use unless you say otherwise. The last column says 
 | 15 | Should the agent be able to use this computer's mouse and keyboard, after asking? | A separate plan, [DESKTOP_CONTROL_PLAN.md](DESKTOP_CONTROL_PLAN.md): a tool the agent calls to ask, Celeste's own consent card, then control for one chat for a limited time with a visible bar and a stop the agent cannot press. Off by default. Proposed after the first public release, starting with a Windows spike. Eight smaller decisions are listed in that file | After Phase 7 |
 | 16 | Mermaid diagrams the agent can draw when a picture helps (plans, structure, flows)? | Future work, not scheduled. A `show_diagram` tool on Celeste's tool server (so every vendor has it), shown as a card in the conversation, plus a fallback for ```mermaid blocks in an answer. Section 7.15 | After Phase 7 |
 | 14 | Should several people be able to share one session? | Not in v1, and not scheduled. Section 7.13 sets out what exists elsewhere, three ways to build it, what each needs, and the privacy and vendor-terms risks. The cheapest first step is handing a session to another person as a file | After Phase 9 |
+| 17 | **How does the Android app reach the computer away from home, when it ships?** | A Cloudflare relay run by the project (`relay/`), carrying only sealed messages, not Tailscale, which asks every person to set up a second product. Tailscale stays as an advanced option and as the owner's way while the app is an experiment. The project needs a Cloudflare account, and the privacy statement must say the relay sees who is online and when. Details: `PHONE_PLAN.md` section 7 and P-8 | Before the phone app ships |
 
 ## 3. Chat vs Develop
 
@@ -691,7 +692,7 @@ Workflows (section 7.10) can run a Tool step's shell command on a device.
 
 - **Pairing.** Mobile access is off by default. In Settings you turn it on, and your computer shows a QR code holding its address, a one-time secret and its certificate's fingerprint. The phone scans it. From then on the phone holds a device key in the iPhone Keychain (or Android's keystore) and proves it on every connection. Each phone is listed in Settings and can be revoked at once.
 - **Same Wi-Fi.** The phone finds your computer on the local network. iOS asks permission for that (Local Network), and the app declares the service it looks for.
-- **Away from home.** Through a tunnel you set up yourself, such as Tailscale or Cloudflare Tunnel. Celeste has no server of its own, so it doesn't offer one. The plan shows the steps.
+- **Away from home.** Through a tunnel you set up yourself, such as Tailscale or Cloudflare Tunnel. Celeste has no server of its own, so it doesn't offer one. The plan shows the steps. **Changed 9 November 2026 (decision 17): to ship, a Cloudflare relay run by the project replaces this; the tunnel stays as an advanced option.**
 - **The same interface.** The desktop screens already reach Core through one typed channel (section 5), and the browser preview already swaps in another way to reach it. The phone adds a third, an encrypted WebSocket that pins the certificate. The phone screens are the same React code, with layouts made for a small screen.
 - **Narrower permissions than the desktop.** Every Core method carries a scope (read, chat, approve, admin), and a phone is never given admin. Risky actions can be set to need approval on the phone.
 
@@ -713,6 +714,18 @@ A phone whose app is closed shows as asleep, and the assistant is told so instea
 **No push notifications in v1.** Apple and Google deliver push only with a provider key, and that key can't ship inside an open-source app. So a closed phone gets no "needs you" alert. It shows when the app is opened. An optional small relay run by the project could come later, and it would carry no message content (decision 11).
 
 **Cost and rules.** An iOS app needs an Apple Developer Program account (US$99 a year **Verify**), builds on macOS (a cloud macOS builder in CI is enough), review before the App Store, and TestFlight for betas, whose builds expire after 90 days **Verify**. Android needs a Google Play developer account. Celeste's Apache-2.0 license is fine for both stores.
+
+**What the Android app still needs from the main app** (the app's own remaining work is in `PHONE_PLAN.md`, "Remaining work"):
+
+| Area | To do |
+|---|---|
+| Release and CI | Build and sign the APK in CI (one stable key kept as a CI secret, so updates install over the old app), attach it to each GitHub Release, run the app's tests on an emulator, and have the computer fetch and cache the released APK to serve it |
+| Away from home (decision 17) | The Cloudflare relay in `relay/`: a transport the computer opens outward, the same sealed messages on top, rate limits per pairing, and its free-tier limits watched. Needed before shipping |
+| Keys | The phone bridge's key moves from Celeste's settings to the system's secret store (Electron `safeStorage`) |
+| Networks | Windows: Public-network profile check and the firewall prompt. macOS: Local Network permission. Linux: a firewall note |
+| Workflows and devices | A **Use the phone** step in the workflow engine, and a `phone` device kind beside `ssh`, `hyperv` and `adb` |
+| Docs and legal | README and install guide, a privacy statement (what the phone sends to the computer, what goes on to the AI vendor, what the relay sees), third-party notices for the app's libraries, and the CHANGELOG at release |
+| Merge and release | The `phone` branch is merged when the owner decides, and the owner publishes the release |
 
 **What earlier phases do now so this stays easy**
 

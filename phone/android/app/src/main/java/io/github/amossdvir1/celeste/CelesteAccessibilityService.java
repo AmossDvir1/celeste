@@ -21,10 +21,12 @@ import android.util.Base64;
 import android.view.Display;
 import android.view.Gravity;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import java.io.ByteArrayOutputStream;
@@ -35,15 +37,22 @@ import java.util.concurrent.Executor;
 /**
  * The phone-control service (step A3). Android lets an app see the screen and tap only through an accessibility service,
  * which the person switches on in Android's settings. It acts only while PhoneControl has a grant; then it draws a
- * coloured border and a Stop button over everything, and three presses of volume down stop it too.
+ * coloured border and a Stop button over everything, and three presses of volume down stop it too. A touch from the
+ * person pauses it until they press Continue.
  */
 public class CelesteAccessibilityService extends AccessibilityService {
     static volatile CelesteAccessibilityService live;
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private View border;
-    private TextView stop;
-    private final Rect stopBounds = new Rect();
+    /** The pill at the top: Stop, and Continue while paused. It also hears every touch outside it (pausing control). */
+    private LinearLayout pill;
+    private TextView stop, resume;
+    /** Where the pill is on the screen (screen pixels), kept so a tap aimed at it can be told apart. Replaced, never changed. */
+    private volatile Rect pillRect = new Rect();
+    private boolean pillAtTop = true;
+    /** Touches before this time are Celeste's own gestures, not the person's. */
+    private volatile long ownUntil;
     private final long[] volumeDowns = new long[3];
     private int volumeIndex;
 
@@ -119,27 +128,112 @@ public class CelesteAccessibilityService extends AccessibilityService {
                     PixelFormat.TRANSLUCENT);
             wm.addView(border, full);
 
-            stop = new TextView(this);
-            stop.setText("■  Stop Celeste");
-            stop.setTextColor(Color.WHITE);
-            stop.setTextSize(15);
-            int pad = (int) (14 * getResources().getDisplayMetrics().density);
-            stop.setPadding(pad * 2, pad, pad * 2, pad);
+            float dp = getResources().getDisplayMetrics().density;
+            int pad = (int) (14 * dp);
+            pill = new LinearLayout(this);
+            pill.setOrientation(LinearLayout.HORIZONTAL);
+            pill.setGravity(Gravity.CENTER_VERTICAL);
             GradientDrawable bg = new GradientDrawable();
             bg.setColor(0xF0111111);
             bg.setCornerRadius(100);
             bg.setStroke(3, 0xFFF5487F);
-            stop.setBackground(bg);
+            pill.setBackground(bg);
+
+            resume = new TextView(this);
+            resume.setText("▶  Continue");
+            resume.setTextColor(0xFF7CF0B0);
+            resume.setTextSize(15);
+            resume.setPadding(pad * 2, pad, pad, pad);
+            resume.setVisibility(View.GONE);
+            resume.setOnClickListener(v -> PhoneControl.resume(this));
+            pill.addView(resume);
+
+            stop = new TextView(this);
+            stop.setText("■  Stop Celeste");
+            stop.setTextColor(Color.WHITE);
+            stop.setTextSize(15);
+            stop.setPadding(pad * 2, pad, pad * 2, pad);
             stop.setOnClickListener(v -> PhoneControl.end(this, "The user pressed Stop on the phone."));
+            pill.addView(stop);
+
+            // The person's own touch wins: Android tells this window about every touch outside it (where, it does not say
+            // for other apps' windows). Celeste's own gestures are told apart by time.
+            pill.setOnTouchListener((v, ev) -> {
+                if (ev.getActionMasked() == MotionEvent.ACTION_OUTSIDE) personTouched();
+                return false;
+            });
             WindowManager.LayoutParams top = new WindowManager.LayoutParams(
                     WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
                     WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN | WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
                     PixelFormat.TRANSLUCENT);
+            pillAtTop = true;
             top.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
-            top.y = (int) (40 * getResources().getDisplayMetrics().density);
-            wm.addView(stop, top);
-            stop.post(() -> stop.getGlobalVisibleRect(stopBounds));
+            top.y = (int) (40 * dp);
+            wm.addView(pill, top);
+            measurePill();
+        });
+    }
+
+    /** Works out where the pill is on the screen. (Not getGlobalVisibleRect: for a window of its own that is relative to the window.) */
+    private void measurePill() {
+        if (pill == null) return;
+        pill.post(() -> {
+            if (pill == null) return;
+            int[] xy = new int[2];
+            pill.getLocationOnScreen(xy);
+            pillRect = new Rect(xy[0], xy[1], xy[0] + pill.getWidth(), xy[1] + pill.getHeight());
+        });
+    }
+
+    private void placePill() {
+        if (pill == null) return;
+        WindowManager.LayoutParams lp = (WindowManager.LayoutParams) pill.getLayoutParams();
+        float dp = getResources().getDisplayMetrics().density;
+        lp.gravity = (pillAtTop ? Gravity.TOP : Gravity.BOTTOM) | Gravity.CENTER_HORIZONTAL;
+        lp.y = (int) ((pillAtTop ? 40 : 72) * dp);
+        try { getSystemService(WindowManager.class).updateViewLayout(pill, lp); } catch (Exception ignored) {}
+        measurePill();
+    }
+
+    /**
+     * The assistant is about to tap (x, y). If that is where Celeste's own Stop pill is (a tab or button at the top of an app
+     * often is), the pill moves to the other end of the screen first, so the tap reaches the app and never the Stop.
+     */
+    void clearPillFor(int x, int y, Runnable then) {
+        main.post(() -> {
+            Rect r = new Rect(pillRect);
+            r.inset(-24, -24);
+            if (pill == null || r.isEmpty() || !r.contains(x, y)) {
+                then.run();
+                return;
+            }
+            pillAtTop = !pillAtTop;
+            placePill();
+            // Go ahead once the window has moved and been measured again.
+            main.postDelayed(then, 450);
+        });
+    }
+
+    private void personTouched() {
+        if (!PhoneControl.active() || PhoneControl.paused()) return;
+        if (System.currentTimeMillis() < ownUntil || PhoneControl.asking()) return;
+        // In Celeste itself the person is watching or answering, not taking the phone back.
+        if (getPackageName().equals(foregroundPackage())) return;
+        PhoneControl.pause(this);
+    }
+
+    /** While paused the border fades and Continue shows beside Stop. */
+    void showPaused(boolean on) {
+        main.post(() -> {
+            if (border != null) border.setAlpha(on ? 0.35f : 1f);
+            if (resume != null) resume.setVisibility(on ? View.VISIBLE : View.GONE);
+            if (stop != null) {
+                stop.setText(on ? "■  Stop" : "■  Stop Celeste");
+                int pad = (int) (14 * getResources().getDisplayMetrics().density);
+                stop.setPadding(on ? pad : pad * 2, pad, pad * 2, pad);
+            }
+            measurePill();
         });
     }
 
@@ -147,18 +241,21 @@ public class CelesteAccessibilityService extends AccessibilityService {
         main.post(() -> {
             WindowManager wm = getSystemService(WindowManager.class);
             if (border != null) try { wm.removeView(border); } catch (Exception ignored) {}
-            if (stop != null) try { wm.removeView(stop); } catch (Exception ignored) {}
+            if (pill != null) try { wm.removeView(pill); } catch (Exception ignored) {}
             border = null;
+            pill = null;
             stop = null;
-            stopBounds.setEmpty();
+            resume = null;
+            pillRect = new Rect();
+            pillAtTop = true;
         });
     }
 
     /** True when (x, y) is on Celeste's own Stop button, which the assistant may never press. */
     boolean onStop(int x, int y) {
-        Rect r = new Rect(stopBounds);
+        Rect r = new Rect(pillRect);
         r.inset(-24, -24);
-        return !stopBounds.isEmpty() && r.contains(x, y);
+        return !pillRect.isEmpty() && r.contains(x, y);
     }
 
     // ---- Reading the screen ----
@@ -263,9 +360,11 @@ public class CelesteAccessibilityService extends AccessibilityService {
     }
 
     private void gesture(GestureDescription g, Runnable done) {
+        // Its own touches must not look like the person's: quiet for the gesture and a moment after.
+        ownUntil = System.currentTimeMillis() + g.getStroke(0).getDuration() + 1_500;
         dispatchGesture(g, new GestureResultCallback() {
-            @Override public void onCompleted(GestureDescription d) { main.postDelayed(done, 600); }
-            @Override public void onCancelled(GestureDescription d) { main.postDelayed(done, 300); }
+            @Override public void onCompleted(GestureDescription d) { ownUntil = System.currentTimeMillis() + 300; main.postDelayed(done, 600); }
+            @Override public void onCancelled(GestureDescription d) { ownUntil = System.currentTimeMillis() + 300; main.postDelayed(done, 300); }
         }, main);
     }
 }

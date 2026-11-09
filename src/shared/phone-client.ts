@@ -92,17 +92,26 @@ export async function pair(base: string, name: string, onPictures: (emoji: strin
 
 export type LinkState = 'connecting' | 'connected' | 'offline' | 'refused'
 
+/**
+ * The computer pings the stream every 20 seconds (core/phone/bridge.ts). A stream silent for longer than this is gone,
+ * even when the socket never said so: after the WebView froze the page, the phone slept, or its Wi-Fi dropped for a moment.
+ */
+const SILENT_MS = 45_000
+
 /** A paired phone's line to the computer: sealed calls, and a stream of sealed pushes that reconnects by itself. */
 export class PhoneLink {
   private key: Promise<CryptoKey>
   private nextId = 1
   private readonly f: Fetch
+  private readonly silentMs: number
+  private reopenStream: (() => void) | null = null
 
   constructor(
     private pairing: PhonePairing,
-    opts: { fetch?: Fetch } = {}
+    opts: { fetch?: Fetch; silentMs?: number } = {}
   ) {
     this.f = opts.fetch ?? ((...a) => fetch(...a))
+    this.silentMs = opts.silentMs ?? SILENT_MS
     this.key = sessionKey(pairing.keys.priv, pairing.computer.key, pairing.computer.key, pairing.keys.pub)
   }
 
@@ -130,32 +139,54 @@ export class PhoneLink {
     return reply.result as T
   }
 
-  /** Listens for pushes until the returned function is called. Reconnects after a drop, slower each time, up to 15 s. */
+  /**
+   * Listens for pushes until the returned function is called. Reconnects after a drop, slower each time, up to 15 s.
+   * A stream that goes quiet past the computer's pings, or that `reopen` drops, is opened again at once without going
+   * `offline`. Every new stream says `connected` again, so the caller can catch up on what it missed.
+   */
   listen(onPush: (push: CorePush | PhoneRequestPush | PhoneCancelPush) => void, onState: (state: LinkState) => void): () => void {
     let stopped = false
     let controller: AbortController | null = null
     let delay = 1000
+    let live = false
+    let again = false
+    const reopen = () => {
+      if (!live) return
+      again = true
+      controller?.abort()
+    }
+    this.reopenStream = reopen
     const run = async () => {
       while (!stopped) {
-        onState('connecting')
-        controller = new AbortController()
+        const quiet = again
+        again = false
+        if (!quiet) onState('connecting')
+        const ctl = new AbortController()
+        controller = ctl
+        let watch: ReturnType<typeof setInterval> | null = null
         try {
           const key = await this.key
           const auth = await seal(key, { ts: Date.now(), n: randomB64(12) }, LABEL.listen)
-          const res = await this.f(`${this.pairing.base}/events?phone=${encodeURIComponent(this.pairing.phoneId)}&auth=${encodeURIComponent(auth)}`, { signal: controller.signal })
+          const res = await this.f(`${this.pairing.base}/events?phone=${encodeURIComponent(this.pairing.phoneId)}&auth=${encodeURIComponent(auth)}`, { signal: ctl.signal })
           if (res.status === 401) {
             onState('refused')
             return
           }
           if (!res.ok || !res.body) throw new Error(String(res.status))
+          live = true
           onState('connected')
           delay = 1000
+          // Checked often rather than one long timer: a WebView in the background runs timers late, and on its return the
+          // first check finds the silence at once.
+          let heard = Date.now()
+          watch = setInterval(() => Date.now() - heard > this.silentMs && reopen(), Math.min(5000, this.silentMs / 3))
           const reader = res.body.getReader()
           const decoder = new TextDecoder()
           let buf = ''
           for (;;) {
             const { value, done } = await reader.read()
             if (done) break
+            heard = Date.now()
             buf += decoder.decode(value, { stream: true })
             let cut: number
             while ((cut = buf.indexOf('\n\n')) >= 0) {
@@ -175,9 +206,13 @@ export class PhoneLink {
             }
           }
         } catch {
-          // Dropped, or the computer is not there: try again shortly.
+          // Dropped, gone quiet, or the computer is not there: try again shortly.
+        } finally {
+          live = false
+          if (watch) clearInterval(watch)
         }
         if (stopped) return
+        if (again) continue
         onState('offline')
         await new Promise((r) => setTimeout(r, delay))
         delay = Math.min(delay * 2, 15_000)
@@ -186,7 +221,17 @@ export class PhoneLink {
     void run()
     return () => {
       stopped = true
+      if (this.reopenStream === reopen) this.reopenStream = null
       controller?.abort()
     }
+  }
+
+  /**
+   * Drops the stream and opens a new one at once, for when the app comes back to the screen. Android's WebView freezes a
+   * page about a minute after it is hidden, and a stream that was open across the freeze never delivers again: no error,
+   * no end, and the socket stays open, so neither side can tell.
+   */
+  reopen(): void {
+    this.reopenStream?.()
   }
 }

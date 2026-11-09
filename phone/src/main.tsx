@@ -30,8 +30,11 @@ void setupNotifications((action, extra) => {
 onBack(() => useApp.getState().back())
 onResume(() => {
   const st = useApp.getState()
-  if (st.pairing && st.linkState !== 'connected') st.connect()
-  else void st.refresh()
+  if (!st.pairing) return
+  // The WebView froze the page while it was hidden, and a stream open across that never delivers again: a new one says
+  // connected, which reads the open chat again.
+  if (st.linkState === 'connected' && st.link) st.link.reopen()
+  else st.connect()
 })
 
 if (useApp.getState().pairing) useApp.getState().connect()

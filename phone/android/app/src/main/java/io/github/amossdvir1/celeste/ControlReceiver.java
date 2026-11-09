@@ -4,13 +4,17 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 
-/** Phone control's buttons on notifications: Allow or Deny on its cards, and Stop while it lasts. */
+/** Phone control's buttons on notifications: Allow or Deny on its cards, and Stop (and Continue while paused) while it lasts. */
 public class ControlReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context ctx, Intent intent) {
         String action = intent.getAction();
         if ("stop".equals(action)) {
             PhoneControl.end(ctx, "The user pressed Stop on the phone.");
+            return;
+        }
+        if ("continue".equals(action)) {
+            PhoneControl.resume(ctx);
             return;
         }
         String id = intent.getStringExtra("id");

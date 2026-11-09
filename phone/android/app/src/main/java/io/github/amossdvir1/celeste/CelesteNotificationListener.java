@@ -52,7 +52,8 @@ public class CelesteNotificationListener extends NotificationListenerService {
         if (all == null) return out;
         java.util.Arrays.sort(all, (x, y) -> Long.compare(y.getPostTime(), x.getPostTime()));
         for (StatusBarNotification s : all) {
-            if (s.getPackageName().equals(l.getPackageName()) || s.isOngoing()) continue;
+            // Never-list apps (password managers, authenticators, and the person's own picks such as their bank) stay unseen.
+            if (s.getPackageName().equals(l.getPackageName()) || s.isOngoing() || PhoneControl.never(l, s.getPackageName())) continue;
             Notification n = s.getNotification();
             if ((n.flags & Notification.FLAG_GROUP_SUMMARY) != 0) continue;
             Bundle x = n.extras;

@@ -29,6 +29,8 @@ interface CelesteNativePlugin {
   handleRequest(opts: { request: string }): Promise<void>
   abilities(): Promise<AbilityState>
   setAbility(opts: { ability: string; on: boolean }): Promise<void>
+  apps(): Promise<{ apps: PhoneApp[] }>
+  setNever(opts: { pkg: string; on: boolean }): Promise<void>
   openNotificationAccess(): Promise<void>
   openAppInfo(): Promise<void>
   openAccessibility(): Promise<void>
@@ -43,6 +45,18 @@ export interface AbilityState {
   notificationAccess: boolean
   /** Celeste phone control is switched on in Android's Accessibility settings. */
   controlAccess: boolean
+  /** Ask again before buttons like Send, Pay or Delete (off by default: one grant covers the task). */
+  controlConfirm: boolean
+  /** How many apps the person added to the never list. */
+  never: number
+}
+
+/** An app on the phone, for the never list. `fixed`: always off-limits (password managers, Android's installer). */
+export interface PhoneApp {
+  pkg: string
+  name: string
+  never: boolean
+  fixed: boolean
 }
 
 const Native = registerPlugin<CelesteNativePlugin>('CelesteNative', {
@@ -53,7 +67,9 @@ const Native = registerPlugin<CelesteNativePlugin>('CelesteNative', {
     stopService: async () => undefined,
     setLine: async () => undefined,
     handleRequest: async () => undefined,
-    abilities: async () => ({ notifications: false, open: false, alarm: false, control: false, notificationAccess: false, controlAccess: false }),
+    abilities: async () => ({ notifications: false, open: false, alarm: false, control: false, notificationAccess: false, controlAccess: false, controlConfirm: false, never: 0 }),
+    apps: async () => ({ apps: [] }),
+    setNever: async () => undefined,
     setAbility: async () => undefined,
     openNotificationAccess: async () => undefined,
     openAppInfo: async () => undefined,
@@ -122,8 +138,11 @@ export async function handlePhoneRequest(request: unknown): Promise<void> {
 }
 
 export const abilities = {
-  get: (): Promise<AbilityState> => Native.abilities().catch(() => ({ notifications: false, open: false, alarm: false, control: false, notificationAccess: false, controlAccess: false })),
+  get: (): Promise<AbilityState> =>
+    Native.abilities().catch(() => ({ notifications: false, open: false, alarm: false, control: false, notificationAccess: false, controlAccess: false, controlConfirm: false, never: 0 })),
   set: (ability: string, on: boolean): Promise<void> => Native.setAbility({ ability, on }).catch(() => undefined),
+  apps: (): Promise<PhoneApp[]> => Native.apps().then((r) => r.apps, () => []),
+  setNever: (pkg: string, on: boolean): Promise<void> => Native.setNever({ pkg, on }),
   openNotificationAccess: (): Promise<void> => Native.openNotificationAccess().catch(() => undefined),
   openAppInfo: (): Promise<void> => Native.openAppInfo().catch(() => undefined),
   openAccessibility: (): Promise<void> => Native.openAccessibility().catch(() => undefined)
@@ -196,7 +215,8 @@ export async function notificationsAllowed(ask: boolean): Promise<boolean> {
 export async function notify(key: string, title: string, body: string, extra: NotifyExtra): Promise<void> {
   try {
     await LocalNotifications.schedule({
-      notifications: [{ id: idFor(key), title, body, extra, ...(extra.kind === 'approval' ? { actionTypeId: 'approval' } : {}), autoCancel: true }]
+      // Shown now, not at a time: never "exact", which would send the person to Android's Alarms & reminders page.
+      notifications: [{ id: idFor(key), title, body, extra, ...(extra.kind === 'approval' ? { actionTypeId: 'approval' } : {}), autoCancel: true, isExactNotification: false }]
     })
   } catch {
     // Not allowed: the chat list still shows what needs the person.

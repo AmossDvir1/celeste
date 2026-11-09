@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
-import { AlarmClock, AppWindow, Bell, ChevronRight, Hand, Code2, Laptop, MessageSquare, Monitor, Moon, Plus, Search, Smartphone, Sun, Unplug, Wifi, Workflow } from 'lucide-react'
+import { AlarmClock, AppWindow, Bell, ChevronRight, Hand, Code2, Laptop, MessageSquare, Monitor, Moon, Plus, Search, ShieldOff, Smartphone, Sun, Unplug, Wifi, Workflow } from 'lucide-react'
 import type { Session } from '@/stores/types'
 import { abilities, notificationsAllowed, type AbilityState } from '../native'
+import { NeverAppsSheet } from '../NeverApps'
 import { askNotifications, useApp, type Tab } from '../store'
 import { Arc, Logo, Shimmer, buzz, greeting, rise, when } from '../ui'
 
@@ -243,6 +244,7 @@ function Runs() {
  */
 function AbilitiesCard() {
   const [state, setState] = useState<AbilityState | null>(null)
+  const [never, setNever] = useState(false)
   const refresh = () => void abilities.get().then(setState)
   useEffect(() => {
     refresh()
@@ -252,7 +254,7 @@ function AbilitiesCard() {
     return () => document.removeEventListener('visibilitychange', again)
   }, [])
   if (!state) return null
-  const rows: [keyof Omit<AbilityState, 'notificationAccess' | 'controlAccess'>, typeof Bell, string, string][] = [
+  const rows: [keyof Omit<AbilityState, 'notificationAccess' | 'controlAccess' | 'never'>, typeof Bell, string, string][] = [
     ['notifications', Bell, 'Notifications', 'Read them, and reply to messages'],
     ['open', AppWindow, 'Open apps and links', ''],
     ['alarm', AlarmClock, 'Alarms and timers', 'In your clock app'],
@@ -298,7 +300,49 @@ function AbilitiesCard() {
             <span className={`switch${state[key] ? ' on' : ''}`} />
           </button>
         ))}
+        {state.control && (
+          <button
+            key="control_confirm"
+            className="row tap"
+            style={{ width: '100%', textAlign: 'left' }}
+            onClick={async () => {
+              const on = !state.controlConfirm
+              buzz(5)
+              await abilities.set('control_confirm', on)
+              setState({ ...state, controlConfirm: on })
+            }}
+          >
+            <span className="ibox">
+              <Hand size={18} />
+            </span>
+            <div className="grow">
+              <div className="t">Ask again before Send, Pay or Delete</div>
+              <div className="s">Off: one Allow covers the whole task</div>
+            </div>
+            <span className={`switch${state.controlConfirm ? ' on' : ''}`} />
+          </button>
+        )}
       </div>
+      {(state.notifications || state.control) && (
+        <button className="card row tap" style={{ width: 'calc(100% - 32px)', textAlign: 'left', margin: '10px 16px 0' }} onClick={() => setNever(true)}>
+          <span className="ibox">
+            <ShieldOff size={18} />
+          </span>
+          <div className="grow">
+            <div className="t">Apps Celeste never uses</div>
+            <div className="s">{state.never ? `${state.never} of yours, plus password managers` : 'Password managers and authenticators. Add your own'}</div>
+          </div>
+          <ChevronRight size={18} className="faint" />
+        </button>
+      )}
+      {never && (
+        <NeverAppsSheet
+          onClose={(count) => {
+            setNever(false)
+            setState((s) => (s ? { ...s, never: count } : s))
+          }}
+        />
+      )}
       {needsControl && (
         <div className="card" style={{ margin: '10px 16px 0', padding: '14px 16px' }}>
           <div className="t" style={{ fontWeight: 600 }}>

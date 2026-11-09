@@ -318,7 +318,11 @@ export const useApp = create<AppState>((set, get) => ({
       case 'event': {
         tellPerson(push.sessionId, push.stored)
         const s = sessions[push.sessionId]
-        if (s?.loaded) set({ sessions: { ...sessions, [push.sessionId]: foldEvents(s, [push.stored]) } })
+        if (!s?.loaded) return
+        // The computer pushes every event it logs, numbered one after another: a jump means some were missed while the
+        // line was down, so the chat is read again from the computer's log.
+        if (push.stored.seq > s.foldedSeq + 1) return void loadLog(push.sessionId)
+        set({ sessions: { ...sessions, [push.sessionId]: foldEvents(s, [push.stored]) } })
         return
       }
       case 'phoneRequest':
@@ -338,7 +342,25 @@ export const useApp = create<AppState>((set, get) => ({
   }
 }))
 
-async function loadLog(id: string): Promise<void> {
+const loading = new Map<string, Promise<void>>()
+const loadAgain = new Set<string>()
+
+/** Reads a chat's log from the computer. Asked again while a read is under way, it reads once more after it. */
+function loadLog(id: string): Promise<void> {
+  const running = loading.get(id)
+  if (running) {
+    loadAgain.add(id)
+    return running
+  }
+  const p = readLog(id).finally(() => {
+    loading.delete(id)
+    if (loadAgain.delete(id)) void loadLog(id)
+  })
+  loading.set(id, p)
+  return p
+}
+
+async function readLog(id: string): Promise<void> {
   const link = useApp.getState().link
   if (!link) return
   try {

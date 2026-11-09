@@ -66,7 +66,7 @@ const TOOLS: (ExtraTool & { ability: PhoneAbility })[] = [
     ability: 'control_request',
     title: 'Ask to use the phone’s screen',
     description:
-      'Asks the user, on their phone, to let you see its screen and tap, swipe and type, for a task no other phone tool can do. Say why in `reason`; they see it. If they allow it, control lasts up to 15 minutes for this chat. Prefer the other phone tools when they can do the job. Use phone_release_control when done.',
+      'Asks the user, on their phone, to let you see its screen and tap, swipe and type, for a task no other phone tool can do. Say why in `reason`; they see it. If they allow it, control lasts up to 15 minutes for this chat. When the user touches the phone, control pauses and your next phone call waits (up to two minutes) until they press Continue on the phone: do not ask them in the chat. Apps on their never list stay off-limits. Prefer the other phone tools when they can do the job. Use phone_release_control when done.',
     shape: { reason: z.string().min(3).max(300).describe('Why, in a few words the user will read on the phone') },
     readOnly: false
   },
@@ -163,8 +163,9 @@ export class PhoneTools implements ExtraTools {
     }
     if (name === 'phone_tap' && a['id'] === undefined && (a['x'] === undefined || a['y'] === undefined)) return { text: 'Give an element id from phone_screen, or both x and y.', isError: true }
     // Asking for control waits for the person; an action under control should be quick.
-    // A tap on a button like Send asks the person again, so it may wait for them too.
-    const wait = name === 'phone_request_control' || name === 'phone_tap' ? 180_000 : tool.ability.startsWith('control_') ? 30_000 : 180_000
+    // A tap on a button like Send asks the person again, so it may wait for them too. Other actions wait up to two minutes
+    // for a person who touched the phone to press Continue (the phone holds them while control is paused).
+    const wait = name === 'phone_request_control' || name === 'phone_tap' ? 180_000 : tool.ability.startsWith('control_') ? 150_000 : 180_000
     const r = await b.ask(phone.id, tool.ability, a, this.chatTitle(sessionId), wait, sessionId)
     return { text: r.text || (r.ok ? 'Done.' : 'It did not happen.'), isError: !r.ok, ...(r.image ? { image: r.image } : {}) }
   }

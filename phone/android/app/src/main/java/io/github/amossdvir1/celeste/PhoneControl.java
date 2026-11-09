@@ -14,6 +14,7 @@ import androidx.core.app.NotificationCompat;
 
 import org.json.JSONObject;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -26,8 +27,8 @@ import java.util.regex.Pattern;
 /**
  * Phone control (docs/PHONE_PLAN.md, step A3), with the plan's rails:
  * asked for on this phone; 15 minutes at most, 5 idle, 500 actions; a border, a Stop button and an ongoing notification
- * while it lasts; never password fields, never the apps on the never list, nothing while locked; and a second yes for
- * buttons that send, pay, buy, delete, install or allow.
+ * while it lasts; never password fields, never the apps on the never list, nothing while locked; and, if the person
+ * switched it on, a second yes for buttons that send, pay, buy, delete, install or allow.
  */
 final class PhoneControl {
     static final long GRANT_MS = 15 * 60_000L, IDLE_MS = 5 * 60_000L;
@@ -44,8 +45,9 @@ final class PhoneControl {
             "com.google.android.apps.authenticator2", "com.azure.authenticator", "com.authy.authy"));
 
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
-    private static volatile long until, lastAction;
+    private static volatile long until, lastAction, askedUntil;
     private static volatile int actions;
+    private static volatile boolean paused;
     private static volatile String chat = "", endedWhy = "";
 
     private PhoneControl() {}
@@ -53,6 +55,93 @@ final class PhoneControl {
     static boolean active() {
         long now = System.currentTimeMillis();
         return until > now && now - lastAction < IDLE_MS && actions < MAX_ACTIONS;
+    }
+
+    static boolean paused() {
+        return paused;
+    }
+
+    /** A card is waiting, or one was just answered: the person's touches then answer it and do not pause control. */
+    static boolean asking() {
+        return Cards.waiting() || System.currentTimeMillis() < askedUntil;
+    }
+
+    /** True for an app Celeste never sees or touches: the fixed list, or one the person added in the app. */
+    static boolean never(Context ctx, String pkg) {
+        return NEVER.contains(pkg) || Abilities.neverApps(ctx).contains(pkg);
+    }
+
+    /** The person answered a card (a touch that is theirs but is not taking the phone back): touches are not read as that for a moment. */
+    static void quiet(long ms) {
+        askedUntil = Math.max(askedUntil, System.currentTimeMillis() + ms);
+    }
+
+    /** The person touched the screen: control waits until they press Continue. */
+    static void pause(Context ctx) {
+        if (!active() || paused) return;
+        paused = true;
+        CelesteAccessibilityService fg = CelesteAccessibilityService.live;
+        android.util.Log.i("CelesteControl", "paused by a touch; app on screen: " + (fg != null ? fg.foregroundPackage() : "?") + "; " + (System.currentTimeMillis() - lastAction) + " ms since Celeste's last action");
+        CelesteAccessibilityService s = CelesteAccessibilityService.live;
+        if (s != null) s.showPaused(true);
+        notifyRunning(ctx);
+    }
+
+    static void resume(Context ctx) {
+        if (!paused) return;
+        paused = false;
+        lastAction = System.currentTimeMillis();
+        CelesteAccessibilityService s = CelesteAccessibilityService.live;
+        if (s != null) s.showPaused(false);
+        notifyRunning(ctx);
+        releaseHeld(ctx);
+    }
+
+    /** A request that arrived while control is paused, waiting for the person's Continue. */
+    private static final class Held {
+        PhoneLine line;
+        JSONObject request;
+        Runnable timeout;
+    }
+    private static final List<Held> HELD = new ArrayList<>();
+    private static final long HOLD_MS = 120_000L;
+
+    private static void hold(PhoneLine line, JSONObject request) {
+        Held h = new Held();
+        h.line = line;
+        h.request = request;
+        h.timeout = () -> {
+            synchronized (HELD) {
+                if (!HELD.remove(h)) return;
+            }
+            Abilities.reply(line, request.optString("id"), false, "Control is still paused after two minutes: the user touched the phone and has not pressed Continue. Nothing was done. Say so in your answer and stop; do not call more phone tools until the user asks again.");
+        };
+        synchronized (HELD) {
+            HELD.add(h);
+        }
+        MAIN.postDelayed(h.timeout, HOLD_MS);
+    }
+
+    private static List<Held> takeHeld() {
+        List<Held> all;
+        synchronized (HELD) {
+            all = new ArrayList<>(HELD);
+            HELD.clear();
+        }
+        for (Held h : all) MAIN.removeCallbacks(h.timeout);
+        return all;
+    }
+
+    /** Continue was pressed: reading the screen goes ahead; anything that acts waits for a fresh look, as the screen may have changed. */
+    private static void releaseHeld(Context ctx) {
+        for (Held h : takeHeld()) {
+            if ("control_screen".equals(h.request.optString("ability"))) handle(ctx, h.line, h.request);
+            else Abilities.reply(h.line, h.request.optString("id"), false, "The user pressed Continue, so you have control again, but the screen may have changed while it was paused, so that action was not done. Call phone_screen to look, then act again.");
+        }
+    }
+
+    private static void failHeld(String why) {
+        for (Held h : takeHeld()) Abilities.reply(h.line, h.request.optString("id"), false, why + " Use phone_request_control to ask again.");
     }
 
     static void handle(Context ctx, PhoneLine line, JSONObject request) {
@@ -91,13 +180,20 @@ final class PhoneControl {
             Abilities.reply(line, id, false, (endedWhy.isEmpty() ? "You do not have control of the phone." : endedWhy) + " Use phone_request_control to ask again.");
             return;
         }
+        if (paused) {
+            // Not refused: the request waits here for the person's Continue (or Stop), so the assistant never has to ask them.
+            hold(line, request);
+            return;
+        }
         if (ctx.getSystemService(KeyguardManager.class).isKeyguardLocked()) {
             Abilities.reply(line, id, false, "The phone is locked. Nothing is done while it is locked.");
             return;
         }
         String pkg = s.foregroundPackage();
-        if (NEVER.contains(pkg)) {
-            Abilities.reply(line, id, false, "The app on screen (" + pkg + ") is one Celeste never sees or touches. Use phone_key to leave it, or ask the user.");
+        // Home, Back and Recents show and touch nothing in the app, and are the way out of it.
+        if (never(ctx, pkg) && !"control_key".equals(ability)) {
+            String whose = NEVER.contains(pkg) ? "one Celeste never sees or touches" : "on the user's own list of apps Celeste never sees or touches";
+            Abilities.reply(line, id, false, "The app on screen (" + pkg + ") is " + whose + ". Use phone_key to leave it, or ask the user.");
             return;
         }
         lastAction = System.currentTimeMillis();
@@ -145,11 +241,15 @@ final class PhoneControl {
                     y = a.optInt("y");
                     what = "the point " + x + "," + y;
                 }
-                if (s.onStop(x, y)) { Abilities.reply(line, id, false, "That is Celeste's own Stop button, which only the user may press."); return; }
                 boolean longPress = a.optBoolean("long");
-                Runnable go = () -> s.tap(x, y, longPress, () -> Abilities.reply(line, id, true, (longPress ? "Long-pressed " : "Tapped ") + what + ". Call phone_screen to see what changed."));
+                // Celeste's own Stop pill moves out of the way of the tap (an app's tab or button at the top often sits where it
+                // is). If the spot is still under it afterwards, the tap is refused: only the person may press Stop or Continue.
+                Runnable go = () -> s.clearPillFor(x, y, () -> {
+                    if (s.onStop(x, y)) { Abilities.reply(line, id, false, "That spot is under Celeste's own Stop button, which only the user may press. Tap somewhere else."); return; }
+                    s.tap(x, y, longPress, () -> Abilities.reply(line, id, true, (longPress ? "Long-pressed " : "Tapped ") + what + ". Call phone_screen to see what changed."));
+                });
                 String label = e != null ? e.text : "";
-                if (RISKY.matcher(label).find()) {
+                if (Abilities.controlConfirm(ctx) && RISKY.matcher(label).find()) {
                     ask(ctx, line, id, "Let Celeste press “" + label + "”?", "In " + s.foregroundPackage() + ". Buttons like this can send, pay or delete something.", go,
                             () -> Abilities.reply(line, id, false, "The user said no to pressing \"" + label + "\"."));
                 } else go.run();
@@ -198,34 +298,50 @@ final class PhoneControl {
         actions = 0;
         chat = forChat;
         endedWhy = "";
+        paused = false;
         CelesteAccessibilityService s = CelesteAccessibilityService.live;
         if (s != null) s.showOverlay();
-        ConnectionService.channels(ctx);
-        Intent stop = new Intent(ctx, ControlReceiver.class).setAction("stop");
-        Notification n = new NotificationCompat.Builder(ctx, ConnectionService.CHANNEL_ASK)
-                .setSmallIcon(R.drawable.ic_stat_celeste)
-                .setColor(0xFFF5487F)
-                .setContentTitle("Celeste is using this phone")
-                .setContentText("For “" + chat + "”. Press Stop, or volume down three times.")
-                .setOngoing(true)
-                .setSilent(true)
-                .addAction(0, "Stop", PendingIntent.getBroadcast(ctx, NOTE_ID, stop, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT))
-                .build();
-        try { ctx.getSystemService(NotificationManager.class).notify(NOTE_ID, n); } catch (SecurityException ignored) {}
-        // It ends by itself at the time limit, or after five minutes with nothing done.
+        notifyRunning(ctx);
+        // It ends by itself at the time limit, or after five minutes with nothing done (a pause counts).
         MAIN.postDelayed(new Runnable() {
             @Override public void run() {
                 if (until == 0) return;
-                if (!active()) end(ctx, System.currentTimeMillis() >= until ? "The 15 minutes of control ended." : actions >= MAX_ACTIONS ? "Control ended after 500 actions." : "Control ended after five minutes with nothing done.");
+                if (!active()) end(ctx, System.currentTimeMillis() >= until ? "The 15 minutes of control ended."
+                        : actions >= MAX_ACTIONS ? "Control ended after 500 actions."
+                        : paused ? "Control ended: it stayed paused for five minutes after the user touched the phone."
+                        : "Control ended after five minutes with nothing done.");
                 else MAIN.postDelayed(this, 15_000);
             }
         }, 15_000);
     }
 
+    /** The ongoing notification while control lasts: Stop, and Continue while it is paused. */
+    private static void notifyRunning(Context ctx) {
+        if (until == 0) return;
+        ConnectionService.channels(ctx);
+        Intent stop = new Intent(ctx, ControlReceiver.class).setAction("stop");
+        NotificationCompat.Builder b = new NotificationCompat.Builder(ctx, ConnectionService.CHANNEL_ASK)
+                .setSmallIcon(R.drawable.ic_stat_celeste)
+                .setColor(0xFFF5487F)
+                .setContentTitle(paused ? "Celeste is paused" : "Celeste is using this phone")
+                .setContentText(paused ? "You touched the screen. Continue when you are ready, or Stop." : "For “" + chat + "”. Touch the screen to pause. Stop, or volume down three times, ends it.")
+                .setOngoing(true)
+                .setSilent(true)
+                .addAction(0, "Stop", PendingIntent.getBroadcast(ctx, NOTE_ID, stop, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
+        if (paused) {
+            Intent go = new Intent(ctx, ControlReceiver.class).setAction("continue");
+            b.addAction(0, "Continue", PendingIntent.getBroadcast(ctx, NOTE_ID + 1, go, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
+        }
+        Notification n = b.build();
+        try { ctx.getSystemService(NotificationManager.class).notify(NOTE_ID, n); } catch (SecurityException ignored) {}
+    }
+
     static void end(Context ctx, String why) {
         if (until == 0) return;
         until = 0;
+        paused = false;
         endedWhy = why;
+        failHeld(why);
         CelesteAccessibilityService s = CelesteAccessibilityService.live;
         if (s != null) s.hideOverlay();
         ctx.getSystemService(NotificationManager.class).cancel(NOTE_ID);
@@ -235,10 +351,14 @@ final class PhoneControl {
     private static void ask(Context ctx, PhoneLine line, String id, String title, String text, Runnable yes, Runnable no) {
         Intent allow = new Intent(ctx, ControlReceiver.class).setAction("yes").putExtra("id", id);
         Intent deny = new Intent(ctx, ControlReceiver.class).setAction("no").putExtra("id", id);
+        // Touches that answer the card must not pause control: quiet while it waits (Cards.waiting), and for a moment after.
         boolean shown = Cards.show(ctx, id, title, text,
                 PendingIntent.getBroadcast(ctx, (id + "no").hashCode(), deny, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT),
                 PendingIntent.getBroadcast(ctx, (id + "yes").hashCode(), allow, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT),
-                (c, ok) -> MAIN.post(ok ? yes : no));
+                (c, ok) -> {
+                    askedUntil = System.currentTimeMillis() + 2_000;
+                    MAIN.post(ok ? yes : no);
+                });
         if (!shown) Abilities.reply(line, id, false, Abilities.UNSEEN);
     }
 

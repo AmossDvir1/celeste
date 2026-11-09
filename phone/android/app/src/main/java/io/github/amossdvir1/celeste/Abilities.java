@@ -32,12 +32,50 @@ final class Abilities {
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(ability, on).apply();
     }
 
+    /** Ask again before buttons like Send or Pay. Off by default, so the one grant covers the whole task. */
+    static boolean controlConfirm(Context ctx) {
+        return ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean("control_confirm", false);
+    }
+
+    /** The apps the person added to the never list: Celeste never reads their notifications or touches their screens. */
+    static java.util.Set<String> neverApps(Context ctx) {
+        return new java.util.HashSet<>(ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getStringSet("never", java.util.Collections.emptySet()));
+    }
+
+    static void setNever(Context ctx, String pkg, boolean on) {
+        java.util.Set<String> now = neverApps(ctx);
+        if (on) now.add(pkg);
+        else now.remove(pkg);
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putStringSet("never", now).apply();
+    }
+
+    /** The apps on the phone a person can open, by name, each marked if Celeste never uses it (and whether that is fixed). */
+    static JSONArray apps(Context ctx) throws Exception {
+        android.content.pm.PackageManager pm = ctx.getPackageManager();
+        Intent launcher = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
+        java.util.Set<String> mine = neverApps(ctx);
+        java.util.TreeMap<String, JSONObject> byName = new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        for (android.content.pm.ResolveInfo r : pm.queryIntentActivities(launcher, 0)) {
+            String pkg = r.activityInfo.packageName;
+            if (pkg.equals(ctx.getPackageName())) continue;
+            String name = r.loadLabel(pm).toString();
+            JSONObject o = new JSONObject().put("pkg", pkg).put("name", name)
+                    .put("never", PhoneControl.NEVER.contains(pkg) || mine.contains(pkg)).put("fixed", PhoneControl.NEVER.contains(pkg));
+            byName.put(name + "\u0000" + pkg, o);
+        }
+        JSONArray out = new JSONArray();
+        for (JSONObject o : byName.values()) out.put(o);
+        return out;
+    }
+
     static JSONObject state(Context ctx) throws Exception {
         SharedPreferences p = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         JSONObject o = new JSONObject();
         for (String a : ALL) o.put(a, p.getBoolean(a, false));
         o.put("notificationAccess", CelesteNotificationListener.allowed(ctx));
         o.put("controlAccess", CelesteAccessibilityService.enabled(ctx));
+        o.put("controlConfirm", controlConfirm(ctx));
+        o.put("never", neverApps(ctx).size());
         return o;
     }
 

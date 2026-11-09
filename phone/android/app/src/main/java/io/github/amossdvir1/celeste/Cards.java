@@ -64,6 +64,7 @@ final class Cards {
         }
         ctx.getSystemService(NotificationManager.class).cancel(id.hashCode());
         CelesteNativePlugin.cardsChanged();
+        PhoneControl.quiet(3_000);
         if (c != null && c.answer != null) c.answer.run(ctx, yes);
     }
 
@@ -74,6 +75,14 @@ final class Cards {
         }
         ctx.getSystemService(NotificationManager.class).cancel(id.hashCode());
         CelesteNativePlugin.cardsChanged();
+        PhoneControl.quiet(3_000);
+    }
+
+    /** Some card is waiting for the person. */
+    static boolean waiting() {
+        synchronized (open) {
+            return !open.isEmpty();
+        }
     }
 
     static JSArray list() {

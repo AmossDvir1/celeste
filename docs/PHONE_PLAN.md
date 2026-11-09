@@ -51,37 +51,75 @@
 - **The grant**: a consent card that shows the reason and the AI-vendor note. It lasts 15 minutes, with 5 idle minutes and 500 actions at most, for one chat.
 - **While it runs**: a gradient border and a Stop button over everything, an ongoing notification with Stop, and volume down three times also stops it.
 - **Never**:
-  - taps on Celeste's own Stop
+  - taps on Celeste's own Stop: the pill's place is measured in screen coordinates (the first version measured it in the window's own, so the guard never matched, and a tap on a tab at the top of an app, where the pill sits, pressed Stop twice in the owner's first real task). A tap aimed at the pill's spot now moves the pill to the other end of the screen first, and is refused if the spot is still under it
   - typing into password fields (it says to ask the person)
   - the never list: Celeste itself, Android's installer and permission screens, common password managers and authenticators
   - anything while the phone is locked
 - **Asked again**: before buttons named Send, Pay, Buy, Delete, Install, Allow and the like.
 - **Screen text** is labelled as information, not instructions.
+- **The person's touch wins**: the Stop pill's window watches for touches outside it (`FLAG_WATCH_OUTSIDE_TOUCH`). A touch from the person pauses control: the border fades and Continue shows beside Stop (and on the notification). A request that arrives while paused is **held on the phone** (up to two minutes), not refused, so the assistant never has to ask in the chat (the first version refused, Claude asked in the chat, and Continue on the phone could not answer it). On Continue, reading the screen goes ahead; an action is answered "not done, look again", because the screen may have changed. Stop, or two minutes, ends the wait. Celeste's own gestures are told apart by time; touches while a card waits, for three seconds after one is answered, or in Celeste itself, don't pause. Each pause writes a line to the log (`CelesteControl`: the app on screen and the time since Celeste's last action), because the owner's first real task paused once with no clear cause (an Approve tap on a card is the suspect; one touch gives the pill's window exactly one outside-touch event, checked on the emulator). Celeste can't press Continue.
+- **The person's never list**: This phone → Apps Celeste never uses, a searchable list of the phone's apps. Those apps' notifications are left out, and control refuses their screens. Home, Back and Recents still work there, as the way out.
 
-**Checked on the emulator:** consent, then reading the screen with a screenshot, Home, and release, with the border and Stop on screen.
+**Checked on the emulator:**
+- consent, then reading the screen with a screenshot, Home, and release, with the border and Stop on screen;
+- a person's tap and a swipe paused control; the next request waited (its tool row kept running), and Continue on the phone finished it and Celeste went on, with no question asked;
+- Celeste's own tap did not pause it;
+- with Gallery on the person's never list, reading its screen was refused.
 
-**Not built yet:**
-- pausing when the person touches the screen
-- the person's own never list
-- turning the service off between grants
-- showing control in the computer's chat beyond the tool rows
+## Remaining work (9 November 2026)
 
-**Not checked yet:**
-- the asking-again before Send and the like
-- the password refusal
-- the volume-key stop
-- a real phone
+Two lists, so nothing is lost: what is left in the phone app and its link to the computer, and what is left in the main Celeste app and the repository (also listed in `IMPLEMENTATION_PLAN.md`, section 7.12). Then what must happen before it ships.
 
-**Not done yet:**
-- **Not tried on a real phone**: Wi-Fi discovery is untested, and so is Chrome's handling of the APK download.
-- **Not built**:
-  - the Public-network check
-  - the Android Keystore for keys
-  - App Links from the QR
-  - self-update
-  - CI building the APK
-  - phone abilities (A2), phone control (A3), and away from home (A4)
-- **On the computer**: the desktop's key is kept in its settings, not in the system's secret store.
+### In the phone app (and the bridge it talks to)
+
+**Check on the owner's real phone** (only they can; none of it is tried on a real phone yet):
+- touching the screen pauses control, and Continue on the phone lets the held request go on (emulator only so far; the emulator missed the first touch once, right after a fresh install)
+- Stop while a request is held
+- the second yes before buttons like Send, and the password-field refusal
+- the volume-down-three-times stop
+- replying to a real message notification
+- Wi-Fi discovery, and Chrome's handling of the APK download
+- the model picker with Copilot connected (checks never use a real Copilot account)
+
+**Phone control, left over:**
+- turning the accessibility service off between grants
+- showing control's state in the computer's chat ("paused on the phone", "10 minutes left") beyond the tool rows
+- what is on screen in an app that is not on the never list goes to the AI vendor (the consent card says so); decide whether a "hide private fields" option is wanted
+
+**More abilities (A2):**
+- location (once, when asked)
+- photos and files the person picks
+- calendar: read the next events, and add one
+- dismissing a notification
+- sending an SMS or making a call by opening the app with everything filled in
+- a `phone` device kind beside `ssh`, `hyperv` and `adb`, and a **Use the phone** step in workflows
+
+**In the app:**
+- send things to the assistant from the share sheet (files, photos, links, text)
+- workflows: start a run from the phone (today they are read only)
+- keep keys in the Android Keystore (today in the app's private storage)
+- open the app straight from the QR code (App Links)
+- the app updating itself, and showing when the computer's Celeste is newer than the app
+- away from home (A4): see "Before it ships"
+
+### In the main Celeste app and the repository
+
+- **APK in CI and in releases**: CI builds and signs the APK with a key kept as a CI secret (one stable key, or updates won't install over the old app), attaches it to each GitHub Release, and runs the app's tests on an emulator (**Verify** KVM speed on GitHub's Ubuntu runners).
+- **Serving the APK**: the computer fetches the released APK and caches it (today it looks for a local build), with GitHub Releases and Obtainium as the other ways in (P-3).
+- **The computer's key**: the phone bridge's key is kept in Celeste's settings; move it to the system's secret store (Electron `safeStorage`).
+- **Network checks, per desktop**: Windows Public-network profile check and the firewall prompt; macOS Local Network permission **Verify**; Linux firewall note.
+- **Workflows engine**: the **Use the phone** step.
+- **Devices**: the `phone` device kind.
+- **Docs and legal**: README and install guide, the privacy statement (what the phone sends to the computer and what the computer sends to the AI vendor), third-party notices for what the app bundles (Capacitor, `@noble/curves`, lucide, and the rest of `phone/package.json`), and the CHANGELOG at release.
+- **Merging**: the `phone` branch is merged only when the owner decides; the owner publishes the release.
+
+### Before it ships
+
+1. **Away from home must use a Cloudflare relay, not Tailscale.** Tailscale asks every person to make a Tailscale account and install it on both devices: fine for people who already use it, but not an experience a public app can rely on. A relay makes the app work away from home with nothing to set up, and it can wake a closed app (section 7). Tailscale stays as the advanced option for people who already have it, and as what the owner uses while the app is experimental. The relay brings work of its own, listed in section 7: someone has to run it (a Cloudflare account of the project's), its free-tier limits are shared by every user (**Verify**, and it may need Cloudflare's paid plan if the app grows), it must carry only encrypted bytes with rate limits against abuse, and the privacy statement has to say it sees who is online and when. Decision P-6 is changed accordingly, and P-8 asks for the owner's go-ahead.
+2. **Every item in "Check on the owner's real phone" is checked**, phone control above all.
+3. **A security review** of the bridge, the pairing, and the accessibility service (`/security-review`), with the plan's rails (5.1) as the checklist.
+4. **A signed APK from CI**, with updates that install over the old app.
+5. **The main-app list above is done**: at least the APK in releases, the secret-store key, the network checks and the docs.
 
 ## 1. Summary
 
@@ -91,7 +129,7 @@
 - **The assistant uses the phone**, and each action is approved on the phone by the person holding it:
   - **Phone abilities**: read and answer notifications, open an app or a link, location, photos and files the person picks, calendar, alarms. These are typed tools. They are fast and never need a screenshot.
   - **Phone control**: see the screen, tap, swipe and type, for anything the abilities don't cover. It has the same rails as desktop control.
-- **No server on the home Wi-Fi.** The phone and the computer talk directly, encrypted end to end. A server is needed only away from home, and then it's one the owner deploys for free (section 7), or none at all with Tailscale.
+- **No server on the home Wi-Fi.** The phone and the computer talk directly, encrypted end to end. A server is needed only away from home. To ship, that is a Cloudflare relay run by the project (section 7, P-8); during the experiment, none at all with Tailscale.
 
 ## 2. Installing it: the easy way
 
@@ -152,6 +190,8 @@ A Play version without phone control ("Celeste Remote") stays possible later (de
 
 While the app is open, or while a chat is running, a foreground service keeps the connection open with a quiet "Connected to DANA-PC" notification. Otherwise it reconnects when opened. The person can choose "Stay connected on home Wi-Fi" so approval notifications arrive with the app closed.
 
+A line can die without saying so. Android's WebView freezes the app's page about a minute after it leaves the screen, and a stream that was open across the freeze never delivers again: no error, and the socket stays open, so the computer can't tell either. So every time the app comes back to the screen it quietly opens a new line and reads the open chat again from the computer's log. The computer also pings every 20 seconds, and if the app hears nothing for 45 seconds (the phone slept, Wi-Fi dropped) it does the same. It also reads the chat again when the chat's event numbers skip ahead. So a chat never stays stuck on "Thinking" after an answer from the phone.
+
 ### 3.2 The assistant uses the phone
 
 The person says, in a chat on the computer or on the phone, "reply to Mum's WhatsApp that I'm running late" or "turn on the hotspot on my phone".
@@ -174,7 +214,7 @@ The person says, in a chat on the computer or on the phone, "reply to Mum's What
 |---|---|
 | **The app talks to Celeste directly on the Wi-Fi** (WebSocket, encrypted end to end, found by mDNS) | **Build.** No server, no account, works offline from the internet |
 | A web page served by Celeste | **Dropped as the main remote** (owner's call). It survives only as the one-button install page of 2.1 |
-| A relay server | Only away from home, self-deployed (section 7) |
+| A relay server | Only away from home: a Cloudflare relay run by the project, to ship (section 7, P-8) |
 
 ### 4.2 The assistant using the phone
 
@@ -269,8 +309,8 @@ Exit: "open Settings and turn on the hotspot", done by the stand-in agent on the
 
 **On the home Wi-Fi no server is needed.** Away from home the phone can't reach the computer directly, so there are three choices, simplest first:
 
-1. **Tailscale** (no code, no server). The free Personal plan covers 6 users with unlimited devices since April 2026 (non-commercial use). Install it on the phone and the computer and the app reaches the computer as if at home. Settings → Phone shows the steps and accepts the computer's Tailscale address. **Recommended first.**
-2. **A relay the owner deploys for free.** Both sides connect out to it; it passes encrypted bytes it can't read. Options:
+1. **Tailscale** (no code, no server). The free Personal plan covers 6 users with unlimited devices since April 2026 (non-commercial use). Install it on the phone and the computer and the app reaches the computer as if at home. Settings → Phone shows the steps and accepts the computer's Tailscale address. **Good for the experiment and for people who already use Tailscale; not the way to ship** (every person would need their own Tailscale account and an install on both devices).
+2. **A relay the project deploys for free.** Both sides connect out to it; it passes encrypted bytes it can't read. **This is the way to ship** (decision P-8): it works with nothing to set up, and it can wake a closed app. What it asks of the project: a Cloudflare account that runs it; free-tier limits shared by all users (**Verify**; the paid plan if the app grows); rate limits against abuse; a transport the computer opens outward (a WebSocket the Worker joins to the phone's), with the same sealed messages on top so the relay never sees content; and a privacy statement that says the relay sees who is online and when. Options:
 
 | Service | Free tier | Fit |
 |---|---|---|
@@ -291,7 +331,7 @@ Exit: "open Settings and turn on the hotspot", done by the stand-in agent on the
 | Shared | Scopes on every API method, phone tool schemas, and a `phone` device kind beside `ssh`, `hyperv` and `adb`. |
 | Renderer | Settings → Phone: the QR, the phones list and the two settings. The "Android phone" tab in Add a device becomes **Developer connection (advanced)**. The phone layouts, if Capacitor (4.3). |
 | `android/` | The app: Capacitor shell, Kotlin services, and tests. |
-| `relay/` | The optional Cloudflare Worker (section 7). |
+| `relay/` | The Cloudflare Worker, needed before shipping (section 7, P-8). |
 | Workflows | A **Use the phone** step, like **Use the computer**. |
 | CI | Builds and signs the APK (the signing key is a CI secret; no fee). Attaches it to releases. Runs the app's tests on an emulator. |
 
@@ -321,7 +361,7 @@ Sending an SMS or making a call opens the messaging or phone app with everything
 | **A1** | **The app as a remote**, after spikes 6.1 and 6.2: scopes on Core methods; the phone bridge; install from the QR; mDNS pairing; Settings → Phone; the app's chats, chat, cards, Stop and workflows; APK in CI and releases; self-update. | L |
 | **A2** | **Phone abilities**: the ability tools with approval cards on the phone, notification access with the restricted-settings guide, the `phone` device kind, and the **Use the phone** step. | L |
 | **A3** | **Phone control**, after spike 6.3: accessibility service, the rails of 5.1, the action tools and the never list. | L |
-| **A4** | **Away from home**: Tailscale steps first, then the Cloudflare relay if wanted. | S–M |
+| **A4** | **Away from home**: Tailscale steps now, for the experiment; **the Cloudflare relay before shipping** (section 7, P-8). | S–M |
 
 Each step ends with tests, a real-app check, this plan updated with what was and wasn't built, and the CHANGELOG. All of it stays on the `phone` branch until the owner decides to merge.
 
@@ -342,6 +382,7 @@ Each step ends with tests, a real-app check, this plan updated with what was and
 | Prompt injection from the screen or notifications | Approvals on the phone, a second yes for consequential buttons, never-list apps hidden, nothing while locked, notification text treated as data. |
 | Someone else on the Wi-Fi | Nothing answers before the handshake; a new phone needs **Allow** on the computer with matching emoji. |
 | Battery and data | Element list before screenshots, screenshots only when asked, a cap on actions per grant. |
+| The relay (to ship) is a service someone must run | A Cloudflare account of the project's; sealed messages so it sees no content; rate limits per pairing; free-tier limits watched (**Verify**); and the app still works on the home Wi-Fi if the relay is down. |
 
 ## 12. Decisions for the owner
 
@@ -352,8 +393,9 @@ Each step ends with tests, a real-app check, this plan updated with what was and
 | P-3 | Serve the APK from the computer on the Wi-Fi (fetched from the GitHub Release and cached), with GitHub Releases and Obtainium as alternatives? | Yes |
 | P-4 | A free limited-distribution developer account for the experiment, and US$25 for a full account if it goes public? | Yes |
 | P-5 | A Google Play "Celeste Remote" without phone control, later? | Later, if at all (12 testers for 14 days first) |
-| P-6 | Away from home: Tailscale first, then a self-deployed Cloudflare relay? | Yes |
+| P-6 | Away from home while it is an experiment: Tailscale? | Yes (**changed 9 November 2026**: it was "Tailscale first, then a self-deployed relay"; see P-8 for shipping) |
 | P-7 | May a phone grant **desktop** control? | No by default; a phone can always stop it |
+| P-8 | To ship: use a Cloudflare relay run by the project, with Tailscale only as an advanced option? | Yes. Before shipping, not before. It needs a Cloudflare account for the project, and the privacy statement has to say what the relay sees (who is online and when, never content) |
 
 ## 13. Sources (read 9 November 2026)
 

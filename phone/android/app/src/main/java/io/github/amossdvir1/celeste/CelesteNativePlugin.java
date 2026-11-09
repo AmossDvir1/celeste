@@ -245,6 +245,31 @@ public class CelesteNativePlugin extends Plugin {
         call.resolve();
     }
 
+    /** The phone's apps, for the never list. */
+    @PluginMethod
+    public void apps(PluginCall call) {
+        new Thread(() -> {
+            try {
+                JSObject o = new JSObject();
+                o.put("apps", new com.getcapacitor.JSArray(Abilities.apps(getContext()).toString()));
+                call.resolve(o);
+            } catch (Exception e) {
+                call.reject(e.getMessage());
+            }
+        }, "celeste-apps").start();
+    }
+
+    @PluginMethod
+    public void setNever(PluginCall call) {
+        String pkg = call.getString("pkg");
+        if (pkg == null || PhoneControl.NEVER.contains(pkg)) {
+            call.reject("That app is always off-limits.");
+            return;
+        }
+        Abilities.setNever(getContext(), pkg, Boolean.TRUE.equals(call.getBoolean("on", false)));
+        call.resolve();
+    }
+
     /** Opens Android's Notification access page, at Celeste's own switch where Android allows it. */
     @PluginMethod
     public void openNotificationAccess(PluginCall call) {
