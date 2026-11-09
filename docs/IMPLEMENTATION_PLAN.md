@@ -673,6 +673,8 @@ Workflows (section 7.10) can run a Tool step's shell command on a device.
 
 ### 7.12 Mobile companion: iPhone, iPad and Android
 
+> **Replaced for Android by `PHONE_PLAN.md` (9 November 2026)**, which is newer where they differ: an Android app (not a web page) that both drives the assistant and lets the assistant use the phone, installed from the computer over the Wi-Fi. iPhone and iPad are set aside for now. The work happens on the `phone` branch.
+
 **The straight answer.** Celeste itself can't run on iOS. It is built on Electron, which targets Windows, Mac and Linux only, and the agents underneath are desktop programs (the Claude, Copilot, Codex and Gemini CLIs) that an iPhone can't run. Android is the same. What can run on a phone is a **companion app** that controls the Celeste on your computer, which does the work. It puts the Celeste screens on your phone: see your sessions, send a message, answer a question, and approve or deny a command while you're away from your desk.
 
 **What the companion does**
