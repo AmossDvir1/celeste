@@ -49,6 +49,22 @@ describe('replaying a log', () => {
     expect(s).toMatchObject({ status: 'idle', activity: null, foldedSeq: 7, lastSeq: 7, updatedAt: 9400 })
   })
 
+  it('moves a session in the list only for the person’s message and the end of a turn, never for tokens', () => {
+    const fold = (s: Session, at: number, event: LogEvent, seq: number) => foldEvents(s, [{ seq, at, event }])
+    let s = blank({ updatedAt: 500 })
+    s = fold(s, 1000, { type: 'user.message', text: 'hi', attachments: [] }, 1)
+    expect(s.updatedAt).toBe(1000)
+    s = fold(s, 1100, { type: 'turn.started', turnId: 't' }, 2)
+    s = fold(s, 1200, { type: 'thinking.delta', text: 'hm' }, 3)
+    s = fold(s, 1300, { type: 'message.delta', text: 'a' }, 4)
+    s = fold(s, 1400, { type: 'tool.started', id: 'x', kind: 'shell', title: 'ls' }, 5)
+    s = fold(s, 1500, { type: 'tool.completed', id: 'x', ok: true }, 6)
+    s = fold(s, 1600, { type: 'message.delta', text: 'b' }, 7)
+    expect(s.updatedAt).toBe(1000)
+    s = fold(s, 1700, { type: 'turn.completed', turnId: 't' }, 8)
+    expect(s.updatedAt).toBe(1700)
+  })
+
   it('skips what it has already seen, so a log and live events can overlap safely', () => {
     const events = log(
       [1, { type: 'user.message', text: 'a', attachments: [] }],
@@ -74,6 +90,19 @@ describe('replaying a log', () => {
     )
     expect(s.items[0]).toMatchObject({ kind: 'approval', status: 'allowed' })
     expect(s.items[1]).toMatchObject({ kind: 'ask', status: 'answered', answers: { Scope: 'Staging' } })
+  })
+
+  it('keeps the words of a question that can be answered for now or for good, and none on one that cannot', () => {
+    const choices = { allow: 'Allow for this chat', always: 'Always allow shop.test' }
+    const s = foldEvents(
+      blank(),
+      log(
+        [1, { type: 'approval.requested', requestId: 'tool-a', kind: 'web', title: 'Let the assistant use shop.test', choices }],
+        [2, { type: 'approval.requested', requestId: 'r', kind: 'edit', title: 'Edit files' }]
+      )
+    )
+    expect(s.items[0]).toMatchObject({ kind: 'approval', status: 'pending', choices })
+    expect(s.items[1]).not.toHaveProperty('choices')
   })
 
   it('tells you that a turn was cut off by a restart, and stops its spinners', () => {

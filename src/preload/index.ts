@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { CoreMessage, CoreMethod, CoreParams, CorePush, CoreRequest, CoreResult } from '@shared/api'
 import type { CelesteBridge } from '@shared/bridge'
+import type { BrowserState, KeyInput } from '@shared/browser'
 
 // The main process gives each window a message port straight to Core, as soon as this script asks for one.
 const port = new Promise<MessagePort>((resolve) => {
@@ -66,6 +67,33 @@ const bridge: CelesteBridge = {
     remove: (name) => secret('remove', name),
     has: (name) => secret('has', name),
     hint: (name) => secret('hint', name)
+  },
+  browser: {
+    call: (op, arg) => ipcRenderer.invoke('celeste:browser', op, arg),
+    onState: (listener) => {
+      const on = (_event: unknown, state: BrowserState) => listener(state)
+      ipcRenderer.on('celeste:browser-state', on)
+      return () => {
+        ipcRenderer.removeListener('celeste:browser-state', on)
+      }
+    },
+    // The page is a native layer, so the window never sees the keys typed in it. The ones the window uses come back this way.
+    onReveal: (listener) => {
+      const on = (_event: unknown, payload: { chatId?: unknown }) => {
+        if (typeof payload?.chatId === 'string') listener(payload.chatId)
+      }
+      ipcRenderer.on('celeste:browser-reveal', on)
+      return () => {
+        ipcRenderer.removeListener('celeste:browser-reveal', on)
+      }
+    },
+    onKey: (listener) => {
+      const on = (_event: unknown, key: KeyInput) => listener(key)
+      ipcRenderer.on('celeste:browser-key', on)
+      return () => {
+        ipcRenderer.removeListener('celeste:browser-key', on)
+      }
+    }
   },
   chatFile: (sessionId, path, action) => ipcRenderer.invoke('celeste:chat-file', sessionId, path, action),
   saveText: (suggestedName, text) => ipcRenderer.invoke('celeste:save-text', suggestedName, text),

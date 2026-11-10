@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent, AgentSession, ApprovalAnswer, AskAnswers, UserInput } from '@shared/agent'
 import type { CorePush, CreateSessionInput, SessionSummary, StoredEvent } from '@shared/api'
+import { coalesceEvents } from '@shared/coalesce'
 import { DEFAULT_SETTINGS, SIDEBAR_WIDTH } from '@shared/defaults'
 import { MemoryFileStore, MemoryStore } from './testing/memory-store'
 import { SessionService, type AdapterFactory } from './service'
@@ -138,12 +139,46 @@ describe('sessions and their log', () => {
     agent.emit({ type: 'turn.completed', turnId: 't1' })
     await flush()
 
+    // Every entry is on record, in order. (The window is read the log with runs of tokens joined: the two here become one.)
+    const told = pushedEvents(pushes, id)
+    expect(told.map((e) => e.event.type)).toEqual(['user.message', 'turn.started', 'message.delta', 'message.delta', 'turn.completed'])
+    expect(told.map((e) => e.seq)).toEqual([1, 2, 3, 4, 5])
     const log = api['sessions.get'](id)?.events ?? []
-    expect(log.map((e) => e.event.type)).toEqual(['user.message', 'turn.started', 'message.delta', 'message.delta', 'turn.completed'])
-    expect(log.map((e) => e.seq)).toEqual([1, 2, 3, 4, 5])
-    // What the window was told is exactly what is on record.
-    expect(pushedEvents(pushes, id)).toEqual(log)
+    expect(log.map((e) => e.event.type)).toEqual(['user.message', 'turn.started', 'message.delta', 'turn.completed'])
+    expect(log.map((e) => e.seq)).toEqual([1, 2, 4, 5])
+    expect(log[2]?.event).toEqual({ type: 'message.delta', text: 'Starting now.' })
+    // What the window was told, replayed, is exactly what it is read.
+    expect(coalesceEvents(told)).toEqual(log)
     expect(api['sessions.get'](id)?.summary).toMatchObject({ status: 'idle', lastSeq: 5 })
+  })
+
+  it('logs a fast stream of tokens as a few entries, the first at once, and loses none of the text', async () => {
+    const { api, agents, pushes } = setup()
+    const { id } = api['sessions.create'](input)
+    api['sessions.send'](id, { text: 'Write a lot', attachments: [] })
+    const agent = agents[0]
+    agent.emit({ type: 'turn.started', turnId: 't' })
+    let sent = ''
+    for (let i = 0; i < 300; i++) {
+      agent.emit({ type: 'message.delta', text: `w${i} ` })
+      sent += `w${i} `
+      if (i === 0) await flush()
+    }
+    await flush()
+    // The first went through at once; the other 299 wait for their window to close, and are joined.
+    expect(pushedEvents(pushes, id).filter((e) => e.event.type === 'message.delta')).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(200)
+    const deltas = pushedEvents(pushes, id).filter((e) => e.event.type === 'message.delta')
+    expect(deltas).toHaveLength(2)
+    expect(deltas.map((e) => (e.event as { text: string }).text).join('')).toBe(sent)
+    // A different kind of entry flushes what waits first, so the order of the log is the order things happened.
+    agent.emit({ type: 'message.delta', text: 'tail' })
+    agent.emit({ type: 'tool.started', id: 'x', kind: 'read', title: 'Read a' })
+    await flush()
+    expect(pushedEvents(pushes, id).slice(-2).map((e) => e.event.type)).toEqual(['message.delta', 'tool.started'])
+    const read = api['sessions.get'](id)?.events ?? []
+    expect(read.filter((e) => e.event.type === 'message.delta').length).toBeLessThanOrEqual(2)
+    expect(read.map((e) => (e.event.type === 'message.delta' ? e.event.text : '')).join('')).toBe(sent + 'tail')
   })
 
   it('keeps the summary status in step: working, waiting for you, working, idle', async () => {
@@ -247,6 +282,65 @@ describe('sessions and their log', () => {
     first.service.close()
     const again = setup(first.store).api['app.bootstrap']().settings
     expect([again.desktopMinutes, again.desktopWholeScreen, again.desktopNeverApps]).toEqual([60, false, ['KeePass', 'my bank', 'keepass']])
+  })
+
+  it('keeps the browser’s settings: tools on, asking before a new site on, no sites allowed; and cleans the list of sites', () => {
+    const first = setup()
+    const before = first.api['app.bootstrap']().settings
+    expect([before.browserTools, before.browserAskSites, before.browserAllowedSites]).toEqual([true, true, []])
+    first.api['settings.patch']({ browserTools: false, browserAskSites: false, browserAllowedSites: [' Shop.Example.com ', 'shop.example.com', 'localhost'] })
+    expect(() => first.api['settings.patch']({ browserAllowedSites: 'example.com' as never })).toThrow()
+    expect(() => first.api['settings.patch']({ browserAllowedSites: ['not a site'] })).toThrow()
+    expect(() => first.api['settings.patch']({ browserAllowedSites: ['https://example.com'] })).toThrow()
+    expect(() => first.api['settings.patch']({ browserAllowedSites: new Array(201).fill('a.test') })).toThrow()
+    first.service.close()
+    const again = setup(first.store).api['app.bootstrap']().settings
+    expect([again.browserTools, again.browserAskSites, again.browserAllowedSites]).toEqual([false, false, ['shop.example.com', 'localhost']])
+  })
+
+  it('asks a question that can be answered for this chat, for good, or no, and says which to the one waiting', async () => {
+    const { service, api, pushes } = setup()
+    const { id } = api['sessions.create'](input)
+    const requested = (n: number) => {
+      const e = pushedEvents(pushes, id).filter((s) => s.event.type === 'approval.requested')[n]?.event
+      return e && e.type === 'approval.requested' ? e : undefined
+    }
+    const choices = { allow: 'Allow for this chat', always: 'Always allow shop.test' }
+    const a = service.requestChoice(id, { kind: 'web', title: 'Let the assistant use shop.test', detail: 'Click', choices })
+    const b = service.requestChoice(id, { kind: 'web', title: 'Let the assistant use shop.test', detail: 'Click', choices })
+    const c = service.requestChoice(id, { kind: 'web', title: 'Let the assistant use shop.test', detail: 'Click', choices })
+    await flush()
+    expect(requested(0)).toMatchObject({ kind: 'web', title: 'Let the assistant use shop.test', choices })
+    expect(service.pendingApprovals(id)).toBe(3)
+    api['sessions.respondApproval'](id, requested(0)!.requestId, { allow: true })
+    api['sessions.respondApproval'](id, requested(1)!.requestId, { allow: true, always: true })
+    api['sessions.respondApproval'](id, requested(2)!.requestId, { allow: false, always: true })
+    expect(await Promise.all([a, b, c])).toEqual(['once', 'always', 'deny'])
+    expect(service.pendingApprovals(id)).toBe(0)
+  })
+
+  it('still asks a plain yes or no, with no choices on the card, and says no to a question when the chat is stopped', async () => {
+    const { service, api, pushes } = setup()
+    const { id } = api['sessions.create'](input)
+    const yes = service.requestApproval(id, { kind: 'other', title: 'Use the screen' })
+    await flush()
+    const first = pushedEvents(pushes, id).find((s) => s.event.type === 'approval.requested')?.event
+    expect(first && first.type === 'approval.requested' && first.choices).toBeFalsy()
+    api['sessions.respondApproval'](id, first && first.type === 'approval.requested' ? first.requestId : '', { allow: true, always: true })
+    expect(await yes).toBe(true)
+    const waiting = service.requestChoice(id, { kind: 'web', title: 'Site', choices: { allow: 'Allow', always: 'Always' } })
+    await flush()
+    api['sessions.interrupt'](id)
+    expect(await waiting).toBe('deny')
+  })
+
+  it('tells how a chat asks before the agent acts', () => {
+    const { service, api } = setup()
+    const { id } = api['sessions.create']({ ...input, approval: 'edits' })
+    expect(service.approvalOf(id)).toBe('edits')
+    api['sessions.update'](id, { approval: 'auto' })
+    expect(service.approvalOf(id)).toBe('auto')
+    expect(service.approvalOf('no-such-chat')).toBe('auto')
   })
 
   it('lists the recent times the assistant had the screen, newest first', () => {

@@ -18,7 +18,8 @@ interface SessionsState {
   applyPush: (push: CorePush) => void
   open: (id: string) => void
   home: (mode: SessionMode) => void
-  send: (mode: SessionMode, input: UserInput) => Promise<void>
+  /** Resolves true when the message was sent. On failure the error is shown and false is returned, so the caller keeps the message. */
+  send: (mode: SessionMode, input: UserInput) => Promise<boolean>
   stop: (id: string) => void
   /** What reverting to a checkpoint would change. Rejects with a message fit to show. */
   previewRevert: (id: string, checkpointId: string) => Promise<CheckpointChanges>
@@ -57,6 +58,12 @@ function mergeSummary(current: Session, summary: SessionSummary): Session {
 /** Events that arrive while a session's log is still being read wait here, then replay after it. */
 const loading = new Map<string, StoredEvent[]>()
 
+/**
+ * Events for a session that is on screen wait a moment here and are replayed together, so a burst of tokens is one redraw and not
+ * one for each. (Redrawing a long conversation for every few characters is what made it crawl.)
+ */
+const FLUSH_MS = 40
+
 function report(err: unknown): void {
   useUi.getState().pushToast({ text: err instanceof Error ? err.message : 'Something went wrong.' })
 }
@@ -66,7 +73,27 @@ export const useSessions = create<SessionsState>((set, get) => {
   const update = (id: string, fn: (s: Session) => Session) =>
     set((st) => (st.sessions[id] ? { sessions: { ...st.sessions, [id]: fn(st.sessions[id]) } } : st))
 
-  const drop = (id: string) =>
+  const waiting = new Map<string, StoredEvent[]>()
+  let flushTimer: ReturnType<typeof setTimeout> | null = null
+  const flushWaiting = () => {
+    flushTimer = null
+    if (waiting.size === 0) return
+    const batches = [...waiting]
+    waiting.clear()
+    set((st) => {
+      let sessions = st.sessions
+      for (const [id, events] of batches) {
+        const s = sessions[id]
+        if (!s?.loaded) continue
+        if (sessions === st.sessions) sessions = { ...sessions }
+        sessions[id] = foldEvents(s, events)
+      }
+      return sessions === st.sessions ? st : { sessions }
+    })
+  }
+
+  const drop = (id: string) => {
+    waiting.delete(id)
     set((st) => {
       const { [id]: gone, ...rest } = st.sessions
       if (!gone) return st
@@ -74,6 +101,7 @@ export const useSessions = create<SessionsState>((set, get) => {
       if (active[gone.mode] === id) active[gone.mode] = null
       return { sessions: rest, active }
     })
+  }
 
   async function load(id: string): Promise<void> {
     if (loading.has(id)) return
@@ -113,7 +141,10 @@ export const useSessions = create<SessionsState>((set, get) => {
       } else if (push.type === 'event') {
         const queue = loading.get(push.sessionId)
         if (queue) queue.push(push.stored)
-        else if (get().sessions[push.sessionId]?.loaded) update(push.sessionId, (s) => foldEvents(s, [push.stored]))
+        else if (get().sessions[push.sessionId]?.loaded) {
+          waiting.set(push.sessionId, [...(waiting.get(push.sessionId) ?? []), push.stored])
+          flushTimer ??= setTimeout(flushWaiting, FLUSH_MS)
+        }
       }
     },
 
@@ -132,7 +163,7 @@ export const useSessions = create<SessionsState>((set, get) => {
         if (!id) {
           // The first message creates the session, with the settings chosen on the home screen.
           const d = useUi.getState().draft
-          if (mode === 'develop' && !d.project) throw new Error('Choose a project folder first.')
+          if (mode === 'develop' && !d.project) throw new Error('Choose a project folder first. Your message is still here.')
           const title = titleFrom(input.text || input.attachments[0]?.name || '')
           let cwd = d.project
           let branch = d.branch
@@ -157,8 +188,10 @@ export const useSessions = create<SessionsState>((set, get) => {
           set((st) => ({ sessions: { ...st.sessions, [sid]: fromSummary(created, true) }, active: { ...st.active, [mode]: sid } }))
         }
         await core.call('sessions.send', id, input)
+        return true
       } catch (err) {
         report(err)
+        return false
       }
     },
 
@@ -219,6 +252,8 @@ export const useSessions = create<SessionsState>((set, get) => {
       if (!gone) return
       drop(id)
       fire(core.call('sessions.remove', id))
+      // The chat's browser tabs go with it.
+      if (window.celeste) void window.celeste.browser.call('closeChat', { chatId: id }).catch(() => undefined)
       useUi.getState().pushToast({
         text: `Deleted “${gone.title}”`,
         actionLabel: 'Undo',

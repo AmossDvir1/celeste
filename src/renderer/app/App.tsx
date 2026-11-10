@@ -1,5 +1,8 @@
 import { useEffect } from 'react'
 import { PanelLeft } from 'lucide-react'
+import { BrowserPanel } from '@/features/browser/BrowserPanel'
+import { LinkChoiceDialog } from '@/features/browser/LinkChoiceDialog'
+import { startBrowser } from '@/stores/browser'
 import { ChatHome } from '@/features/chat/ChatHome'
 import { AddDeviceDialog } from '@/features/devices/AddDeviceDialog'
 import { McpDialog, McpImportDialog } from '@/features/tools/McpDialog'
@@ -42,10 +45,21 @@ function MainPanel() {
 function RightPanel() {
   const panel = useUi((s) => s.rightPanel)
   const mode = useUi((s) => s.mode)
+  const browserWidth = useUi((s) => s.browserWidth)
+  const activeId = useSessions((s) => (mode === 'workflows' ? null : s.active[mode]))
   if (!panel) return null
   // Develop panels only make sense in Develop.
   if (mode === 'workflows') return null
-  if (panel !== 'tools' && mode !== 'develop') return null
+  if (panel !== 'tools' && panel !== 'browser' && mode !== 'develop') return null
+  // The browser belongs to a chat, in Chat as well as in Develop, and is wider than the others (and can be dragged wider).
+  if (panel === 'browser') {
+    if (!activeId) return null
+    return (
+      <div className="animate-slide-in-right h-full shrink-0" style={{ width: browserWidth, maxWidth: '70%' }}>
+        <BrowserPanel key={activeId} chatId={activeId} />
+      </div>
+    )
+  }
   return (
     <div className="animate-slide-in-right h-full w-[400px] shrink-0">
       {panel === 'tools' && <ToolsPanel />}
@@ -71,6 +85,9 @@ function useShortcuts() {
       } else if (key === ',') {
         e.preventDefault()
         ui.openSettings()
+      } else if (key === 'b' && e.shiftKey) {
+        e.preventDefault()
+        ui.toggleRight('browser')
       } else if (key === 'b') {
         e.preventDefault()
         settings.set({ sidebarCollapsed: !settings.sidebarCollapsed })
@@ -104,6 +121,8 @@ export function App() {
   const set = useSettings((s) => s.set)
   const wizardOpen = useUi((s) => s.wizardOpen)
   useShortcuts()
+  // What the browser's pages are doing (tabs, questions, downloads) is told by the main process.
+  useEffect(() => startBrowser(), [])
 
   // First run: show the setup wizard once.
   useEffect(() => {
@@ -152,6 +171,7 @@ export function App() {
         <McpImportDialog />
         <FolderPicker />
         <PhonePairingDialog />
+        <LinkChoiceDialog />
         <Toasts />
       </div>
     </TooltipProvider>

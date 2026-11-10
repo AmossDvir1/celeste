@@ -44,7 +44,7 @@ async function phone(base: string, answer: (r: PhoneRequest) => { ok: boolean; t
     (p) => {
       if (p.type !== 'phoneRequest') return
       asked.push(p.request)
-      void link.call('phone.reply', { id: p.request.id, ...answer(p.request) })
+      void link.call('phone.reply', { id: p.request.id, ...answer(p.request) }).catch(() => undefined)
     },
     (s) => (connected = s === 'connected')
   )
@@ -223,8 +223,8 @@ describe('phone abilities as tools', () => {
       link.listen(
         (push) => {
           if (push.type !== 'phoneRequest') return
-          void link.call('phone.ack', { id: push.request.id })
-          setTimeout(() => void link.call('phone.reply', { id: push.request.id, ok: true, text: 'Allowed after a while' }), 600)
+          void link.call('phone.ack', { id: push.request.id }).catch(() => undefined)
+          setTimeout(() => void link.call('phone.reply', { id: push.request.id, ok: true, text: 'Allowed after a while' }).catch(() => undefined), 600)
         },
         (s) => (up = s === 'connected')
       )
@@ -243,7 +243,7 @@ describe('phone abilities as tools', () => {
       link.listen(
         (push) => {
           seen.push(push)
-          if (push.type === 'phoneRequest') void link.call('phone.ack', { id: push.request.id })
+          if (push.type === 'phoneRequest') void link.call('phone.ack', { id: push.request.id }).catch(() => undefined)
         },
         (s) => (up = s === 'connected')
       )
@@ -273,7 +273,7 @@ describe('phone abilities as tools', () => {
       link.listen(
         (push) => {
           seen.push(push as never)
-          if (push.type === 'phoneRequest') void link.call('phone.ack', { id: push.request.id })
+          if (push.type === 'phoneRequest') void link.call('phone.ack', { id: push.request.id }).catch(() => undefined)
         },
         (s) => (up = s === 'connected')
       )

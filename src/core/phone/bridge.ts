@@ -328,7 +328,14 @@ export class PhoneBridge {
     this.stopAnnounce = null
     const server = this.server
     this.server = null
-    if (server) await new Promise<void>((resolve) => server.close(() => resolve()))
+    if (server) {
+      // Switching phones off cuts every connection at once. (Waiting for them to end by themselves can hang for as long as a phone keeps its
+      // stream open, or is reopening it just then.)
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve())
+        server.closeAllConnections()
+      })
+    }
   }
 
   /** Forgets a phone: its key no longer works, and its open stream is closed at once. */

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDown, FileDiff, Folder, FolderTree, GitBranch, Plug, SquareTerminal, Workflow } from 'lucide-react'
+import { ArrowDown, FileDiff, Folder, FolderTree, GitBranch, Globe, Plug, SquareTerminal, Workflow } from 'lucide-react'
 import type { ContextRef, UserInput } from '@shared/agent'
 import { cn } from '@/lib/cn'
 import { basename } from '@/lib/format'
@@ -183,6 +183,7 @@ export function ConversationView({ sessionId }: { sessionId: string }) {
               </>
             )}
             <MakeWorkflow sessionId={sessionId} enabled={session.items.some((i) => i.kind === 'assistant') && session.status === 'idle'} />
+            <PanelToggle panel="browser" label="Browser (Ctrl+Shift+B)" icon={Globe} />
             <PanelToggle panel="tools" label="Tools & Integrations" icon={Plug} />
           </div>
         </header>
@@ -190,6 +191,8 @@ export function ConversationView({ sessionId }: { sessionId: string }) {
         <div ref={scroller} onScroll={onScroll} className="relative z-10 min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-[820px] px-6 py-6">
             <Timeline
+              key={sessionId}
+              scroller={scroller}
               session={session}
               onApproval={(requestId, allow, always) => respondApproval(sessionId, requestId, allow, always)}
               onAsk={(requestId, answers) => respondAsk(sessionId, requestId, answers)}
@@ -226,9 +229,11 @@ export function ConversationView({ sessionId }: { sessionId: string }) {
               context={context}
               onRemoveContext={(path) => useDrafts.getState().removeContext(sessionId, path)}
               busy={busy}
-              onSend={(input: UserInput) => {
-                void send(session.mode, input)
-                useDrafts.getState().clear(sessionId)
+              onSend={async (input: UserInput) => {
+                const sent = await send(session.mode, input)
+                // Context is only cleared once the message has gone; the text is cleared by the composer.
+                if (sent) useDrafts.getState().clear(sessionId)
+                return sent
               }}
               onStop={() => stop(sessionId)}
               placeholder={session.status === 'waiting' ? 'Answer above to continue…' : 'Message Celeste...'}

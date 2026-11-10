@@ -109,6 +109,8 @@ for (const theme of ['dark', 'light']) {
   await snap('develop-home')
   await send('Fix the flaky checkout test', 'racing the pricing service')
   await page.getByRole('button', { name: 'Changes' }).click()
+  // The panel reads the folder first: the picture is taken once the files are listed.
+  await page.getByText('Looking at the folder').waitFor({ state: 'detached', timeout: 20_000 }).catch(() => undefined)
   await snap('develop-diffs')
 
   await page.getByRole('button', { name: 'Settings', exact: true }).click()

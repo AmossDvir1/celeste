@@ -1,5 +1,6 @@
 import type { AskAnswers, ToolKind } from '@shared/agent'
 import type { LogEvent, StoredEvent } from '@shared/api'
+import { movesSession } from '@shared/status'
 import { basename } from '@/lib/format'
 import type { Activity, Session, TimelineItem } from './types'
 
@@ -50,7 +51,7 @@ export function reduceEvent(s: Session, e: LogEvent, at: number): Session {
   const now = at
   switch (e.type) {
     case 'user.message':
-      return { ...s, items: [...s.items, { kind: 'user', id: itemId(), text: e.text, attachments: e.attachments, ...(e.context?.length ? { context: e.context } : {}), at: now }], updatedAt: now }
+      return { ...s, items: [...s.items, { kind: 'user', id: itemId(), text: e.text, attachments: e.attachments, ...(e.context?.length ? { context: e.context } : {}), at: now }] }
 
     case 'checkpoint.created': {
       // It is written right after the message it belongs to.
@@ -93,7 +94,7 @@ export function reduceEvent(s: Session, e: LogEvent, at: number): Session {
       return { ...s, items: [...s.items, { kind: 'notice', id: itemId(), text: `Celeste could not save the folder before this message, so it cannot be reverted. ${e.reason}` }] }
 
     case 'checkpoint.reverted':
-      return { ...s, items: [...s.items, { kind: 'reverted', id: itemId(), restored: e.restored, removed: e.removed, undoId: e.undoId }], updatedAt: now }
+      return { ...s, items: [...s.items, { kind: 'reverted', id: itemId(), restored: e.restored, removed: e.removed, undoId: e.undoId }] }
 
     case 'approval.resolved':
       return resolveApproval(s, e.requestId, e.allow)
@@ -109,12 +110,10 @@ export function reduceEvent(s: Session, e: LogEvent, at: number): Session {
           { kind: 'notice', id: itemId(), text: 'Celeste was closed while this was running. Send a message to continue.' }
         ],
         status: 'idle',
-        activity: null,
-        updatedAt: now
-      }
+        activity: null }
 
     case 'turn.started':
-      return { ...s, status: 'working', activity: THINKING, updatedAt: now }
+      return { ...s, status: 'working', activity: THINKING }
 
     case 'thinking.delta': {
       const last = s.items[s.items.length - 1]
@@ -132,7 +131,7 @@ export function reduceEvent(s: Session, e: LogEvent, at: number): Session {
         last?.kind === 'assistant'
           ? [...base.slice(0, -1), { ...last, text: last.text + e.text }]
           : [...base, { kind: 'assistant', id: itemId(), text: e.text }]
-      return { ...s, items, status: 'working', activity: { label: 'Writing', working: true }, updatedAt: now }
+      return { ...s, items, status: 'working', activity: { label: 'Writing', working: true } }
     }
 
     case 'tool.started': {
@@ -174,7 +173,7 @@ export function reduceEvent(s: Session, e: LogEvent, at: number): Session {
         ...s,
         items: [
           ...closeThinking(s.items, now),
-          { kind: 'approval', id: itemId(), requestId: e.requestId, tool: e.kind, title: e.title, detail: e.detail, status: 'pending' }
+          { kind: 'approval', id: itemId(), requestId: e.requestId, tool: e.kind, title: e.title, detail: e.detail, ...(e.choices ? { choices: e.choices } : {}), status: 'pending' }
         ],
         status: 'waiting',
         activity: { label: 'Waiting for your approval', working: false }
@@ -195,7 +194,7 @@ export function reduceEvent(s: Session, e: LogEvent, at: number): Session {
       return s
 
     case 'turn.completed':
-      return { ...s, items: closeThinking(s.items, now), status: 'idle', activity: null, updatedAt: now }
+      return { ...s, items: closeThinking(s.items, now), status: 'idle', activity: null }
 
     case 'turn.interrupted':
       // Tools that were still running stopped with it: none is left spinning under "You stopped this response".
@@ -203,18 +202,14 @@ export function reduceEvent(s: Session, e: LogEvent, at: number): Session {
         ...s,
         items: [...failRunningTools(closeThinking(s.items, now), now), { kind: 'notice', id: itemId(), text: 'You stopped this response.' }],
         status: 'idle',
-        activity: null,
-        updatedAt: now
-      }
+        activity: null }
 
     case 'turn.failed':
       return {
         ...s,
         items: [...closeThinking(s.items, now), { kind: 'error', id: itemId(), error: e.error }],
         status: 'idle',
-        activity: null,
-        updatedAt: now
-      }
+        activity: null }
   }
 }
 
@@ -248,7 +243,7 @@ export function foldEvents(s: Session, events: StoredEvent[]): Session {
   let next = s
   for (const { seq, at, event } of events) {
     if (seq <= next.foldedSeq) continue
-    next = { ...reduceEvent(next, event, at), updatedAt: at, foldedSeq: seq, lastSeq: Math.max(next.lastSeq, seq) }
+    next = { ...reduceEvent(next, event, at), updatedAt: movesSession(event) ? at : next.updatedAt, foldedSeq: seq, lastSeq: Math.max(next.lastSeq, seq) }
   }
   return next
 }

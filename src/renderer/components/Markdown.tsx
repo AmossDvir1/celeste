@@ -1,7 +1,9 @@
-import { useState, type ReactNode } from 'react'
+import { memo, useMemo, useState, type ReactNode } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Check, Copy } from 'lucide-react'
+import { openLink } from '@/lib/links'
+import { splitMarkdown } from '@/lib/markdown-chunks'
 
 function CodeBlock({ code, lang }: { code: string; lang?: string }) {
   const [copied, setCopied] = useState(false)
@@ -38,7 +40,17 @@ const components: Components = {
   strong: ({ children }) => <strong className="font-semibold text-ink">{children}</strong>,
   em: ({ children }) => <em className="italic">{children}</em>,
   a: ({ href, children }) => (
-    <a href={href} target="_blank" rel="noopener noreferrer" className="text-accent-text underline decoration-accent-text/40 underline-offset-2 hover:decoration-accent-text">
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      // A web link opens in Celeste's browser or the person's own, as they chose; Ctrl-click always means their own.
+      onClick={(e) => {
+        if (!href || !/^https?:\/\//i.test(href)) return
+        e.preventDefault()
+        void openLink(href, e)
+      }}
+      className="text-accent-text underline decoration-accent-text/40 underline-offset-2 hover:decoration-accent-text">
       {children}
     </a>
   ),
@@ -63,12 +75,25 @@ const components: Components = {
   }
 }
 
-export function Markdown({ children }: { children: string }) {
+/** One piece of a long reply. It is drawn again only when its own text changes, which for all but the last piece is never. */
+const Piece = memo(function Piece({ text, first }: { text: string; first: boolean }) {
+  // Inside a piece the first and last blocks have no outer margin; the gap between pieces is made here, as between any two blocks.
   return (
-    <div className="selectable text-[15px] leading-[1.7] text-ink">
+    <div className={first ? undefined : /^ {0,3}#{1,3}\s/.test(text) ? 'mt-5' : 'mt-2.5'}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-        {children}
+        {text}
       </ReactMarkdown>
     </div>
   )
-}
+})
+
+export const Markdown = memo(function Markdown({ children }: { children: string }) {
+  const pieces = useMemo(() => splitMarkdown(children), [children])
+  return (
+    <div className="selectable text-[15px] leading-[1.7] text-ink">
+      {pieces.map((p, i) => (
+        <Piece key={i} text={p} first={i === 0} />
+      ))}
+    </div>
+  )
+})

@@ -33,7 +33,7 @@ export function ChatHome({
   greeting
 }: {
   mode: SessionMode
-  onSend: (input: UserInput) => void
+  onSend: (input: UserInput) => void | Promise<boolean>
   /** Overrides the time-of-day greeting. Used when comparing with the picture. */
   greeting?: string
   /** Rendered between the subtitle and the composer (Develop puts its project picker here). */
@@ -75,10 +75,7 @@ export function ChatHome({
               prefs={draft}
               onPrefs={setDraft}
               attachments={attachments}
-              onSend={(input) => {
-                onSend(input)
-                useDrafts.getState().clear(draftKey)
-              }}
+              onSend={(input) => onSend(input)}
               autoFocus
             />
           </div>

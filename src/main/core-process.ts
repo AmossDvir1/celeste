@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, MessageChannelMain, utilityProcess, type UtilityProcess, type WebContents } from 'electron'
+import type { BrowserService } from './browser/service'
 import type { DesktopService } from './desktop/service'
 import { secrets } from './secrets'
 
@@ -18,10 +19,16 @@ export class CoreProcess {
   private shuttingDown = false
   private exits: number[] = []
   private desktop: DesktopService | null = null
+  private browser: BrowserService | null = null
 
   /** The real computer, for Core's desktop tools. Core asks it by message; it asks Core to stop by message. */
   setDesktop(desktop: DesktopService): void {
     this.desktop = desktop
+  }
+
+  /** The browser's pages, for Core's browser tools. Core asks by message. */
+  setBrowser(browser: BrowserService): void {
+    this.browser = browser
   }
 
   /** A message to Core that is not a request from a window. */
@@ -47,6 +54,19 @@ export class CoreProcess {
         desktop.handle(message.method, message.arg).then(
           (result) => child.postMessage({ type: 'desktop-reply', id, ok: true, result }),
           (err: unknown) => child.postMessage({ type: 'desktop-reply', id, ok: false, error: err instanceof Error ? err.message : String(err) })
+        )
+        return
+      }
+      if (message?.type === 'browser-call' && typeof message.id === 'number' && typeof message.method === 'string') {
+        const id = message.id
+        const browser = this.browser
+        if (!browser) {
+          child.postMessage({ type: 'browser-reply', id, ok: false, error: 'The browser is not available.' })
+          return
+        }
+        browser.core(message.method, message.arg).then(
+          (result) => child.postMessage({ type: 'browser-reply', id, ok: true, result }),
+          (err: unknown) => child.postMessage({ type: 'browser-reply', id, ok: false, error: err instanceof Error ? err.message : String(err) })
         )
         return
       }

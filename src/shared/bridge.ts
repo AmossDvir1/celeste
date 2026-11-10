@@ -1,4 +1,5 @@
 import type { CoreMethod, CoreParams, CorePush, CoreResult } from './api'
+import type { BrowserCalls, BrowserOp, BrowserState, KeyInput } from './browser'
 
 /** What the preload script gives the window as `window.celeste`. Absent in a plain browser. */
 export interface CelesteBridge {
@@ -24,6 +25,15 @@ export interface CelesteBridge {
   saveText(suggestedName: string, text: string): Promise<{ saved: string | null }>
   /** Asks for a file to open and reads it as text (at most 1 MB). Null when the person cancels. */
   openText(extensions: string[]): Promise<{ name: string; text: string } | null>
+  /** The browser pane: the pages live in the main process, and this tells it what to show and hears what they are doing. */
+  browser: {
+    call<O extends BrowserOp>(op: O, arg: BrowserCalls[O]['arg']): Promise<BrowserCalls[O]['result']>
+    onState(listener: (state: BrowserState) => void): () => void
+    /** A key typed in a page that the window handles (Ctrl+K, Ctrl+Shift+B, …). */
+    onKey(listener: (key: KeyInput) => void): () => void
+    /** The assistant started using the browser in this chat: show it, if that chat is open. */
+    onReveal(listener: (chatId: string) => void): () => void
+  }
   revealDataFolder(): Promise<void>
   /** Asks the person to choose a folder. Null when they cancel. */
   chooseFolder(): Promise<string | null>

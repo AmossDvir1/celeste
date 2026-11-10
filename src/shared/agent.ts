@@ -4,6 +4,14 @@
 export type VendorId = 'copilot' | 'claude' | 'openai' | 'gemini'
 export type SessionMode = 'chat' | 'develop'
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+/** The words on the two buttons of a question that can be answered for just now, or for good (Celeste's own questions, such as the browser's). */
+export interface ApprovalChoices {
+  /** Yes, for now: for this chat. */
+  allow: string
+  /** Yes, and do not ask again. */
+  always: string
+}
+
 export type ApprovalMode = 'auto' | 'edits' | 'ask' | 'plan'
 export type ToolKind = 'read' | 'edit' | 'write' | 'shell' | 'web' | 'search' | 'mcp' | 'agent' | 'other'
 
@@ -98,7 +106,7 @@ export type AgentEvent =
   | { type: 'tool.started'; id: string; kind: ToolKind; title: string; input?: unknown }
   | { type: 'tool.output'; id: string; text: string }
   | { type: 'tool.completed'; id: string; ok: boolean; result?: string; diff?: FileDiff[] }
-  | { type: 'approval.requested'; requestId: string; kind: ToolKind; title: string; detail?: string }
+  | { type: 'approval.requested'; requestId: string; kind: ToolKind; title: string; detail?: string; choices?: ApprovalChoices }
   | { type: 'ask_user.requested'; requestId: string; questions: Question[] }
   | { type: 'usage.updated'; usage: Usage }
   | { type: 'turn.completed'; turnId: string }

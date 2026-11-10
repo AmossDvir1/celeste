@@ -1,5 +1,6 @@
 import type {
   AgentError,
+  ApprovalChoices,
   AskAnswers,
   AttachmentInfo,
   ContextRef,
@@ -46,6 +47,8 @@ export type TimelineItem =
       tool: ToolKind
       title: string
       detail?: string
+      /** Set when the question can be answered for now or for good: the words for each. */
+      choices?: ApprovalChoices
       status: 'pending' | 'allowed' | 'denied'
     }
   | { kind: 'ask'; id: string; requestId: string; questions: Question[]; answers?: AskAnswers; status: 'pending' | 'answered' }

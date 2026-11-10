@@ -4,7 +4,25 @@ All notable changes to Celeste. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Changed
+
+- **A dot shows which sessions are working.** A small dot beside a session in the list breathes while an assistant is writing in it (with Working… instead of the time), and a dot on the Chat or Develop tab says something is going on in the one you are not looking at.
+- **The list holds still.** Sessions are ordered by your last message and by when an answer ended, not by every word being written. Before, two sessions answering at once kept trading places.
+- **Long conversations are fast.** A reply that streamed in about 2 seconds took almost two minutes to draw in a conversation of 150 turns, because every few characters redrew everything in it. Now it draws as fast as in an empty chat, the window does not freeze, and a long conversation opens in a fraction of a second (the newest messages first, older ones as you scroll up). Under the hood: tokens are logged in runs, not one by one; only what changed is drawn again; a long reply is drawn in pieces; the browser skips what is far off screen.
+- **Chat keeps the working out out of the way.** Thinking and tool calls are folded into one line (Thought for 4 s, Read 3 files · 2 s) that you can open, also while they are still going. Develop shows thinking while it streams, but only the last few lines, and folds runs of reading and searching.
+
 ### Added
+- **A browser inside Celeste.** The Browser button (or Ctrl+Shift+B) opens a real browser beside the chat, in Chat and in Develop.
+  - **A real page**, not a picture: it is Chromium, so sites, sign-ins, video and typing work as in any browser. It has tabs, an address bar (a search if it is not an address), Back, Forward and Reload, a right-click menu, and Developer tools.
+  - **A browser for each chat.** Each chat has its own tabs, and they close with it. The panel can be dragged wider.
+  - **It asks first**: a page that wants your location, camera, microphone or notifications asks in the panel, and a download asks where to save.
+  - **Starts signed out**, like Claude's browser. "Keep cookies" in the ⋮ menu keeps sign-ins after you quit, and "Clear browsing data" removes them.
+  - **Links in a chat** open in the browser or in yours, as you choose (it asks the first time; Ctrl+click always uses yours). A page on your own computer, such as a dev server, always opens in Celeste.
+  - **The assistant can use it.** Claude and Copilot can open pages, read them, click, type, fill in forms, take pictures, read the console and the network, and open and close tabs, in their own chat's tabs only. The browser comes up beside the chat the first time. It works with the panel closed. 20 tools.
+  - **Other programs can use it too** (Playwright, or Playwright MCP with `--cdp-endpoint`), only when switched on, and they see only the browser's tabs, never Celeste's windows. Switch it on in Settings, Browser, which shows the address to give them.
+  - **It asks before using a new site.** The first time the assistant clicks or types on a site that is not on your own computer, a card in the chat asks: Allow for this chat, Always allow that site, or Deny. A no is final for that chat. Opening a new site also asks in chats that ask before they act (Ask, Edits). Settings, Browser lists the sites you always allow, each with a way to take it back, and switches this asking off.
+  - **Settings, Browser** gathers it all: let the assistant use the browser, ask before a new site, the sites always allowed, keep cookies, clear browsing data, where links open, the search engine, and other programs.
+  - `npm run verify:browser` and `npm run verify:browser-tools` check it. Playwright (about 14 MB) and the `ws` library now ship with the app.
 - **Celeste for Android (experimental)**: use Celeste from your phone on the same Wi-Fi.
   - **Settings → Phone** shows a QR code. The page it opens on the phone offers the app.
   - **Connecting**: the app finds the computer by itself. You compare three pictures on both screens and press Allow on the computer.

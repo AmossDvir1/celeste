@@ -257,3 +257,13 @@
   }
 }
 
+/* A long conversation: the browser skips laying out and painting the blocks that are far off screen, and remembers how tall each was. */
+.cv-auto {
+  content-visibility: auto;
+  contain-intrinsic-width: auto 0px;
+  contain-intrinsic-height: auto 120px;
+}
+/* Blocks brought in from above while reading do not play their entrance. */
+.no-anim .animate-fade-up {
+  animation: none;
+}

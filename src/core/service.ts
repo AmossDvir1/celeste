@@ -1,6 +1,6 @@
 import { mkdirSync, rmSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
-import type { AgentSession, ApprovalAnswer, ApprovalMode, AskAnswers, AttachmentInfo, ContextRef, SessionMode, ToolKind, UserInput, VendorId } from '@shared/agent'
+import type { AgentSession, ApprovalAnswer, ApprovalChoices, ApprovalMode, AskAnswers, AttachmentInfo, ContextRef, SessionMode, ToolKind, UserInput, VendorId } from '@shared/agent'
 import {
   UNDO_WINDOW_MS,
   type AppSettings,
@@ -22,6 +22,7 @@ import {
 } from '@shared/api'
 import { SIDEBAR_WIDTH } from '@shared/defaults'
 import { DESKTOP_MINUTES } from '@shared/desktop'
+import { coalesceEvents } from '@shared/coalesce'
 import { nextStatus } from '@shared/status'
 import type { AttachmentRow, FileStore, SessionRow, Store } from './store'
 import type { Snapshots } from './snapshots'
@@ -78,6 +79,22 @@ interface Live {
   filesBefore?: Manifest
 }
 
+/**
+ * Tokens arrive many times a second. The first of a run is logged and shown at once; the ones that follow within this time are joined
+ * into one entry, so the log, the windows and the phone hear a few entries a second, not one for every few characters.
+ */
+const BURST_MS = 80
+
+/** The tokens of one run that are waiting to be logged together. */
+interface Burst {
+  type: 'message.delta' | 'thinking.delta'
+  text: string
+  /** When the first of the waiting tokens arrived. */
+  at: number
+  live: { text: string; pending?: Set<string> }
+  timer: ReturnType<typeof setTimeout>
+}
+
 /** How long Celeste waits for a folder to be saved before it sends the message anyway, without a checkpoint. */
 const CHECKPOINT_TIMEOUT_MS = 90_000
 const CHECKPOINT_ID = /^[0-9a-f]{40}$/
@@ -100,7 +117,7 @@ const APPROVALS: ApprovalMode[] = ['auto', 'edits', 'ask', 'plan']
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const THEMES = ['dark', 'light', 'system']
 const VENDOR_IDS: VendorId[] = ['copilot', 'claude', 'openai', 'gemini']
-const SETTINGS_KEYS = ['theme', 'userName', 'wizardDone', 'sidebarCollapsed', 'sidebarWidth', 'autoTitle', 'ownPrograms', 'desktopControl', 'desktopMinutes', 'desktopWholeScreen', 'desktopNeverApps', 'pinnedModels', 'defaults'] as const
+const SETTINGS_KEYS = ['theme', 'userName', 'wizardDone', 'sidebarCollapsed', 'sidebarWidth', 'autoTitle', 'ownPrograms', 'desktopControl', 'desktopMinutes', 'desktopWholeScreen', 'desktopNeverApps', 'browserTools', 'browserAskSites', 'browserAllowedSites', 'pinnedModels', 'defaults'] as const
 const MAX_PINNED = 100
 const TRANSCRIPT_LIMIT = 24_000
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
@@ -136,7 +153,7 @@ export class SessionService {
   private readonly undoTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly undoMs: number
   /** Approval cards raised for tool calls that are not the agent's own (device commands), waiting for an answer. */
-  private readonly toolApprovals = new Map<string, { sessionId: string; resolve: (allow: boolean) => void }>()
+  private readonly toolApprovals = new Map<string, { sessionId: string; resolve: (answer: { allow: boolean; always: boolean }) => void }>()
 
   constructor(private readonly opts: ServiceOptions) {
     this.store = opts.store
@@ -171,6 +188,7 @@ export class SessionService {
   }
 
   close(): void {
+    this.flushAllBursts()
     for (const [id, live] of this.live) {
       void live.session.close()
       this.live.delete(id)
@@ -184,6 +202,7 @@ export class SessionService {
   /** Everything except the device methods, which DeviceService adds. */
   readonly api: SessionApi = {
     'app.bootstrap': () => this.bootstrap(),
+    'settings.get': () => this.currentSettings(),
     'settings.patch': (patch) => this.patchSettings(patch),
     'desktop.grants': () => [...((this.store.settings().desktopGrants as DesktopGrantRecord[] | undefined) ?? [])].reverse(),
     'vendors.set': (id, record) => this.setVendor(id, record),
@@ -192,7 +211,9 @@ export class SessionService {
     'sessions.get': (id) => {
       const row = this.store.getSession(id)
       if (!row || row.deletedAt !== null) return null
-      return { summary: this.summary(row), events: this.store.events(id) }
+      this.flushBurst(id)
+      // The log holds a token at a time; the window is sent whole runs of them, which replay to the same conversation.
+      return { summary: this.summary(row), events: coalesceEvents(this.store.events(id)) }
     },
     'sessions.send': (id, input) => this.send(id, input),
     'sessions.interrupt': (id) => this.interrupt(id),
@@ -237,6 +258,9 @@ export class SessionService {
       desktopMinutes: (stored.desktopMinutes as number | undefined) ?? d.desktopMinutes,
       desktopWholeScreen: (stored.desktopWholeScreen as boolean | undefined) ?? d.desktopWholeScreen,
       desktopNeverApps: (stored.desktopNeverApps as string[] | undefined) ?? d.desktopNeverApps,
+      browserTools: (stored.browserTools as boolean | undefined) ?? d.browserTools,
+      browserAskSites: (stored.browserAskSites as boolean | undefined) ?? d.browserAskSites,
+      browserAllowedSites: (stored.browserAllowedSites as string[] | undefined) ?? d.browserAllowedSites,
       pinnedModels: (stored.pinnedModels as string[] | undefined) ?? d.pinnedModels,
       defaults: { ...d.defaults, ...(stored.defaults as Partial<AppSettings['defaults']> | undefined) }
     }
@@ -273,6 +297,14 @@ export class SessionService {
       next.desktopMinutes = patch.desktopMinutes
     }
     if (patch.desktopWholeScreen !== undefined) next.desktopWholeScreen = patch.desktopWholeScreen === true
+    if (patch.browserTools !== undefined) next.browserTools = patch.browserTools === true
+    if (patch.browserAskSites !== undefined) next.browserAskSites = patch.browserAskSites === true
+    if (patch.browserAllowedSites !== undefined) {
+      if (!Array.isArray(patch.browserAllowedSites) || patch.browserAllowedSites.length > 200) throw new Error('Invalid list of sites')
+      const sites = patch.browserAllowedSites.map((s) => text(s, 'site', 253).trim().toLowerCase())
+      if (sites.some((s) => !/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/.test(s) && !/^\[[0-9a-f:]+\]$/.test(s))) throw new Error('Invalid site')
+      next.browserAllowedSites = [...new Set(sites)]
+    }
     if (patch.desktopNeverApps !== undefined) {
       if (!Array.isArray(patch.desktopNeverApps) || patch.desktopNeverApps.length > 50) throw new Error('Invalid list of programs')
       next.desktopNeverApps = [...new Set(patch.desktopNeverApps.map((name) => text(name, 'program', 100).trim()).filter(Boolean))]
@@ -379,6 +411,34 @@ export class SessionService {
 
   // --- the agent -------------------------------------------------------------------------------------
 
+  private readonly bursts = new Map<string, Burst>()
+
+  /** The timer that ends a window for joining tokens. It never keeps the process alive, and a failure in it is reported, not thrown from a timer. */
+  private burstTimer(id: string): ReturnType<typeof setTimeout> {
+    const timer = setTimeout(() => {
+      try {
+        this.flushBurst(id)
+      } catch (err) {
+        console.error('[core] could not log the last tokens', err)
+      }
+    }, BURST_MS)
+    timer.unref?.()
+    return timer
+  }
+
+  /** Logs the tokens that are waiting, now. */
+  private flushBurst(id: string): void {
+    const b = this.bursts.get(id)
+    if (!b) return
+    clearTimeout(b.timer)
+    this.bursts.delete(id)
+    if (b.text) this.commit(id, { type: b.type, text: b.text }, b.live, b.at)
+  }
+
+  private flushAllBursts(): void {
+    for (const id of [...this.bursts.keys()]) this.flushBurst(id)
+  }
+
   private runtime(id: string): Live {
     const existing = this.live.get(id)
     if (existing) return existing
@@ -414,6 +474,7 @@ export class SessionService {
 
   /** The conversation as plain text, newest last, cut from the front when long. Seeds a new vendor session. */
   private transcript(id: string): string {
+    this.flushBurst(id)
     const lines: string[] = []
     let answer = ''
     const flush = () => {
@@ -433,9 +494,31 @@ export class SessionService {
 
   /** Writes an event to the log, then tells the windows. Status changes also update the session's summary. */
   private record(id: string, event: LogEvent, live: { text: string; pending?: Set<string> }): void {
+    if (event.type === 'message.delta' || event.type === 'thinking.delta') {
+      let b = this.bursts.get(id)
+      if (b && b.type !== event.type) {
+        this.flushBurst(id)
+        b = undefined
+      }
+      if (!b) {
+        // The first token of a run goes straight through; the window for joining the next ones opens.
+        this.commit(id, event, live, this.now())
+        this.bursts.set(id, { type: event.type, text: '', at: 0, live, timer: this.burstTimer(id) })
+        return
+      }
+      if (!b.text) b.at = this.now()
+      b.text += event.text
+      return
+    }
+    // Anything else keeps its place in the log: what is waiting goes first.
+    this.flushBurst(id)
+    this.commit(id, event, live, this.now())
+  }
+
+  private commit(id: string, event: LogEvent, live: { text: string; pending?: Set<string> }, at: number): void {
     const row = this.store.getSession(id)
     if (!row || row.deletedAt !== null) return
-    const stored = this.store.appendEvent(id, this.now(), event)
+    const stored = this.store.appendEvent(id, at, event)
 
     switch (event.type) {
       case 'user.message':
@@ -742,7 +825,7 @@ export class SessionService {
     if (waiting && waiting.sessionId === id) {
       this.toolApprovals.delete(requestId)
       this.record(id, { type: 'approval.resolved', requestId, allow: answer.allow === true }, { text: '' })
-      waiting.resolve(answer.allow === true)
+      waiting.resolve({ allow: answer.allow === true, always: answer.allow === true && answer.always === true })
       return
     }
     const live = this.live.get(id)
@@ -770,10 +853,27 @@ export class SessionService {
 
   /** Raises an approval card in the session for something that is not the agent's own tool, and waits. */
   requestApproval(sessionId: string, request: { kind: ToolKind; title: string; detail?: string }): Promise<boolean> {
+    return this.ask(sessionId, request).then((a) => a.allow)
+  }
+
+  /**
+   * The same card with a third button: yes for this chat, yes for good, or no. `choices` are the words on the first two. Used where a yes can be
+   * remembered (the browser's sites).
+   */
+  requestChoice(sessionId: string, request: { kind: ToolKind; title: string; detail?: string; choices: ApprovalChoices }): Promise<'once' | 'always' | 'deny'> {
+    return this.ask(sessionId, request).then((a) => (!a.allow ? 'deny' : a.always ? 'always' : 'once'))
+  }
+
+  private ask(sessionId: string, request: { kind: ToolKind; title: string; detail?: string; choices?: ApprovalChoices }): Promise<{ allow: boolean; always: boolean }> {
     const requestId = `tool-${crypto.randomUUID()}`
     // Not tied to the running agent: the answer goes to whoever is waiting, not to the vendor.
-    this.record(sessionId, { type: 'approval.requested', requestId, kind: request.kind, title: request.title, detail: request.detail }, { text: '' })
+    this.record(sessionId, { type: 'approval.requested', requestId, kind: request.kind, title: request.title, detail: request.detail, ...(request.choices ? { choices: request.choices } : {}) }, { text: '' })
     return new Promise((resolve) => this.toolApprovals.set(requestId, { sessionId, resolve }))
+  }
+
+  /** How a session asks before the agent acts: for the browser, whether going to a new site asks. */
+  approvalOf(sessionId: string): ApprovalMode {
+    return this.store.getSession(sessionId)?.approval ?? 'auto'
   }
 
   /** How many questions in a session wait for the person: the agent's own approvals and questions, and Celeste's cards. */
@@ -788,7 +888,7 @@ export class SessionService {
     for (const [requestId, waiting] of [...this.toolApprovals]) {
       if (waiting.sessionId !== sessionId) continue
       this.toolApprovals.delete(requestId)
-      waiting.resolve(false)
+      waiting.resolve({ allow: false, always: false })
     }
   }
 
@@ -808,6 +908,7 @@ export class SessionService {
   // --- deleting --------------------------------------------------------------------------------------
 
   private stopRuntime(id: string): void {
+    this.flushBurst(id)
     const live = this.live.get(id)
     if (!live) return
     void live.session.interrupt()

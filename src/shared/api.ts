@@ -54,6 +54,12 @@ export interface AppSettings {
   desktopWholeScreen: boolean
   /** Programs, or words in a window's title, that desktop control never sees or touches (a password manager, a bank). */
   desktopNeverApps: string[]
+  /** The assistant may use Celeste's browser (open pages, read, click, type). On unless the person switches it off. */
+  browserTools: boolean
+  /** Before the assistant acts on a site it has not been allowed to use (a click, typing), ask. On unless switched off. */
+  browserAskSites: boolean
+  /** The sites the person chose "Always allow" for, by host name. */
+  browserAllowedSites: string[]
   /** Models the person pinned to the top of the model menu, in the order they were pinned. */
   pinnedModels: string[]
   defaults: { model: string; approval: ApprovalMode; projectsFolder: string }
@@ -333,6 +339,7 @@ export interface CoreApi {
   'app.bootstrap': () => Bootstrap
   /** Asks GitHub which release is newest. Only when the person asks: Celeste never looks by itself. */
   'app.checkUpdate': () => Promise<UpdateInfo>
+  'settings.get': () => AppSettings
   'settings.patch': (patch: SettingsPatch) => AppSettings
   /** The last times the assistant had the screen, newest first. */
   'desktop.grants': () => DesktopGrantRecord[]

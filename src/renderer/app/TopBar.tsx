@@ -3,6 +3,7 @@ import { cn } from '@/lib/cn'
 import { Logo } from '@/components/Logo'
 import { Menu } from '@/components/menu'
 import { Avatar, IconButton } from '@/components/ui'
+import { useSessions } from '@/stores/sessions'
 import { useSettings, type ThemePref } from '@/stores/settings'
 import { useUi, type AppMode } from '@/stores/ui'
 
@@ -11,6 +12,20 @@ const TABS: { id: AppMode; label: string; icon: typeof Code }[] = [
   { id: 'develop', label: 'Develop', icon: Code },
   { id: 'workflows', label: 'Workflows', icon: Workflow }
 ]
+
+/** A small dot on a tab whose sessions are busy (or waiting for you) while you are looking at another tab. */
+function BusyDot({ mode }: { mode: AppMode }) {
+  const busy = useSessions((s) => mode !== 'workflows' && Object.values(s.sessions).some((x) => x.mode === mode && x.status !== 'idle'))
+  const needs = useSessions((s) => mode !== 'workflows' && Object.values(s.sessions).some((x) => x.mode === mode && x.status === 'waiting'))
+  if (!busy) return null
+  return (
+    <span
+      className={cn('absolute top-2 right-3 h-2 w-2 rounded-full bg-accent', !needs && 'animate-pulse motion-reduce:animate-none')}
+      title={needs ? 'Waiting for you' : 'Working'}
+      aria-hidden
+    />
+  )
+}
 
 export function TopBar() {
   const mode = useUi((s) => s.mode)
@@ -53,12 +68,13 @@ export function TopBar() {
               aria-current={active ? 'page' : undefined}
               onClick={() => setMode(id)}
               className={cn(
-                'flex h-10 min-w-[112px] items-center justify-center gap-2.5 rounded-[10px] border border-transparent px-5 text-[15px] transition-colors',
+                'relative flex h-10 min-w-[112px] items-center justify-center gap-2.5 rounded-[10px] border border-transparent px-5 text-[15px] transition-colors',
                 active ? 'tab-active' : 'text-ink-muted hover:text-ink'
               )}
             >
               <Icon className="h-[19px] w-[19px]" />
               {label}
+              {!active && <BusyDot mode={id} />}
             </button>
           )
         })}

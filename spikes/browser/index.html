@@ -1,0 +1,25 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Celeste spike</title>
+<style>
+  body { margin: 0; font: 14px sans-serif; display: flex; flex-direction: column; height: 100vh; background: #111; color: #eee }
+  #bar { height: 48px; display: flex; align-items: center; gap: 8px; padding: 0 12px; background: #223 }
+  #row { flex: 1; display: flex; min-height: 0 }
+  #chat { width: 320px; padding: 12px; background: #1a1a1a }
+  #ph { flex: 1; margin: 12px; border: 2px dashed #6a6; background: #031 }
+  #dlg { display: none; position: fixed; inset: 0; background: #0008; align-items: center; justify-content: center }
+  #dlg.on { display: flex }
+  #dlg div { background: #fff; color: #000; padding: 40px; border-radius: 8px }
+</style>
+<div id="bar"><b>Celeste spike</b> <button id="open">Open dialog</button></div>
+<div id="row"><div id="chat">chat area</div><div id="ph"></div></div>
+<div id="dlg"><div>A dialog that must stay above the browser</div></div>
+<script>
+  const ph = document.getElementById('ph')
+  const send = () => { const r = ph.getBoundingClientRect(); window.spike.rect({ x: r.x, y: r.y, width: r.width, height: r.height }) }
+  new ResizeObserver(send).observe(ph)
+  window.addEventListener('resize', send)
+  send()
+  document.getElementById('open').onclick = () => document.getElementById('dlg').classList.add('on')
+  window.setOverlay = (on) => document.getElementById('dlg').classList.toggle('on', on)
+</script>

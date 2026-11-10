@@ -44,7 +44,10 @@
     "verify:workflows-ai": "electron-vite build && node scripts/workflows-ai-check.mjs",
     "verify:desktop": "electron-vite build && node scripts/desktop-check.mjs",
     "verify:phone": "electron-vite build && npm --prefix phone run build && node scripts/phone-check.mjs",
+    "verify:browser": "electron-vite build && node scripts/browser-check.mjs",
+    "verify:browser-tools": "electron-vite build && node scripts/browser-tools-check.mjs",
     "verify:mcp": "electron-vite build && node scripts/mcp-check.mjs",
+    "verify:perf": "electron-vite build && node scripts/perf-check.mjs",
     "verify:ui": "electron-vite build && node scripts/ui-check.mjs",
     "verify:claude": "electron-vite build && node scripts/claude-check.mjs",
     "verify:copilot": "electron-vite build && node scripts/copilot-check.mjs && node scripts/copilot-signin-check.mjs",
@@ -69,6 +72,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/ssh2": "^1.15.6",
+    "@types/ws": "^8.18.2",
     "@vitejs/plugin-react": "^6.2.1",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
@@ -81,7 +85,6 @@
     "electron-vite": "^6.0.0",
     "jpeg-js": "^0.4.4",
     "lucide-react": "^1.70.0",
-    "playwright-core": "^1.65.0",
     "png-to-ico": "^3.0.2",
     "pngjs": "^7.0.0",
     "qrcode": "^1.5.4",
@@ -104,7 +107,9 @@
     "@modelcontextprotocol/sdk": "^1.32.2",
     "bonjour-service": "^1.4.4",
     "koffi": "3.3.4",
-    "ssh2": "^1.17.0"
+    "playwright-core": "^1.65.0",
+    "ssh2": "^1.17.0",
+    "ws": "^8.22.2"
   },
   "author": "The Celeste contributors"
 }

@@ -16,12 +16,12 @@ export const root = resolve(import.meta.dirname, '..', '..')
  * Nothing is pretended: a vendor is only there if it is connected. Checks that need no account connect Claude to a stand-in for
  * Anthropic's API (scripts/lib/stub.mjs, passed as `env`). `copilotKnowsNoOne: true` gives Copilot a data folder of its own,
  * so its sign-in screens can be tried without touching the sign-in on this computer.
- * `env` adds environment variables to the app.
+ * `env` adds environment variables to the app, and `chromiumArgs` adds switches (for example `--host-resolver-rules=MAP *.test 127.0.0.1`).
  */
-export async function launch({ width, height, query = '', theme = 'dark', profile: given, entry = root, copilotKnowsNoOne = false, env = {} }) {
+export async function launch({ width, height, query = '', theme = 'dark', profile: given, entry = root, copilotKnowsNoOne = false, env = {}, chromiumArgs = [] }) {
   const profile = given ?? mkdtempSync(join(tmpdir(), 'celeste-shots-'))
   const app = await electron.launch({
-    args: [entry, `--user-data-dir=${profile}`],
+    args: [entry, `--user-data-dir=${profile}`, ...chromiumArgs],
     env: { ...process.env, CELESTE_NO_OWN_PROGRAMS: '1', ...env, CELESTE_QUERY: query, ELECTRON_RENDERER_URL: '', CELESTE_COPILOT_ISOLATED: copilotKnowsNoOne ? '1' : '' }
   })
   const page = await app.firstWindow()

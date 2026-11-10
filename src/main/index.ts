@@ -1,9 +1,10 @@
-import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainEvent, type IpcMainInvokeEvent, type WebContents } from 'electron'
 import { copyFile, readFile, stat, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { canOpenFile } from '@shared/produced'
 import { resolveChatFile } from './chat-files'
 import { registerAttachmentScheme, serveAttachments } from './attachments-protocol'
+import { BrowserService } from './browser/service'
 import { CoreProcess } from './core-process'
 import { DesktopService } from './desktop/service'
 import { secrets } from './secrets'
@@ -26,6 +27,11 @@ const desktop = new DesktopService({
   resume: () => core.send({ type: 'desktop-resume' })
 })
 core.setDesktop(desktop)
+// The browser pane (docs/BROWSER_PLAN.md): the pages are views laid over the window; the window says which are shown and where.
+const browser = new BrowserService(join(app.getPath('userData'), 'browser.json'))
+/** The web contents of Celeste's own windows, the only ones the bridge answers (a page in the browser has no bridge, and a sign-in popup is not one of these). */
+const ownContents = new WeakSet<WebContents>()
+core.setBrowser(browser)
 const flushed = new WeakSet<BrowserWindow>()
 
 /** Asks the window to save whatever it is holding (unsent text) and waits briefly for its answer. */
@@ -68,6 +74,7 @@ function createWindow(): void {
     }
   })
 
+  ownContents.add(win.webContents)
   win.once('ready-to-show', () => win.show())
 
   // Control ends with the last of Celeste's own windows: nothing may be left controlling the computer with no chat in view.
@@ -101,8 +108,16 @@ function createWindow(): void {
 
 /** Only the app's own windows may use the bridge. */
 function fromOurWindow(event: IpcMainEvent | IpcMainInvokeEvent): boolean {
-  return !!BrowserWindow.fromWebContents(event.sender) && event.senderFrame === event.sender.mainFrame
+  return ownContents.has(event.sender) && !!BrowserWindow.fromWebContents(event.sender) && event.senderFrame === event.sender.mainFrame
 }
+
+// The browser pane. Every call is checked and typed in browser/service.ts.
+ipcMain.handle('celeste:browser', (event, op: unknown, arg: unknown) => {
+  if (!fromOurWindow(event)) throw new Error('Not allowed')
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (win) browser.bind(win)
+  return browser.handle(op as Parameters<BrowserService['handle']>[0], arg)
+})
 
 // The renderer tells us the theme so the native window buttons match the top bar.
 ipcMain.on('celeste:theme', (event, payload: { color?: unknown; symbolColor?: unknown }) => {
@@ -219,6 +234,7 @@ if (!app.requestSingleInstanceLock()) {
     app.setAppUserModelId('app.celeste')
     core.start()
     serveAttachments()
+    void browser.init()
     createWindow()
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -237,6 +253,7 @@ if (!app.requestSingleInstanceLock()) {
     quitting = true
     desktop.stopAll('Celeste closed.')
     void Promise.all(BrowserWindow.getAllWindows().map(flushWindow))
+      .then(() => browser.shutdown())
       .then(() => core.shutdown())
       .finally(() => app.quit())
   })

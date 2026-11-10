@@ -37,6 +37,15 @@ try {
   const { page } = app
   await page.getByRole('dialog', { name: 'Set up Celeste' }).waitFor({ timeout: 20_000 })
   check('the window and Core start from inside the archive', true)
+  // The browser's tools use Playwright (in Core, the same way the main process would load it) and the browser's own DevTools endpoint (the ws library).
+  const loads = await app.app.evaluate(({ app: electronApp }) => {
+    const { createRequire } = process.getBuiltinModule('node:module')
+    const load = createRequire(`${electronApp.getAppPath()}/package.json`)
+    const pw = load('playwright-core')
+    const ws = load('ws')
+    return typeof pw.chromium.connectOverCDP === 'function' && typeof ws.WebSocketServer === 'function'
+  })
+  check('Playwright and the DevTools library load from inside the archive', loads === true)
   await page.getByRole('button', { name: 'Skip setup' }).click()
   await page.getByRole('heading', { level: 1 }).first().waitFor({ timeout: 20_000 })
   const boot = await page.evaluate(() => window.celeste.core.call('app.bootstrap', []))

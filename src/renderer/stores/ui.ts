@@ -5,8 +5,20 @@ import { lookupModel, modelOf, useModels } from './models'
 import { useSettings } from '@/stores/settings'
 
 export type AppMode = 'chat' | 'develop' | 'workflows'
-export type RightPanel = null | 'tools' | 'changes' | 'terminal' | 'files'
-export type SettingsSection = 'general' | 'appearance' | 'vendors' | 'agent' | 'tools' | 'desktop' | 'phone' | 'devices' | 'data' | 'about'
+export type RightPanel = null | 'tools' | 'changes' | 'terminal' | 'files' | 'browser'
+
+/** How wide the browser panel is, in pixels. It is dragged by its edge and remembered. */
+export const BROWSER_WIDTH = { min: 360, max: 1100, normal: 520 }
+const WIDTH_KEY = 'celeste.browserWidth'
+function savedBrowserWidth(): number {
+  try {
+    const n = Number(localStorage.getItem(WIDTH_KEY))
+    return n >= BROWSER_WIDTH.min && n <= BROWSER_WIDTH.max ? n : BROWSER_WIDTH.normal
+  } catch {
+    return BROWSER_WIDTH.normal
+  }
+}
+export type SettingsSection = 'general' | 'appearance' | 'vendors' | 'agent' | 'tools' | 'browser' | 'desktop' | 'phone' | 'devices' | 'data' | 'about'
 
 /** Settings of the composer before a session exists. A new session copies them. */
 export interface Draft {
@@ -31,6 +43,9 @@ export interface Toast {
 interface UiState {
   mode: AppMode
   rightPanel: RightPanel
+  browserWidth: number
+  /** A web link in a chat that waits for the person to say where it opens (Celeste's browser or theirs). */
+  pendingLink: string | null
   settingsOpen: boolean
   settingsSection: SettingsSection
   wizardOpen: boolean
@@ -45,6 +60,8 @@ interface UiState {
   setMode: (mode: AppMode) => void
   toggleRight: (panel: Exclude<RightPanel, null>) => void
   setRight: (panel: RightPanel) => void
+  setBrowserWidth: (width: number, save?: boolean) => void
+  setPendingLink: (url: string | null) => void
   openSettings: (section?: SettingsSection) => void
   closeSettings: () => void
   setWizardOpen: (open: boolean) => void
@@ -77,6 +94,8 @@ let toastId = 1
 export const useUi = create<UiState>((set, get) => ({
   mode: 'chat',
   rightPanel: null,
+  browserWidth: savedBrowserWidth(),
+  pendingLink: null,
   settingsOpen: false,
   settingsSection: 'general',
   wizardOpen: false,
@@ -89,6 +108,17 @@ export const useUi = create<UiState>((set, get) => ({
   setMode: (mode) => set({ mode, rightPanel: null }),
   toggleRight: (panel) => set({ rightPanel: get().rightPanel === panel ? null : panel }),
   setRight: (rightPanel) => set({ rightPanel }),
+  setBrowserWidth: (width, save = true) => {
+    const browserWidth = Math.round(Math.min(BROWSER_WIDTH.max, Math.max(BROWSER_WIDTH.min, width)))
+    set({ browserWidth })
+    if (!save) return
+    try {
+      localStorage.setItem(WIDTH_KEY, String(browserWidth))
+    } catch {
+      /* the width just is not remembered */
+    }
+  },
+  setPendingLink: (pendingLink) => set({ pendingLink }),
   openSettings: (section) => set({ settingsOpen: true, settingsSection: section ?? get().settingsSection }),
   closeSettings: () => set({ settingsOpen: false }),
   setWizardOpen: (wizardOpen) => set({ wizardOpen }),

@@ -1,4 +1,5 @@
 import type { DraftState, LogEvent, SearchHit, StoredEvent } from '@shared/api'
+import { movesSession } from '@shared/status'
 import type { DeviceActivity, DeviceFolder, DeviceRecord } from '@shared/devices'
 import type { RunEvent, RunSummary, StoredRunEvent, WorkflowDefinition } from '@shared/workflow'
 import type { AttachmentRow, FileStore, IndexKind, SessionRow, StoredFolder, Store, WorkflowRow } from '../store'
@@ -138,7 +139,7 @@ export class MemoryStore implements Store {
     const s = this.sessions.get(sessionId)
     if (!s) throw new Error(`No session ${sessionId}`)
     s.lastSeq += 1
-    s.updatedAt = at
+    if (movesSession(event)) s.updatedAt = at
     const stored: StoredEvent = { seq: s.lastSeq, at, event: structuredClone(event) }
     this.logs.get(sessionId)?.push(stored)
     return structuredClone(stored)

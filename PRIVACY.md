@@ -26,6 +26,13 @@ The phone app talks only to **your own computer**, directly over your Wi-Fi. The
 - **Phone control:** while you let an assistant use the phone (up to 15 minutes, or until you press Stop), what is on screen goes to your AI vendor, except in the apps on your never list and Celeste's fixed one (password managers, authenticators, Android's installer). It never types into a password field.
 - **Nothing else:** the app has no analytics, no crash reporting and no account. Finding your computer uses your local network only (mDNS). Away from home it cannot reach your computer yet; if a relay is added for that, it will carry only encrypted messages, and this page will say what it sees.
 
+## The browser inside Celeste
+
+Celeste has a browser of its own. It works like any browser: the sites you open there see you as a visitor from this computer, and Celeste does not watch where you go or send it anywhere. It starts signed out and keeps no cookies after you quit unless you choose "Keep cookies".
+
+- **When an assistant uses it** (you can switch that off in Settings; the first time it acts on a site that is not on your computer, it asks you), what it reads from a page, the pictures it takes of a page, and what it types go to your AI vendor as part of the chat, and stay in the chat's history on your computer. Close or avoid pages you do not want an assistant to read while it is working.
+- **Other programs** (such as Playwright MCP) can use the browser only if you switch that on in Settings. It is off by default, listens on this computer only, and needs a secret address that changes each time Celeste starts.
+
 ## Workflows you share
 
 A shared workflow file holds the steps and nothing about your computer. Celeste leaves out the value of headers that look like secrets and the devices you used, but a command or a prompt you wrote is part of the file: read it before you share it.

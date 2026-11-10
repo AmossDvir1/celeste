@@ -33,6 +33,8 @@ import { WorkflowService } from './workflows/service'
 import { CombinedTools, WorkflowTools } from './workflows/tools'
 import { DesktopControl } from './desktop/control'
 import { MainDesktopHost } from './desktop/main-host'
+import { MainBrowserHost } from './browser/main-host'
+import { BrowserTools } from './browser/tools'
 import type { AdapterFactory } from './adapters/types'
 import { TerminalService } from './terminal'
 import { Worktrees } from './worktrees'
@@ -99,6 +101,8 @@ let store: SqliteStore | undefined
 let terminalsRef: TerminalService | undefined
 let desktopRef: DesktopControl | undefined
 const desktopHost = new MainDesktopHost((message) => parent.postMessage(message))
+const browserHost = new MainBrowserHost((message) => parent.postMessage(message))
+let browserToolsRef: BrowserTools | undefined
 
 // Passwords and key passphrases live in the main process. Core asks for one only when it is about to connect.
 let nextSecretId = 0
@@ -216,6 +220,7 @@ async function start(): Promise<void> {
     onSessionStopped: (id) => {
       tools.cancel(id)
       desktopRef?.sessionGone(id)
+      browserToolsRef?.sessionGone(id)
       phoneRef?.cancel(id)
     },
     push,
@@ -338,7 +343,25 @@ async function start(): Promise<void> {
     // Phone control is written into the chat as the same card desktop control uses, marked as the phone's.
     (sessionId, event) => (service as SessionService).recordDesktop(sessionId, event)
   )
-  servers.setExtraTools(new CombinedTools([new WorkflowTools(db, runner, (sessionId) => (service as SessionService).workFolder(sessionId)), desktopControl, phoneTools]))
+  // The assistant's use of Celeste's browser: Playwright, connected to the browser's own DevTools endpoint (docs/BROWSER_PLAN.md).
+  const browserTools = new BrowserTools({
+    enabled: () => db.settings().browserTools !== false,
+    host: browserHost,
+    workFolder: (sessionId) => (service as SessionService).workFolder(sessionId),
+    approvalMode: (sessionId) => (service as SessionService).approvalOf(sessionId),
+    askSites: () => db.settings().browserAskSites !== false,
+    allowedSites: () => (db.settings().browserAllowedSites as string[] | undefined) ?? [],
+    allowSite: (site) => db.setSetting('browserAllowedSites', [...new Set([...((db.settings().browserAllowedSites as string[] | undefined) ?? []), site])].slice(0, 200)),
+    ask: (sessionId, request) =>
+      (service as SessionService).requestChoice(sessionId, {
+        kind: 'web',
+        title: request.title,
+        detail: request.detail,
+        choices: { allow: 'Allow for this chat', always: `Always allow ${request.site}` }
+      })
+  })
+  browserToolsRef = browserTools
+  servers.setExtraTools(new CombinedTools([new WorkflowTools(db, runner, (sessionId) => (service as SessionService).workFolder(sessionId)), desktopControl, phoneTools, browserTools]))
   const workflows = new WorkflowService(db, runner, undefined, () => push({ type: 'workflows' }), dataDir, async () => (await mcp.resolved()).map((s) => s.key), (sessionId) => (service as SessionService).workFolder(sessionId), (source) =>
     // The assistant only has to write; it is in plan mode, so anything it asks to do is refused, and it has three minutes.
     draftWorkflow(source.kind === 'text' ? source : { kind: 'conversation', transcript: (service as SessionService).transcriptOf(source.sessionId) }, {
@@ -441,6 +464,8 @@ parent.on('message', (event) => {
   const message = event.data as { type?: string; id?: number; value?: string | null } | null
   if (message?.type === 'desktop-reply') {
     desktopHost.reply(message as { id?: number; ok?: boolean; result?: unknown; error?: string })
+  } else if (message?.type === 'browser-reply') {
+    browserHost.reply(message as { id?: number; ok?: boolean; result?: unknown; error?: string })
   } else if (message?.type === 'desktop-stop') {
     desktopRef?.stop(typeof (message as { why?: string }).why === 'string' ? ((message as { why: string }).why) : 'You pressed Stop.')
   } else if (message?.type === 'desktop-extend') {
@@ -464,6 +489,7 @@ parent.on('message', (event) => {
     desktopRef?.stop('Celeste closed.')
     service?.close()
     void (async () => {
+      await browserToolsRef?.close().catch(() => undefined)
       await phoneRef?.stop().catch(() => undefined)
       await devices?.close().catch(() => undefined)
       terminalsRef?.closeAll()

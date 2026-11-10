@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import {
   Bot,
   Check,
@@ -51,7 +51,7 @@ const TOOL_ICON: Record<ToolKind, typeof Wrench> = {
 
 /* ---------- user and assistant messages ---------- */
 
-function UserMessage({
+const UserMessage = memo(function UserMessage({
   item,
   canRevert,
   onRevert,
@@ -106,9 +106,9 @@ function UserMessage({
       )}
     </div>
   )
-}
+})
 
-function RevertedNotice({ item, canUndo, onUndo }: { item: Extract<TimelineItem, { kind: 'reverted' }>; canUndo: boolean; onUndo: () => void }) {
+const RevertedNotice = memo(function RevertedNotice({ item, canUndo, onUndo }: { item: Extract<TimelineItem, { kind: 'reverted' }>; canUndo: boolean; onUndo: () => void }) {
   const parts = [item.restored > 0 && `${item.restored} ${item.restored === 1 ? 'file' : 'files'} put back`, item.removed > 0 && `${item.removed} removed`].filter(Boolean)
   return (
     <div className="flex items-center justify-center gap-2 text-xs text-ink-faint">
@@ -121,26 +121,33 @@ function RevertedNotice({ item, canUndo, onUndo }: { item: Extract<TimelineItem,
       )}
     </div>
   )
-}
+})
 
-function AssistantMessage({ item }: { item: Extract<TimelineItem, { kind: 'assistant' }> }) {
+const AssistantMessage = memo(function AssistantMessage({ item }: { item: Extract<TimelineItem, { kind: 'assistant' }> }) {
   return (
     <div className="animate-fade-up max-w-[760px]">
       <Markdown>{item.text}</Markdown>
     </div>
   )
-}
+})
 
 /* ---------- thinking ---------- */
 
-function ThinkingRow({ item }: { item: ThinkingItem }) {
+/** What the assistant thought. Chat folds it into a group; Develop shows it, a little at a time: the last lines while it streams, a line when done. */
+const ThinkingRow = memo(function ThinkingRow({ item }: { item: ThinkingItem }) {
   const [open, setOpen] = useState(false)
   const done = item.endedAt !== undefined
+  const body = 'mt-1 ml-1 border-l-2 border-edge-strong pl-4 text-[13.5px] leading-[1.65] text-ink-muted italic'
   if (!done) {
-    // While it streams, show the reasoning itself: the line below says "Thinking".
+    // While it streams only the last lines show, and a click opens all of it. (A long line of thought is a lot to draw for each word.)
+    const tail = item.text.length > TAIL ? `…${item.text.slice(-TAIL).trimStart()}` : item.text
     return (
-      <div className="max-w-[760px] border-l-2 border-edge-strong pl-4 text-[13.5px] leading-[1.65] text-ink-muted italic">
-        {item.text}
+      <div className="max-w-[760px]">
+        <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="flex items-center gap-1.5 rounded-md py-0.5 text-[13px] text-ink-muted hover:text-ink">
+          <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-90')} />
+          <ShimmerText active>Thinking</ShimmerText>
+        </button>
+        <div className={cn(body, !open && 'max-h-[5.2em] overflow-hidden')}>{open ? item.text : tail}</div>
       </div>
     )
   }
@@ -155,10 +162,13 @@ function ThinkingRow({ item }: { item: ThinkingItem }) {
         <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-90')} />
         Thought for {formatDuration((item.endedAt ?? item.startedAt) - item.startedAt)}
       </button>
-      {open && <div className="mt-1 ml-1 border-l-2 border-edge-strong pl-4 text-[13.5px] leading-[1.65] text-ink-muted italic">{item.text}</div>}
+      {open && <div className={body}>{item.text}</div>}
     </div>
   )
-}
+})
+
+/** About three lines of thinking, as shown while it streams in Develop. */
+const TAIL = 240
 
 /* ---------- tools ---------- */
 
@@ -168,13 +178,14 @@ function StatusMark({ status }: { status: ToolItem['status'] }) {
   return <X className="h-3.5 w-3.5 text-danger" />
 }
 
-function ToolCard({ item, detailed }: { item: ToolItem; detailed: boolean }) {
+const ToolCard = memo(function ToolCard({ item, detailed }: { item: ToolItem; detailed: boolean }) {
   const Icon = TOOL_ICON[item.tool]
   const hasBody = item.output.trim().length > 0 || (item.diff?.length ?? 0) > 0
   // Develop shows diffs and running commands open. Chat keeps everything folded.
   const [open, setOpen] = useState(detailed && ((item.diff?.length ?? 0) > 0 || item.status === 'running'))
   const duration = item.endedAt ? formatDuration(item.endedAt - item.startedAt) : null
-  const outputLines = item.output.trimEnd().split('\n')
+  // Only what is on screen is worked out: a closed card has no use for its output split into lines.
+  const outputLines = open ? item.output.trimEnd().split('\n') : []
 
   return (
     <div className={cn('max-w-[760px] overflow-hidden rounded-xl border bg-panel/60', item.status === 'failed' ? 'border-danger/40' : 'border-edge')}>
@@ -203,7 +214,7 @@ function ToolCard({ item, detailed }: { item: ToolItem; detailed: boolean }) {
       )}
     </div>
   )
-}
+})
 
 function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`
@@ -226,34 +237,46 @@ function summarize(tools: ToolItem[]): string {
   return text ? text[0].toUpperCase() + text.slice(1) : 'Worked'
 }
 
-/** Chat folds a run of tool calls into one line. Develop never uses this: it shows every call. */
-function ActivityGroup({ items }: { items: (ToolItem | ThinkingItem)[] }) {
-  const tools = items.filter((i): i is ToolItem => i.kind === 'tool')
-  const running = tools.some((t) => t.status === 'running')
-  const [open, setOpen] = useState(false)
-  const shown = open || running
-  const start = Math.min(...items.map((i) => i.startedAt))
-  const end = Math.max(...items.map((i) => ('endedAt' in i && i.endedAt ? i.endedAt : start)))
+const sameItems = (a: readonly unknown[], b: readonly unknown[]) => a.length === b.length && a.every((x, i) => x === b[i])
 
-  return (
-    <div className="max-w-[760px]">
-      <button
-        type="button"
-        aria-expanded={shown}
-        onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 rounded-md py-0.5 text-[13px] text-ink-muted hover:text-ink"
-      >
-        <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', shown && 'rotate-90')} />
-        {running ? 'Working…' : `${summarize(tools)} · ${formatDuration(end - start)}`}
-      </button>
-      {shown && (
-        <div className="mt-1.5 ml-1 space-y-1.5 border-l-2 border-edge pl-4">
-          {items.map((i) => (i.kind === 'tool' ? <ToolCard key={i.id} item={i} detailed={false} /> : <ThinkingRow key={i.id} item={i} />))}
-        </div>
-      )}
-    </div>
-  )
-}
+/**
+ * A run of thinking and tool calls folded into one line, closed until the person opens it (also while it is still going: what it
+ * is doing now is the line under the conversation). Chat folds all of it; Develop folds the quiet part, reading and searching.
+ */
+const ActivityGroup = memo(
+  function ActivityGroup({ items, detailed }: { items: (ToolItem | ThinkingItem)[]; detailed: boolean }) {
+    const tools = items.filter((i): i is ToolItem => i.kind === 'tool')
+    const running = tools.some((t) => t.status === 'running') || items.some((i) => i.kind === 'thinking' && i.endedAt === undefined)
+    const [open, setOpen] = useState(false)
+    const start = Math.min(...items.map((i) => i.startedAt))
+    const end = Math.max(...items.map((i) => ('endedAt' in i && i.endedAt ? i.endedAt : start)))
+    const label = running ? (tools.length ? 'Working' : 'Thinking') : tools.length ? summarize(tools) : 'Thought'
+
+    return (
+      <div className="max-w-[760px]">
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+          className="flex items-center gap-2 rounded-md py-0.5 text-[13px] text-ink-muted hover:text-ink"
+        >
+          <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-90')} />
+          {running ? (
+            <ShimmerText active>{`${label}…`}</ShimmerText>
+          ) : (
+            `${label}${tools.length ? ' · ' : ' for '}${formatDuration(end - start)}`
+          )}
+        </button>
+        {open && (
+          <div className="mt-1.5 ml-1 space-y-1.5 border-l-2 border-edge pl-4">
+            {items.map((i) => (i.kind === 'tool' ? <ToolCard key={i.id} item={i} detailed={detailed} /> : <ThinkingRow key={i.id} item={i} />))}
+          </div>
+        )}
+      </div>
+    )
+  },
+  (a, b) => a.detailed === b.detailed && sameItems(a.items, b.items)
+)
 
 /* ---------- approval ---------- */
 
@@ -266,12 +289,12 @@ const APPROVAL_TITLE: Partial<Record<ToolKind, string>> = {
   agent: 'Start a helper agent?'
 }
 
-function ApprovalCard({
+const ApprovalCard = memo(function ApprovalCard({
   item,
   onAnswer
 }: {
   item: Extract<TimelineItem, { kind: 'approval' }>
-  onAnswer: (allow: boolean, always?: boolean) => void
+  onAnswer: (requestId: string, allow: boolean, always?: boolean) => void
 }) {
   const Icon = TOOL_ICON[item.tool]
   // A command on a device is Celeste's own approval: it names the device, and cannot be allowed for the whole session.
@@ -298,26 +321,40 @@ function ApprovalCard({
         </div>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button variant="primary" size="sm" onClick={() => onAnswer(true)} autoFocus>
-          Allow
+        <Button variant="primary" size="sm" onClick={() => onAnswer(item.requestId, true)} autoFocus>
+          {item.choices?.allow ?? 'Allow'}
         </Button>
-        {!onDevice && (
-          <Button variant="secondary" size="sm" onClick={() => onAnswer(true, true)}>
-            Allow for this session
+        {item.choices ? (
+          <Button variant="secondary" size="sm" onClick={() => onAnswer(item.requestId, true, true)}>
+            {item.choices.always}
           </Button>
+        ) : (
+          !onDevice && (
+            <Button variant="secondary" size="sm" onClick={() => onAnswer(item.requestId, true, true)}>
+              Allow for this session
+            </Button>
+          )
         )}
-        <Button variant="ghost" size="sm" onClick={() => onAnswer(false)}>
+        <Button variant="ghost" size="sm" onClick={() => onAnswer(item.requestId, false)}>
           Deny
         </Button>
       </div>
     </div>
   )
-}
+})
 
+/** A question card, with its answer wired to its own request. */
+const AskRow = memo(function AskRow({ item, onAsk }: { item: Extract<TimelineItem, { kind: 'ask' }>; onAsk: (requestId: string, answers: AskAnswers) => void }) {
+  return <AskUserCard item={item} onAnswer={(a) => onAsk(item.requestId, a)} />
+})
+
+const MemoWorkflowRunCard = memo(WorkflowRunCard)
+const MemoDesktopCard = memo(DesktopCard)
+const MemoFileCards = memo(FileCards)
 
 /* ---------- errors, notices, activity ---------- */
 
-function ErrorCard({ item, onRetry }: { item: Extract<TimelineItem, { kind: 'error' }>; onRetry?: () => void }) {
+const ErrorCard = memo(function ErrorCard({ item, onRetry }: { item: Extract<TimelineItem, { kind: 'error' }>; onRetry?: () => void }) {
   return (
     <div role="alert" className="animate-fade-up flex max-w-[760px] items-start gap-3 rounded-xl border border-danger/40 bg-danger/10 p-4">
       <CircleAlert className="mt-0.5 h-[18px] w-[18px] shrink-0 text-danger" />
@@ -332,7 +369,7 @@ function ErrorCard({ item, onRetry }: { item: Extract<TimelineItem, { kind: 'err
       </div>
     </div>
   )
-}
+})
 
 export function ActivityLine({ activity }: { activity: NonNullable<Session['activity']> }) {
   return (
@@ -355,29 +392,80 @@ export function ActivityLine({ activity }: { activity: NonNullable<Session['acti
 
 type Block = { kind: 'item'; item: TimelineItem } | { kind: 'group'; id: string; items: (ToolItem | ThinkingItem)[] }
 
-/** Chat folds runs of thinking and tool calls into one group. Develop shows each one. */
-function toBlocks(items: TimelineItem[], mode: SessionMode): Block[] {
-  if (mode === 'develop') return items.map((item) => ({ kind: 'item', item }))
+const blockId = (b: Block) => (b.kind === 'group' ? b.id : b.item.id)
+const holds = (b: Block, id: string) => (b.kind === 'group' ? b.items.some((i) => i.id === id) : b.item.id === id)
+
+/** Reading and searching: the part of Develop's work that is folded. Edits, commands, web and tools stay as cards of their own. */
+const QUIET: ToolKind[] = ['read', 'search']
+
+/**
+ * Chat folds all thinking and every tool call into groups: a person using it for questions wants the answer, and the way there is
+ * one click away. Develop shows thinking while it streams and each tool call, but folds runs of reading and searching, which
+ * are many and the least interesting.
+ */
+export function toBlocks(items: TimelineItem[], mode: SessionMode): Block[] {
   const out: Block[] = []
+  let run: (ToolItem | ThinkingItem)[] = []
+  const emit = () => {
+    if (run.length === 0) return
+    if (mode === 'chat' || run.some((i) => i.kind === 'tool')) out.push({ kind: 'group', id: run[0]!.id, items: run })
+    // Develop: thinking with no reading beside it is shown on its own.
+    else for (const item of run) out.push({ kind: 'item', item })
+    run = []
+  }
   for (const item of items) {
-    if (item.kind === 'tool' || (item.kind === 'thinking' && item.endedAt !== undefined)) {
-      const last = out[out.length - 1]
-      if (last?.kind === 'group') last.items.push(item)
-      else out.push({ kind: 'group', id: item.id, items: [item] })
-    } else {
+    const foldable =
+      mode === 'chat'
+        ? item.kind === 'tool' || item.kind === 'thinking'
+        : (item.kind === 'tool' && QUIET.includes(item.tool)) || (item.kind === 'thinking' && item.endedAt !== undefined)
+    if (foldable) run.push(item as ToolItem | ThinkingItem)
+    else {
+      emit()
       out.push({ kind: 'item', item })
     }
   }
-  return out.filter((b) => b.kind !== 'group' || b.items.some((i) => i.kind === 'tool'))
+  emit()
+  return out
+}
+
+/** How many blocks a long conversation opens with at the bottom, and how many more each "earlier" brings. */
+const FIRST = 60
+const PAGE = 40
+/** The newest blocks are always drawn in full; older ones are only drawn while they are near the screen. */
+const LIVE_TAIL = 12
+
+const NO_ROOT: RefObject<HTMLDivElement | null> = { current: null }
+
+/** The top of what is drawn, when older blocks are held back: it loads more as it comes near the screen. */
+function Earlier({ hidden, onMore, root }: { hidden: number; onMore: () => void; root: RefObject<HTMLDivElement | null> }) {
+  const ref = useRef<HTMLButtonElement>(null)
+  const more = useRef(onMore)
+  more.current = onMore
+  useEffect(() => {
+    const el = ref.current
+    if (!el || typeof IntersectionObserver === 'undefined') return
+    const io = new IntersectionObserver((entries) => entries.some((e) => e.isIntersecting) && more.current(), { root: root.current, rootMargin: '900px 0px 0px 0px' })
+    io.observe(el)
+    return () => io.disconnect()
+    // It watches again after each page, in case the next is already near.
+  }, [root, hidden])
+  return (
+    <button ref={ref} type="button" onClick={onMore} className="mx-auto flex rounded-full border border-edge px-3 py-1 text-xs text-ink-muted hover:bg-hover hover:text-ink">
+      Show earlier messages ({hidden})
+    </button>
+  )
 }
 
 export function Timeline({
   session,
+  scroller,
   onApproval,
   onAsk,
   onRetry
 }: {
   session: Session
+  /** The element that scrolls, to keep what is being read in place when earlier messages are added above it. */
+  scroller?: RefObject<HTMLDivElement | null>
   onApproval: (requestId: string, allow: boolean, always?: boolean) => void
   onAsk: (requestId: string, answers: AskAnswers) => void
   onRetry: () => void
@@ -392,45 +480,90 @@ export function Timeline({
     return last >= 0 && !session.items.slice(last).some((it) => it.kind === 'user') ? session.items[last]?.id : undefined
   }, [session.items])
   const idle = session.status === 'idle'
+
+  // The callbacks the cards get never change, so a card is drawn again only when it itself changes.
+  const latest = useRef({ onApproval, onAsk, onRetry })
+  latest.current = { onApproval, onAsk, onRetry }
+  const approve = useCallback((requestId: string, allow: boolean, always?: boolean) => latest.current.onApproval(requestId, allow, always), [])
+  const ask = useCallback((requestId: string, answers: AskAnswers) => latest.current.onAsk(requestId, answers), [])
+  const retry = useCallback(() => latest.current.onRetry(), [])
+  const sessionId = session.id
+  const undo = useCallback((undoId: string) => void revert(sessionId, undoId), [revert, sessionId])
+
+  // A long conversation is drawn from near its end; what is above is held back until the reader goes there. The first block that
+  // is drawn is remembered by its id, so what is drawn does not shift as the conversation grows.
+  const [from, setFrom] = useState<string | null>(null)
+  const index = from === null ? Math.max(0, blocks.length - FIRST) : Math.max(0, blocks.findIndex((b) => holds(b, from)))
+  const first = blocks[index]
+  useLayoutEffect(() => {
+    if (from === null && first) setFrom(blockId(first))
+  }, [from, first])
+  const opened = useRef<number | null>(null)
+  if (opened.current === null && blocks.length > 0) opened.current = index
+  const hold = useRef<{ height: number; top: number } | null>(null)
+  const more = useCallback(() => {
+    const el = scroller?.current
+    hold.current = el ? { height: el.scrollHeight, top: el.scrollTop } : null
+    const at = Math.max(0, index - PAGE)
+    const b = blocks[at]
+    if (b) setFrom(blockId(b))
+  }, [blocks, index, scroller])
+  // Messages added above keep what the reader is looking at where it was.
+  useLayoutEffect(() => {
+    const el = scroller?.current
+    const h = hold.current
+    hold.current = null
+    if (el && h) el.scrollTop = h.top + (el.scrollHeight - h.height)
+  }, [from, scroller])
+
   return (
     <div className="space-y-4">
       {target && <RevertDialog sessionId={session.id} checkpointId={target} onClose={() => setTarget(null)} />}
       {reviewing && <ReviewDialog sessionId={session.id} scope={reviewing} onClose={() => setReviewing(null)} />}
-      {blocks.map((b) => {
-        if (b.kind === 'group') return <ActivityGroup key={b.id} items={b.items} />
-        const it = b.item
-        switch (it.kind) {
-          case 'user':
-            return <UserMessage key={it.id} item={it} canRevert={idle} onRevert={setTarget} onReview={setReviewing} />
-          case 'workflow':
-            return <WorkflowRunCard key={it.id} runId={it.runId} name={it.name} workflowId={it.workflowId} />
-          case 'desktop':
-            return <DesktopCard key={it.id} item={it} />
-          case 'files':
-            return <FileCards key={it.id} sessionId={session.id} files={it.files} more={it.more} />
-          case 'reverted':
-            return <RevertedNotice key={it.id} item={it} canUndo={idle && it.id === lastReverted} onUndo={() => void revert(session.id, it.undoId)} />
-          case 'assistant':
-            return <AssistantMessage key={it.id} item={it} />
-          case 'thinking':
-            return <ThinkingRow key={it.id} item={it} />
-          case 'tool':
-            return <ToolCard key={it.id} item={it} detailed={session.mode === 'develop'} />
-          case 'approval':
-            return <ApprovalCard key={it.id} item={it} onAnswer={(allow, always) => onApproval(it.requestId, allow, always)} />
-          case 'ask':
-            return <AskUserCard key={it.id} item={it} onAnswer={(a) => onAsk(it.requestId, a)} />
-          case 'error':
-            return <ErrorCard key={it.id} item={it} onRetry={onRetry} />
-          case 'notice':
-            return (
-              <div key={it.id} className="text-center text-xs text-ink-faint">
-                {it.text}
-              </div>
-            )
-        }
+      {index > 0 && <Earlier hidden={index} onMore={more} root={scroller ?? NO_ROOT} />}
+      {blocks.slice(index).map((b, n) => {
+        const at = index + n
+        // Blocks far from the end are skipped by the browser while they are off screen (nothing is laid out or painted for them), and
+        // those brought in from above do not play the entrance animation.
+        const cls = cn(at < blocks.length - LIVE_TAIL && 'cv-auto', at < (opened.current ?? 0) && 'no-anim')
+        return (
+          <div key={blockId(b)} className={cls || undefined}>
+            {renderBlock(b)}
+          </div>
+        )
       })}
       {session.activity && <ActivityLine activity={session.activity} />}
     </div>
   )
+
+  function renderBlock(b: Block) {
+    if (b.kind === 'group') return <ActivityGroup items={b.items} detailed={session.mode === 'develop'} />
+    const it = b.item
+    switch (it.kind) {
+      case 'user':
+        return <UserMessage item={it} canRevert={idle && !!it.checkpoint} onRevert={setTarget} onReview={setReviewing} />
+      case 'workflow':
+        return <MemoWorkflowRunCard runId={it.runId} name={it.name} workflowId={it.workflowId} />
+      case 'desktop':
+        return <MemoDesktopCard item={it} />
+      case 'files':
+        return <MemoFileCards sessionId={session.id} files={it.files} more={it.more} />
+      case 'reverted':
+        return <RevertedNotice item={it} canUndo={idle && it.id === lastReverted} onUndo={() => undo(it.undoId)} />
+      case 'assistant':
+        return <AssistantMessage item={it} />
+      case 'thinking':
+        return <ThinkingRow item={it} />
+      case 'tool':
+        return <ToolCard item={it} detailed={session.mode === 'develop'} />
+      case 'approval':
+        return <ApprovalCard item={it} onAnswer={approve} />
+      case 'ask':
+        return <AskRow item={it} onAsk={ask} />
+      case 'error':
+        return <ErrorCard item={it} onRetry={retry} />
+      case 'notice':
+        return <div className="text-center text-xs text-ink-faint">{it.text}</div>
+    }
+  }
 }

@@ -7,7 +7,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
  */
 
 export type Block =
-  | { type: 'text'; text: string }
+  /** chunk and delayMs make the text arrive in small pieces over time, as a model's tokens do (a test of how the window copes). */
+  | { type: 'text'; text: string; chunk?: number; delayMs?: number }
   | { type: 'tool_use'; name: string; input: Record<string, unknown> }
   /** Starts an answer and never finishes it, so a test can stop it in the middle. */
   | { type: 'hold' }
@@ -18,6 +19,8 @@ export interface FakeRequest {
   last: { kind: 'text'; text: string } | { kind: 'tool_result'; text: string; isError: boolean }
   /** Whether the last user message carried an image. */
   image: boolean
+  /** The size, in bytes, of the pictures inside the tool result that came back (a screenshot a tool returned), or 0. */
+  resultImageBytes: number
   body: Record<string, unknown>
 }
 
@@ -99,9 +102,13 @@ export class FakeAnthropic {
       }
       if (b.type === 'text') {
         send('content_block_start', { type: 'content_block_start', index, content_block: { type: 'text', text: '' } })
-        // Two pieces, so the stream is seen to arrive in parts.
+        // Two pieces, so the stream is seen to arrive in parts; or many small ones, when asked.
         const mid = Math.ceil(b.text.length / 2)
-        for (const text of [b.text.slice(0, mid), b.text.slice(mid)].filter(Boolean)) send('content_block_delta', { type: 'content_block_delta', index, delta: { type: 'text_delta', text } })
+        const parts = b.chunk && b.chunk > 0 ? (b.text.match(new RegExp(`[\\s\\S]{1,${b.chunk}}`, 'g')) ?? []) : [b.text.slice(0, mid), b.text.slice(mid)].filter(Boolean)
+        for (const text of parts) {
+          send('content_block_delta', { type: 'content_block_delta', index, delta: { type: 'text_delta', text } })
+          if (b.delayMs) await new Promise((resolve) => setTimeout(resolve, b.delayMs))
+        }
       } else {
         send('content_block_start', { type: 'content_block_start', index, content_block: { type: 'tool_use', id: `toolu_fake_${this.counter}_${index}`, name: b.name, input: {} } })
         send('content_block_delta', { type: 'content_block_delta', index, delta: { type: 'input_json_delta', partial_json: JSON.stringify(b.input) } })
@@ -145,6 +152,17 @@ function typed(content: unknown): string {
   return own[own.length - 1] ?? ''
 }
 
+/** The bytes of the pictures in a tool result's content, from their base64 text. */
+function pictureBytes(content: unknown): number {
+  if (!Array.isArray(content)) return 0
+  let bytes = 0
+  for (const b of content as Record<string, unknown>[]) {
+    const source = b?.['type'] === 'image' ? (b['source'] as { data?: unknown } | undefined) : undefined
+    if (typeof source?.data === 'string') bytes += Math.floor((source.data.length * 3) / 4)
+  }
+  return bytes
+}
+
 function describe(body: Record<string, unknown>): FakeRequest {
   const messages = Array.isArray(body['messages']) ? (body['messages'] as { role?: string; content?: unknown }[]) : []
   const last = [...messages].reverse().find((m) => m.role === 'user')
@@ -154,6 +172,7 @@ function describe(body: Record<string, unknown>): FakeRequest {
     model: String(body['model'] ?? ''),
     body,
     image: content.some((b) => b['type'] === 'image'),
+    resultImageBytes: pictureBytes(result?.['content']),
     last: result
       ? { kind: 'tool_result', text: textOf(result['content']), isError: result['is_error'] === true }
       : { kind: 'text', text: typed(last?.content) }

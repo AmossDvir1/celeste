@@ -151,7 +151,15 @@ export function useSlash(text: string, sessionId: string | undefined) {
 /** The list above the message box. Keyboard: arrows, Enter or Tab to choose, Escape to leave it. */
 export function SlashList({ id, items, index, onPick, onHover }: { id: string; items: SlashItem[]; index: number; onPick: (i: number) => void; onHover: (i: number) => void }) {
   return (
-    <div role="listbox" id={id} aria-label="Workflows and commands" className="absolute right-0 bottom-full left-0 z-30 mb-2 max-h-96 overflow-y-auto rounded-xl border border-edge-strong bg-raised-2 p-1.5 shadow-pop">
+    <div
+      role="listbox"
+      id={id}
+      aria-label="Workflows and commands"
+      // With more entries than fit it scrolls, and a scrolling area has to be reachable by keyboard. It is: the arrow keys in the message box move through it (aria-activedescendant), and Tab there chooses an entry, so it never takes focus itself.
+      tabIndex={0}
+      onMouseDown={(e) => e.preventDefault()}
+      className="absolute right-0 bottom-full left-0 z-30 mb-2 max-h-96 overflow-y-auto rounded-xl border border-edge-strong bg-raised-2 p-1.5 shadow-pop"
+    >
       {items.map((item, i) => {
         const Icon = item.icon
         return (

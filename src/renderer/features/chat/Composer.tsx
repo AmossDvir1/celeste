@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { Paperclip, Send, Square, TriangleAlert, X } from 'lucide-react'
 import type { ContextRef, SessionMode, UserInput } from '@shared/agent'
 import { cn } from '@/lib/cn'
@@ -29,7 +29,7 @@ export interface ComposerProps {
   context?: ContextRef[]
   onRemoveContext?: (path: string) => void
   busy?: boolean
-  onSend: (input: UserInput) => void
+  onSend: (input: UserInput) => void | Promise<boolean>
   onStop?: () => void
   autoFocus?: boolean
   placeholder?: string
@@ -64,6 +64,8 @@ export function Composer({
   // A workflow chosen with "/" is run by sending; it needs no AI vendor of its own, but its steps may.
   const canSend = slash.chip !== null || (!noVendor && (text.trim().length > 0 || attachments.items.length > 0 || context.length > 0))
   const imageBlocked = model?.images === false && attachments.items.some((a) => a.mime.startsWith('image/'))
+  // While a message is being sent the prompt stays in the box, and it is not sent twice.
+  const [sending, setSending] = useState(false)
 
   // Grow with the text, up to a limit.
   useEffect(() => {
@@ -77,12 +79,12 @@ export function Composer({
     if (autoFocus) areaRef.current?.focus()
   }, [autoFocus])
 
-  const submit = () => {
+  const submit = async () => {
     if (slash.chip) {
       void slash.run()
       return
     }
-    if (busy || !canSend) return
+    if (busy || sending || !canSend) return
     // "/name answer=value" typed out in full is a workflow as well.
     const typed = parseSlash(text)
     const named = typed && useWorkflows.getState().list.find((w) => slugify(w.name) === typed.name)
@@ -91,10 +93,15 @@ export function Composer({
       void slash.choose(named.id, typed.args)
       return
     }
-    onSend({ text: text.trim(), attachments: attachments.items, ...(context.length ? { context } : {}) })
+    setSending(true)
+    // The prompt is only cleared once it has gone. If sending fails, what was written is still there to fix and send again.
+    const sent = await onSend({ text: text.trim(), attachments: attachments.items, ...(context.length ? { context } : {}) })
+    setSending(false)
+    if (sent === false) return
     attachments.clear()
     onText('')
   }
+
 
   /** Chooses an item of the "/" menu: a command happens at once, a workflow becomes a chip. The text typed so far goes. */
   function pickItem(i: number) {
@@ -109,7 +116,7 @@ export function Composer({
     <button
       type="button"
       aria-label={busy ? 'Stop' : 'Send message'}
-      disabled={!busy && !canSend}
+      disabled={!busy && (!canSend || sending)}
       onClick={busy ? onStop : submit}
       className={cn(
         'flex shrink-0 items-center justify-center rounded-full transition-colors',

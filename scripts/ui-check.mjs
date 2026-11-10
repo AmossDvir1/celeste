@@ -100,7 +100,7 @@ try {
   await settingsNav(page, 'AI vendors').click()
   await pasteClaudeKey(page)
   await audit(page, 'Settings, AI vendors')
-  for (const section of ['General', 'Appearance', 'Agent defaults', 'Tools & Integrations', 'Devices', 'Data', 'About']) {
+  for (const section of ['General', 'Appearance', 'Agent defaults', 'Tools & Integrations', 'Browser', 'Devices', 'Data', 'About']) {
     await settingsNav(page, section).click()
     await page.waitForTimeout(150)
     await audit(page, `Settings, ${section}`)
@@ -336,6 +336,20 @@ try {
   await page.waitForTimeout(300)
   await audit(page, 'Develop, a confirmation')
   await page.keyboard.press('Escape')
+
+  // The browser panel: empty, then with a page that would not open (the page itself is a native layer, outside what can be audited here).
+  await page.getByRole('button', { name: 'Browser (Ctrl+Shift+B)' }).first().click()
+  const pane = page.getByRole('region', { name: 'Browser' })
+  await pane.waitFor()
+  await page.waitForTimeout(400)
+  await audit(page, 'the Browser panel, empty')
+  await pane.getByRole('textbox', { name: 'Address' }).fill('http://127.0.0.1:1/')
+  await pane.getByRole('textbox', { name: 'Address' }).press('Enter')
+  await pane.getByRole('alert').first().waitFor({ timeout: 20_000 })
+  await audit(page, 'the Browser panel, a page that would not open')
+  await page.getByRole('button', { name: 'New tab (Ctrl+T)' }).click()
+  await page.waitForTimeout(300)
+  await audit(page, 'the Browser panel, with two tabs')
 
   console.log(`audited ${audited} screens in both themes`)
   const list = [...found.values()]

@@ -3,6 +3,7 @@ import { DatabaseSync, type StatementSync } from 'node:sqlite'
 import type { ApprovalMode, Effort, SessionMode, VendorId } from '@shared/agent'
 import type { DraftState, LogEvent, SearchHit, SessionStatus, StoredEvent } from '@shared/api'
 import type { AccessLevel, AuthMethod, DeviceActivity, DeviceFolder, DeviceKind, DeviceOs, DeviceRecord, DeviceShell, FolderMode } from '@shared/devices'
+import { movesSession } from '@shared/status'
 import { MIGRATIONS } from './migrations'
 import type { RunEvent, RunSummary, StoredRunEvent, WorkflowDefinition } from '@shared/workflow'
 import { toMatchQuery, type AttachmentRow, type IndexKind, type SessionRow, type StoredFolder, type Store, type WorkflowRow } from './store'
@@ -265,7 +266,8 @@ export class SqliteStore implements Store {
       if (!row) throw new Error(`No session ${sessionId}`)
       const seq = (row.last_seq as number) + 1
       this.run('INSERT INTO events (session_id, seq, type, payload_json, created_at) VALUES (?, ?, ?, ?, ?)', sessionId, seq, event.type, JSON.stringify(event), at)
-      this.run('UPDATE sessions SET last_seq = ?, updated_at = ? WHERE id = ?', seq, at, sessionId)
+      // The list is ordered by updated_at, which only the person's message and the end of a turn move (shared/status.ts).
+      this.run('UPDATE sessions SET last_seq = ?, updated_at = CASE WHEN ? THEN ? ELSE updated_at END WHERE id = ?', seq, movesSession(event) ? 1 : 0, at, sessionId)
       return { seq, at, event }
     })
   }

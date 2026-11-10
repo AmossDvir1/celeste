@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Bot, Database, Info, Monitor, MousePointer2, Moon, Palette, Plug, Settings as SettingsIcon, Smartphone, Sun, Laptop, X, Plug2 } from 'lucide-react'
+import { Bot, Database, Globe, Info, Monitor, MousePointer2, Moon, Palette, Plug, Settings as SettingsIcon, Smartphone, Sun, Laptop, X, Plug2 } from 'lucide-react'
 import { PhoneSettings } from '@/features/phone/PhoneSettings'
 import { cn } from '@/lib/cn'
 import { Modal } from '@/components/Dialog'
@@ -9,6 +9,8 @@ import { APPROVAL_OPTIONS, VENDORS, VENDOR_ORDER } from '@/lib/vendors'
 import { useModels } from '@/stores/models'
 import { core, revealDataFolder } from '@/api'
 import type { DesktopGrantRecord, UpdateInfo } from '@shared/api'
+import type { BrowserPrefs } from '@shared/browser'
+import { browserCall, useBrowser } from '@/stores/browser'
 import { useSessions } from '@/stores/sessions'
 import { useSettings, type ThemePref } from '@/stores/settings'
 import { useUi, type SettingsSection } from '@/stores/ui'
@@ -26,6 +28,7 @@ const SECTIONS: { id: SettingsSection; label: string; icon: typeof Bot }[] = [
   { id: 'vendors', label: 'AI vendors', icon: Plug2 },
   { id: 'agent', label: 'Agent defaults', icon: Bot },
   { id: 'tools', label: 'Tools & Integrations', icon: Plug },
+  { id: 'browser', label: 'Browser', icon: Globe },
   { id: 'desktop', label: 'Desktop control', icon: MousePointer2 },
   { id: 'phone', label: 'Phone', icon: Smartphone },
   { id: 'devices', label: 'Devices', icon: Monitor },
@@ -92,6 +95,112 @@ function NeverApps() {
         />
       )}
     </Field>
+  )
+}
+
+/** The sites the person chose "Always allow" for, each with a way to take it back. */
+function AllowedSites() {
+  const sites = useSettings((st) => st.browserAllowedSites)
+  const set = useSettings((st) => st.set)
+  // The assistant adds to this list while Settings is closed, so what Core has is read when it opens.
+  useEffect(() => {
+    let live = true
+    void core.call('settings.get').then((s) => live && useSettings.setState({ browserAllowedSites: s.browserAllowedSites }), () => undefined)
+    return () => {
+      live = false
+    }
+  }, [])
+  if (!sites.length) return <p className="text-[13px] text-ink-faint">Sites you choose “Always allow” for will be listed here.</p>
+  return (
+    <div className="space-y-1.5">
+      <div className="text-[13px] text-ink-muted">Sites it may always use</div>
+      <ul className="space-y-1.5">
+        {sites.map((site) => (
+          <li key={site} className="flex items-center justify-between gap-3 rounded-lg bg-field px-3 py-1.5 text-[13.5px] text-ink">
+            <span className="min-w-0 truncate">{site}</span>
+            <IconButton label={`Stop always allowing ${site}`} size="sm" onClick={() => set({ browserAllowedSites: sites.filter((s) => s !== site) })}>
+              <X className="h-3.5 w-3.5" />
+            </IconButton>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+/** The browser: what the assistant may do in it, the person's own settings for it, and whether other programs may use it. */
+function BrowserSection() {
+  const settings = useSettings()
+  const prefs = useBrowser((s) => s.prefs)
+  const external = useBrowser((s) => s.external)
+  const pushToast = useUi((s) => s.pushToast)
+  const failed = () => pushToast({ text: 'Could not change that.' })
+  const setPrefs = (patch: Partial<BrowserPrefs>) => void browserCall('setPrefs', patch).catch(failed)
+  return (
+    <Section title="Browser" description="Celeste’s own browser, beside the chat. You can use it, and so can the assistant.">
+      <Row title="Let the assistant use the browser" description="It can open pages, read them, click, type and take pictures of them, in its own chat’s tabs. Off: the browser is only yours.">
+        <Switch label="Let the assistant use the browser" checked={settings.browserTools} onCheckedChange={(browserTools) => settings.set({ browserTools })} />
+      </Row>
+      <Row title="Ask before it uses a new site" description="The first time it clicks or types on a site, a card in the chat asks. Pages on this computer, such as one you are building, never ask. Off: it uses any site.">
+        <Switch label="Ask before it uses a new site" checked={settings.browserAskSites} onCheckedChange={(browserAskSites) => settings.set({ browserAskSites })} />
+      </Row>
+      <AllowedSites />
+
+      <Row title="Keep cookies" description="Stay signed in to sites after you quit Celeste. Off: the browser starts signed out each time.">
+        <Switch label="Keep cookies" checked={prefs.keepCookies} onCheckedChange={(keepCookies) => setPrefs({ keepCookies })} />
+      </Row>
+      <Row title="Clear browsing data" description="Signs you out of every site and forgets what it saved.">
+        <Button size="sm" onClick={() => void browserCall('clearData', undefined).then(() => pushToast({ text: 'Cleared the browser’s cookies, sign-ins and saved data.' }), failed)}>
+          Clear
+        </Button>
+      </Row>
+      <Field label="Open links from chats in">
+        {(id) => (
+          <SelectField id={id} value={prefs.linksIn} onChange={(e) => setPrefs({ linksIn: e.target.value as BrowserPrefs['linksIn'] })} className="max-w-xs">
+            <option value="ask">Ask each time</option>
+            <option value="celeste">Celeste’s browser</option>
+            <option value="system">My browser</option>
+          </SelectField>
+        )}
+      </Field>
+      <Field label="Search engine" hint="Used when you type words, not an address, in the address bar.">
+        {(id) => (
+          <SelectField id={id} value={prefs.search} onChange={(e) => setPrefs({ search: e.target.value as BrowserPrefs['search'] })} className="max-w-xs">
+            <option value="google">Google</option>
+            <option value="duckduckgo">DuckDuckGo</option>
+            <option value="bing">Bing</option>
+          </SelectField>
+        )}
+      </Field>
+
+      <div className="space-y-3">
+        <Row title="Let other programs control Celeste’s browser" description="Such as Playwright or Playwright MCP, on this computer. Off by default. They see only the browser’s tabs, never Celeste’s windows, and turning this off disconnects them at once.">
+          <Switch label="Let other programs control Celeste’s browser" checked={external.endpoint !== null} onCheckedChange={(on) => void browserCall('external', { on }).catch(failed)} />
+        </Row>
+        {external.endpoint && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <TextInput aria-label="Address for other programs" readOnly value={external.endpoint} onFocus={(e) => e.currentTarget.select()} className="font-mono text-[12.5px]" />
+              <Button size="sm" onClick={() => void navigator.clipboard.writeText(external.endpoint ?? '').then(() => pushToast({ text: 'Copied the address.' }), failed)}>
+                Copy
+              </Button>
+            </div>
+            <p className="text-[13px] text-ink-muted">
+              {external.clients === 0 ? 'No program is connected.' : external.clients === 1 ? '1 program is connected.' : `${external.clients} programs are connected.`} The address works only while this is on, and it
+              changes each time Celeste starts. Anyone who has it can use the browser, including the sites you are signed in to there.
+            </p>
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-2 text-[13px] leading-relaxed text-ink-muted">
+        <p>The browser is a real one: sites, sign-ins and video work as in any browser. It starts signed out, separate from your own browser, and Celeste does not see or send where you go.</p>
+        <p>
+          When an assistant uses it, what it reads from a page, the pictures it takes and what it types go to your AI vendor, like anything else in the chat. A page can contain text that tries to steer the assistant, which is why it asks before using a new
+          site, and why it is told never to follow what a page says. It is also told not to buy anything, create an account or get past a CAPTCHA without asking you.
+        </p>
+      </div>
+    </Section>
   )
 }
 
@@ -303,6 +412,8 @@ function Content({ section }: { section: SettingsSection }) {
           </p>
         </Section>
       )
+    case 'browser':
+      return <BrowserSection />
     case 'desktop':
       return (
         <Section title="Desktop control" description="Lets the assistant ask to use this computer's screen, mouse and keyboard, for tasks that have no command or tool, such as clicking through a settings page.">

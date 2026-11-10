@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
+import { memo, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import {
   ChevronDown,
   Code,
@@ -40,7 +40,17 @@ function groupByDay(list: Session[]): { label: string; items: Session[] }[] {
     .map(([label, items]) => ({ label, items }))
 }
 
-function SessionRow({ session, active }: { session: Session; active: boolean }) {
+/** A small dot that breathes while an assistant is working in a session. It stands still for people who ask for less motion. */
+function WorkingDot() {
+  return (
+    <span className="relative flex h-2 w-2 shrink-0 group-hover:hidden" data-working aria-hidden>
+      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-60 motion-reduce:animate-none" />
+      <span className="relative inline-flex h-2 w-2 rounded-full bg-accent" />
+    </span>
+  )
+}
+
+const SessionRow = memo(function SessionRow({ session, active }: { session: Session; active: boolean }) {
   const open = useSessions((s) => s.open)
   const setMode = useUi((s) => s.setMode)
   const remove = useSessions((s) => s.remove)
@@ -50,6 +60,7 @@ function SessionRow({ session, active }: { session: Session; active: boolean }) 
   const [draft, setDraft] = useState(session.title)
   const Icon = session.mode === 'develop' ? Code : MessageSquare
   const waiting = needsYou(session)
+  const working = session.status === 'working'
   const stamp = sameDay(session.updatedAt, Date.now()) ? formatTime(session.updatedAt) : formatDay(session.updatedAt)
 
   return (
@@ -98,9 +109,12 @@ function SessionRow({ session, active }: { session: Session; active: boolean }) 
           </span>
           <span className="min-w-0 flex-1 leading-tight">
             <span className={cn('block truncate text-[13px]', active ? 'text-ink' : 'text-ink')}>{session.title}</span>
-            <span className="block text-[11px] text-ink-faint">{waiting ? <span className="text-accent-text">Needs you</span> : stamp}</span>
+            <span className="block text-[11px] text-ink-faint">
+              {waiting ? <span className="text-accent-text">Needs you</span> : working ? <span className="text-accent-text">Working…</span> : stamp}
+            </span>
           </span>
           {waiting && <span className="h-2 w-2 shrink-0 rounded-full bg-accent group-hover:hidden" aria-hidden />}
+          {working && <WorkingDot />}
         </button>
       )}
 
@@ -146,7 +160,7 @@ function SessionRow({ session, active }: { session: Session; active: boolean }) 
       </ConfirmDialog>
     </div>
   )
-}
+})
 
 function ShowMore({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   return (
