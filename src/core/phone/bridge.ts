@@ -33,6 +33,7 @@ import {
   sessionKey,
   type PhoneAbility,
   type PhoneAttachPart,
+  type PhoneControlReport,
   type PhoneHello,
   type PhoneMethod,
   type PhonePairRequest,
@@ -63,6 +64,12 @@ export interface PhoneBridgeDeps {
   onStatus: () => void
   /** A pairing is waiting for the person at the computer, or no longer is (null). */
   onPairing: (request: PhonePairRequest | null) => void
+  /** Something wrong with the network phones reach this computer on (Windows: a Public network), or null. */
+  networkWarning?: (address: string | undefined) => Promise<string | null>
+  /** The system's secret store, for this computer's key pair (Electron safeStorage, through the main process). */
+  keyStore?: { get(): Promise<string | null>; set(value: string): Promise<boolean> }
+  /** The phone says what happened to phone control there (the person paused it, pressed Continue, or ended it). */
+  onControl?: (phoneId: string, report: PhoneControlReport) => void
   /** Announces the service on the local network. Returns how to stop announcing. */
   announce?: (port: number, name: string, id: string) => Promise<() => Promise<void>>
   addresses?: () => string[]
@@ -174,14 +181,39 @@ export class PhoneBridge {
     this.deps.store.setSetting('phones', list)
   }
 
+  private ownKeys: Promise<StoredKeyPair> | null = null
+
+  /**
+   * This computer's key pair, made the first time it is needed (once, even when two phones ask at the same moment). It is
+   * kept in the system's secret store; a key from an older Celeste, kept in its settings, moves there and leaves the
+   * settings. Only a computer with no secret store keeps it in the settings.
+   */
+  private keyPair(): Promise<StoredKeyPair> {
+    this.ownKeys ??= (async () => {
+      const store = this.deps.keyStore
+      const saved = store ? await store.get().catch(() => null) : null
+      if (saved) {
+        try {
+          const k = JSON.parse(saved) as StoredKeyPair
+          if (typeof k?.pub === 'string' && k.priv && typeof k.priv === 'object') return k
+        } catch {
+          // Not a key: make or move one below.
+        }
+      }
+      const old = this.settings['phoneKey'] as StoredKeyPair | null | undefined
+      const keys = old ?? (await makeKeyPair())
+      const kept = store ? await store.set(JSON.stringify(keys)).catch(() => false) : false
+      if (kept && old) this.deps.store.setSetting('phoneKey', null)
+      else if (!kept && !old) this.deps.store.setSetting('phoneKey', keys)
+      return keys
+    })()
+    return this.ownKeys
+  }
+
   /** This computer's key pair and id, made the first time they are needed. */
   private async identity(): Promise<{ keys: StoredKeyPair; id: string }> {
-    let keys = this.settings['phoneKey'] as StoredKeyPair | undefined
+    const keys = await this.keyPair()
     let id = this.settings['phoneId'] as string | undefined
-    if (!keys) {
-      keys = await makeKeyPair()
-      this.deps.store.setSetting('phoneKey', keys)
-    }
     if (!id) {
       id = randomB64(6).replace(/[^a-z0-9]/gi, '').slice(0, 8) || 'celeste'
       this.deps.store.setSetting('phoneId', id)
@@ -211,8 +243,30 @@ export class PhoneBridge {
       installUrl: port && addresses[0] ? `http://${addresses[0]}:${port}/` : null,
       apk: !!this.deps.apkFile(),
       pending: p && p.state === 'revealed' && p.emoji ? { pairId: p.pairId, name: p.name, emoji: p.emoji, at: p.at } : null,
-      ...(this.lastError ? { error: this.lastError } : {})
+      ...(this.lastError ? { error: this.lastError } : {}),
+      // Only while no phone is connected: one that is connected shows the network lets it in.
+      ...(this.server && this.network.warning && !this.listening().length ? { network: this.network.warning } : {})
     }
+  }
+
+  /** The network check's last answer, and when it was asked; asked again at most once a minute, while phones may connect. */
+  private network: { warning: string | null; at: number; running: boolean } = { warning: null, at: 0, running: false }
+
+  /** Looks at the network again (Settings, Phone opened, or the server started), and says so when the answer changed. */
+  checkNetwork(): void {
+    const check = this.deps.networkWarning
+    const n = this.network
+    if (!check || !this.server || n.running || this.now() - n.at < 60_000) return
+    n.running = true
+    void check((this.deps.addresses ?? lanAddresses)()[0])
+      .catch(() => null)
+      .then((warning) => {
+        n.running = false
+        n.at = this.now()
+        if (warning === n.warning) return
+        n.warning = warning
+        this.deps.onStatus()
+      })
   }
 
   async setEnabled(on: boolean): Promise<PhoneStatus> {
@@ -249,6 +303,8 @@ export class PhoneBridge {
     if (this.deps.announce) {
       this.stopAnnounce = await this.deps.announce(port, this.deps.computerName(), id).catch(() => null)
     }
+    this.network.at = 0
+    this.checkNetwork()
   }
 
   private listen(port: number): Promise<Server> {
@@ -570,6 +626,16 @@ export class PhoneBridge {
       const waiting = typeof r?.id === 'string' ? this.asked.get(r.id) : undefined
       if (waiting && waiting.phoneId === phone.id) waiting.acked()
       reply = { id: call.id, ok: true, result: null }
+    } else if (call.method === 'phone.control') {
+      const r = call.params[0] as Partial<PhoneControlReport> | undefined
+      if (r && (r.state === 'paused' || r.state === 'resumed' || r.state === 'ended')) {
+        this.deps.onControl?.(phone.id, {
+          state: r.state,
+          ...(typeof r.why === 'string' ? { why: r.why.slice(0, 300) } : {}),
+          ...(typeof r.actions === 'number' && Number.isFinite(r.actions) ? { actions: Math.max(0, Math.floor(r.actions)) } : {})
+        })
+        reply = { id: call.id, ok: true, result: null }
+      } else reply = { id: call.id, ok: false, error: 'That is not a phone control state.' }
     } else if (call.method === 'phone.attach') {
       const error = this.attach(phone.id, call.params[0] as Partial<PhoneAttachPart> | undefined)
       reply = error ? { id: call.id, ok: false, error } : { id: call.id, ok: true, result: null }

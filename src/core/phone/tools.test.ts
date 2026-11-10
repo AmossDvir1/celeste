@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type { PhoneRequest } from '@shared/phone'
 import { PhoneLink, pair } from '@shared/phone-client'
 import { PhoneBridge } from './bridge'
-import { PhoneTools, realTime, safeName } from './tools'
+import { PHOTOS_SHOWN_BYTES, PhoneTools, realTime, safeName, shownPhotos } from './tools'
 
 const running: (() => void | Promise<void>)[] = []
 afterEach(async () => {
@@ -127,6 +127,62 @@ describe('phone abilities as tools', () => {
     expect(safeName('', 'image/jpeg', 2)).toBe('photo-3.jpg')
     expect(safeName('..', 'application/octet-stream', 0)).toBe('file-1')
     expect(safeName('a'.repeat(300) + '.pdf', 'application/pdf', 0)).toHaveLength(120)
+  })
+
+  it('show photos to the assistant up to a total size, and say how many were left out', () => {
+    const photo = (mb: number, mime = 'image/jpeg') => ({ name: 'p.jpg', mime, data: Buffer.alloc(Math.round(mb * 1_048_576)) })
+    const few = shownPhotos([photo(0.5), photo(0.5)])
+    expect([few.images.length, few.left]).toEqual([2, 0])
+    // Eight 1.8 MB photos: four fit under the cap (7.2 MB), the rest are only saved.
+    const many = shownPhotos(Array.from({ length: 8 }, () => photo(1.8)))
+    expect(many.images.length * 1.8 * 1_048_576).toBeLessThanOrEqual(PHOTOS_SHOWN_BYTES)
+    expect([many.images.length, many.left]).toEqual([4, 4])
+    expect(shownPhotos([photo(2.5), photo(0.1, 'image/heic')]).left).toBe(2)
+  })
+
+  it('a chat is not remembered: only a workflow step’s requests end when the step ends', async () => {
+    const t = await setup()
+    const tools = new PhoneTools(() => t.bridge, (id) => `Chat ${id}`, () => t.received, (id) => id.startsWith('wf-'))
+    const p = await phone(t.base, () => ({ ok: true, text: 'ok' }))
+    await tools.call('chat-1', 'phone_status', {})
+    await tools.call('wf-1', 'phone_status', {})
+    expect(p.asked).toHaveLength(2)
+    expect((tools as unknown as { used: Set<string> }).used).toEqual(new Set(['wf-1']))
+  })
+
+  it('write phone control into the chat: started when allowed, each action, the person’s pause and Continue, and the end', async () => {
+    const t = await setup()
+    const events: { sessionId: string; type: string; [k: string]: unknown }[] = []
+    const tools = new PhoneTools(() => t.bridge, (id) => `Chat ${id}`, () => t.received, () => false, (sessionId, e) => void events.push({ sessionId, ...e }))
+    await phone(t.base, (r) =>
+      r.ability === 'control_request'
+        ? { ok: true, text: 'The user allowed it: you have control of the phone for up to 15 minutes.' }
+        : r.ability === 'control_tap'
+          ? { ok: true, text: 'Tapped "Sessions". Call phone_screen to see what changed.' }
+          : r.ability === 'control_type'
+            ? { ok: false, text: 'That is a password field. Ask the user to type it themselves.' }
+            : { ok: true, text: 'ok' }
+    )
+    await tools.call('c1', 'phone_tap', { x: 1, y: 2 })
+    expect(events).toEqual([])
+    await tools.call('c1', 'phone_request_control', { reason: 'Find my best pace' })
+    await tools.call('c1', 'phone_tap', { id: 13 })
+    await tools.call('c1', 'phone_type', { text: 'hunter2' })
+    await tools.call('c2', 'phone_screen', {})
+    tools.controlReport({ state: 'paused' })
+    tools.controlReport({ state: 'resumed' })
+    tools.controlReport({ state: 'ended', why: 'The user pressed Stop on the phone.', actions: 3 })
+    tools.controlReport({ state: 'paused' })
+    const grantId = events[0]?.['grantId']
+    expect(events.map(({ sessionId, type, text, ok, note, why, actions, where, reason }) => ({ sessionId, type, text, ok, note, why, actions, where, reason }))).toEqual([
+      { sessionId: 'c1', type: 'desktop.started', where: 'phone', reason: 'Find my best pace', text: undefined, ok: undefined, note: undefined, why: undefined, actions: undefined },
+      { sessionId: 'c1', type: 'desktop.action', text: 'Tapped "Sessions"', ok: true, note: undefined, why: undefined, actions: undefined, where: undefined, reason: undefined },
+      { sessionId: 'c1', type: 'desktop.action', text: 'That is a password field', ok: false, note: undefined, why: undefined, actions: undefined, where: undefined, reason: undefined },
+      { sessionId: 'c1', type: 'desktop.action', text: 'Paused: you touched the phone', ok: true, note: true, why: undefined, actions: undefined, where: undefined, reason: undefined },
+      { sessionId: 'c1', type: 'desktop.action', text: 'Continue pressed on the phone', ok: true, note: true, why: undefined, actions: undefined, where: undefined, reason: undefined },
+      { sessionId: 'c1', type: 'desktop.ended', why: 'The user pressed Stop on the phone.', actions: 3, text: undefined, ok: undefined, note: undefined, where: undefined, reason: undefined }
+    ])
+    expect(events.every((e) => e['grantId'] === grantId)).toBe(true)
   })
 
   it('say so when the phone is not connected, and nothing waits forever', async () => {

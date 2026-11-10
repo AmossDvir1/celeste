@@ -50,6 +50,45 @@ async function paired() {
 }
 
 describe('phone bridge', () => {
+  it('keeps its key in the secret store, moving one an older Celeste kept in its settings, and keeps it there without one', async () => {
+    const hello = async (settings: Record<string, unknown>, vault: { value: string | null; works: boolean } | null) => {
+      const b = new PhoneBridge({
+        store: { settings: () => settings, setSetting: (k, v) => void (settings[k] = v) },
+        call: async () => null,
+        computerName: () => 'TEST-PC',
+        version: '1',
+        apkFile: () => null,
+        onStatus: () => undefined,
+        onPairing: () => undefined,
+        addresses: () => ['127.0.0.1'],
+        host: '127.0.0.1',
+        port: 0,
+        ...(vault ? { keyStore: { get: async () => vault.value, set: async (v: string) => (vault.works ? ((vault.value = v), true) : false) } } : {})
+      })
+      await b.start()
+      running.push(b)
+      return ((await (await fetch(`http://127.0.0.1:${b.port}/hello`)).json()) as { key: string }).key
+    }
+    // A key an older Celeste kept in its settings moves to the store, and the settings forget it.
+    const old = { phoneEnabled: true, phoneKey: { pub: 'OLDPUB', priv: { kty: 'OKP' } } }
+    const vault = { value: null as string | null, works: true }
+    expect(await hello(old, vault)).toBe('OLDPUB')
+    expect(old.phoneKey).toBeNull()
+    expect(JSON.parse(vault.value ?? '{}').pub).toBe('OLDPUB')
+    // Next time it comes from the store.
+    expect(await hello({ phoneEnabled: true }, vault)).toBe('OLDPUB')
+    // A new computer: made once, straight into the store.
+    const fresh = { value: null as string | null, works: true }
+    const settings: Record<string, unknown> = { phoneEnabled: true }
+    const key = await hello(settings, fresh)
+    expect(JSON.parse(fresh.value ?? '{}').pub).toBe(key)
+    expect(settings['phoneKey']).toBeUndefined()
+    // No secret store on this computer: the settings keep it, as before.
+    const none: Record<string, unknown> = { phoneEnabled: true }
+    const k2 = await hello(none, { value: null, works: false })
+    expect((none['phoneKey'] as { pub: string }).pub).toBe(k2)
+  })
+
   it('pairs after Allow, with the same three pictures on both screens', async () => {
     const { bridge, pairing, shown, pairings } = await paired()
     expect(shown).toHaveLength(3)

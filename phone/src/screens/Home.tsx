@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
-import { AlarmClock, AppWindow, Bell, CalendarDays, ChevronRight, Hand, Code2, Images, Laptop, MapPin, MessageSquare, Monitor, Moon, Phone, Plus, Search, ShieldOff, Smartphone, Sun, Unplug, Wifi, Workflow } from 'lucide-react'
+import { AlarmClock, AppWindow, Bell, CalendarDays, ChevronRight, Hand, Code2, Images, Laptop, MapPin, MessageSquare, Monitor, Moon, Phone, Play, Plus, Search, ShieldOff, Smartphone, Sun, Unplug, Wifi, Workflow } from 'lucide-react'
 import type { Session } from '@/stores/types'
-import { abilities, notificationsAllowed, type AbilityState } from '../native'
+import { abilities, appVersion, notificationsAllowed, type AbilityState } from '../native'
+import type { PhoneWorkflow } from '@shared/phone'
 import { NeverAppsSheet } from '../NeverApps'
+import { RunSheet, StartSheet } from '../WorkflowSheets'
 import { askNotifications, useApp, type Tab } from '../store'
 import { Arc, Logo, Shimmer, buzz, greeting, rise, when } from '../ui'
 
@@ -199,11 +201,20 @@ function Preview({ s }: { s: Session }) {
 function Runs() {
   const runs = useApp((s) => s.runs)
   const loadRuns = useApp((s) => s.loadRuns)
+  const link = useApp((s) => s.link)
+  const online = useApp((s) => s.linkState === 'connected')
   const computer = useApp((s) => s.pairing?.computer.name ?? 'your computer')
+  const [workflows, setWorkflows] = useState<PhoneWorkflow[] | null>(null)
+  const [starting, setStarting] = useState<PhoneWorkflow | null>(null)
+  const [open, setOpen] = useState<string | null>(null)
   useEffect(() => {
     void loadRuns()
   }, [loadRuns])
-  const label = { running: 'Running', waiting: 'Waiting for you on the computer', completed: 'Done', failed: 'Failed', cancelled: 'Stopped' }
+  useEffect(() => {
+    if (!link || !online) return
+    void link.call<PhoneWorkflow[]>('phone.workflows').then(setWorkflows, () => setWorkflows([]))
+  }, [link, online])
+  const label = { running: 'Running', waiting: 'Waiting for you: tap to answer', completed: 'Done', failed: 'Failed', cancelled: 'Stopped' }
   return (
     <>
       <div className="hero">
@@ -214,14 +225,38 @@ function Runs() {
           Workflows
         </h1>
       </div>
+      {workflows && workflows.length > 0 && (
+        <>
+          <div className="section-title" {...rise(2)}>
+            Your workflows
+          </div>
+          <div className="card" data-rise style={{ margin: '0 16px 6px', ['--i' as string]: 2 }}>
+            {workflows.map((w) => (
+              <button key={w.id} className="row tap" style={{ width: '100%', textAlign: 'left' }} disabled={!online} onClick={() => setStarting(w)}>
+                <span className="ibox">
+                  <Workflow size={18} />
+                </span>
+                <div className="grow">
+                  <div className="t">{w.name}</div>
+                  {w.description && <div className="s">{w.description}</div>}
+                </div>
+                <Play size={18} className="faint" />
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      <div className="section-title" {...rise(3)}>
+        Runs
+      </div>
       {runs.length === 0 ? (
-        <div className="empty" {...rise(2)}>
-          Runs of your workflows show here as they happen. Start them on the computer, or ask Celeste in a chat.
+        <div className="empty" {...rise(3)}>
+          Runs of your workflows show here as they happen. Start one above, on the computer, or ask Celeste in a chat.
         </div>
       ) : (
-        <div className="card" data-rise style={{ margin: '0 16px', ['--i' as string]: 2 }}>
+        <div className="card" data-rise style={{ margin: '0 16px', ['--i' as string]: 3 }}>
           {runs.map((r) => (
-            <div key={r.id} className="row">
+            <button key={r.id} className="row tap" style={{ width: '100%', textAlign: 'left' }} onClick={() => setOpen(r.id)}>
               <span className={`ibox${r.status === 'waiting' ? ' accent' : ''}`}>
                 <Workflow size={18} />
               </span>
@@ -229,10 +264,12 @@ function Runs() {
                 <div className="t">{r.workflowName}</div>
                 <div className="s">{r.status === 'running' ? <Shimmer>Running</Shimmer> : label[r.status]} · {when(r.startedAt)}</div>
               </div>
-            </div>
+            </button>
           ))}
         </div>
       )}
+      {starting && <StartSheet workflow={starting} onClose={() => setStarting(null)} onStarted={(run) => setOpen(run.id)} />}
+      {open && <RunSheet runId={open} onClose={() => setOpen(null)} />}
       <div style={{ height: 24 }} />
     </>
   )
@@ -389,6 +426,42 @@ function AbilitiesCard() {
   )
 }
 
+/** 1.10.0 is newer than 1.9.2: compares the numbers, part by part. */
+export function newer(a: string, b: string): boolean {
+  const pa = a.split(/[.-]/).map((x) => parseInt(x, 10) || 0)
+  const pb = b.split(/[.-]/).map((x) => parseInt(x, 10) || 0)
+  for (let i = 0; i < 3; i++) if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) > (pb[i] ?? 0)
+  return false
+}
+
+/**
+ * The computer's Celeste is newer than this app: the new app is on its install page (the same page the QR opened), and
+ * installs over this one, keeping the pairing.
+ */
+function UpdateNote() {
+  const boot = useApp((s) => s.boot)
+  const base = useApp((s) => s.pairing?.base)
+  const [mine, setMine] = useState<string | null>(null)
+  useEffect(() => {
+    void appVersion().then(setMine)
+  }, [])
+  if (!boot || !mine || !base || !newer(boot.version, mine)) return null
+  return (
+    <div className="card" data-rise style={{ margin: '10px 16px 0', padding: '14px 16px', ['--i' as string]: 2 }}>
+      <div className="t" style={{ fontWeight: 600 }}>
+        A newer app is ready
+      </div>
+      <p className="small muted" style={{ margin: '4px 0 10px' }}>
+        Celeste on the computer is {boot.version}; this app is {mine}. Install the new one from the computer: it goes over this one and stays
+        connected.
+      </p>
+      <a className="btn primary sm" href={`${base}/`} target="_blank" rel="noreferrer">
+        Get it from the computer
+      </a>
+    </div>
+  )
+}
+
 function ThisPhone() {
   const pairing = useApp((s) => s.pairing)
   const boot = useApp((s) => s.boot)
@@ -424,6 +497,7 @@ function ThisPhone() {
           </div>
         </div>
       </div>
+      <UpdateNote />
 
       <AbilitiesCard />
 

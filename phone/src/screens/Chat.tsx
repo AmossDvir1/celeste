@@ -228,7 +228,9 @@ const Item = memo(function Item({ it, sessionId }: { it: TimelineItem; sessionId
         <div className="m-tool">
           <MonitorSmartphone size={17} />
           <div className="grow">
-            <div className="l">Used the computer: {it.reason}</div>
+            <div className="l">
+              {it.where === 'phone' ? 'Used this phone' : 'Used the computer'}: {it.reason}
+            </div>
             <div className="d">{it.ended ? `${it.ended.actions} actions · ${it.ended.why}` : `${it.actions.length} actions so far`}</div>
           </div>
         </div>
@@ -437,6 +439,13 @@ export function NewChat() {
   const link = useApp((s) => s.link)
   const computer = useApp((s) => s.pairing?.computer.name ?? 'your computer')
   const [draft, setDraft] = useState<string | null>(null)
+  // Text shared from another app becomes the message, ready to send (also when New chat is already open).
+  const shared = useApp((s) => s.shared)
+  useEffect(() => {
+    if (shared === null) return
+    setDraft(shared)
+    useApp.setState({ shared: null })
+  }, [shared])
   const [mode, setMode] = useState<'chat' | 'develop'>('chat')
   const [projects, setProjects] = useState<PhoneProject[] | null>(null)
   const [project, setProject] = useState<string | null>(null)

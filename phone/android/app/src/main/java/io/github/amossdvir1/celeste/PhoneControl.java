@@ -85,6 +85,7 @@ final class PhoneControl {
         CelesteAccessibilityService s = CelesteAccessibilityService.live;
         if (s != null) s.showPaused(true);
         notifyRunning(ctx);
+        report(ctx, "paused", null);
     }
 
     static void resume(Context ctx) {
@@ -94,6 +95,7 @@ final class PhoneControl {
         CelesteAccessibilityService s = CelesteAccessibilityService.live;
         if (s != null) s.showPaused(false);
         notifyRunning(ctx);
+        report(ctx, "resumed", null);
         releaseHeld(ctx);
     }
 
@@ -353,6 +355,23 @@ final class PhoneControl {
         CelesteAccessibilityService s = CelesteAccessibilityService.live;
         if (s != null) s.hideOverlay();
         ctx.getSystemService(NotificationManager.class).cancel(NOTE_ID);
+        report(ctx, "ended", why);
+    }
+
+    /** Tells the computer what happened to control here, for the card in its chat. Off the main thread; a lost one is harmless. */
+    private static void report(Context ctx, String state, String why) {
+        PhoneLine line = PhoneLine.load(ctx);
+        if (line == null) return;
+        int count = actions;
+        new Thread(() -> {
+            try {
+                JSONObject r = new JSONObject().put("state", state).put("actions", count);
+                if (why != null) r.put("why", why);
+                line.call("phone.control", new org.json.JSONArray().put(r));
+            } catch (Exception ignored) {
+                // The card on the computer just misses this line.
+            }
+        }, "celeste-control").start();
     }
 
     /** A card with Allow and Deny; `yes` or `no` runs when the person answers. */

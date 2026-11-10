@@ -3,7 +3,14 @@
 
 import type { Effort, ModelInfo, VendorId } from '@shared/agent'
 import type { CoreApi, SessionSummary } from '@shared/api'
-import type { PhoneBootstrap, PhoneMethod, PhoneModelChoice, PhoneModels, PhoneNewSession, PhoneProject } from '@shared/phone'
+import type { PhoneBootstrap, PhoneMethod, PhoneModelChoice, PhoneModels, PhoneNewSession, PhoneProject, PhoneWorkflow } from '@shared/phone'
+import { checkInputs, type InputDef, type WorkflowFull } from '@shared/workflow'
+
+/** What a workflow's Start step asks for. */
+const startInputs = (w: WorkflowFull): InputDef[] => {
+  const start = w.definition.nodes.find((n) => n.type === 'start')
+  return start && start.type === 'start' ? start.inputs : []
+}
 
 type Api = Pick<CoreApi, 'app.bootstrap' | 'sessions.create' | 'sessions.send'> & Partial<CoreApi>
 
@@ -72,6 +79,23 @@ export function phoneCalls(api: () => Api, computerName: () => string): (method:
       case 'phone.models': {
         const reply: PhoneModels = { models: await connectedModels(a, kept), pinned: a['app.bootstrap']().settings.pinnedModels ?? [] }
         return reply
+      }
+      case 'phone.workflows': {
+        if (!a['workflows.list'] || !a['workflows.get']) return []
+        const get = a['workflows.get']
+        return a['workflows.list']().flatMap((s): PhoneWorkflow[] => {
+          const w = get(s.id)
+          return w ? [{ id: w.id, name: w.name, description: w.description, inputs: startInputs(w) }] : []
+        })
+      }
+      case 'phone.runWorkflow': {
+        // A run started from the phone works in the workflow's own folder (a phone never names one), and asks before it does
+        // anything, as every run does: that card reaches the phone too.
+        const [id, given] = params as [unknown, Record<string, unknown> | undefined]
+        const w = a['workflows.get']?.(String(id))
+        if (!w || !a['workflows.run']) throw new Error('That workflow is no longer on the computer.')
+        const inputs = checkInputs(startInputs(w), given && typeof given === 'object' ? given : {})
+        return a['workflows.run'](w.id, inputs, { folder: '', startedBy: 'you' })
       }
       case 'phone.setModel': {
         // Only the model and its effort: a chat keeps its assistant, as on the computer.

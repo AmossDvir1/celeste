@@ -249,3 +249,37 @@ export function onResume(handler: () => void): void {
   if (!isNative) return
   void App.addListener('resume', handler)
 }
+
+/** Secrets of the app (the pairing), kept by Android encrypted with a key in the Android Keystore. */
+export const secure = {
+  get: async (name: string): Promise<string | null> =>
+    (await (Native as unknown as { secureGet(o: { name: string }): Promise<{ value?: string }> }).secureGet({ name })).value ?? null,
+  set: (name: string, value: string | null): Promise<void> =>
+    (Native as unknown as { secureSet(o: { name: string; value?: string }): Promise<void> }).secureSet({ name, ...(value !== null ? { value } : {}) })
+}
+
+/** This app's version, as Android has it (the one in phone/package.json); null in a browser. */
+export async function appVersion(): Promise<string | null> {
+  if (!isNative) return null
+  try {
+    return (await App.getInfo()).version
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Text or a link another app shared to Celeste: `handler` gets it once, whether it was shared before the app loaded or
+ * while it is open. The phone keeps it until it is taken, so it is never handled twice.
+ */
+export function onShared(handler: (text: string) => void): void {
+  if (!isNative) return
+  const n = Native as unknown as { takeShared(): Promise<{ text?: string }>; addListener(e: string, f: () => void): Promise<unknown> }
+  const take = () =>
+    void n
+      .takeShared()
+      .then((r) => r.text && handler(r.text))
+      .catch(() => undefined)
+  take()
+  void n.addListener('shared', take).catch(() => undefined)
+}

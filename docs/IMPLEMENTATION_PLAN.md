@@ -727,6 +727,8 @@ A phone whose app is closed shows as asleep, and the assistant is told so instea
 | Docs and legal | README and install guide, a privacy statement (what the phone sends to the computer, what goes on to the AI vendor, what the relay sees), third-party notices for the app's libraries, and the CHANGELOG at release |
 | Merge and release | The `phone` branch is merged when the owner decides, and the owner publishes the release |
 
+**Done on 10 November 2026** (details in `PHONE_PLAN.md`, "Remaining work"): the APK in CI and in releases (written; the signing key and its secrets are the owner's to make, see RELEASING.md), fetching the released APK, the key in the system's secret store, the Windows Public-network check, the docs and notices, and the merge into `main`. Still open: the relay (decision 17), the macOS and Linux network notes, the `phone` device kind, and the app's tests on an emulator in CI.
+
 **What earlier phases do now so this stays easy**
 
 - Everything the interface needs from Core keeps going through the one typed channel, never through anything Electron-only.

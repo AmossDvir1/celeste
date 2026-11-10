@@ -10,7 +10,7 @@ import { PhoneLink, type LinkState, type PhonePairing } from '@shared/phone-clie
 import type { RunSummary } from '@shared/workflow'
 import { foldEvents, resolveApproval, resolveAsk } from '@/stores/reduce'
 import type { Session } from '@/stores/types'
-import { cards, clearNotification, discover, handlePhoneRequest, keepRunning, notificationsAllowed, notify, shareLine } from './native'
+import { cards, clearNotification, discover, handlePhoneRequest, isNative, keepRunning, notificationsAllowed, notify, secure, shareLine } from './native'
 
 export type Tab = 'chats' | 'workflows' | 'phone'
 export type Screen = { name: 'setup' } | { name: 'home'; tab: Tab } | { name: 'chat'; id: string } | { name: 'new' }
@@ -44,6 +44,46 @@ function save(key: string, value: unknown): void {
   }
 }
 
+/**
+ * The pairing holds the phone's private key. On Android it is kept encrypted with a key in the Android Keystore
+ * (`secure`); in a desktop browser (development) in the page's own storage.
+ */
+function savePairing(p: PhonePairing | null): void {
+  if (!isNative) return save(PAIRING_KEY, p)
+  void secure.set('pairing', p ? JSON.stringify(p) : null).catch(() => save(PAIRING_KEY, p))
+  if (p === null || localStorage.getItem(PAIRING_KEY) !== null) save(PAIRING_KEY, null)
+}
+
+/**
+ * Reads the pairing from the Keystore-encrypted store, moving one an older app kept in the page's storage. Runs once,
+ * before the app shows anything.
+ */
+export async function restorePairing(): Promise<void> {
+  if (!isNative) return
+  let raw: string | null = null
+  try {
+    raw = await secure.get('pairing')
+    const old = localStorage.getItem(PAIRING_KEY)
+    if (old !== null) {
+      if (!raw) {
+        await secure.set('pairing', old)
+        raw = old
+      }
+      localStorage.removeItem(PAIRING_KEY)
+    }
+  } catch {
+    // No secure store: the page's storage is still read below.
+    raw = localStorage.getItem(PAIRING_KEY)
+  }
+  let pairing: PhonePairing | null = null
+  try {
+    pairing = raw ? (JSON.parse(raw) as PhonePairing) : null
+  } catch {
+    pairing = null
+  }
+  useApp.setState({ pairing, screen: pairing ? { name: 'home', tab: 'chats' } : { name: 'setup' } })
+}
+
 const fresh = (summary: SessionSummary): Session => ({ ...summary, items: [], activity: null, loaded: false, foldedSeq: 0 })
 
 interface AppState {
@@ -55,6 +95,8 @@ interface AppState {
   runs: RunSummary[]
   /** The models the computer offers, once asked. */
   models: PhoneModels | null
+  /** Text another app shared to Celeste, for New chat to start with. */
+  shared: string | null
   screen: Screen
   nav: Nav
   prefs: Prefs
@@ -95,6 +137,7 @@ export const useApp = create<AppState>((set, get) => ({
   sessions: {},
   runs: [],
   models: null,
+  shared: null,
   screen: load<PhonePairing | null>(PAIRING_KEY, null) ? { name: 'home', tab: 'chats' } : { name: 'setup' },
   nav: 'none',
   prefs: load<Prefs>(PREFS_KEY, { theme: 'system', stay: false, notify: true }),
@@ -139,7 +182,7 @@ export const useApp = create<AppState>((set, get) => ({
   },
 
   paired: (p) => {
-    save(PAIRING_KEY, p)
+    savePairing(p)
     set({ pairing: p, removed: false })
     // Approvals arrive as notifications when the app is not open: Android asks the person once.
     void notificationsAllowed(true)
@@ -151,7 +194,7 @@ export const useApp = create<AppState>((set, get) => ({
     unlisten?.()
     unlisten = null
     void keepRunning(false, null, true)
-    save(PAIRING_KEY, null)
+    savePairing(null)
     set({ pairing: null, link: null, boot: null, sessions: {}, runs: [], models: null, screen: { name: 'setup' }, nav: 'none' })
   },
 
@@ -175,7 +218,7 @@ export const useApp = create<AppState>((set, get) => ({
         if (state === 'refused') {
           // The computer forgot this phone (removed in Settings, or reinstalled).
           unlisten?.()
-          save(PAIRING_KEY, null)
+          savePairing(null)
           set({ pairing: null, link: null, removed: true, screen: { name: 'setup' }, nav: 'none' })
           void keepRunning(false, null, true)
         }
@@ -401,7 +444,7 @@ async function findAgain(): Promise<void> {
     if (base && base !== st.link.base) {
       st.link.moveTo(base)
       const pairing = { ...(st.pairing as PhonePairing), base }
-      save(PAIRING_KEY, pairing)
+      savePairing(pairing)
       useApp.setState({ pairing })
       if (useApp.getState().prefs.stay) void keepRunning(true, pairing)
     }

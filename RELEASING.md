@@ -10,6 +10,7 @@ A release is the installers for one version, on the [Releases page](https://gith
 | `Celeste-<version>-windows-x64-setup.msi` | The same, as an MSI for IT departments |
 | `Celeste-<version>-mac-arm64.dmg` and `.zip` | Macs with Apple silicon |
 | `Celeste-<version>-mac-x64.dmg` and `.zip` | Macs with an Intel processor |
+| `Celeste-<version>.apk` | Celeste for Android, signed with the project's key (only when the Android signing secrets exist, below). A computer running this version fetches it from the release the first time phones are switched on, checks it against `SHA256SUMS.txt`, and hands it to phones on the Wi-Fi. `phone/package.json` must have the same version as `package.json` (the build checks). |
 | `SHA256SUMS.txt` | A checksum for every file above |
 
 Every one of them is started and looked inside by the build before it is offered (`scripts/installer-check.mjs`): on Windows it is installed silently, run (window, database, the terminal's pty), and uninstalled with the person's data left alone; on a Mac the packed app is run and checked the same way.
@@ -17,7 +18,7 @@ Every one of them is started and looked inside by the build before it is offered
 ## The steps
 
 1. **Everything is green on `main`.** The CI page shows the unit tests on three systems, the app checks on a Mac, and the installers for Windows and macOS.
-2. **Set the version** in `package.json` (`"version": "1.0.0"`), add a section `## [1.0.0] - date` to `CHANGELOG.md` (that section is the text of the release), run `npm run notices` if dependencies changed, and commit.
+2. **Set the version** in `package.json` (`"version": "1.0.0"`) and the same in `phone/package.json`, add a section `## [1.0.0] - date` to `CHANGELOG.md` (that section is the text of the release), run `npm run notices` if dependencies changed, and commit.
 3. **Tag it and push the tag.** The tag must be `v` and the version:
    ```bash
    git tag v1.0.0
@@ -47,6 +48,7 @@ Without signing, Windows SmartScreen and macOS Gatekeeper warn the first time (t
 | For | Secrets | Where from |
 |---|---|---|
 | Windows | `WINDOWS_CSC_LINK` (the certificate, as a file link or base64) and `WINDOWS_CSC_KEY_PASSWORD` | A code-signing certificate from a certificate authority (an EV one removes the SmartScreen warning at once; a standard one earns it over time). Free signing for open-source projects exists through programs such as SignPath: apply, then use their action instead of `CSC_LINK`. |
+| Android | `ANDROID_KEYSTORE_BASE64` (the keystore file, base64), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` | Free: make it once with `keytool -genkeypair -v -keystore celeste.jks -keyalg RSA -keysize 4096 -validity 10000 -alias celeste`, then `base64 -w0 celeste.jks` for the first secret. **Keep the file and its passwords safe for good**: a new app signed with another key will not install over the old one, so everyone would have to uninstall first. Without these secrets the release has no APK (an unsigned one cannot be installed), and computers fall back to an APK built from source. |
 | macOS | `MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD` (a *Developer ID Application* certificate), `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` | An Apple Developer Program membership (US$99 a year). With these the app is signed and notarized, and the Gatekeeper warning goes away. |
 
 ## Before the first public release

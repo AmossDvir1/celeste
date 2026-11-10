@@ -351,3 +351,11 @@ svg.vlogo.sm { width:13px; height:13px; }
 .always { display:inline-flex; align-items:center; gap:4px; font-size:12px; color:var(--c-ink-faint); flex:none; }
 
 .card-layer .sheet.tall > *:not(.mlist) { flex:none; }
+
+/* Workflows: what Start asks for, and everything a run will do. */
+.wf-field { display:flex; flex-direction:column; gap:6px; margin:6px 2px 10px; }
+.wf-field .field { height:46px; padding:0 14px; font-size:15px; outline:none; }
+.mrow.plan { align-items:flex-start; cursor:default; padding:9px 10px; }
+.mrow.plan svg { margin-top:3px; flex:none; color:var(--c-ink-muted); }
+.mrow.plan .nm { display:block; font-weight:500; }
+.mrow.plan .pk { display:block; font-size:12px; color:var(--c-ink-muted); white-space:pre-wrap; word-break:break-word; }

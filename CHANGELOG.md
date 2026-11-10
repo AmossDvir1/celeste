@@ -27,6 +27,13 @@ All notable changes to Celeste. The format follows [Keep a Changelog](https://ke
     - It never types into password fields, never touches password managers or Android's installer, and does nothing while the phone is locked.
     - **Apps Celeste never uses**: add your bank or anything private in the app. Celeste won't read their notifications or touch their screens.
     - If you switch it on, it asks again before pressing buttons like Send, Pay or Delete.
+    - The chat on the computer shows a card while it works: why, what it did, when you paused it, and how it ended.
+  - **Workflows from the phone**: start one, answer what it asks to start, and approve the list of everything it will do.
+  - **Share to Celeste**: share text or a link from any app, and a new chat opens with it written in.
+  - **Keys kept safer**: the phone keeps its pairing encrypted with the Android Keystore, and the computer keeps its own key in the system's secure storage.
+  - **This phone** says when the computer has a newer Celeste, with a link to get the new app.
+  - **Settings → Phone** says when Windows treats your Wi-Fi as Public, which can keep phones out.
+  - A released Celeste fetches the matching Android app from its GitHub release the first time phones are switched on, and checks it before handing it out.
 
 ## [1.1.0] - 2026-11-09
 

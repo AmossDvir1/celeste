@@ -45,8 +45,15 @@ final class PhoneLine {
     }
 
     static void save(Context ctx, String base, String phoneId, String computer, String keyB64) {
+        String key;
+        try {
+            key = SecureStore.seal(keyB64);
+        } catch (Exception e) {
+            // No Keystore on this phone (rare): the key stays in the app's private storage, as before.
+            key = keyB64;
+        }
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                .putString("base", base).putString("phone", phoneId).putString("computer", computer).putString("key", keyB64).apply();
+                .putString("base", base).putString("phone", phoneId).putString("computer", computer).putString("key", key).apply();
     }
 
     static void clear(Context ctx) {
@@ -55,7 +62,7 @@ final class PhoneLine {
 
     static PhoneLine load(Context ctx) {
         SharedPreferences p = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        String base = p.getString("base", null), phone = p.getString("phone", null), key = p.getString("key", null);
+        String base = p.getString("base", null), phone = p.getString("phone", null), key = SecureStore.open(p.getString("key", null));
         if (base == null || phone == null || key == null) return null;
         return new PhoneLine(base, phone, p.getString("computer", "your computer"), Base64.decode(key, Base64.DEFAULT));
     }

@@ -176,7 +176,7 @@ export type LogEvent =
   /** That run ended. `output` is its result, which the assistant is told with the person's next message. */
   | { type: 'workflow.finished'; runId: string; name: string; status: 'completed' | 'failed' | 'cancelled'; output?: string; error?: string; startedBy?: 'you' | 'menu' | 'assistant' }
   /** The assistant was allowed to use this computer's mouse and keyboard (see docs/DESKTOP_CONTROL_PLAN.md). `until` is when it ends unless extended. */
-  | { type: 'desktop.started'; grantId: string; reason: string; until: number }
+  | { type: 'desktop.started'; grantId: string; reason: string; until: number; /** Control of the paired phone, not of this computer. */ where?: 'phone' }
   /** One thing it did, or was refused (`ok` false). */
   | { type: 'desktop.action'; grantId: string; text: string; ok: boolean; /** A fact rather than an action: the person paused it, or let it carry on. */ note?: boolean; /** Set when the action was more time: when control now ends. */ until?: number }
   /** Control ended, and why. */

@@ -41,6 +41,8 @@ import { VendorService } from './vendors'
 import { SqliteStore } from './sqlite-store'
 import { PhoneBridge } from './phone/bridge'
 import { phoneCalls } from './phone/calls'
+import { checkNetwork } from './phone/network'
+import { cachedApk, fetchReleasedApk } from './phone/apk'
 import { PhoneTools } from './phone/tools'
 import { PHONE_PROTOCOL, PHONE_SERVICE } from '@shared/phone'
 
@@ -51,6 +53,8 @@ function findPhoneApk(dataDir: string): string | null {
   const resources = (process as { resourcesPath?: string }).resourcesPath
   const candidates = [
     process.env['CELESTE_PHONE_APK'],
+    // The one fetched from this version's GitHub release (src/core/phone/apk.ts).
+    cachedApk(dataDir, process.env['CELESTE_VERSION'] ?? '0.0.0'),
     join(dataDir, 'phone', 'celeste.apk'),
     resources ? join(resources, 'phone', 'celeste.apk') : undefined,
     join(process.cwd(), 'phone', 'android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk'),
@@ -111,6 +115,22 @@ function getSecret(name: string): Promise<string | null> {
       resolve(value)
     })
     parent.postMessage({ type: 'secret-request', id, name })
+  })
+}
+
+/** Stores a secret Core made itself (only the phone bridge's key may be). True when the system's secret store took it. */
+function storeSecret(name: string, value: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const id = ++nextSecretId
+    const timer = setTimeout(() => {
+      waitingForSecret.delete(id)
+      resolve(false)
+    }, 10_000)
+    waitingForSecret.set(id, (value) => {
+      clearTimeout(timer)
+      resolve(value === 'ok')
+    })
+    parent.postMessage({ type: 'secret-store', id, name, value })
   })
 }
 
@@ -312,7 +332,11 @@ async function start(): Promise<void> {
   const phoneTools = new PhoneTools(
     () => phoneRef,
     (sessionId) => stepLabels.get(sessionId) ?? db.listSessions().find((s) => s.id === sessionId)?.title ?? 'a chat',
-    () => join(dataDir, 'phone', 'received')
+    () => join(dataDir, 'phone', 'received'),
+    // Only a workflow step's session is remembered: a chat's requests end with Stop, not with the step.
+    (sessionId) => stepAsk.has(sessionId),
+    // Phone control is written into the chat as the same card desktop control uses, marked as the phone's.
+    (sessionId, event) => (service as SessionService).recordDesktop(sessionId, event)
   )
   servers.setExtraTools(new CombinedTools([new WorkflowTools(db, runner, (sessionId) => (service as SessionService).workFolder(sessionId)), desktopControl, phoneTools]))
   const workflows = new WorkflowService(db, runner, undefined, () => push({ type: 'workflows' }), dataDir, async () => (await mcp.resolved()).map((s) => s.key), (sessionId) => (service as SessionService).workFolder(sessionId), (source) =>
@@ -337,12 +361,30 @@ async function start(): Promise<void> {
     apkFile: () => findPhoneApk(dataDir),
     onStatus: () => push({ type: 'phone' }),
     onPairing: (request) => push({ type: 'phonePairing', request }),
+    onControl: (_phoneId, report) => phoneTools.controlReport(report),
+    networkWarning: (address) => checkNetwork(address),
+    keyStore: { get: () => getSecret('phone.key'), set: (value) => storeSecret('phone.key', value) },
     announce: announcePhone
   })
   phoneRef = phone
+  // A released Celeste has no APK of its own until the first time phones are switched on: it is fetched then, from the
+  // GitHub release of this version, and the install page offers it (Settings, Phone updates when it arrives).
+  const ensureApk = () => {
+    if (!phone.enabled || findPhoneApk(dataDir)) return
+    void fetchReleasedApk(dataDir, process.env['CELESTE_VERSION'] ?? '0.0.0').then((file) => file && push({ type: 'phone' }))
+  }
+  ensureApk()
   api = {
-    'phone.status': () => phone.status(),
-    'phone.setEnabled': (on) => phone.setEnabled(on),
+    'phone.status': () => {
+      // Settings, Phone was opened: a good moment to look at the network again (at most once a minute).
+      phone.checkNetwork()
+      return phone.status()
+    },
+    'phone.setEnabled': async (on) => {
+      const status = await phone.setEnabled(on)
+      ensureApk()
+      return status
+    },
     'phone.remove': (id) => phone.remove(id),
     'phone.answer': (pairId, allow) => phone.answer(pairId, allow),
     ...service.api,
@@ -407,6 +449,9 @@ parent.on('message', (event) => {
     desktopRef?.resume()
   } else if (message?.type === 'secret-reply' && typeof message.id === 'number') {
     waitingForSecret.get(message.id)?.(message.value ?? null)
+    waitingForSecret.delete(message.id)
+  } else if (message?.type === 'secret-stored' && typeof message.id === 'number') {
+    waitingForSecret.get(message.id)?.((message as { value?: unknown }).value === true ? 'ok' : null)
     waitingForSecret.delete(message.id)
   } else if (message?.type === 'connect') {
     const port = event.ports[0]

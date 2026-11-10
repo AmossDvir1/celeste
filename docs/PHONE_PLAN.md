@@ -98,15 +98,15 @@ Two lists, so nothing is lost: what is left in the phone app and its link to the
 - Not tried: replying to a real message notification (the owner chose to skip it, as it sends a real message).
 
 **Phone control, left over:**
-- turning the accessibility service off between grants
-- showing control's state in the computer's chat ("paused on the phone", "10 minutes left") beyond the tool rows
+- turning the accessibility service off between grants: **not possible as planned** (Android has no way for an app to pause its own accessibility service; `disableSelf()` switches it off until the person switches it on again in Android's settings). It already does nothing between grants: it reads nothing and draws nothing until control is allowed.
+- ✅ control's state in the computer's chat (10 November 2026): the desktop-control card, marked as the phone's, with the reason, each action, the person's pause and Continue (reported by the phone with `phone.control`), minutes left, and how it ended. Checked on the emulator.
 - what is on screen in an app that is not on the never list goes to the AI vendor (the consent card says so); decide whether a "hide private fields" option is wanted
-- with "Ask again before Send, Pay or Delete" on, a tap on an empty spot reads the whole screen's text (`labelAt` falls back to the screen's root), so a word like "send" anywhere on screen can ask needlessly; stop at the deepest element under the point instead (found in review, 10 November 2026)
+- ✅ a tap on an empty spot reads only the words right there (`labelAt`), not the whole screen's (10 November 2026)
 - if control pauses with nobody touching the phone again, read the `CelesteControl` line in the phone's log (it names the app on screen and the time since Celeste's last action)
 
 **Abilities, small fixes (found in review, 10 November 2026):**
-- `phone_photos` shows up to 10 photos to the assistant in one answer, each under 2 MB, with no cap on the total; cap the total so one answer stays within what the AI vendors accept
-- `PhoneTools` remembers every chat that used the phone (to end a workflow step's requests), and only forgets workflow steps; forget chats too
+- ✅ photos shown to the assistant in one answer are capped at 8 MB together; the rest are saved and named in the answer (10 November 2026)
+- ✅ `PhoneTools` remembers only workflow steps (10 November 2026)
 
 **More abilities (A2):**
 - ✅ location (once, when asked)
@@ -127,23 +127,26 @@ Two lists, so nothing is lost: what is left in the phone app and its link to the
 - a workflow with a **Use the phone** step: the card names the step, and Stop in the run cancels what waits on the phone
 
 **In the app:**
-- send things to the assistant from the share sheet (files, photos, links, text)
-- workflows: start a run from the phone (today they are read only)
-- keep keys in the Android Keystore (today in the app's private storage)
-- open the app straight from the QR code (App Links)
-- the app updating itself, and showing when the computer's Celeste is newer than the app
+- ✅ Share → Celeste with text or a link starts a new chat with it written in, with the app open or closed (10 November 2026, checked on the emulator)
+- sharing **files and photos** to Celeste: needs an upload of its own (today files reach the computer only as the answer to a request); not built
+- ✅ workflows: start one from the phone (its Start questions, checked on the computer), and answer the run's card listing everything it will do, or a tool an AI step wants (10 November 2026, checked on the emulator: a run wrote its file). A step's question is still answered on the computer.
+- ✅ the pairing (with the phone's private key) and the background line's key are stored encrypted with a key in the Android Keystore; an older app's pairing moves there at start (10 November 2026, checked on the emulator)
+- open the app straight from the QR code (App Links): **blocked** — Android verifies App Links only for an `https` site the app's makers control, and the QR is the computer's own `http` address on the Wi-Fi. Possible later through the relay's domain (P-8).
+- ✅ This phone says when the computer's Celeste is newer than the app, with a link to its install page; the new APK installs over the old one (its version code follows the version) (10 November 2026)
+- the app installing an update by itself: not built (Android asks the person anyway; the note above covers it)
 - away from home (A4): see "Before it ships"
 
 ### In the main Celeste app and the repository
 
-- **APK in CI and in releases**: CI builds and signs the APK with a key kept as a CI secret (one stable key, or updates won't install over the old app), attaches it to each GitHub Release, and runs the app's tests on an emulator (**Verify** KVM speed on GitHub's Ubuntu runners).
-- **Serving the APK**: the computer fetches the released APK and caches it (today it looks for a local build), with GitHub Releases and Obtainium as the other ways in (P-3).
-- **The computer's key**: the phone bridge's key is kept in Celeste's settings; move it to the system's secret store (Electron `safeStorage`).
-- **Network checks, per desktop**: Windows Public-network profile check and the firewall prompt; macOS Local Network permission **Verify**; Linux firewall note.
+- ✅ **APK in CI and in releases** (10 November 2026, written, not yet run on GitHub): CI typechecks and builds the app on every push; a release signs it with the project's key from secrets (RELEASING.md says how to make it) and attaches `Celeste-<version>.apk`. **Blocked on the owner**: the signing key and its four secrets. Not built: the app's tests on an emulator in CI.
+- ✅ **Serving the APK**: the first time phones are switched on, the computer fetches its version's APK from the GitHub release, checks it against `SHA256SUMS.txt` and keeps it (10 November 2026; tested with a stand-in release, not yet with a real one).
+- ✅ **The computer's key** is in the system's secret store (`phone.key`); one kept in the settings by an older Celeste moves there (10 November 2026).
+- ✅ **Windows Public-network check** (10 November 2026): Settings → Phone says so while no phone is connected (checked on this PC, whose Wi-Fi is Public). Not built: macOS Local Network permission (**Verify**), a Linux firewall note.
 - ✅ **Workflows engine**: the **Use the phone** step (9 November 2026).
 - **Devices**: the `phone` device kind.
-- **Docs and legal**: README and install guide, the privacy statement (what the phone sends to the computer and what the computer sends to the AI vendor), third-party notices for what the app bundles (Capacitor, `@noble/curves`, lucide, and the rest of `phone/package.json`), and the CHANGELOG at release.
-- **Merging**: the `phone` branch is merged only when the owner decides; the owner publishes the release.
+- ✅ **Docs and legal** (10 November 2026): README install steps, PRIVACY.md's phone section, the app's packages and Android libraries in THIRD_PARTY_NOTICES.md (`npm run notices`), RELEASING.md's Android signing. The CHANGELOG at release stays.
+- ✅ **Merging**: merged into `main` on 10 November 2026. The owner publishes the release.
+- **Found while testing** (10 November 2026): a window's call to Core with its arguments not in a list (`core.call('workflows.save', {...})`) is never answered, instead of failing; make Core answer a malformed call with an error.
 
 ### Before it ships
 

@@ -1,5 +1,10 @@
 apply plugin: 'com.android.application'
 
+// The app's version is the one in phone/package.json, kept in step with Celeste's own. The version code grows with it
+// (1.2.3 is 10203), so a newer app always installs over an older one.
+def celesteVersion = new groovy.json.JsonSlurper().parse(file('../../package.json')).version as String
+def celesteVersionCode = celesteVersion.tokenize('.-')[0..2].collect { it as int }.with { it[0] * 10000 + it[1] * 100 + it[2] }
+
 android {
     namespace = "io.github.amossdvir1.celeste"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +12,8 @@ android {
         applicationId "io.github.amossdvir1.celeste"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.1.0"
+        versionCode celesteVersionCode
+        versionName celesteVersion
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,8 +21,21 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // A release is signed with the project's own key when CI has it (secrets, see RELEASING.md): one key for good, or a
+    // new app will not install over an older one. Without it (a build on someone's computer) the release is not signed.
+    signingConfigs {
+        if (System.getenv('CELESTE_ANDROID_KEYSTORE')) {
+            release {
+                storeFile file(System.getenv('CELESTE_ANDROID_KEYSTORE'))
+                storePassword System.getenv('CELESTE_ANDROID_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('CELESTE_ANDROID_KEY_ALIAS')
+                keyPassword System.getenv('CELESTE_ANDROID_KEY_PASSWORD')
+            }
+        }
+    }
     buildTypes {
         release {
+            if (System.getenv('CELESTE_ANDROID_KEYSTORE')) signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

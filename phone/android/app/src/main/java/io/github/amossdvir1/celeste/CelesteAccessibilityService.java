@@ -308,11 +308,12 @@ public class CelesteAccessibilityService extends AccessibilityService {
     String labelAt(int x, int y) {
         AccessibilityNodeInfo root = getRootInActiveWindow();
         if (root == null) return "";
-        AccessibilityNodeInfo hit = null, n = root;
+        AccessibilityNodeInfo hit = null, deepest = null, n = root;
         Rect r = new Rect();
         // Down through the children under the point; the deepest tappable one is what a tap there presses.
         for (int depth = 0; n != null && depth < 40; depth++) {
             if (n.isClickable() || n.isLongClickable()) hit = n;
+            if (depth > 0) deepest = n;
             AccessibilityNodeInfo next = null;
             for (int i = n.getChildCount() - 1; i >= 0 && next == null; i--) {
                 AccessibilityNodeInfo c = n.getChild(i);
@@ -320,10 +321,21 @@ public class CelesteAccessibilityService extends AccessibilityService {
                 c.getBoundsInScreen(r);
                 if (r.contains(x, y)) next = c;
             }
-            if (next == null && hit == null) hit = n;
             n = next;
         }
-        return hit != null ? labelOf(hit) : "";
+        if (hit != null && hit != root) return labelOf(hit);
+        // Nothing tappable under the point: only the words right there, never the whole screen's (one "send" anywhere on
+        // it would ask again for nothing).
+        return deepest != null ? ownLabel(deepest) : "";
+    }
+
+    /** The node's own text and description, without what is inside it. */
+    private static String ownLabel(AccessibilityNodeInfo n) {
+        if (n.isPassword()) return "";
+        StringBuilder b = new StringBuilder();
+        if (n.getText() != null) b.append(n.getText()).append(' ');
+        if (n.getContentDescription() != null) b.append(n.getContentDescription());
+        return b.toString().trim();
     }
 
     /** The text and description of a node and what is inside it (a button's words are often in a child). */

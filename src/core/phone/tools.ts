@@ -6,9 +6,13 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { extname, join } from 'node:path'
 import { z } from 'zod'
-import { PHONE_ATTACH_MAX_BYTES, PHONE_ATTACH_MAX_FILES, type PhoneAbility } from '@shared/phone'
+import type { LogEvent } from '@shared/api'
+import { PHONE_ATTACH_MAX_BYTES, PHONE_ATTACH_MAX_FILES, type PhoneAbility, type PhoneControlReport } from '@shared/phone'
 import type { ExtraTool, ExtraTools, ToolResult } from '../workflows/tools'
 import type { PhoneBridge, PhoneFile } from './bridge'
+
+/** The entries of the control card in a chat (shared with desktop control). */
+export type ControlEvent = Extract<LogEvent, { type: 'desktop.started' | 'desktop.action' | 'desktop.ended' }>
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/
 const WHEN = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/
@@ -249,8 +253,56 @@ export class PhoneTools implements ExtraTools {
     /** The chat's title, for the card on the phone. */
     private readonly chatTitle: (sessionId: string) => string,
     /** Where files picked on the phone are saved, a folder for each day. */
-    private readonly received: () => string
+    private readonly received: () => string,
+    /** Whether a session is a workflow step's (only those are remembered, to end what they left on the phone). */
+    private readonly isStep: (sessionId: string) => boolean = () => true,
+    /** Writes phone control into the chat, as the card desktop control uses (marked as the phone's). */
+    private readonly record?: (sessionId: string, event: ControlEvent) => void
   ) {}
+
+  /** The phone control that is on now, and the chat it is for. */
+  private grant: { sessionId: string; id: string; actions: number } | null = null
+
+  /** What the phone says happened there: the person paused control, pressed Continue, or ended it. */
+  controlReport(report: PhoneControlReport): void {
+    const g = this.grant
+    if (!g || !this.record) return
+    if (report.state === 'paused') this.record(g.sessionId, { type: 'desktop.action', grantId: g.id, text: 'Paused: you touched the phone', ok: true, note: true })
+    else if (report.state === 'resumed') this.record(g.sessionId, { type: 'desktop.action', grantId: g.id, text: 'Continue pressed on the phone', ok: true, note: true })
+    else this.endGrant(report.why || 'It ended on the phone.', report.actions)
+  }
+
+  private endGrant(why: string, actions?: number): void {
+    const g = this.grant
+    if (!g) return
+    this.grant = null
+    this.record?.(g.sessionId, { type: 'desktop.ended', grantId: g.id, why, actions: actions ?? g.actions })
+  }
+
+  /** Puts a control tool's result on the chat's card. */
+  private noteControl(sessionId: string, name: string, a: Record<string, unknown>, r: { ok: boolean; text: string }): void {
+    if (!this.record) return
+    if (name === 'phone_request_control') {
+      if (!r.ok || !/^The user allowed it/.test(r.text)) return
+      this.endGrant('Control was asked for again.')
+      this.grant = { sessionId, id: `phone-${Date.now().toString(36)}`, actions: 0 }
+      this.record(sessionId, { type: 'desktop.started', grantId: this.grant.id, reason: String(a['reason'] ?? ''), until: Date.now() + 15 * 60_000, where: 'phone' })
+      return
+    }
+    const g = this.grant
+    if (!g || g.sessionId !== sessionId) return
+    if (name === 'phone_release_control') return this.endGrant('Celeste gave the phone back.')
+    const first = (t: string) => (t.split(/(?<=\.)\s/)[0] ?? t).replace(/\.$/, '').slice(0, 160)
+    let text: string
+    if (!r.ok) text = first(r.text)
+    else if (name === 'phone_screen') text = a['screenshot'] ? 'Read the screen, with a screenshot' : 'Read the screen'
+    else if (name === 'phone_type') text = `Typed “${String(a['text'] ?? '').slice(0, 40)}${String(a['text'] ?? '').length > 40 ? '…' : ''}”`
+    else if (name === 'phone_swipe') text = `Swiped ${String(a['direction'] ?? 'up')}`
+    else if (name === 'phone_key') text = `Pressed ${String(a['key'] ?? 'back')}`
+    else text = first(r.text)
+    if (r.ok) g.actions++
+    this.record(sessionId, { type: 'desktop.action', grantId: g.id, text, ok: r.ok })
+  }
 
   /**
    * Listed while Settings → Phone is on, paired or not yet: an assistant learns its tools when its chat starts, so a phone
@@ -287,9 +339,10 @@ export class PhoneTools implements ExtraTools {
     // A tap on a button like Send asks the person again, so it may wait for them too. Other actions wait up to two minutes
     // for a person who touched the phone to press Continue (the phone holds them while control is paused).
     const wait = name === 'phone_request_control' || name === 'phone_tap' ? 180_000 : tool.ability.startsWith('control_') ? 150_000 : name === 'phone_photos' || name === 'phone_files' ? 300_000 : 180_000
-    this.used.add(sessionId)
+    if (this.isStep(sessionId)) this.used.add(sessionId)
     const r = await b.ask(phone.id, tool.ability, a, this.chatTitle(sessionId), wait, sessionId)
     const text = r.text || (r.ok ? 'Done.' : 'It did not happen.')
+    if (tool.ability.startsWith('control_')) this.noteControl(sessionId, name, a, { ok: r.ok, text })
     if (!r.files?.length) return { text, isError: !r.ok, ...(r.image ? { image: r.image } : {}) }
     let saved: string[]
     try {
@@ -298,8 +351,9 @@ export class PhoneTools implements ExtraTools {
       return { text: `${text}\nThe files arrived but could not be saved on this computer: ${err instanceof Error ? err.message : String(err)}`, isError: true }
     }
     const list = saved.map((f, i) => `- ${f} (${size(r.files?.[i]?.data.length ?? 0)})`).join('\n')
-    const images = name === 'phone_photos' ? r.files.filter((f) => /^image\/(jpeg|png)$/.test(f.mime) && f.data.length < 2_000_000).map((f) => ({ mime: f.mime, data: f.data.toString('base64') })) : []
-    return { text: `${text}\nSaved on this computer:\n${list}`, isError: !r.ok, ...(images.length ? { images } : {}) }
+    const { images, left } = name === 'phone_photos' ? shownPhotos(r.files) : { images: [], left: 0 }
+    const note = left ? `\n${left === 1 ? 'One photo is' : `${left} photos are`} not shown to you, to keep this answer small enough; open the saved files to look at them.` : ''
+    return { text: `${text}\nSaved on this computer:\n${list}${note}`, isError: !r.ok, ...(images.length ? { images } : {}) }
   }
 
   /** Saves the files under today's folder, each with a name nothing else has there, and says where. */
@@ -330,6 +384,19 @@ export class PhoneTools implements ExtraTools {
   ended(sessionId: string): void {
     if (this.used.delete(sessionId)) this.bridge()?.cancel(sessionId, 'The workflow step on the computer ended.')
   }
+}
+
+/** The pictures shown to the assistant in one answer: JPEG or PNG under 2 MB each, and at most PHOTOS_SHOWN_BYTES together. */
+export const PHOTOS_SHOWN_BYTES = 8 * 1_048_576
+export function shownPhotos(files: PhoneFile[]): { images: { mime: string; data: string }[]; left: number } {
+  const images: { mime: string; data: string }[] = []
+  let total = 0
+  for (const f of files) {
+    if (!/^image\/(jpeg|png)$/.test(f.mime) || f.data.length >= 2_000_000 || total + f.data.length > PHOTOS_SHOWN_BYTES) continue
+    total += f.data.length
+    images.push({ mime: f.mime, data: f.data.toString('base64') })
+  }
+  return { images, left: files.length - images.length }
 }
 
 const size = (n: number) => (n < 1024 ? `${n} bytes` : n < 1_048_576 ? `${Math.round(n / 1024)} KB` : `${(n / 1_048_576).toFixed(1)} MB`)

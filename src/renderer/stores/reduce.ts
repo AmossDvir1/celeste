@@ -73,7 +73,7 @@ export function reduceEvent(s: Session, e: LogEvent, at: number): Session {
       return s
 
     case 'desktop.started':
-      return { ...s, items: [...s.items, { kind: 'desktop', id: itemId(), grantId: e.grantId, reason: e.reason, until: e.until, actions: [] }] }
+      return { ...s, items: [...s.items, { kind: 'desktop', id: itemId(), grantId: e.grantId, reason: e.reason, until: e.until, ...(e.where ? { where: e.where } : {}), actions: [] }] }
 
     case 'desktop.action':
       return {

@@ -29,6 +29,14 @@ const visit = (name, from) => {
   for (const dep of Object.keys({ ...pkg.dependencies, ...pkg.optionalDependencies, ...pkg.peerDependencies })) visit(dep, dir)
 }
 for (const name of [...Object.keys(own.dependencies ?? {}), ...BUNDLED]) visit(name, root)
+// Celeste for Android (phone/): what its own package bundles into the APK. Its build tools are devDependencies and are not in it.
+const phoneDir = join(root, 'phone')
+const phone = existsSync(join(phoneDir, 'package.json')) ? JSON.parse(readFileSync(join(phoneDir, 'package.json'), 'utf8')) : null
+if (phone && !existsSync(join(phoneDir, 'node_modules'))) {
+  console.error('phone/node_modules is missing: run `npm --prefix phone ci` first, so the Android app’s packages are listed too.')
+  process.exit(1)
+}
+for (const name of Object.keys(phone?.dependencies ?? {})) visit(name, phoneDir)
 
 const licenseOf = (pkg) => {
   const l = pkg.license ?? (Array.isArray(pkg.licenses) ? pkg.licenses.map((x) => x.type).join(' OR ') : undefined)
@@ -58,6 +66,7 @@ out.push('Celeste is licensed under the Apache License 2.0 (see `LICENSE`). It i
 out.push('**Electron** (MIT) and **Chromium** (BSD-style and other licences) are part of every installer: their licence files are in the application folder as `LICENSE.electron.txt` and `LICENSES.chromium.html`.', '')
 out.push('**Vendors’ programs** (Claude Code, GitHub Copilot) are not part of Celeste. Celeste downloads them from npm when you connect that vendor, and they stay under the vendor’s own terms.', '')
 out.push('**Fonts:** Outfit and JetBrains Mono, SIL Open Font License 1.1.', '')
+out.push('**Celeste for Android** (the app in `phone/`) bundles the packages of `phone/package.json` that are listed below as well, and these Android libraries, all under the Apache License 2.0: AndroidX (AppCompat, Core, CoordinatorLayout, Activity, WebKit, ExifInterface), Capacitor’s Android runtime and its App and Local Notifications plugins.', '')
 out.push(`## Packages (${entries.length})`, '')
 for (const e of entries) out.push(`- ${e.name} ${e.version} — ${e.license}`)
 out.push('', '## Licence texts', '')

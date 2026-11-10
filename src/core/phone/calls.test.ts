@@ -168,6 +168,28 @@ describe('phone calls', () => {
     })
   })
 
+  it('lists workflows with what Start asks for, and starts one with checked inputs in its own folder', async () => {
+    const { api } = fakeApi([])
+    const started: unknown[][] = []
+    const wf = {
+      id: 'w1', name: 'Tidy downloads', description: 'Old files out', version: 1, allowAssistant: false, createdAt: 1, updatedAt: 1,
+      definition: { nodes: [{ id: 'start', type: 'start', name: 'Start', inputs: [{ name: 'days', type: 'number', required: true }], position: { x: 0, y: 0 } }], edges: [] }
+    }
+    const more = {
+      ...api,
+      'workflows.list': () => [wf],
+      'workflows.get': (id: string) => (id === 'w1' ? wf : null),
+      'workflows.run': async (...args: unknown[]) => (started.push(args), { id: 'r1' })
+    } as never
+    const call = phoneCalls(() => more, () => 'PC')
+    expect(await call('phone.workflows', [])).toEqual([{ id: 'w1', name: 'Tidy downloads', description: 'Old files out', inputs: [{ name: 'days', type: 'number', required: true }] }])
+    await expect(call('phone.runWorkflow', ['w1', {}])).rejects.toThrow(/needed/)
+    await expect(call('phone.runWorkflow', ['w1', { days: 'many' }])).rejects.toThrow(/number/)
+    await call('phone.runWorkflow', ['w1', { days: '30', folder: 'C:/Windows' }])
+    expect(started).toEqual([['w1', { days: 30 }, { folder: '', startedBy: 'you' }]])
+    await expect(call('phone.runWorkflow', ['gone', {}])).rejects.toThrow(/no longer/)
+  })
+
   it('makes short titles', () => {
     expect(titleFromText('  hello   there ')).toBe('hello there')
     expect(titleFromText('')).toBe('New chat')

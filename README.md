@@ -66,6 +66,16 @@ Every release lists a checksum for each file (`SHA256SUMS.txt`). To check one on
 
 **Updating:** Settings → About → *Check for updates* tells you whether a newer version exists and opens the download page. Celeste never looks by itself. Install the new version over the old one; your data is kept.
 
+### Celeste for Android (experimental)
+
+An Android app that is a remote for the Celeste on your computer (your chats, Develop, approvals, workflows), and lets the assistant use the phone when you allow it each time. It works on the same Wi-Fi as the computer; away from home is not there yet.
+
+1. On the computer: **Settings → Phone**, switch on **Let my phone connect**. A QR code shows.
+2. Scan it with the phone's camera and open the page. Tap **Install**. Chrome may say the file can be harmful because it does not come from a store: choose **Download anyway**, then let Chrome install apps if Android asks.
+3. Open Celeste on the phone. It finds the computer; check the three pictures match and press **Allow** on the computer.
+
+The app is not in Google Play, because Play does not allow apps like it that act on the screen for an assistant. What it can do on the phone (notifications, location, photos and files, the calendar, texts and calls, phone control) is each off until you switch it on in **This phone**, and each request asks you on the phone.
+
 What leaves your computer, and where it goes, is written down in [PRIVACY.md](PRIVACY.md). The open-source software inside Celeste is listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Status
@@ -82,6 +92,7 @@ Celeste 1.0 is the first release. Nothing in the app is pretended: a vendor is t
 | Workflows | **Working.** Build them on a canvas, with an assistant, or import one; run them from the screen or with `/` in a chat; every run shows what it will do first. The assistant can run the ones you allow |
 | Tools & Integrations (MCP) | **Working.** Add a tool once and every vendor can use it. Checked against real MCP servers and the stand-in for Claude; Copilot's side checked live |
 | Develop extras | **Working.** Reverting to before any message, a review screen, a file tree, separate copies of a project (git worktrees), an integrated terminal |
+| Celeste for Android | **Experimental.** Tried on a Galaxy S24 and an Android 15 emulator. Same Wi-Fi only; the APK is attached to releases once the project's signing key is set up (RELEASING.md) |
 | Installers | Windows (`.exe`, `.msi`) and macOS (`.dmg`). Not signed with a paid certificate yet; no automatic updates (there is a manual check) |
 | Linux | Not released. It runs from source |
 

@@ -1,4 +1,4 @@
-import { Check, MousePointer2, Pause, X } from 'lucide-react'
+import { Check, MousePointer2, Pause, Smartphone, X } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import type { TimelineItem } from '@/stores/types'
 
@@ -12,11 +12,24 @@ export function DesktopCard({ item }: { item: Extract<TimelineItem, { kind: 'des
   const live = !item.ended && item.until > Date.now()
   const hidden = Math.max(0, item.actions.length - SHOWN)
   const shown = item.actions.slice(-SHOWN)
+  const phone = item.where === 'phone'
+  // The phone's own state (paused by the person's touch) is the last note it sent.
+  const paused = phone && live && item.actions.at(-1)?.text.startsWith('Paused')
+  const Icon = phone ? Smartphone : MousePointer2
+  const minutes = Math.max(1, Math.round((item.until - Date.now()) / 60_000))
   return (
-    <div role="group" aria-label="Desktop control" className={cn('animate-fade-up max-w-[760px] rounded-xl border p-4', live ? 'border-warning/50 bg-warning/10' : 'border-edge bg-field')}>
+    <div role="group" aria-label={phone ? 'Phone control' : 'Desktop control'} className={cn('animate-fade-up max-w-[760px] rounded-xl border p-4', live ? 'border-warning/50 bg-warning/10' : 'border-edge bg-field')}>
       <div className="flex items-center gap-2 text-[14px] font-medium text-ink">
-        <MousePointer2 className={cn('h-[18px] w-[18px]', live ? 'text-warning' : 'text-ink-muted')} />
-        {live ? 'The assistant is controlling this computer' : 'The assistant controlled this computer'}
+        <Icon className={cn('h-[18px] w-[18px]', live ? 'text-warning' : 'text-ink-muted')} />
+        {phone
+          ? live
+            ? paused
+              ? 'Phone control is paused: press Continue on the phone'
+              : `The assistant is controlling your phone (up to ${minutes} more ${minutes === 1 ? 'minute' : 'minutes'})`
+            : 'The assistant controlled your phone'
+          : live
+            ? 'The assistant is controlling this computer'
+            : 'The assistant controlled this computer'}
       </div>
       <div className="mt-1 text-[13px] text-ink-muted">{item.reason}</div>
       {item.actions.length > 0 && (
@@ -34,7 +47,9 @@ export function DesktopCard({ item }: { item: Extract<TimelineItem, { kind: 'des
         {item.ended
           ? `Ended: ${item.ended.why} ${item.ended.actions} ${item.ended.actions === 1 ? 'action' : 'actions'} in all.`
           : live
-            ? 'Stop it any time with the Stop button on the bar, or Ctrl+Alt+Esc.'
+            ? phone
+              ? 'Stop it on the phone: the Stop button on its screen, or volume down three times. Stop here ends it too.'
+              : 'Stop it any time with the Stop button on the bar, or Ctrl+Alt+Esc.'
             : 'It ended when the time ran out, or Celeste was closed.'}
       </div>
     </div>

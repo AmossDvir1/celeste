@@ -27,6 +27,36 @@ jobs:
       - run: npm test
       - run: npm run build
 
+  # Celeste for Android (phone/): typechecked and built on every push, so a release is never the first build. The APK is a debug
+  # build, kept for two weeks as a download of the run. Release builds are signed in release.yml.
+  android:
+    name: Android app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            phone/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      # The app shares the protocol, types and reducer in src/ with the desktop app, so both sets of packages are needed.
+      - run: node scripts/ci-report.mjs --raw npm ci
+      - run: npm --prefix phone ci
+      - run: npm --prefix phone run typecheck
+      - run: npm --prefix phone run apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-debug
+          path: phone/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14
+          if-no-files-found: error
+
   # The real app, started and driven (Playwright for Electron) on a Mac. None of these needs an account or spends anything: Claude is
   # the real program talking to a stand-in for Anthropic's API on the runner. This is how Celeste is tried on macOS, since nobody
   # working on it has a Mac. It reports problems without blocking a merge (continue-on-error) until it has been green for a while.

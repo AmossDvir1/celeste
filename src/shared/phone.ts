@@ -13,6 +13,7 @@
 
 import type { Effort, ModelInfo } from './agent'
 import type { CorePush, SessionSummary } from './api'
+import type { InputDef } from './workflow'
 
 export const PHONE_PROTOCOL = 1
 /** mDNS service type the computer announces while phones may connect: `_celeste._tcp`. */
@@ -30,6 +31,9 @@ export const PHONE_METHODS = [
   'phone.reply',
   'phone.ack',
   'phone.attach',
+  'phone.control',
+  'phone.workflows',
+  'phone.runWorkflow',
   'sessions.get',
   'sessions.send',
   'sessions.interrupt',
@@ -161,6 +165,26 @@ export interface PhoneReply {
   image?: { mime: string; data: string }
 }
 
+/** A workflow the phone may start: what Start asks for, and nothing of what its steps do (the run's own card shows that). */
+export interface PhoneWorkflow {
+  id: string
+  name: string
+  description: string
+  inputs: InputDef[]
+}
+
+/**
+ * What happened to phone control on the phone, with `phone.control`, for the card in the computer's chat. The computer
+ * writes the start and each action itself; only what the person does on the phone comes from there.
+ */
+export interface PhoneControlReport {
+  state: 'paused' | 'resumed' | 'ended'
+  /** Why it ended, in the person's words ("The user pressed Stop on the phone."). */
+  why?: string
+  /** How many actions it took, when it ended. */
+  actions?: number
+}
+
 /**
  * Part of a file the person picked on the phone (a photo or a document), with `phone.attach`, sent before the
  * `phone.reply` that answers the request. Files go one after another, each in parts, in order.
@@ -208,6 +232,8 @@ export interface PhoneStatus {
   apk: boolean
   pending: PhonePairRequest | null
   error?: string
+  /** Something about the network that keeps phones out (Windows: it is set to Public), with how to fix it. */
+  network?: string
 }
 
 /** The pictures the two screens compare. 64 that are easy to tell apart and to say out loud. */

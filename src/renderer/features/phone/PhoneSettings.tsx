@@ -53,6 +53,11 @@ export function PhoneSettings() {
       </div>
 
       {status.error && <p className="text-[13px] text-danger">{status.error}</p>}
+      {status.network && (
+        <p role="alert" className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-[13px] text-ink">
+          {status.network}
+        </p>
+      )}
 
       {status.enabled && status.running && (
         <div className="flex gap-5 rounded-xl border border-edge p-4">

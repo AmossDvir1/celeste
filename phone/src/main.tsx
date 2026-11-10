@@ -5,8 +5,8 @@ import { createRoot } from 'react-dom/client'
 import { x25519 } from '@noble/curves/ed25519.js'
 import { setX25519Fallback } from '@shared/phone'
 import { App } from './App'
-import { onBack, onResume, setupNotifications } from './native'
-import { useApp } from './store'
+import { onBack, onResume, onShared, setupNotifications } from './native'
+import { restorePairing, useApp } from './store'
 
 // Older WebViews (before Chrome 133) have no X25519 in WebCrypto: the audited pure-JS one stands in.
 setX25519Fallback({
@@ -37,6 +37,15 @@ onResume(() => {
   else st.connect()
 })
 
-if (useApp.getState().pairing) useApp.getState().connect()
-
-createRoot(document.getElementById('root') as HTMLElement).render(<App />)
+// The pairing is read from the Keystore-encrypted store first, so the app never shows Setup to a phone that is paired.
+void restorePairing().finally(() => {
+  if (useApp.getState().pairing) useApp.getState().connect()
+  createRoot(document.getElementById('root') as HTMLElement).render(<App />)
+  // Share → Celeste from another app: a new chat with the text written in, ready to send (once the phone is paired).
+  onShared((text) => {
+    const st = useApp.getState()
+    if (!st.pairing) return st.say('Connect Celeste to your computer first, then share again.')
+    useApp.setState({ shared: text })
+    if (st.screen.name !== 'new') st.go({ name: 'new' })
+  })
+})

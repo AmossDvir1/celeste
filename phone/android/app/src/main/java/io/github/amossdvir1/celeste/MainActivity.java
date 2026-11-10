@@ -1,5 +1,6 @@
 package io.github.amossdvir1.celeste;
 
+import android.content.Intent;
 import android.os.Bundle;
 
 import com.getcapacitor.BridgeActivity;
@@ -12,6 +13,26 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(CelesteNativePlugin.class);
         super.onCreate(savedInstanceState);
+        if (savedInstanceState == null) shared(getIntent());
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        shared(intent);
+    }
+
+    /** Text or a link shared to Celeste from another app: kept for the app to start a chat with. */
+    private void shared(Intent intent) {
+        if (intent == null || !Intent.ACTION_SEND.equals(intent.getAction())) return;
+        CharSequence text = intent.getCharSequenceExtra(Intent.EXTRA_TEXT);
+        String subject = intent.getStringExtra(Intent.EXTRA_SUBJECT);
+        if (text == null || text.toString().trim().isEmpty()) return;
+        String t = text.toString().trim();
+        // A shared link often comes with the page's title as the subject: both, title first.
+        if (subject != null && !subject.trim().isEmpty() && !t.contains(subject.trim())) t = subject.trim() + "\n" + t;
+        if (t.length() > 20_000) t = t.substring(0, 20_000);
+        CelesteNativePlugin.share(t);
     }
 
     @Override

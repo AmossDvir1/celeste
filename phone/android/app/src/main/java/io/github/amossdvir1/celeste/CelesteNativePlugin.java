@@ -41,6 +41,48 @@ public class CelesteNativePlugin extends Plugin {
         live = this;
     }
 
+    /** A secret of the app's screens (the pairing), from storage encrypted with a Keystore key. */
+    @PluginMethod
+    public void secureGet(PluginCall call) {
+        JSObject o = new JSObject();
+        String v = SecureStore.get(getContext(), call.getString("name", ""));
+        if (v != null) o.put("value", v);
+        call.resolve(o);
+    }
+
+    @PluginMethod
+    public void secureSet(PluginCall call) {
+        try {
+            SecureStore.set(getContext(), call.getString("name", ""), call.getString("value"));
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("Could not keep it securely: " + e.getMessage());
+        }
+    }
+
+    /** Text shared to Celeste from another app, until the app takes it. */
+    private static volatile String shared;
+
+    /** Another app shared text or a link: the app starts a new chat with it (now, or when it has loaded). */
+    static void share(String text) {
+        shared = text;
+        CelesteNativePlugin p = live;
+        if (p == null) return;
+        JSObject o = new JSObject();
+        o.put("text", text);
+        p.notifyListeners("shared", o);
+    }
+
+    /** What was shared before the app was ready to hear it; once. */
+    @PluginMethod
+    public void takeShared(PluginCall call) {
+        JSObject o = new JSObject();
+        String t = shared;
+        shared = null;
+        if (t != null) o.put("text", t);
+        call.resolve(o);
+    }
+
     /** The open cards changed: the app shows the first one as a sheet. */
     static void cardsChanged() {
         CelesteNativePlugin p = live;
