@@ -4,34 +4,42 @@
 
 # Celeste
 
-**One desktop workbench for Claude, GitHub Copilot, OpenAI and Google Gemini.**
+**One desktop workbench for your AI assistants.**
 
-Use each vendor's own agent from a single, fast interface, with your sessions saved on your computer and every
-action under your control. No Celeste server, no account with us: your usage goes to your own vendor account.
+Work with Claude and GitHub Copilot from one fast, calm interface. Your chats stay on your computer, every action the
+assistant takes is under your control, and there is no Celeste server and no account with us: your usage goes to your own
+vendor account.
 
 [![CI](https://github.com/AmossDvir1/celeste/actions/workflows/ci.yml/badge.svg)](https://github.com/AmossDvir1/celeste/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/AmossDvir1/celeste?color=c2417d)](https://github.com/AmossDvir1/celeste/releases/latest)
-![Electron](https://img.shields.io/badge/Electron-45-47848f?logo=electron&logoColor=white)
-![React](https://img.shields.io/badge/React-19-149eca?logo=react&logoColor=white)
-![TypeScript](https://img.shields.io/badge/TypeScript-7-3178c6?logo=typescript&logoColor=white)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 <img src="docs/images/chat.png" alt="A Celeste conversation with a table, code and a numbered list of next steps" width="880" />
 
 </div>
 
-## Why Celeste
+## What you can do with Celeste
 
-- **Your choice of model, one place to work.** Switch between Claude, Copilot, OpenAI and Gemini models in the same
-  conversation, and pin the ones you use most to the top of the model menu.
-- **Their agents, not a re-implementation.** Each vendor's official CLI or SDK does the work underneath (reading and
-  editing files, running commands, calling tools), so you get the vendor's real behavior, and Celeste adds the interface.
-- **You approve what matters.** Choose when the agent may act: automatically, ask before edits, ask for everything, or
-  plan only. Commands on a remote machine always show the exact command and ask first.
-- **Your data stays yours.** Sessions live in a local SQLite database. Keys are stored encrypted by your operating
-  system. There is no Celeste backend to send anything to.
-- **Chat and Develop.** Chat is for questions, analysis and writing. Develop works in a project folder, with inline diffs
-  and a Changes panel.
-- **Devices.** Give the agent other computers, VMs and Android phones as context or as places to work, read-only by default.
+- **Chat and Develop.** Chat is for questions, analysis and writing. Develop works in a project folder, with diffs in the
+  conversation, a Changes panel, a file tree, an integrated terminal, and separate copies of your project so a session
+  never touches your working folder. Go back to the way things were before any message.
+- **Your assistants, their real abilities.** Each vendor's own agent does the work underneath (reading and editing files,
+  running commands, using tools), so you get the vendor's real behavior. Switch model and thinking effort in the middle of
+  a conversation, and pin the models you use most.
+- **You stay in control.** Choose when the assistant may act: automatically, ask before edits, ask for everything, or plan
+  only. Commands on another machine always show the exact command and ask first.
+- **Workflows.** Build a repeatable job on a canvas from commands, web requests, files, tools and assistant steps, or let
+  an assistant draft one for you. **Before a run does anything, one card lists everything it will do.** Start one from a
+  conversation with `/`.
+- **Tools and devices.** Add a tool once and every assistant can use it. Give the assistant other computers, virtual
+  machines and Android phones to work with, read-only unless you say otherwise.
+- **Let it use your screen, if you want (Windows, off by default).** The assistant can ask to use this computer's mouse and
+  keyboard for a task that has no command or tool. You allow it each time, it is limited in time, and you can stop it with
+  Ctrl+Alt+Esc from anywhere.
+- **Your phone (Android, experimental).** Use Celeste from your phone, and let the assistant use the phone when you allow
+  it. See [Celeste for Android](#celeste-for-android-experimental).
+- **Private by design.** Chats are saved in a database on your computer. Keys are kept in your operating system's secure
+  storage. See [PRIVACY.md](PRIVACY.md) for what leaves your computer and where it goes.
 
 <table>
   <tr>
@@ -44,9 +52,9 @@ action under your control. No Celeste server, no account with us: your usage goe
   </tr>
 </table>
 
-## Download
+## Get Celeste
 
-Get the newest version from the [Releases page](https://github.com/AmossDvir1/celeste/releases/latest).
+Download the newest version from the [Releases page](https://github.com/AmossDvir1/celeste/releases/latest).
 
 | System | Download | Notes |
 |---|---|---|
@@ -54,70 +62,60 @@ Get the newest version from the [Releases page](https://github.com/AmossDvir1/ce
 | Windows, for IT departments | `Celeste-<version>-windows-x64-setup.msi` | The same program as an MSI, for deployment tools and group policy. |
 | **macOS** (Apple silicon) | `Celeste-<version>-mac-arm64.dmg` | Open it and drag Celeste into Applications. |
 | macOS (Intel) | `Celeste-<version>-mac-x64.dmg` | The same, for Intel Macs. |
+| Linux | none yet | It runs from source: see [CONTRIBUTING.md](CONTRIBUTING.md). |
 
 Every release lists a checksum for each file (`SHA256SUMS.txt`). To check one on Windows: `certutil -hashfile <file> SHA256`; on a Mac: `shasum -a 256 <file>`.
 
-**The first time you open it, your system may warn you.** The installers of this release are not signed with a paid certificate yet, so Windows and macOS do not know who made them. This is expected; the program is the one built from this repository's code.
+**The first time you open it, your system may warn you.** The installers are not signed with a paid certificate yet, so
+Windows and macOS do not know who made them. This is expected; the program is the one built from this repository's code.
 
 - **Windows:** SmartScreen may say "Windows protected your PC". Choose **More info**, then **Run anyway**.
 - **macOS:** it may say Celeste "cannot be opened" or "is damaged". Open **System Settings → Privacy & Security**, scroll to Security, and choose **Open Anyway** next to Celeste. If it still says "damaged", run `xattr -dr com.apple.quarantine /Applications/Celeste.app` in Terminal once.
 
-**Uninstalling** on Windows: Settings → Apps → Celeste. This removes the program and leaves your chats, workflows and settings in `%APPDATA%\Celeste`; delete that folder yourself if you want them gone. On a Mac, drag Celeste to the Bin; your data is in `~/Library/Application Support/Celeste`.
+### Getting started
 
-**Updating:** Settings → About → *Check for updates* tells you whether a newer version exists and opens the download page. Celeste never looks by itself. Install the new version over the old one; your data is kept.
+1. **Open Celeste** and follow the short set-up.
+2. **Connect an assistant** in Settings → AI vendors.
+   - **GitHub Copilot:** choose Connect. If you are already signed in to Copilot on this computer it connects at once;
+     otherwise Celeste opens GitHub's sign-in page, or shows a code to enter at github.com/login/device. The first time,
+     Celeste downloads Copilot's runtime (about 180 MB) from npm and checks it. Disconnecting only makes Celeste stop using
+     Copilot: it never signs you out of GitHub.
+   - **Claude:** connect through the Claude Console in your browser, or paste an API key. The first time, Celeste downloads
+     Claude Code's program (about 330 MB unpacked) from npm. A Claude subscription login is not offered, because
+     Anthropic does not allow other apps to use one.
+3. **Start a chat** with Ctrl N, pick a model under the message box, and write.
 
-### Celeste for Android (experimental)
+**Updating:** Settings → About → *Check for updates* tells you whether a newer version exists and opens the download page.
+Celeste never looks by itself. Install the new version over the old one; your data is kept.
 
-An Android app that is a remote for the Celeste on your computer (your chats, Develop, approvals, workflows), and lets the assistant use the phone when you allow it each time. It works on the same Wi-Fi as the computer; away from home is not there yet.
+**Uninstalling** on Windows: Settings → Apps → Celeste. This removes the program and leaves your chats, workflows and
+settings in `%APPDATA%\Celeste`; delete that folder yourself if you want them gone. On a Mac, drag Celeste to the Bin;
+your data is in `~/Library/Application Support/Celeste`.
 
-1. On the computer: **Settings → Phone**, switch on **Let my phone connect**. A QR code shows.
-2. Scan it with the phone's camera and open the page. Tap **Install**. Chrome may say the file can be harmful because it does not come from a store: choose **Download anyway**, then let Chrome install apps if Android asks.
-3. Open Celeste on the phone. It finds the computer; check the three pictures match and press **Allow** on the computer.
+## Celeste for Android (experimental)
 
-The app is not in Google Play, because Play does not allow apps like it that act on the screen for an assistant. What it can do on the phone (notifications, location, photos and files, the calendar, texts and calls, phone control) is each off until you switch it on in **This phone**, and each request asks you on the phone.
+An Android app that works as a remote for the Celeste on your computer, on the same Wi-Fi:
 
-What leaves your computer, and where it goes, is written down in [PRIVACY.md](PRIVACY.md). The open-source software inside Celeste is listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+- follow your chats live, send messages, start a Chat or Develop session, choose the model, stop a reply, and answer
+  approvals and questions (also as notifications, with the app closed);
+- start your workflows and approve what a run is about to do;
+- share text or a link from any app to start a chat with it;
+- let the assistant use your phone, **each thing off until you switch it on, and each request asking you on the phone
+  first**: read and reply to notifications, open an app, set an alarm, find where the phone is, pick photos and files for
+  it, read and add calendar events, get a text or a call ready (you press Send or Call yourself), and, for a task nothing
+  else can do, see and use the screen for up to 15 minutes. Touching the screen pauses it, Stop ends it, and password
+  managers, your bank and anything else you add to a never list stay off-limits.
 
-## Status
+**Installing it:**
 
-Celeste 1.0 is the first release. Nothing in the app is pretended: a vendor is there only if it is connected, and what is not built yet says so.
+1. On the computer: Settings → Phone, switch on **Let my phone connect**. A QR code shows.
+2. Scan it with the phone's camera and open the page. Tap **Install**. Chrome may say the file can be harmful because it
+   comes from your Wi-Fi and not from a store: choose **Download anyway**, then let Chrome install apps if Android asks.
+3. Open Celeste on the phone. It finds the computer; check that the three pictures match and press **Allow** on the computer.
 
-| Area | State |
-|---|---|
-| GitHub Copilot | **Working.** Streaming, tools, approvals, `ask_user` questions, image attachments, model and effort switching, resuming a conversation after a restart |
-| Claude | **Built.** Same features as Copilot. Checked against the real Claude Code program with a stand-in for Anthropic's API, not yet against a real account |
-| OpenAI, Gemini | Not available yet: their cards say "Coming soon". Adapters are next |
-| Sessions, settings, drafts, attachments | **Working.** Saved locally, and they survive a crash |
-| Devices (SSH, Hyper-V, Android) | **Working against test fixtures**, not yet tried on a wide range of real hardware. Read-only by default, with approvals |
-| Workflows | **Working.** Build them on a canvas, with an assistant, or import one; run them from the screen or with `/` in a chat; every run shows what it will do first. The assistant can run the ones you allow |
-| Tools & Integrations (MCP) | **Working.** Add a tool once and every vendor can use it. Checked against real MCP servers and the stand-in for Claude; Copilot's side checked live |
-| Develop extras | **Working.** Reverting to before any message, a review screen, a file tree, separate copies of a project (git worktrees), an integrated terminal |
-| Celeste for Android | **Experimental.** Tried on a Galaxy S24 and an Android 15 emulator. Same Wi-Fi only; the APK is attached to releases once the project's signing key is set up (RELEASING.md) |
-| Installers | Windows (`.exe`, `.msi`) and macOS (`.dmg`). Not signed with a paid certificate yet; no automatic updates (there is a manual check) |
-| Linux | Not released. It runs from source |
-
-Tried on Windows by hand and on macOS by automatic checks only (no one working on Celeste has a Mac); please report what you find.
-
-The full plan, with the reasoning behind each decision, is in [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md).
-
-## Running from source
-
-You need [Node.js](https://nodejs.org) 22.13 or newer (the database is `node:sqlite`, built into Node and Electron).
-
-```bash
-git clone https://github.com/AmossDvir1/celeste.git
-cd celeste
-npm install
-npm run dev
-```
-
-To use **GitHub Copilot**, open Settings, then AI vendors, and choose Connect. If you are already signed in to Copilot on
-this computer it connects at once. Otherwise Celeste opens GitHub's sign-in page, or shows a code to enter at
-github.com/login/device. The first time, Celeste downloads Copilot's runtime (about 180 MB) from npm and checks its
-checksum. Disconnecting only makes Celeste stop using Copilot: it never signs you out of GitHub.
-
-**Claude** connects through the Claude Console in your browser, or with an API key you paste. Celeste downloads Claude Code's
-program (about 330 MB unpacked) from npm the first time, and starts doing so as soon as you open the key field.
+The app is not on Google Play, which does not allow apps that act on the screen for an assistant. It is **new in the next
+release**: until then, the computer has no app to hand out unless you build it (see [phone/README.md](phone/README.md)).
+Away from home is not supported yet. Everything between the phone and the computer is encrypted, with no server in between.
 
 ## Keyboard shortcuts
 
@@ -129,74 +127,51 @@ program (about 330 MB unpacked) from npm the first time, and starts doing so as 
 | Ctrl B | Show or hide the sidebar |
 | Ctrl , | Settings |
 
-## How it works
+On a Mac, use Cmd instead of Ctrl.
 
-```
- Window (React)  ──message port──▶  Core process  ──▶  vendor adapters ──▶ Copilot SDK / CLIs
-                                        │
-                                        ├── SQLite: sessions are an event log, replayed on open
-                                        ├── Devices: SSH, Hyper-V, adb, behind approvals
-                                        └── Tool server (MCP, loopback only): lets agents use your devices
-```
+## What works today
 
-- Each session is an **event log**. Opening it replays the log through the same reducer that handles live events, so a
-  restart or crash loses nothing. Each vendor's own resume id is stored too, so a conversation continues natively when the
-  vendor still has it, and is rebuilt from Celeste's log when it does not.
-- Vendors sit behind one small boundary (`AgentAdapter`, `AgentSession`, `AgentEvent`), so adding a vendor does not touch the interface.
-- Secrets stay in Electron's main process. The Core process asks for a device password only when connecting.
+Celeste 1.1 is the current release. Nothing in the app is pretended: a vendor is there only if it is connected, and what
+is not built yet says so.
 
-```
-src/
-  shared/      the vendor boundary and the API between the window and Core
-  main/        the Electron window, the Core launcher, secrets
-  core/        the Core process: SQLite, sessions, vendor adapters, devices, the tool server
-  preload/     the bridge the interface calls
-  renderer/    the React interface: app shell, chat, develop, settings, stores
-docs/          the implementation plan and images
-scripts/       end-to-end checks that drive the built app, screenshot tools
-```
-
-## Development
-
-| Command | What it does |
+| Area | State |
 |---|---|
-| `npm run dev` | Start the app with hot reload |
-| `npm run typecheck` | Type-check the interface, the main process and Core |
-| `npm test` | Unit tests: storage, sessions, adapters, devices |
-| `npm run build` | Production build into `out/` |
-| `npm run verify:persistence` | Run the built app on one profile, restart and crash it, and check nothing is lost |
-| `npm run verify:package` | Run the built app from an `app.asar`, as an installer lays it out |
-| `npm run verify:devices` | Run the built app against an in-process SSH server that stands in for a VM |
-| `npm run verify:claude` | Drive the real app with the real Claude Code program against a stand-in for Anthropic's API on this computer (no account, no cost) |
-| `npm run verify:checkpoints` | Drive a Develop session in the real app: checkpoints before each message, revert, undo, and your project's own git left alone (no account, no cost) |
-| `npm run verify:terminal` | Drive the real integrated terminal in the real app: a shell in the project folder, typing, the same shell after closing the panel (no account, no cost) |
-| `npm run verify:files` | Drive a Chat that makes files in the real app: the cards, Open, Show in folder, Save a copy, and what is refused (no account, no cost) |
-| `npm run verify:workflows` | Drive the Workflows tab in the real app: the empty start, building a workflow on the canvas, saving, versions, unsaved changes, deleting (no account, no cost) |
-| `npm run verify:workflows-chat` | Start a workflow from a conversation with `/`: the menu, the card that asks first, the result, and the assistant being told (no account, no cost) |
-| `npm run verify:workflows-ai` | Build with AI, Make this a workflow, and the assistant running a workflow only when allowed (no account, no cost) |
-| `npm run verify:ui` | An accessibility audit (axe, WCAG 2.2 A and AA) of every screen in both themes, plus keyboard checks |
-| `npm run dist:win` / `dist:mac` | Make the installers (`release/`). See [RELEASING.md](RELEASING.md) |
-| `node scripts/installer-check.mjs` | Install what `dist:win` made, run it, and uninstall it (on a Mac: open the packed app and check it) |
-| `npm run verify:copilot` | Drive the real app with your real Copilot account (spends a few premium requests) |
-| `npm run shots` | Screenshots of the key screens in both themes. They are the real app; Claude's answers come from a stand-in for the API, so the pictures cost nothing |
+| GitHub Copilot | **Working.** Streaming, tools, approvals, questions, image attachments, model and effort switching, resuming a conversation after a restart |
+| Claude | **Built.** The same features. Checked against the real Claude Code program with a stand-in for Anthropic's API, not yet against a real account |
+| OpenAI, Gemini | Not available yet: their cards say "Coming soon" |
+| Chat, Develop, sessions | **Working.** Saved locally, and they survive a crash. Review, revert, worktrees and a terminal in Develop |
+| Workflows | **Working.** Canvas, drafts by an assistant, import and share, every run shows what it will do first |
+| Tools (MCP) | **Working.** Add a tool once and every assistant can use it |
+| Devices (SSH, Hyper-V, Android) | **Working against test fixtures**, not yet tried on a wide range of real hardware. Read-only by default, with approvals |
+| Desktop control | **Windows only, off by default.** Tried with a stand-in for the assistant on one screen, not yet with a real assistant or other screen setups |
+| Celeste for Android | **Experimental, next release.** Tried on a Galaxy S24 and an Android emulator. Same Wi-Fi only |
+| Installers | Windows (`.exe`, `.msi`) and macOS (`.dmg`). Not signed with a paid certificate yet; no automatic updates (there is a manual check) |
 
-The Copilot live tests are opt-in (`CELESTE_LIVE_COPILOT=1`) because they use a real account. See
-[CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+Tried on Windows by hand and on macOS by automatic checks only (no one working on Celeste has a Mac); please report what you find.
 
 ## Roadmap
 
-1. **Done in 1.0:** design, storage and sessions, devices, Copilot, Claude, tools (MCP), Develop (review, revert, worktrees, terminal), Chat file cards, workflows, Windows and macOS installers
-2. Letting the assistant use the mouse and keyboard, after asking (next)
-3. OpenAI and Gemini adapters (their cards say Coming soon)
+1. **Done:** design, storage and sessions, devices, Copilot, Claude, tools, Develop, workflows, Windows and macOS installers (1.0); using this computer's screen (1.1); the Android app (next release)
+2. The Android app away from home, through a relay run by the project (nothing to set up)
+3. OpenAI and Gemini
 4. Signed installers (Windows first), automatic updates, Linux
 5. Branches, schedules and templates for workflows
-6. A companion app for phones that controls your desktop Celeste (Android first)
+
+The full plan, with the reasoning behind each decision, is in [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md), and the
+phone's in [docs/PHONE_PLAN.md](docs/PHONE_PLAN.md).
+
+## Help and feedback
+
+- A bug, or an idea: [open an issue](https://github.com/AmossDvir1/celeste/issues).
+- A security problem: please do not open a public issue; see [SECURITY.md](SECURITY.md).
+- What changed in each version: [CHANGELOG.md](CHANGELOG.md).
+- Building it yourself or helping: [CONTRIBUTING.md](CONTRIBUTING.md) has how to run Celeste from source, the checks, and how it is put together.
 
 ## License
 
 Celeste's code is licensed under the [Apache License 2.0](LICENSE). The name "Celeste" and the logo are not covered by it.
 The vendors' programs that Celeste downloads (Claude Code, the GitHub Copilot runtime) stay under their own terms and are not part of this
-repository.
+repository. The open-source software inside Celeste is listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Trademarks
 

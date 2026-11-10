@@ -674,7 +674,7 @@ Workflows (section 7.10) can run a Tool step's shell command on a device.
 
 ### 7.12 Mobile companion: iPhone, iPad and Android
 
-> **Replaced for Android by `PHONE_PLAN.md` (9 November 2026)**, which is newer where they differ: an Android app (not a web page) that both drives the assistant and lets the assistant use the phone, installed from the computer over the Wi-Fi. iPhone and iPad are set aside for now. The work happens on the `phone` branch.
+> **Replaced for Android by `PHONE_PLAN.md` (9 November 2026)**, which is newer where they differ: an Android app (not a web page) that both drives the assistant and lets the assistant use the phone, installed from the computer over the Wi-Fi. iPhone and iPad are set aside for now. It is built and merged into `main` (10 November 2026); what is left is in `PHONE_PLAN.md`, "Remaining work".
 
 **The straight answer.** Celeste itself can't run on iOS. It is built on Electron, which targets Windows, Mac and Linux only, and the agents underneath are desktop programs (the Claude, Copilot, Codex and Gemini CLIs) that an iPhone can't run. Android is the same. What can run on a phone is a **companion app** that controls the Celeste on your computer, which does the work. It puts the Celeste screens on your phone: see your sessions, send a message, answer a question, and approve or deny a command while you're away from your desk.
 
@@ -725,7 +725,7 @@ A phone whose app is closed shows as asleep, and the assistant is told so instea
 | Networks | Windows: Public-network profile check and the firewall prompt. macOS: Local Network permission. Linux: a firewall note |
 | Workflows and devices | ✅ The **Use the phone** step in the workflow engine (9 November 2026). Still to do: a `phone` device kind beside `ssh`, `hyperv` and `adb` |
 | Docs and legal | README and install guide, a privacy statement (what the phone sends to the computer, what goes on to the AI vendor, what the relay sees), third-party notices for the app's libraries, and the CHANGELOG at release |
-| Merge and release | The `phone` branch is merged when the owner decides, and the owner publishes the release |
+| Release | The phone work is merged into `main`; the owner publishes the release |
 
 **Done on 10 November 2026** (details in `PHONE_PLAN.md`, "Remaining work"): the APK in CI and in releases (written; the signing key and its secrets are the owner's to make, see RELEASING.md), fetching the released APK, the key in the system's secret store, the Windows Public-network check, the docs and notices, and the merge into `main`. Still open: the relay (decision 17), the macOS and Linux network notes, the `phone` device kind, and the app's tests on an emulator in CI.
 

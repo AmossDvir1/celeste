@@ -1,6 +1,6 @@
 # Celeste: Phone Plan (Android)
 
-> **Status, 9 November 2026: step A1 (the app as a remote) is built, and so are A2 (phone abilities and the Use the phone step, without the `phone` device kind) and A3 (phone control), on the `phone` branch, not merged.** See "What A1 built" below. The owner wants two-way control between Celeste and a phone on the same Wi-Fi: the person drives the assistant from the phone, and the assistant does things on the phone with the person's approval. Second version of this plan: the owner chose **an app, not a web page**, and **Android only** for now. Android's wireless debugging (what Celeste has today, `IMPLEMENTATION_PLAN.md` section 7.11) works, but it needs Developer options and isn't simple, so it stays only as an advanced option. This plan updates section 7.12 of `IMPLEMENTATION_PLAN.md` and borrows the safety design of `DESKTOP_CONTROL_PLAN.md`.
+> **Status, 10 November 2026: steps A1 (the app as a remote), A2 (phone abilities and the Use the phone step, without the `phone` device kind) and A3 (phone control) are built and merged into `main`. A4 (away from home) is not; see "Remaining work" for what is left and what must happen before it ships.** The owner wants two-way control between Celeste and a phone on the same Wi-Fi: the person drives the assistant from the phone, and the assistant does things on the phone with the person's approval. Second version of this plan: the owner chose **an app, not a web page**, and **Android only** for now. Android's wireless debugging (what Celeste has today, `IMPLEMENTATION_PLAN.md` section 7.11) works, but it needs Developer options and isn't simple, so it stays only as an advanced option. This plan updates section 7.12 of `IMPLEMENTATION_PLAN.md` and borrows the safety design of `DESKTOP_CONTROL_PLAN.md`.
 
 ### What A1 built
 
@@ -399,7 +399,7 @@ All of these are built (9 November 2026). Sending an SMS or making a call opens 
 | **A3** | **Phone control**, after spike 6.3: accessibility service, the rails of 5.1, the action tools and the never list. | L |
 | **A4** | **Away from home**: Tailscale steps now, for the experiment; **the Cloudflare relay before shipping** (section 7, P-8). | S–M |
 
-Each step ends with tests, a real-app check, this plan updated with what was and wasn't built, and the CHANGELOG. All of it stays on the `phone` branch until the owner decides to merge.
+Each step ends with tests, a real-app check, this plan updated with what was and wasn't built, and the CHANGELOG. It was kept on the `phone` branch until the owner decided to merge it (done on 10 November 2026).
 
 ## 10. Testing
 
