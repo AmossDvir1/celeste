@@ -22,6 +22,8 @@ All notable changes to Celeste. The format follows [Keep a Changelog](https://ke
   - **Other programs can use it too** (Playwright, or Playwright MCP with `--cdp-endpoint`), only when switched on, and they see only the browser's tabs, never Celeste's windows. Switch it on in Settings, Browser, which shows the address to give them.
   - **It asks before using a new site.** The first time the assistant clicks or types on a site that is not on your own computer, a card in the chat asks: Allow for this chat, Always allow that site, or Deny. A no is final for that chat. Opening a new site also asks in chats that ask before they act (Ask, Edits). Settings, Browser lists the sites you always allow, each with a way to take it back, and switches this asking off.
   - **Settings, Browser** gathers it all: let the assistant use the browser, ask before a new site, the sites always allowed, keep cookies, clear browsing data, where links open, the search engine, and other programs.
+  - **Care with your files.** The assistant opens a file in the browser only from its own chat's folder (the project folder in Develop). A page cannot open a file, and a sign-in popup cannot go to one.
+  - Checked with the real Playwright MCP against the browser's address, and with sign-in popups that talk back to their page.
   - `npm run verify:browser` and `npm run verify:browser-tools` check it. Playwright (about 14 MB) and the `ws` library now ship with the app.
 - **Celeste for Android (experimental)**: use Celeste from your phone on the same Wi-Fi.
   - **Settings → Phone** shows a QR code. The page it opens on the phone offers the app.

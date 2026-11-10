@@ -44,6 +44,8 @@ interface UiState {
   mode: AppMode
   rightPanel: RightPanel
   browserWidth: number
+  /** Whether the browser's address bar takes the keyboard when the panel opens on an empty browser: yes when the person opened it, no when the assistant did. */
+  browserFocus: boolean
   /** A web link in a chat that waits for the person to say where it opens (Celeste's browser or theirs). */
   pendingLink: string | null
   settingsOpen: boolean
@@ -60,6 +62,8 @@ interface UiState {
   setMode: (mode: AppMode) => void
   toggleRight: (panel: Exclude<RightPanel, null>) => void
   setRight: (panel: RightPanel) => void
+  /** The assistant started using the browser: the panel opens, and leaves the keyboard where it is. */
+  revealBrowser: () => void
   setBrowserWidth: (width: number, save?: boolean) => void
   setPendingLink: (url: string | null) => void
   openSettings: (section?: SettingsSection) => void
@@ -95,6 +99,7 @@ export const useUi = create<UiState>((set, get) => ({
   mode: 'chat',
   rightPanel: null,
   browserWidth: savedBrowserWidth(),
+  browserFocus: true,
   pendingLink: null,
   settingsOpen: false,
   settingsSection: 'general',
@@ -106,8 +111,9 @@ export const useUi = create<UiState>((set, get) => ({
   version: '',
 
   setMode: (mode) => set({ mode, rightPanel: null }),
-  toggleRight: (panel) => set({ rightPanel: get().rightPanel === panel ? null : panel }),
-  setRight: (rightPanel) => set({ rightPanel }),
+  toggleRight: (panel) => set({ rightPanel: get().rightPanel === panel ? null : panel, ...(panel === 'browser' ? { browserFocus: true } : {}) }),
+  setRight: (rightPanel) => set({ rightPanel, ...(rightPanel === 'browser' ? { browserFocus: true } : {}) }),
+  revealBrowser: () => set({ rightPanel: 'browser', browserFocus: false }),
   setBrowserWidth: (width, save = true) => {
     const browserWidth = Math.round(Math.min(BROWSER_WIDTH.max, Math.max(BROWSER_WIDTH.min, width)))
     set({ browserWidth })

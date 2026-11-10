@@ -3,9 +3,11 @@
 // It is the real app. Claude is real too (the real SDK and program); what it says is chosen by a stand-in for Anthropic's API
 // on this computer (scripts/lib/stub.mjs), so the conversations below are written for the pictures and cost nothing.
 import { execFileSync } from 'node:child_process'
+import { createServer } from 'node:http'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { PNG } from 'pngjs'
 import { launch, root } from './lib/app.mjs'
 import { claudeReady, pasteClaudeKey, startStub } from './lib/stub.mjs'
 
@@ -52,7 +54,37 @@ for (const args of [['init', '-q', '-b', 'main'], ['-c', 'user.name=Demo', '-c',
   execFileSync('git', ['-C', project, ...args])
 }
 
+// A small web page for the assistant to open in the browser picture.
+const PRICING = `<!doctype html><html lang="en"><meta charset="utf-8"><title>Acme pricing</title>
+<style>
+  body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: #f6f7fb; color: #1b2133 }
+  header { display: flex; justify-content: space-between; align-items: center; padding: 18px 36px; background: #fff; border-bottom: 1px solid #e3e6ef }
+  header b { font-size: 18px; letter-spacing: -.01em } header span { color: #6b7490; font-size: 14px }
+  main { max-width: 760px; margin: 0 auto; padding: 44px 24px }
+  h1 { font-size: 30px; letter-spacing: -.02em; margin: 0 0 6px } p.lead { color: #6b7490; margin: 0 0 30px }
+  .plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 16px }
+  .plan { background: #fff; border: 1px solid #e3e6ef; border-radius: 14px; padding: 22px }
+  .plan.pick { border-color: #f5487f; box-shadow: 0 6px 24px #f5487f22 }
+  .plan h2 { font-size: 16px; margin: 0 0 4px } .price { font-size: 30px; font-weight: 650; letter-spacing: -.02em } .price small { font-size: 13px; color: #6b7490; font-weight: 400 }
+  ul { padding-left: 18px; color: #4a5372; margin: 14px 0 0 }
+</style>
+<header><b>Acme</b><span>Pricing · Docs · Sign in</span></header>
+<main><h1>Simple, honest pricing</h1><p class="lead">Every plan includes unlimited projects. Pay yearly and save two months.</p>
+<div class="plans">
+  <div class="plan"><h2>Solo</h2><div class="price">$0 <small>forever</small></div><ul><li>1 user</li><li>Community support</li></ul></div>
+  <div class="plan pick"><h2>Team</h2><div class="price">$12 <small>per user / month</small></div><ul><li>Unlimited users</li><li>Shared workspaces</li><li>Email support</li></ul></div>
+  <div class="plan"><h2>Business</h2><div class="price">$29 <small>per user / month</small></div><ul><li>Single sign-on</li><li>Audit log</li><li>Priority support</li></ul></div>
+</div></main></html>`
+const pricing = createServer((_req, res) => {
+  res.setHeader('content-type', 'text/html; charset=utf-8')
+  res.end(PRICING)
+})
+await new Promise((r) => pricing.listen(0, '127.0.0.1', r))
+const pricingUrl = `http://127.0.0.1:${pricing.address().port}/pricing`
+
 const stub = await startStub((r) => {
+  if (r.last.kind === 'tool_result' && /Opened tab/.test(r.last.text)) return [{ type: 'text', text: 'The **Team** plan is $12 per user a month, and the **Business** plan is $29. There is also a free Solo plan for one person. Paying yearly saves two months.' }]
+  if (r.last.kind === 'text' && /pricing page/i.test(r.last.text)) return [{ type: 'tool_use', name: 'mcp__celeste-devices__browser_navigate', input: { url: pricingUrl } }]
   if (r.last.kind === 'tool_result') return [{ type: 'text', text: r.last.isError ? `That did not work: ${r.last.text}` : 'The flaky test was racing the pricing service. I replaced the fixed `sleep(50)` with a wait on the real condition, so it no longer depends on timing.' }]
   if (/logs/i.test(r.last.text)) return [{ type: 'text', text: ANSWER }]
   if (/flaky/i.test(r.last.text)) return [{ type: 'tool_use', name: 'Edit', input: { file_path: join(project, 'checkout.spec.ts'), old_string: FIX_OLD, new_string: FIX_NEW } }]
@@ -93,6 +125,27 @@ for (const theme of ['dark', 'light']) {
   await send('Analyze the WFO logs from last night', 'What stands out')
   await snap('chat-conversation')
 
+  // The assistant opens a page in the browser beside the chat. The page is a native layer that a window screenshot does not hold,
+  // so its own picture is laid over the window's, where the page sits.
+  await page.getByRole('button', { name: 'New chat' }).click()
+  await send('Look at the pricing page for me', 'Team plan')
+  await page.getByRole('region', { name: 'Browser' }).waitFor({ timeout: 20_000 })
+  await page.waitForTimeout(1500)
+  const window_ = PNG.sync.read(await page.screenshot())
+  const grabbed = await app.evaluate(async ({ BrowserWindow, webContents }) => {
+    const wc = webContents.getAllWebContents().find((w) => w.getURL().startsWith('http://127.0.0.1'))
+    const v = wc && BrowserWindow.getAllWindows()[0]?.contentView.children.find((c) => c.webContents === wc)
+    if (!wc || !v) return null
+    return { bounds: v.getBounds(), png: (await wc.capturePage()).toPNG().toString('base64') }
+  })
+  if (grabbed) {
+    const shot = PNG.sync.read(Buffer.from(grabbed.png, 'base64'))
+    PNG.bitblt(shot, window_, 0, 0, Math.min(shot.width, grabbed.bounds.width), Math.min(shot.height, grabbed.bounds.height), grabbed.bounds.x, grabbed.bounds.y)
+  }
+  writeFileSync(resolve(out, `${theme}-browser.png`), PNG.sync.write(window_))
+  console.log(`${theme}-browser${grabbed ? '' : ' (without the page)'}`)
+  await page.getByRole('button', { name: 'Close browser' }).click()
+
   await page.getByRole('button', { name: 'New chat' }).click()
   await page.locator('input[type=file]').first().setInputFiles([{ name: 'dashboard-mockup.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64') }])
   await page.waitForTimeout(400)
@@ -120,5 +173,6 @@ for (const theme of ['dark', 'light']) {
   await close()
 }
 await stub.stop().catch(() => undefined)
+pricing.close()
 rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 })
 console.log(`\nSaved to ${out}`)

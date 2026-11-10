@@ -1,4 +1,5 @@
 import { isAbsolute, relative, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { z } from 'zod'
 import type { Browser, Page, Response } from 'playwright-core'
 import type { ApprovalMode } from '@shared/agent'
@@ -384,6 +385,25 @@ export class BrowserTools implements ExtraTools {
     this.refusedHere.delete(sessionId)
   }
 
+  // ---- files ----------------------------------------------------------------------------------------------------------------------
+
+  /**
+   * A file address is only opened from the chat's own folder (the project folder in Develop). Without this a chat that has no access to
+   * the computer's files could read any of them by opening it in the browser, or by being sent there by a page.
+   */
+  private fileInside(sessionId: string, url: string): void {
+    if (!/^file:/i.test(url)) return
+    const folder = this.deps.workFolder(sessionId)
+    let file: string | null = null
+    try {
+      file = fileURLToPath(url)
+    } catch {
+      file = null
+    }
+    const rel = folder && file ? relative(resolve(folder), resolve(file)) : null
+    if (rel === null || rel.startsWith('..') || isAbsolute(rel)) throw new Fail('The browser opens files only from this chat’s own folder. This one is outside it.')
+  }
+
   // ---- asking before a site is used ---------------------------------------------------------------------------------------------
 
   /**
@@ -466,6 +486,7 @@ The assistant is working in your browser. Allow lets it use ${site} in this chat
     if (name === 'browser_new_tab' || (name === 'browser_navigate' && !['back', 'forward', 'reload'].includes((str('url') ?? '').trim().toLowerCase()) && !(await host.tabs(sessionId)).length)) {
       const url = addressFor(str('url') ?? '')
       if (!url) throw new Fail('That is not an address. Give a full address such as https://example.com, or a site such as example.com.')
+      this.fileInside(sessionId, url)
       await this.gate(sessionId, 'open', url, `Open ${url}`)
       await this.reveal(sessionId)
       // Connected first, so the new page is watched from its first request.
@@ -494,6 +515,8 @@ The assistant is working in your browser. Allow lets it use ${site} in this chat
 
     await this.reveal(sessionId)
     const { page, tab: t } = await this.target(sessionId, wantedTab)
+    // A page can send its tab to a file (a link, a redirect): what is there is not for the assistant unless it is in the chat's own folder.
+    this.fileInside(sessionId, page.url())
     if (ACTING.has(name)) await this.gate(sessionId, 'act', page.url(), WHAT[name]?.(a) ?? 'Act on the page')
     const locator = (r: string) => page.getByRef(r)
     const where = () => `Now on: ${this.describePage(page, t)}`
@@ -515,6 +538,7 @@ The assistant is working in your browser. Allow lets it use ${site} in this chat
         else {
           const url = addressFor(input)
           if (!url) throw new Fail('That is not an address. Give a full address such as https://example.com, or a site such as example.com.')
+          this.fileInside(sessionId, url)
           await this.gate(sessionId, 'open', url, `Open ${url}`)
           await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 })
         }

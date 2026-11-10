@@ -10,7 +10,7 @@ import { useBrowserArea } from './useBrowserArea'
 
 const NO_TABS: BrowserTab[] = []
 
-function TabStrip({ chatId, tabs, selected }: { chatId: string; tabs: BrowserTab[]; selected: string | undefined }) {
+function TabStrip({ tabs, selected, onNew }: { tabs: BrowserTab[]; selected: string | undefined; onNew: () => void }) {
   return (
     <div aria-label="Browser tabs" role="group" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
       {tabs.map((t) => {
@@ -46,7 +46,7 @@ function TabStrip({ chatId, tabs, selected }: { chatId: string; tabs: BrowserTab
           </div>
         )
       })}
-      <IconButton label="New tab (Ctrl+T)" size="sm" onClick={() => void browserCall('newTab', { chatId })}>
+      <IconButton label="New tab (Ctrl+T)" size="sm" onClick={onNew}>
         <Plus className="h-4 w-4" />
       </IconButton>
     </div>
@@ -261,10 +261,18 @@ export function BrowserPanel({ chatId }: { chatId: string }) {
   const [dragging, setDragging] = useState(false)
   const { shot } = useBrowserArea(body, chatId, dragging)
 
-  // A new tab has nothing to show: the address bar is ready for typing.
+  // A browser or a tab that has nothing to show gets the address bar ready for typing, but only when the person asked for it: opened the
+  // panel, or made a tab. When the assistant opens the panel, or its tab is a moment blank before the page loads, the keyboard stays put.
+  const wantFocus = useRef(useUi.getState().browserFocus)
+  const newTab = useCallback(() => {
+    wantFocus.current = true
+    void browserCall('newTab', { chatId })
+  }, [chatId])
   const emptyId = tab && !tab.url ? tab.id : undefined
   useLayoutEffect(() => {
-    if (emptyId || tabs.length === 0) addressRef.current?.focus()
+    if (!wantFocus.current || !(emptyId || tabs.length === 0)) return
+    addressRef.current?.focus()
+    wantFocus.current = false
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [emptyId])
 
@@ -282,7 +290,7 @@ export function BrowserPanel({ chatId }: { chatId: string }) {
         addressRef.current?.focus()
       } else if (main && !e.shiftKey && key === 't') {
         e.preventDefault()
-        void browserCall('newTab', { chatId })
+        newTab()
       } else if (main && !e.shiftKey && key === 'w' && current) {
         e.preventDefault()
         void browserCall('closeTab', { id: current })
@@ -300,7 +308,7 @@ export function BrowserPanel({ chatId }: { chatId: string }) {
         void browserCall('action', { id: current, action: 'devtools' })
       }
     },
-    [tab?.id, chatId]
+    [tab?.id, newTab]
   )
   useEffect(() => {
     window.addEventListener('keydown', onKey)
@@ -312,7 +320,7 @@ export function BrowserPanel({ chatId }: { chatId: string }) {
     <section ref={root} aria-label="Browser" className="relative flex h-full min-h-0 flex-col rounded-2xl border border-edge bg-panel">
       <ResizeEdge onDragging={setDragging} />
       <div className="flex h-12 shrink-0 items-center gap-1 border-b border-edge/70 pr-1 pl-2">
-        <TabStrip chatId={chatId} tabs={tabs.length ? tabs : NO_TABS} selected={selected} />
+        <TabStrip tabs={tabs.length ? tabs : NO_TABS} selected={selected} onNew={newTab} />
         <IconButton label="Close browser" size="sm" onClick={() => close(null)}>
           <X className="h-4 w-4" />
         </IconButton>

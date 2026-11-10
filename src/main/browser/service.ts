@@ -30,6 +30,8 @@ import {
 const PARTITION = 'persist:celeste-browser'
 /** A tab that is hidden and untouched for this long is closed and keeps only its address (it loads again when shown). */
 const IDLE_DISCARD_MS = 30 * 60_000
+/** How big a page is while the panel has never been shown (CSS pixels): a page of no size cannot be drawn, read or photographed. */
+const DEFAULT_AREA: BrowserRect = { x: 0, y: 0, width: 1000, height: 700 }
 /** Things a page may do without asking. */
 const SAFE_PERMISSIONS = new Set(['clipboard-sanitized-write', 'pointerLock'])
 /** Things a page may ask for, and how the bar says it. Anything else is refused. */
@@ -116,6 +118,8 @@ export class BrowserService {
   private readonly selected = new Map<string, string>()
   private chat: string | null = null
   private area: BrowserRect | null = null
+  /** Where the panel's page area last was, so a page keeps that size while the panel is closed. */
+  private lastArea: BrowserRect | null = null
   private covered = false
   private next = 0
   private prefs: BrowserPrefs
@@ -260,6 +264,7 @@ export class BrowserService {
       case 'show':
         this.chat = (arg['chatId'] as string | null) ?? null
         this.area = (arg['rect'] as BrowserRect | null) ?? null
+        if (this.area) this.lastArea = this.area
         this.touch(this.current())
         this.layout()
         return undefined
@@ -428,6 +433,7 @@ export class BrowserService {
     tab.view = view
     tab.targetId = null
     this.host.contentView.addChildView(view)
+    view.setBounds(this.box())
     this.wire(tab, view.webContents)
     view.setVisible(false)
     // A page that has never navigated does not answer DevTools commands until it does, so one with no address starts at a blank page
@@ -504,7 +510,12 @@ export class BrowserService {
     wc.on('will-navigate', guard)
     wc.on('will-redirect', guard)
     wc.setWindowOpenHandler((details) => this.onOpen(tab, details))
-    wc.on('did-create-window', (win) => win.webContents.setWindowOpenHandler(() => ({ action: 'deny' })))
+    wc.on('did-create-window', (win) => {
+      // A sign-in popup stays on the web: it may not go to a file or an app link, and may not open windows of its own.
+      win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+      win.webContents.on('will-navigate', guard)
+      win.webContents.on('will-redirect', guard)
+    })
     // The page is a native layer, so the window never sees the keys typed in it. The ones the window uses are handed back.
     wc.on('before-input-event', (event, input) => {
       if (input.type !== 'keyDown') return
@@ -522,6 +533,8 @@ export class BrowserService {
 
   private onOpen(tab: Tab, details: { url: string; disposition: string; features: string }) {
     if (!isOpenable(details.url) && details.url !== 'about:blank') return { action: 'deny' as const }
+    // A web page may not open a file (only a page that is itself a file may).
+    if (/^file:/i.test(details.url) && !/^file:/i.test(tab.url)) return { action: 'deny' as const }
     // A sign-in popup that talks back to the page that opened it must be a real window; anything else is a tab.
     const popup = details.disposition === 'new-window' && /\b(width|height|popup)\b/i.test(details.features)
     if (popup) {
@@ -540,11 +553,12 @@ export class BrowserService {
 
   private contextMenu(tab: Tab, wc: WebContents, p: ContextMenuParams): void {
     const items: Electron.MenuItemConstructorOptions[] = []
-    const link = p.linkURL && isOpenable(p.linkURL) ? p.linkURL : ''
+    const link = p.linkURL && isOpenable(p.linkURL) && (/^https?:/i.test(p.linkURL) || /^file:/i.test(tab.url)) ? p.linkURL : ''
     if (link) {
       items.push(
         { label: 'Open link in new tab', click: () => this.createTab(tab.chatId, link) },
-        { label: 'Open link in my browser', click: () => void shell.openExternal(link) },
+        // Only a web address goes to the person's own programs: a file address would start whatever opens it.
+        ...(/^https?:/i.test(link) ? [{ label: 'Open link in my browser', click: () => void shell.openExternal(link) }] : []),
         { label: 'Copy link address', click: () => clipboard.writeText(link) },
         { type: 'separator' }
       )
@@ -570,13 +584,20 @@ export class BrowserService {
     return { x: Math.round(a.x * z), y: Math.round(a.y * z), width: Math.max(0, Math.round(a.width * z)), height: Math.max(0, Math.round(a.height * z)) }
   }
 
+  /** The size every page has: the panel's area when it is shown, where it last was when it is not, and a plain size before it ever was. */
+  private box(): Electron.Rectangle {
+    return this.bounds(this.area ?? this.lastArea ?? DEFAULT_AREA)
+  }
+
   private layout(): void {
     const shown = this.current()
+    const box = this.box()
     for (const tab of this.tabs.values()) {
       const view = tab.view
       if (!view) continue
       const show = !!this.area && !this.covered && tab === shown && !tab.error && !!tab.url && tab.chatId === this.chat
-      if (this.area) view.setBounds(this.bounds(this.area))
+      // Hidden pages keep a real size, so a program can still read, and take a picture of, a page that is not on screen.
+      view.setBounds(box)
       view.setVisible(show)
     }
   }

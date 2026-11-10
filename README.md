@@ -33,6 +33,10 @@ vendor account.
   conversation with `/`.
 - **Tools and devices.** Add a tool once and every assistant can use it. Give the assistant other computers, virtual
   machines and Android phones to work with, read-only unless you say otherwise.
+- **A browser beside the chat.** A real browser inside Celeste, with tabs for each chat (Ctrl+Shift+B). Open links from a
+  conversation in it, and let the assistant use it too: it can open pages, read them, click, type and fill in forms, in its
+  own chat's tabs, and it **asks before using a new site**. Programs like Playwright can use it as well, if you switch that
+  on in Settings.
 - **Let it use your screen, if you want (Windows, off by default).** The assistant can ask to use this computer's mouse and
   keyboard for a task that has no command or tool. You allow it each time, it is limited in time, and you can stop it with
   Ctrl+Alt+Esc from anywhere.
@@ -49,6 +53,12 @@ vendor account.
   <tr>
     <td align="center"><sub>Develop: tool calls and diffs next to the conversation</sub></td>
     <td align="center"><sub>Light and dark themes</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/images/browser.png" alt="The assistant reading a pricing page in Celeste's browser beside the conversation" /></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><sub>The browser: the assistant opens a page beside the conversation, in its own tab</sub></td>
   </tr>
 </table>
 
@@ -125,6 +135,7 @@ Away from home is not supported yet. Everything between the phone and the comput
 | Ctrl N | New chat |
 | Ctrl 1 / 2 / 3 | Chat / Develop / Workflows |
 | Ctrl B | Show or hide the sidebar |
+| Ctrl Shift B | Show or hide the browser |
 | Ctrl , | Settings |
 
 On a Mac, use Cmd instead of Ctrl.
@@ -143,6 +154,7 @@ is not built yet says so.
 | Workflows | **Working.** Canvas, drafts by an assistant, import and share, every run shows what it will do first |
 | Tools (MCP) | **Working.** Add a tool once and every assistant can use it |
 | Devices (SSH, Hyper-V, Android) | **Working against test fixtures**, not yet tried on a wide range of real hardware. Read-only by default, with approvals |
+| Browser | **Built, next release.** Real pages, tabs for each chat, popups for sign-ins, and the assistant's use of it through Playwright (20 tools, asking before a new site). Checked in the real app with a stand-in for the assistant, and with the real Playwright MCP; not yet tried with Copilot, and sign-in to Google, Microsoft and GitHub, downloads and video not yet tried by hand |
 | Desktop control | **Windows only, off by default.** Tried with a stand-in for the assistant on one screen, not yet with a real assistant or other screen setups |
 | Celeste for Android | **Experimental, next release.** Tried on a Galaxy S24 and an Android emulator. Same Wi-Fi only |
 | Installers | Windows (`.exe`, `.msi`) and macOS (`.dmg`). Not signed with a paid certificate yet; no automatic updates (there is a manual check) |
@@ -151,14 +163,14 @@ Tried on Windows by hand and on macOS by automatic checks only (no one working o
 
 ## Roadmap
 
-1. **Done:** design, storage and sessions, devices, Copilot, Claude, tools, Develop, workflows, Windows and macOS installers (1.0); using this computer's screen (1.1); the Android app (next release)
+1. **Done:** design, storage and sessions, devices, Copilot, Claude, tools, Develop, workflows, Windows and macOS installers (1.0); using this computer's screen (1.1); the Android app and a browser inside Celeste (next release)
 2. The Android app away from home, through a relay run by the project (nothing to set up)
 3. OpenAI and Gemini
 4. Signed installers (Windows first), automatic updates, Linux
 5. Branches, schedules and templates for workflows
 
 The full plan, with the reasoning behind each decision, is in [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md), and the
-phone's in [docs/PHONE_PLAN.md](docs/PHONE_PLAN.md).
+phone's in [docs/PHONE_PLAN.md](docs/PHONE_PLAN.md), the browser's in [docs/BROWSER_PLAN.md](docs/BROWSER_PLAN.md).
 
 ## Help and feedback
 

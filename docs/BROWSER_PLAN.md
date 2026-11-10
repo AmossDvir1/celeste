@@ -1,6 +1,6 @@
 # Celeste: Browser Plan
 
-> **Status, 10 November 2026: step 0 (the spike) is done and the design works, and steps 1 (the pane), 2 (Playwright and the tools) and 3 (approvals and Settings) are built and checked (section 8); step 4 (the last checks and docs) is left.** The owner chose the design on 10 November 2026: a real Chromium view inside the app (Electron's `WebContentsView`), driven by Playwright, behaving like the Claude desktop app's built-in browser. Section 3 lists what we copy from it and what we leave out. The decisions in section 9 are the defaults I picked; any of them can be changed before step 1 starts.
+> **Status, 10 November 2026: step 0 (the spike) is done and the design works, and all four steps are built and checked (section 8). What is left is the by-hand list in section 11, and later work (section 10).** The owner chose the design on 10 November 2026: a real Chromium view inside the app (Electron's `WebContentsView`), driven by Playwright, behaving like the Claude desktop app's built-in browser. Section 3 lists what we copy from it and what we leave out. The decisions in section 9 are the defaults I picked; any of them can be changed before step 1 starts.
 
 ## 1. Summary
 
@@ -222,9 +222,17 @@ Where it is: `src/main/browser/service.ts` (the pages), `src/shared/browser.ts` 
 
 **Not checked by the script:** the navigation question (opening a new site in an "Ask" or "Edits" chat) beyond the unit tests, because those modes also put a card on every tool call from the vendor; the card for a site on the phone (the phone shows Allow and Deny, and Allow means for this chat); a site's own port or a redirect to another site in the middle of a task (the check is made on the page's address when each tool runs, so a redirect is caught at the next action).
 
-### Step 4: checks, docs
+### Step 4: the last pass (done, 11 November 2026)
 
-Tests and checks (below), README (a Browser section and a picture), CHANGELOG, CONTRIBUTING (`verify:browser`), the user guide.
+**Hardening found by reading the code again:**
+
+- A file address (`file:`) is opened by the tools only from the chat's own folder (the project folder in Develop). Before, a chat with no access to the computer's files could read any of them by opening it in the browser, or by being sent to one by a page. A page cannot open a file in a new tab either, and the right-click menu does not hand a file address to the person's own programs (that would start whatever opens it). A sign-in popup may not go to a file or an app link.
+- Every page keeps a real size even when hidden: a page that had never been shown had no size, so a program (the real Playwright MCP found this) could not take its picture. Now a hidden page is the size the panel last was, or a plain default before it ever was.
+- The address bar takes the keyboard only when the person opened the panel or made a tab. When the assistant opened it, it used to take the keyboard from the message box and stop following the page (found by looking at the README picture).
+
+**Checked with the real thing:** the official Playwright MCP (`@playwright/mcp` 0.0.85, installed in a scratch folder, not part of Celeste) was pointed at the endpoint with `--cdp-endpoint`: it connected, listed its 25 tools, saw only the browser's tab, read the page with refs, clicked (the page showed the click), navigated and took a screenshot. A sign-in popup that talks back to its page through `window.opener` works, and a link that opens a new tab opens one in the panel (both in `verify:browser`).
+
+**Docs:** the README (a bullet, a picture made by `npm run shots`, the shortcut, the state table, the roadmap), the changelog, CONTRIBUTING, PRIVACY, the notices, `IMPLEMENTATION_PLAN.md` (decision 18).
 
 ## 9. Decisions (defaults picked; say if any should change)
 
@@ -259,7 +267,7 @@ Tests and checks (below), README (a Browser section and a picture), CHANGELOG, C
   - Two chats, two tabs: one chat's tools cannot see the other's tab.
   - With the switch on, a separate `connectOverCDP` from the script sees the browser's tabs and **not** Celeste's own window.
 - `verify:ui` (accessibility) passes with the pane open.
-- **By hand:** Google, Microsoft and GitHub sign-in; a video; a download; a camera prompt; 150% scaling; a second monitor.
+- **By hand (not yet done):** Google, Microsoft and GitHub sign-in end to end; a download saved where the person chose (Playwright takes downloads over in the checks); a video; a camera prompt; 150% scaling and a second monitor; Copilot using the tools (the checks use Claude, and never a real Copilot account); DevTools opened by the person on a tab the assistant is using.
 
 ## 12. Risks
 

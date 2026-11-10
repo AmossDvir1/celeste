@@ -34,6 +34,13 @@ const site = createServer((req, res) => {
   }
   res.setHeader('content-type', 'text/html; charset=utf-8')
   if (url.startsWith('/second')) return res.end('<!doctype html><title>Second page</title><h1>Second page</h1>')
+  // A page that opens a sign-in popup, which talks back to it through window.opener, and a link that opens a new tab.
+  if (url.startsWith('/opener')) {
+    return res.end(`<!doctype html><title>Opener page</title><button id="pop" onclick="window.open('/popup', 'signin', 'width=420,height=520')">Sign in</button>
+<a id="blank" href="/second" target="_blank">Open in a new tab</a><p id="msg"></p>
+<script>addEventListener('message', (e) => { document.getElementById('msg').textContent = e.data })</script>`)
+  }
+  if (url.startsWith('/popup')) return res.end(`<!doctype html><title>Sign-in popup</title><p>Signing in…</p><script>window.opener && window.opener.postMessage('signed in via ' + typeof window.opener, '*')</script>`)
   res.end(`<!doctype html><title>Test page</title><h1>Hello from the test page</h1>
 <button id="b" onclick="document.getElementById('out').textContent='clicked '+(++window.n)">Press me</button>
 <input id="i" aria-label="Name"><p id="out"></p><script>window.n = 0</script>`)
@@ -157,6 +164,30 @@ try {
   await page.getByText('Echo: Hello there').first().waitFor({ timeout: 10_000 })
   await showPane()
   check('the first chat still has its tab', (await tabs().count()) === 1)
+
+  console.log('\n# A sign-in popup, and a link to a new tab')
+  await address.fill(`${base}/opener`)
+  await address.press('Enter')
+  await until('the opener page', async () => (await view(`${base}/opener`)?.title()) === 'Opener page')
+  const windowsBefore = app.app.windows().length
+  const tabsBefore = await tabs().count()
+  await view(`${base}/opener`).click('#pop')
+  await view(`${base}/opener`).locator('#msg').filter({ hasText: 'signed in via object' }).waitFor({ timeout: 10_000 })
+  check('a popup that talks back to the page that opened it works (window.opener is there)', true)
+  check('it is a small window of its own, not a tab', app.app.windows().length === windowsBefore + 1 && (await tabs().count()) === tabsBefore)
+  const popup = app.app.windows().find((w) => w.url().includes('/popup'))
+  await popup?.close().catch(() => undefined)
+  await until('the popup to close', () => app.app.windows().length === windowsBefore)
+  check('and it closes', true)
+  await view(`${base}/opener`).click('#blank')
+  await until('a new tab', async () => (await tabs().count()) === tabsBefore + 1)
+  await until('the new tab’s page', async () => (await view(`${base}/second`)?.title()) === 'Second page')
+  check('a link that opens a new tab opens one, in the panel', true)
+  await pane.getByRole('button', { name: /^Close Second page/ }).click()
+  await until('back to one tab', async () => (await tabs().count()) === tabsBefore)
+  await address.fill(base)
+  await address.press('Enter')
+  await until('the test page again', async () => (await view(`${base}/`)?.title().catch(() => '')) === 'Test page' || (await view(base)?.title().catch(() => '')) === 'Test page')
 
   console.log('\n# A page that cannot be opened')
   await address.fill(closed)

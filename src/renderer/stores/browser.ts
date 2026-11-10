@@ -22,8 +22,8 @@ export function startBrowser(): () => void {
   })
   // The assistant used the browser in a chat for the first time: bring it up beside that chat, if the person has it open.
   const stopReveal = window.celeste.browser.onReveal((chatId) => {
-    const { mode, setRight } = useUi.getState()
-    if (mode !== 'workflows' && useSessions.getState().active[mode] === chatId) setRight('browser')
+    const { mode, revealBrowser } = useUi.getState()
+    if (mode !== 'workflows' && useSessions.getState().active[mode] === chatId) revealBrowser()
   })
   void browserCall('state', undefined).then((state) => useBrowser.setState(state), () => undefined)
   return () => {

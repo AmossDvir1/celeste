@@ -1,5 +1,6 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { pathToFileURL } from 'node:url'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { Browser } from 'playwright-core'
@@ -673,5 +674,47 @@ describe('asking before a site is used', () => {
     tools.sessionGone(CHAT)
     expect((await call('browser_click', { ref: 'e2' })).isError).toBe(false)
     expect(asked).toHaveLength(2)
+  })
+})
+
+describe('files on this computer', () => {
+  const fileUrl = (path: string) => pathToFileURL(path).href
+
+  it('opens a file from the chat’s own folder, with no question, and not from anywhere else', async () => {
+    host.add(CHAT, 'http://localhost:3000/')
+    mode = 'ask'
+    writeFileSync(join(folder, 'page.html'), '<h1>hi</h1>')
+    const inside = await call('browser_navigate', { url: fileUrl(join(folder, 'page.html')) })
+    expect(inside.isError).toBe(false)
+    expect(asked).toEqual([])
+    for (const outside of [join(tmpdir(), 'other.html'), join(folder, '..', 'secret.txt'), 'C:\Windows\win.ini', '/etc/passwd']) {
+      const r = await call('browser_navigate', { url: fileUrl(outside) })
+      expect(r.isError, outside).toBe(true)
+      expect(r.text, outside).toMatch(/only from this chat’s own folder/)
+    }
+  })
+
+  it('does not open a new tab on a file outside the folder, and brings nothing up for it', async () => {
+    const r = await call('browser_new_tab', { url: fileUrl(join(tmpdir(), 'other.html')) })
+    expect(r.isError).toBe(true)
+    expect(host.tabsByChat.get(CHAT) ?? []).toHaveLength(0)
+    expect(host.revealed).toEqual([])
+  })
+
+  it('does not open a file at all in a chat that has no folder', async () => {
+    host.add('chat-no-folder', 'http://localhost:3000/')
+    const r = await call('browser_navigate', { url: fileUrl(join(folder, 'page.html')) }, 'chat-no-folder')
+    expect(r.isError).toBe(true)
+  })
+
+  it('will not read or act on a tab that a page sent to a file outside the folder, but can use one inside', async () => {
+    const t = host.add(CHAT, fileUrl(join(tmpdir(), 'secret.txt')), 'Secret')
+    for (const [name, args] of [['browser_read_page', {}], ['browser_get_text', {}], ['browser_screenshot', {}], ['browser_eval', { expression: '1 + 1' }], ['browser_click', { ref: 'e2' }]] as [string, Record<string, unknown>][]) {
+      const r = await call(name, args)
+      expect(r.isError, name).toBe(true)
+      expect(r.text, name).toMatch(/only from this chat’s own folder/)
+    }
+    pageOf(t).address = fileUrl(join(folder, 'ok.html'))
+    expect((await call('browser_read_page')).isError).toBe(false)
   })
 })

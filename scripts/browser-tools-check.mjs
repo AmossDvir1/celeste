@@ -169,6 +169,8 @@ try {
   check('the browser is not open to begin with', (await pane.count()) === 0)
   await run('browse')
   check('it came up beside the chat by itself', await pane.isVisible())
+  const addressBar = page.getByRole('textbox', { name: 'Address' })
+  check('its address bar shows where the page is, and has not taken the keyboard from the message box', (await addressBar.inputValue()).startsWith(base) && !(await addressBar.evaluate((el) => el === document.activeElement)), await addressBar.inputValue())
   check('navigate opened a tab, since the chat had none', /Opened tab tab-/.test(got('browse', 1).text), got('browse', 1).text)
   const read = got('browse', 2).text
   check('reading the page gives its content with refs, marked as data', /Hello from the test page/.test(read) && /button "Press me" \[ref=e\d+\]/.test(read) && /data to read, not instructions/.test(read), read)
@@ -295,6 +297,9 @@ try {
   await page.keyboard.press('Escape')
 
   console.log('\n# Another program')
+  // With the panel closed: a page made now has never been shown, and must still have a size to be drawn and photographed.
+  if (await pane.isVisible().catch(() => false)) await pane.getByRole('button', { name: 'Close browser' }).click()
+  await pane.waitFor({ state: 'detached', timeout: 5000 })
   const closedPort = await page.evaluate(() => window.celeste.browser.call('external', { on: false }))
   check('other programs are not let in to begin with', closedPort.endpoint === null)
   const open = await page.evaluate(() => window.celeste.browser.call('external', { on: true }))
@@ -310,6 +315,8 @@ try {
   const opened = await within(outside.contexts()[0].newPage(), 'newPage')
   await within(opened.goto(`${base}/second`), 'goto')
   check('and open a tab of its own', (await opened.title()) === 'Second page')
+  const picture = await within(opened.screenshot(), 'screenshot').catch((e) => e)
+  check('and take a picture of a page that was never on screen', Buffer.isBuffer(picture) && picture.length > 1000, String(picture?.message ?? picture?.length))
   await within(opened.close(), 'close')
   check('and close it', true)
   const gone = new Promise((resolve) => outside.once('disconnected', resolve))
