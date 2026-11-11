@@ -6,7 +6,7 @@ All notable changes to Celeste. The format follows [Keep a Changelog](https://ke
 
 ### Added
 
-- **The phone app away from home: the relay (first part, not switched on yet).** A small relay in `relay/` (a Cloudflare Worker) lets the phone reach the computer when they are not on the same Wi-Fi. The computer and the phone each connect outward to it, and it passes sealed messages it can't read. The phone tries the Wi-Fi first and goes back to it by itself. Pairing still happens only on the Wi-Fi. It stays off until the project deploys the relay; `CELESTE_RELAY_URL` points Celeste at one for testing. Notifications and large files away from home come next (`docs/PHONE_PLAN.md`, 7.1).
+- **The phone app away from home: the relay (first part).** A small relay in `relay/` (a Cloudflare Worker, deployed to the project's account) lets the phone reach the computer when they are not on the same Wi-Fi. The computer and the phone each connect outward to it, and it passes sealed messages it can't read. The phone tries the Wi-Fi first and goes back to it by itself. Pairing still happens only on the Wi-Fi. `CELESTE_RELAY_URL` points Celeste at another relay, or (empty) switches it off. Not tried on a real phone yet. Notifications and large files away from home come next (`docs/PHONE_PLAN.md`, 7.1).
 
 ### Changed
 

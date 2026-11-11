@@ -380,14 +380,14 @@ Everything stays sealed end to end with the pairing keys, so Cloudflare and Goog
 - how often a direct link succeeds on the owner's mobile network (general figures are roughly 80 to 95%, lower on mobile carriers; TURN covers the rest)
 - WebRTC on the computer: a hidden Electron window, or `node-datachannel` in Core
 
-**Built so far (11 November 2026): step A4a, the relay.** Not deployed: the project has no Cloudflare account yet, so `DEFAULT_RELAY_URL` is empty and away-from-home is not offered until it is filled in.
+**Built so far (11 November 2026): step A4a, the relay.** **Deployed the same day** to the owner's Cloudflare account on the free plan (no card asked): `https://celeste-relay.celesteapp.workers.dev`, which is now `DEFAULT_RELAY_URL`. The same scenarios as the local run passed against the live Worker (`CELESTE_RELAY_TEST_URL=wss://celeste-relay.celesteapp.workers.dev`). A brand-new workers.dev name took about a minute to get its certificate. Tests and app checks switch the relay off (`relayUrl: () => ''`, `CELESTE_RELAY_URL=''` in `scripts/lib/app.mjs`) so they never touch the live one.
 
 - ✅ `relay/`: the Worker and its rules. One room per computer (not per pairing: one line from the computer serves all its phones). The room's name and the secret that proves the computer owns it are made from the computer's private key, so nothing new is stored. WebSocket hibernation, with pings answered without waking the room.
 - ✅ The computer (`src/core/phone/relay.ts`, and the bridge): one WebSocket outward while phones are on and one is paired; it reconnects by itself. Requests and listening through the relay go through the same checks as on the Wi-Fi. Pairing and the app download are never answered through the relay.
 - ✅ The app (`src/shared/phone-client.ts`): the phone learns the relay from the computer on the Wi-Fi (`phone.hello`) and keeps it with its pairing. Each connection asks the Wi-Fi first (1.5 seconds), then goes through the relay, and moves back to the Wi-Fi by itself. This phone shows "Away from home, through the relay".
 - ✅ Limits: 8 phones in a room, 6 MB a message, a burst of 240 messages from a phone and then 8 a second.
 - ✅ Tested: 12 tests through a stand-in relay (`src/core/phone/relay.test.ts`), and the same scenarios through the real Worker running locally (`npm run verify:relay`). That run found two faults the stand-in could not, both fixed: the Worker's message count did not survive between messages, and a phone leaving the relay waited for the socket to finish closing.
-- **Not done:** deploying it (the owner: `relay/README.md`); trying it on a real phone on mobile data; the privacy statement; the app's background line ("Stay connected"), which still works on the Wi-Fi only, so notifications away from home wait for A4b; the relay's typecheck in CI.
+- **Not done:** trying it on a real phone on mobile data; the privacy statement; the app's background line ("Stay connected"), which still works on the Wi-Fi only, so notifications away from home wait for A4b; the relay's typecheck in CI.
 
 ### 7.2 Looked at and not chosen as the main path
 

@@ -22,7 +22,7 @@ export async function launch({ width, height, query = '', theme = 'dark', profil
   const profile = given ?? mkdtempSync(join(tmpdir(), 'celeste-shots-'))
   const app = await electron.launch({
     args: [entry, `--user-data-dir=${profile}`, ...chromiumArgs],
-    env: { ...process.env, CELESTE_NO_OWN_PROGRAMS: '1', ...env, CELESTE_QUERY: query, ELECTRON_RENDERER_URL: '', CELESTE_COPILOT_ISOLATED: copilotKnowsNoOne ? '1' : '' }
+    env: { ...process.env, CELESTE_NO_OWN_PROGRAMS: '1', CELESTE_RELAY_URL: '', ...env, CELESTE_QUERY: query, ELECTRON_RENDERER_URL: '', CELESTE_COPILOT_ISOLATED: copilotKnowsNoOne ? '1' : '' }
   })
   const page = await app.firstWindow()
   await app.evaluate(

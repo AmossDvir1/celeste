@@ -15,6 +15,7 @@ afterEach(async () => {
 async function setup() {
   const settings: Record<string, unknown> = { phoneEnabled: true }
   const bridge: PhoneBridge = new PhoneBridge({
+    relayUrl: () => '',
     store: { settings: () => settings, setSetting: (k, v) => void (settings[k] = v) },
     call: async () => null,
     computerName: () => 'TEST-PC',

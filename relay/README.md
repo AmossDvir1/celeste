@@ -42,7 +42,7 @@ Then start Celeste with `CELESTE_RELAY_URL=ws://<this computer's address>:8787`.
 
 ## Deploy it
 
-This needs a Cloudflare account (the free plan is enough) and is done by the project's owner.
+The project's relay is at `wss://celeste-relay.celesteapp.workers.dev` (`DEFAULT_RELAY_URL`). To run your own, or to redeploy, you need a Cloudflare account (the free plan is enough, and it asked for no card).
 
 ```bash
 npm --prefix relay run deploy

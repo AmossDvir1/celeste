@@ -398,8 +398,8 @@ export const LABEL = {
 // The computer and the phone each open a WebSocket outward to the relay, which passes text between them and reads none
 // of it: every request, reply and push inside is sealed exactly as on the Wi-Fi. Pairing never goes through the relay.
 
-/** The project's relay. Empty until it is deployed: then away-from-home is simply not offered. */
-export const DEFAULT_RELAY_URL = ''
+/** The project's relay (relay/, deployed to the project's Cloudflare account on 11 November 2026). Empty would mean away-from-home is not offered. */
+export const DEFAULT_RELAY_URL = 'wss://celeste-relay.celesteapp.workers.dev'
 /** WebSocket subprotocols: how each side says who it is. The computer adds its room secret as a second one. */
 export const RELAY_HOST_PROTOCOL = 'celeste.host'
 export const RELAY_PHONE_PROTOCOL = 'celeste.phone'

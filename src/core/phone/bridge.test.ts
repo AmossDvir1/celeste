@@ -9,6 +9,7 @@ function makeBridge(opts: { answer?: (r: PhonePairRequest, b: PhoneBridge) => vo
   const calls: { method: string; params: unknown[] }[] = []
   const pairings: (PhonePairRequest | null)[] = []
   const bridge: PhoneBridge = new PhoneBridge({
+    relayUrl: () => '',
     store: { settings: () => settings, setSetting: (k, v) => void (settings[k] = v) },
     call: async (method, params) => {
       calls.push({ method, params })
@@ -53,6 +54,7 @@ describe('phone bridge', () => {
   it('keeps its key in the secret store, moving one an older Celeste kept in its settings, and keeps it there without one', async () => {
     const hello = async (settings: Record<string, unknown>, vault: { value: string | null; works: boolean } | null) => {
       const b = new PhoneBridge({
+        relayUrl: () => '',
         store: { settings: () => settings, setSetting: (k, v) => void (settings[k] = v) },
         call: async () => null,
         computerName: () => 'TEST-PC',
