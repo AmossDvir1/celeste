@@ -413,6 +413,40 @@ These need no project server, and none can deliver reliable notifications. The f
 | Tor onion service | The computer publishes a hidden address | Slow, about 20 MB on each side |
 | UnifiedPush through ntfy.sh | Push without Google | The person must install a second app; fine as an option for phones without Google Play services |
 
+### 7.3 Watching the screen that is being controlled (researched 12 November 2026)
+
+The owner asked for two live views: **the phone's screen on the computer while the assistant controls the phone**, and **the computer's screen on the phone while the assistant controls the computer** (a chat started from the phone). This is **watching, not remote control**: the assistant acts, the person looks, and Stop (on either device) is the only control. It matters most away from home, where the person cannot glance at the screen they are handing over.
+
+**What exists already.** Phone control takes a screenshot with the accessibility service (`takeScreenshot`, Android 11 and later, scaled to 720 pixels wide, JPEG quality 60) for the assistant. Desktop control takes one with Electron's `desktopCapturer` (`src/main/desktop/screen.ts`). So both sides can already make a picture of the screen; what is missing is showing it to the person, and doing it repeatedly.
+
+**What the research found**
+
+| Fact | Consequence |
+|---|---|
+| `takeScreenshot` needs no extra consent or notification, but is rate-limited by Android. Sources disagree: one AOSP change says once a second, a later one says three a second (**Verify** on the owner's phone). A window marked `FLAG_SECURE` fails with `ERROR_TAKE_SCREENSHOT_SECURE_WINDOW`. | About 1 picture a second is safe. A protected screen (a bank app, a password manager) shows "This screen is protected" and is not worked around; Google Play policy requires apps to respect `FLAG_SECURE`. |
+| Smooth video from a phone is **MediaProjection**. Since Android 14 every session needs the person's consent, a consent token works once, and the service must be a foreground service of type `mediaProjection` (`FOREGROUND_SERVICE_MEDIA_PROJECTION`). The person may share one app instead of the whole screen. | A second consent card on the phone on top of the control grant, every time. |
+| From Android 15 QPR1 a prominent status-bar chip shows the projection and lets the person stop it, and the projection **stops by itself when the screen locks**. Notifications and system bars are left out of an app-only share. | Expected and good, but the live view can end under the assistant; it must handle `onStop` and fall back to pictures. Same behaviour a person would expect from any cast. |
+| Android's WebView has no `getDisplayMedia`, so a Capacitor app cannot share its screen from JavaScript. Smooth video needs a native WebRTC library (such as `stream-webrtc-android`) with `ScreenCapturerAndroid`, and a way to hand its track to the page (**Verify**; no ready plugin found). | A real piece of native work and a larger APK. Not needed for a first version. |
+| scrcpy (what Celeste's wireless-debugging devices could use) pushes a small server to the phone with ADB and streams H.264 from `MediaCodec`, with no app on the phone and no per-session consent. | Good for the "Developer connection (advanced)" device kind only; it needs Developer options, so it is not the way for the Celeste app. |
+| Electron's `desktopCapturer` and `getDisplayMedia` (with `session.setDisplayMediaRequestHandler`) capture the computer's screen in a window, and the phone's WebView can **receive** WebRTC video fine (only sharing is missing there). `node-datachannel`'s own documentation says nothing about video tracks (**Verify**), so video from the computer would come from a hidden Electron window, not from Core. | Smooth video of the computer is possible but needs a hidden window and its plumbing to Core. |
+
+**The design: pictures first, video only if pictures prove too slow.**
+
+1. **A picture channel, one for both directions.** While a control grant is on, the controlled device sends a sealed `screen` message: `{ source: 'phone' | 'computer', seq, width, height, jpeg, at, marks }`, about 1 a second, only when the picture changed (a cheap hash), and only when the previous one was taken (acknowledged; frames are dropped, never queued). It goes over the same link as everything else: the Wi-Fi, the relay in parts like the attachments, or the direct data channel once A4c exists. Sizes: about 40 to 80 KB a picture (**Verify**), so about 0.5 MB a second at most, which the relay's 6 MB message limit and its request counting (incoming WebSocket messages count 20 to 1) allow for a long grant.
+2. **Marks, which a video would not give.** The assistant's own actions are known (`phone_tap` x and y, a swipe's path, a typed field), so each picture carries them and the viewer draws a ring where it tapped and an arrow for a swipe. The person sees *what the assistant is doing*, not only a screen.
+3. **The phone on the computer.** A panel in the chat on the computer, beside the "Use the phone" step, shows the latest picture in a phone-shaped frame with the marks, the red "Celeste is using your phone" strip and Stop. Pictures stay in memory only: not saved, not in the chat log, not sent to the AI vendor (those are the assistant's own screenshots; the live view is a separate, local copy).
+4. **The computer on the phone.** A "Watch" card in the chat on the phone, shown while desktop control runs, with the same marks and the existing remote Stop. The computer's screen can show anything (mail, a password manager), so this is **off by default** and **per phone** (a switch in Settings → Phone on the computer, "Show the computer's screen on this phone", given with the same confirmation as P-7); the phone sees nothing until it is on. Pictures are sealed with the pairing key like all else, so the relay and Google see none of it.
+5. **No new permission on the phone** for pictures: it is the accessibility grant the person already gave, ends with it, and shows the existing border and Stop. A screen that cannot be captured shows a placeholder.
+6. **Smooth video later, only on request.** If 1 picture a second is too slow for a person to follow a fast task, a "Smooth view" option (off by default) adds H.264 over WebRTC after A4c: on the phone through MediaProjection (a second consent, the system chip, a native WebRTC library), and of the computer through a hidden Electron window. It stays optional because of the consent on every session, the lock-screen stop, the larger app and the extra work.
+
+**Rules that carry over.** The view lasts only as long as the grant and ends with Stop, a lock, a timeout or the phone going away. Nothing in it can be acted on (no taps from the viewer). The never list and the protected-screen placeholder apply. A frame is never kept; the only thing logged is that a view started and ended.
+
+**Verify before building**
+- How fast `takeScreenshot` can be called on the owner's phone, and what a 720-pixel JPEG weighs for ordinary screens.
+- Whether pictures at about 1 a second through the relay stay inside the free plan for a long grant (the real Worker, `npm run verify:relay`).
+- How Windows' secure desktop (the permission prompt and the lock screen) looks in `desktopCapturer`: a black picture is expected and should say "This screen can't be shown".
+- Whether a WebRTC video track from `node-datachannel` is practical (only matters for "Smooth view").
+
 ## 8. How it fits the rest of Celeste
 
 | Area | Change |
@@ -454,6 +488,7 @@ All of these are built (9 November 2026). Sending an SMS or making a call opens 
 | **A2** | **Phone abilities**: the ability tools with approval cards on the phone, notification access with the restricted-settings guide, the `phone` device kind, and the **Use the phone** step. ✅ Built, except the `phone` device kind (9 November 2026). | L |
 | **A3** | **Phone control**, after spike 6.3: accessibility service, the rails of 5.1, the action tools and the never list. | L |
 | **A4** | **Away from home**: Tailscale steps now, for the experiment. Before shipping (section 7.1), in this order: **A4a** the relay (the Worker, the computer's outward WebSocket, the app's relay connection, rate limits); **A4b** push notifications (Firebase in the app, the wake-up from the relay); **A4c** the direct WebRTC link for files, with TURN behind it; **A4d**, optional, the public-signalling backup (7.2). ✅ A4a is built and deployed, and A4b is built and awaits the Firebase key and a test on the phone (11 November 2026, see 7.1); A4c and A4d are not built. | L |
+| **A5** | **Watching the controlled screen** (section 7.3): **A5a** the picture channel and the phone's screen on the computer (a panel in the chat, with the assistant's taps drawn on it); **A5b** the computer's screen on the phone (off by default, per phone); **A5c**, optional and last, "Smooth view" with video over WebRTC. Needs only A4a for A5a and A5b; A5c needs A4c. Not built. | M, then L for A5c |
 
 Each step ends with tests, a real-app check, this plan updated with what was and wasn't built, and the CHANGELOG. It was kept on the `phone` branch until the owner decided to merge it (done on 10 November 2026).
 
@@ -475,6 +510,8 @@ Each step ends with tests, a real-app check, this plan updated with what was and
 | Someone else on the Wi-Fi | Nothing answers before the handshake; a new phone needs **Allow** on the computer with matching emoji. |
 | Battery and data | Element list before screenshots, screenshots only when asked, a cap on actions per grant. |
 | The relay (to ship) is a service someone must run | A Cloudflare account of the project's; sealed messages so it sees no content; rate limits per pairing; free-tier limits watched; and the app still works on the home Wi-Fi if the relay is down. |
+| A live view shows something private (a protected app, a password on the computer's screen) | Pictures only while a grant runs, in memory only, never sent to the AI vendor; a protected phone screen shows a placeholder and is not worked around; the computer's screen goes to a phone only when switched on for that phone; Stop ends it. |
+| Android stops the phone's screen sharing (a lock, the status-bar chip) | Only matters for "Smooth view": the view falls back to pictures. The picture channel uses the accessibility grant, which a lock does not end. |
 | Away from home depends on Cloudflare and Google | Both are free at this size. If either is down, away-from-home use or notifications stop until it returns; the home Wi-Fi is unaffected. Nothing they carry can be read. |
 
 ## 12. Decisions for the owner
@@ -490,6 +527,8 @@ Each step ends with tests, a real-app check, this plan updated with what was and
 | P-7 | May a phone grant **desktop** control? | No by default; a phone can always stop it |
 | P-8 | To ship: use a Cloudflare relay run by the project, with Tailscale only as an advanced option? | Yes. Before shipping, not before. It needs a Cloudflare account for the project, and the privacy statement has to say what the relay sees (who is online and when, never content) |
 | P-9 | To ship: push notifications through Firebase Cloud Messaging sent by the relay, and files over a direct WebRTC link with Cloudflare TURN behind it (7.1)? | Yes (the owner, 11 November 2026: notifications and files can't be compromised). It needs a Firebase project of the project's. The public-signalling backup (7.2) is optional and comes last |
+| P-10 | Live views of the controlled screen (7.3): start with a picture about every second, with the assistant's taps drawn on it, and add smooth video only if that proves too slow? | Yes. Pictures work through the relay today, need no new consent and no native video library |
+| P-11 | May the computer's screen be shown on a paired phone while the assistant controls the computer? | Only when the person switches it on for that phone (off by default), because the screen can show private things |
 
 ## 13. Sources (read 9 November 2026)
 
@@ -504,3 +543,4 @@ Each step ends with tests, a real-app check, this plan updated with what was and
 - [UnifiedPush distributors](https://unifiedpush.org/users/distributors/), [ntfy on phones](https://docs.ntfy.sh/subscribe/phone)
 - Read 11 November 2026: [Cloudflare Realtime TURN FAQ](https://developers.cloudflare.com/realtime/turn/faq/), [Trystero](https://github.com/dmotz/trystero), [iroh FAQ](https://docs.iroh.computer/about/faq) and [JavaScript bindings](https://docs.iroh.computer/languages/javascript), [node-datachannel](https://npmjs.com/package/node-datachannel), [Tailscale on NAT traversal](https://tailscale.com/blog/nat-traversal-improvements-pt-1)
 - Microsoft [Phone Link apps](https://support.microsoft.com/en-us/help/4577325)
+- Read 12 November 2026, for 7.3: Android [Media projection](https://developer.android.com/media/grow/media-projection) (per-session consent, foreground service type, app screen sharing, `onStop`, the status-bar chip and the stop on lock); [App screen sharing](https://developer.android.com/about/versions/14/features/app-screen-sharing); [scrcpy's design](https://github.com/Genymobile/scrcpy/blob/master/doc/develop.md); [`ScreenCapturerAndroid`](https://webrtc.googlesource.com/src/+/HEAD/sdk/android/api/org/webrtc/ScreenCapturerAndroid.java) and [Fora Soft on Android WebRTC screen sharing](https://www.forasoft.com/blog/article/android-webrtc-screen-sharing) (no `getDisplayMedia` on Android browsers); [Electron `desktopCapturer`](https://www.electronjs.org/docs/latest/api/desktop-capturer); [node-datachannel](https://github.com/murat-dogan/node-datachannel) (prebuilt for Windows, macOS and Linux; no video documentation); `takeScreenshot` limits in Android's source (an early change at one a second, a later one at three a second) and `ERROR_TAKE_SCREENSHOT_SECURE_WINDOW`
