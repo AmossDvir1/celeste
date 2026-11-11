@@ -55,15 +55,15 @@ export class DirectLines {
    * Answers a phone's offer. The reply is the answer to give back, or null when this computer cannot. The channel is
    * announced to the bridge (`onFrame`) only once it opens, and closed again if it does not within a while.
    */
-  async accept(phoneId: string, offer: string): Promise<string | null> {
+  async accept(phoneId: string, offer: string, servers?: IceServer[]): Promise<string | null> {
     const lib = await this.load()
     if (!lib || offer.length > MAX_SDP) return null
     // One channel per phone: a new offer replaces the old.
     for (const [conn, l] of [...this.lines]) if (l.phoneId === phoneId) this.drop(conn)
     if (this.lines.size >= MAX_LINES) return null
-    const servers = (await this.deps.iceServers()) ?? []
+    const ice = servers ?? (await this.deps.iceServers()) ?? []
     const conn = `d${randomBytes(6).toString('hex').slice(0, 11)}`
-    const pc = new lib.RTCPeerConnection({ iceServers: servers })
+    const pc = new lib.RTCPeerConnection({ iceServers: ice })
     const line: Line = { phoneId, pc, chan: null }
     this.lines.set(conn, line)
     const timer = setTimeout(() => this.lines.get(conn)?.chan || this.drop(conn), OPEN_MS)

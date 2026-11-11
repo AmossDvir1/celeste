@@ -444,7 +444,9 @@ export const LABEL = {
   request: 'celeste-rpc-request',
   response: 'celeste-rpc-response',
   push: 'celeste-push',
-  listen: 'celeste-listen'
+  listen: 'celeste-listen',
+  /** The public-signalling backup (src/shared/signal.ts). */
+  signal: 'celeste-signal'
 } as const
 
 // ── Away from home: the relay (docs/PHONE_PLAN.md 7.1, relay/README.md) ──────────────────────────────────────────────

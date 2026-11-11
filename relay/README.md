@@ -84,4 +84,4 @@ Without them the relay hands out STUN alone, the link opens whenever the two can
 
 ## Not here yet
 
-- Nothing for A4c: the direct link is built. The public-signalling backup (A4d) is separate.
+- Nothing for A4c. The public-signalling backup (A4d) does not use the relay: it runs through public MQTT brokers when the relay cannot be reached (`src/shared/signal.ts`).

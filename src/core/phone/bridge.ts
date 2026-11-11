@@ -24,6 +24,7 @@ import {
   PHONE_PROTOCOL,
   PHONE_PUSHES,
   DEFAULT_RELAY_URL,
+  sessionKeyBytes,
   commitment,
   isPhoneMethod,
   makeKeyPair,
@@ -55,6 +56,7 @@ import {
   type SealedReply,
   type StoredKeyPair
 } from '@shared/phone'
+import { PUBLIC_BROKERS, PUBLIC_ICE, SignalChannel, signalTopic, type SignalMessage } from '@shared/signal'
 import { DirectLines } from './direct'
 import { RelayLine } from './relay'
 
@@ -90,6 +92,10 @@ export interface PhoneBridgeDeps {
    * Left out, it is CELESTE_RELAY_URL, then the `phoneRelayUrl` setting, then the project's own.
    */
   relayUrl?: () => string
+  /** The public MQTT brokers the backup uses when the relay cannot be reached (A4d). Left out: the built-in list. Tests give their own. */
+  publicBrokers?: () => string[]
+  /** How long the relay must have been unreachable before the backup starts listening (default 20 seconds). */
+  publicAfterMs?: number
   /** The title of a chat, for the notification a closed phone is woken with. */
   chatTitle?: (sessionId: string) => string
   /** Where to listen. Tests use 127.0.0.1. */
@@ -197,7 +203,10 @@ export class PhoneBridge {
       onGone: (conn) => {
         for (const l of [...this.listeners]) if (l.conn !== undefined && (conn === null || l.conn === conn)) this.listeners.delete(l)
       },
-      onState: () => this.deps.onStatus(),
+      onState: (state) => {
+        this.relayState(state)
+        this.deps.onStatus()
+      },
       onWake: (id, result) => {
         const w = this.wakes.get(id)
         this.wakes.delete(id)
@@ -216,6 +225,71 @@ export class PhoneBridge {
   }
 
   private readonly direct: DirectLines
+
+  // --- The backup: opening the direct link through public brokers when the relay cannot be reached (A4d) ---------------
+
+  private readonly signals = new Map<string, SignalChannel>()
+  private publicTimer: ReturnType<typeof setTimeout> | null = null
+  /** Offers already answered, by id, so an offer that is sent again gets the same answer and opens no second link. */
+  private readonly answered = new Map<string, { sdp: string; at: number }>()
+
+  /** The relay line changed: while it is down for a while, listen for phones on the public brokers; when it is up, stop. */
+  private relayState(state: string): void {
+    if (state === 'connected' || state === 'off') {
+      if (this.publicTimer) clearTimeout(this.publicTimer)
+      this.publicTimer = null
+      return this.stopPublic()
+    }
+    if (this.publicTimer || this.signals.size) return
+    this.publicTimer = setTimeout(() => {
+      this.publicTimer = null
+      void this.startPublic().catch(() => undefined)
+    }, this.deps.publicAfterMs ?? 20_000)
+    this.publicTimer.unref?.()
+  }
+
+  /** A phone was added or removed: listen for the right ones. */
+  private refreshPublic(): void {
+    if (!this.signals.size) return
+    this.stopPublic()
+    void this.startPublic().catch(() => undefined)
+  }
+
+  private stopPublic(): void {
+    for (const s of this.signals.values()) s.stop()
+    this.signals.clear()
+  }
+
+  private async startPublic(): Promise<void> {
+    // Only as a backup for a relay that is configured but cannot be reached; with the relay switched off, no outside server is used.
+    if (!this.server || this.relay.state === 'connected' || this.relay.state === 'off' || this.signals.size) return
+    const brokers = this.deps.publicBrokers ? this.deps.publicBrokers() : PUBLIC_BROKERS
+    if (!brokers.length) return
+    const { keys } = await this.identity()
+    for (const phone of this.phones()) {
+      const key = await this.keyFor(phone)
+      const topic = await signalTopic(await sessionKeyBytes(keys.priv, phone.key, keys.pub, phone.key))
+      const channel = new SignalChannel(brokers, topic, (text) => void this.offered(phone, key, channel, text).catch(() => undefined))
+      this.signals.set(phone.id, channel)
+      channel.start()
+    }
+  }
+
+  private async offered(phone: PhoneRecord, key: CryptoKey, channel: SignalChannel, text: string): Promise<void> {
+    const m = await open<SignalMessage>(key, text, LABEL.signal)
+    if (m.from !== 'phone' || m.t !== 'offer' || typeof m.sdp !== 'string' || typeof m.id !== 'string' || m.id.length > 40) return
+    if (!this.fresh(phone.id, m.ts, m.n)) return
+    const now = this.now()
+    for (const [id, a] of this.answered) if (now - a.at > 120_000) this.answered.delete(id)
+    let sdp = this.answered.get(`${phone.id}:${m.id}`)?.sdp
+    if (!sdp) {
+      sdp = (await this.direct.accept(phone.id, m.sdp, PUBLIC_ICE)) ?? undefined
+      if (!sdp) return
+      this.answered.set(`${phone.id}:${m.id}`, { sdp, at: now })
+    }
+    this.touch(phone)
+    channel.send(await seal(key, { from: 'host', t: 'answer', id: m.id, sdp, ts: now, n: randomB64(12) } satisfies SignalMessage, LABEL.signal))
+  }
 
   /** Sends a frame to a phone's connection, whether it is a relay connection or a direct channel. */
   private out(conn: string, text: string): void {
@@ -454,6 +528,7 @@ export class PhoneBridge {
     if (this.heartbeat) clearInterval(this.heartbeat)
     this.heartbeat = null
     this.relay.use(null)
+    this.relayState('off')
     this.listeners.forEach((l) => l.end())
     this.listeners.clear()
     this.direct.closeAll()
@@ -483,6 +558,7 @@ export class PhoneBridge {
       this.listeners.delete(l)
     }
     void this.syncRelay()
+    this.refreshPublic()
     this.deps.onStatus()
     return this.status()
   }
@@ -497,6 +573,7 @@ export class PhoneBridge {
       p.phoneId = phone.id
       this.endPairing('allowed')
       void this.syncRelay()
+      this.refreshPublic()
     } else {
       this.endPairing('denied')
     }

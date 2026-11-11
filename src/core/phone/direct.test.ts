@@ -4,6 +4,7 @@ import type { CorePush } from '@shared/api'
 import { PhoneLink, pair, type LinkState, type PhonePairing } from '@shared/phone-client'
 import type { PeerLike } from '@shared/direct'
 import type { PhoneBootstrap, PhonePairRequest } from '@shared/phone'
+import { startBroker } from '../testing/mqtt'
 import { startRelay, type StandInRelay } from '../testing/relay'
 import { PhoneBridge } from './bridge'
 
@@ -23,7 +24,7 @@ async function waitFor(ok: () => boolean, ms = 15_000): Promise<void> {
 }
 
 /** A computer with a stand-in relay that hands out no ICE servers (so nothing here reaches the internet), and one paired phone. */
-async function setup(fixedIce: { urls: string[] }[] | undefined = []) {
+async function setup(fixedIce: { urls: string[] }[] | undefined = [], backup?: { relayUrl: string; brokers: string[] }) {
   const relay: StandInRelay = await startRelay({ ...(fixedIce ? { fixedIce } : {}) })
   stops.push(() => relay.stop())
   const settings: Record<string, unknown> = { phoneEnabled: true }
@@ -38,23 +39,24 @@ async function setup(fixedIce: { urls: string[] }[] | undefined = []) {
     addresses: () => ['127.0.0.1'],
     host: '127.0.0.1',
     port: 0,
-    relayUrl: () => relay.url,
+    relayUrl: () => backup?.relayUrl ?? relay.url,
+    ...(backup ? { publicBrokers: () => backup.brokers, publicAfterMs: 100 } : {}),
     chatTitle: () => 'Build the app'
   })
   await bridge.start()
   stops.push(() => bridge.stop())
   const base = `http://127.0.0.1:${bridge.port}`
   const pairing = await pair(base, 'Pixel test', () => undefined)
-  await waitFor(() => bridge.status().relay === 'connected')
+  if (!backup) await waitFor(() => bridge.status().relay === 'connected')
   const boot = await new PhoneLink(pairing, { rtc: null }).call<PhoneBootstrap>('phone.hello')
   return { relay, bridge, pairing: { ...pairing, relay: boot.relay } as PhonePairing }
 }
 
 /** A phone that is away from home (the Wi-Fi address does not answer). */
-function away(pairing: PhonePairing, rtc: typeof Rtc | null = Rtc) {
+function away(pairing: PhonePairing, rtc: typeof Rtc | null = Rtc, brokers?: string[]) {
   const got: CorePush[] = []
   const states: LinkState[] = []
-  const link = new PhoneLink(pairing, { fetch: () => Promise.reject(new Error('unreachable')), probeMs: 200, rtc })
+  const link = new PhoneLink(pairing, { fetch: () => Promise.reject(new Error('unreachable')), probeMs: 200, rtc, ...(brokers ? { brokers } : {}) })
   stops.push(link.listen((p) => got.push(p as CorePush), (s) => states.push(s)))
   return { link, got, states }
 }
@@ -100,6 +102,8 @@ describe('the direct link, away from home', () => {
     const phone = away(pairing)
     await waitFor(() => phone.link.route === 'direct')
     const connects = phone.states.filter((s) => s === 'connected').length
+    // Hold off the next try, or it would open again so fast that the fallback could not be seen.
+    ;(phone.link as unknown as { directNext: number }).directNext = Date.now() + 60_000
     ;(bridge as unknown as { direct: { closeAll(): void } }).direct.closeAll()
     await waitFor(() => phone.link.route === 'relay')
     // It told the app it is connected again, so the app fetches what it missed.
@@ -117,3 +121,38 @@ describe('the direct link, away from home', () => {
     expect(bridge.listening()).toHaveLength(0)
   })
 })
+
+describe('the backup: a direct link through public brokers, when the relay cannot be reached', () => {
+  it('opens, carries calls and pushes, and shows the brokers nothing', async () => {
+    const broker = await startBroker()
+    stops.push(() => broker.stop())
+    // Nothing listens at this address: the relay is down.
+    const { bridge, pairing } = await setup([], { relayUrl: 'ws://127.0.0.1:9', brokers: [broker.url] })
+    const phone = away(pairing, Rtc, [broker.url])
+    await waitFor(() => phone.link.route === 'direct', 30_000)
+    expect(bridge.listening()).toHaveLength(1)
+
+    expect(await phone.link.call('sessions.get', 'a-private-chat-id')).toMatchObject({ echo: 'sessions.get' })
+    bridge.broadcast({ type: 'removed', id: 'a-private-thing' })
+    await waitFor(() => phone.got.length === 1)
+    expect(phone.got[0]).toEqual({ type: 'removed', id: 'a-private-thing' })
+
+    // The broker carried only sealed offers and answers on a topic that says nothing.
+    expect(broker.seen.length).toBeGreaterThanOrEqual(2)
+    const seen = broker.seen.map((m) => `${m.topic} ${m.payload}`).join('\n')
+    for (const secret of ['v=0', 'candidate', 'a-private', 'sessions.get', 'Pixel test', 'TEST-PC']) expect(seen).not.toContain(secret)
+    expect(broker.seen.every((m) => /^celeste\/[0-9a-f]{32}$/.test(m.topic))).toBe(true)
+  }, 60_000)
+
+  it('does not answer an offer that is not sealed with a paired phone’s key', async () => {
+    const broker = await startBroker()
+    stops.push(() => broker.stop())
+    const { bridge, pairing } = await setup([], { relayUrl: 'ws://127.0.0.1:9', brokers: [broker.url] })
+    // A stranger with the right topic but another key: forge the pairing's keys.
+    const stranger = away({ ...pairing, keys: (await pair(`http://127.0.0.1:${bridge.port}`, 'Other', () => undefined)).keys }, Rtc, [broker.url])
+    await new Promise((r) => setTimeout(r, 6000))
+    expect(stranger.link.route).not.toBe('direct')
+    expect(bridge.listening()).toHaveLength(0)
+  }, 30_000)
+})
+

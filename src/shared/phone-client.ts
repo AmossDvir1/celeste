@@ -4,6 +4,7 @@
 
 import type { CorePush } from './api'
 import { DIRECT_CHANNEL, FrameChannel, gathered, type PeerLike } from './direct'
+import { PUBLIC_BROKERS, PUBLIC_ICE, SignalChannel, signalTopic, type SignalMessage } from './signal'
 import {
   LABEL,
   RELAY_PHONE_PROTOCOL,
@@ -15,6 +16,7 @@ import {
   relaySocketUrl,
   seal,
   sessionKey,
+  sessionKeyBytes,
   type IceServer,
   type PhoneHello,
   type PhoneLinkAnswer,
@@ -140,6 +142,8 @@ export class PhoneLink {
   private current: LinkRoute | null = null
   /** The direct link (A4c): a WebRTC data channel to the computer, opened over the relay and used instead of it while it lasts. */
   private readonly rtc: (new (config: { iceServers: IceServer[] }) => PeerLike) | null
+  /** The public brokers the backup uses (A4d). Tests give their own. */
+  private readonly brokers: string[]
   private directSend: ((frame: string) => Promise<void>) | null = null
   private directPeer: PeerLike | null = null
   private directChan: FrameChannel | null = null
@@ -148,8 +152,9 @@ export class PhoneLink {
 
   constructor(
     private pairing: PhonePairing,
-    opts: { fetch?: Fetch; silentMs?: number; probeMs?: number; homeCheckMs?: number; rtc?: (new (config: { iceServers: IceServer[] }) => PeerLike) | null } = {}
+    opts: { fetch?: Fetch; silentMs?: number; probeMs?: number; homeCheckMs?: number; rtc?: (new (config: { iceServers: IceServer[] }) => PeerLike) | null; brokers?: string[] } = {}
   ) {
+    this.brokers = opts.brokers ?? PUBLIC_BROKERS
     this.rtc = opts.rtc !== undefined ? opts.rtc : ((globalThis as { RTCPeerConnection?: unknown }).RTCPeerConnection as (new (config: { iceServers: IceServer[] }) => PeerLike) | undefined) ?? null
     this.f = opts.fetch ?? ((...a) => fetch(...a))
     this.silentMs = opts.silentMs ?? SILENT_MS
@@ -242,16 +247,78 @@ export class PhoneLink {
   }
 
   /**
+   * Opens a WebRTC data channel to the computer: makes the offer, gives it to `exchange` (which gets it to the computer and
+   * brings the answer back), waits for the channel, and proves itself with `listen` the way the relay line does. Resolves
+   * once the computer has admitted it. `lost` is called if the link ends afterwards. Throws when it does not work.
+   */
+  private async dial(
+    Rtc: new (config: { iceServers: IceServer[] }) => PeerLike,
+    servers: IceServer[],
+    key: CryptoKey,
+    exchange: (sdp: string) => Promise<string>,
+    onPush: (push: Push) => void,
+    lost: () => void,
+    stale: () => boolean
+  ): Promise<FrameChannel> {
+    const pc = new Rtc({ iceServers: servers })
+    this.directPeer = pc
+    const dc = pc.createDataChannel(DIRECT_CHANNEL)
+    const opened = new Promise<void>((resolve, reject) => {
+      dc.onopen = () => resolve()
+      setTimeout(() => reject(new Error('The direct link did not open')), 20_000)
+    })
+    opened.catch(() => undefined)
+    await pc.setLocalDescription(await pc.createOffer())
+    await gathered(pc, 5000)
+    const sdp = pc.localDescription?.sdp
+    if (!sdp || stale()) throw new Error('No offer')
+    await pc.setRemoteDescription({ type: 'answer', sdp: await exchange(sdp) })
+    await opened
+    if (stale()) throw new Error('Superseded')
+    let pushes: Promise<void> = Promise.resolve()
+    const onLost = () => {
+      if (this.directPeer === pc) lost()
+    }
+    pc.onconnectionstatechange = () => {
+      if (['failed', 'closed', 'disconnected'].includes(pc.connectionState)) onLost()
+    }
+    let admitted: (ok: boolean) => void = () => undefined
+    const admission = new Promise<boolean>((resolve) => (admitted = resolve))
+    const chan = new FrameChannel(
+      dc,
+      (text) => {
+        let f: RelayHostFrame
+        try {
+          f = JSON.parse(text) as RelayHostFrame
+        } catch {
+          return
+        }
+        if (f.t === 'rpc') this.relayCalls.get(f.id)?.done(f)
+        else if (f.t === 'listen') admitted(f.ok)
+        else if (f.t === 'push') {
+          const box = f.box
+          pushes = pushes.then(async () => onPush(await open<Push>(key, box, LABEL.push))).catch(() => undefined)
+        }
+      },
+      onLost
+    )
+    this.directChan = chan
+    const auth = await seal(key, { ts: Date.now(), n: randomB64(12) }, LABEL.listen)
+    await chan.send(JSON.stringify({ t: 'listen', phone: this.pairing.phoneId, auth } satisfies RelayPhoneFrame))
+    const ok = await Promise.race([admission, new Promise<boolean>((r) => setTimeout(() => r(false), 10_000))])
+    if (!ok || stale()) throw new Error('The computer did not admit the direct link')
+    return chan
+  }
+
+  /**
    * Opens a direct link to the computer while the relay carries the phone (A4c). Two sealed calls over the relay trade the
-   * descriptions; then the channel opens, proves itself the way the relay line does (`listen`) and takes over. Any failure
-   * leaves the relay as it was and tries again later.
+   * descriptions; then the channel takes over. Any failure leaves the relay as it was and tries again later.
    */
   private async openDirect(key: CryptoKey, onPush: (push: Push) => void, reopen: () => void, connected: (route: LinkRoute) => void): Promise<void> {
     const Rtc = this.rtc
     if (!Rtc || this.directPeer || Date.now() < this.directNext) return
     const gen = ++this.directGen
     const stale = () => gen !== this.directGen
-    let pc: PeerLike | null = null
     try {
       const info = await this.call<PhoneLinkInfo>('phone.linkInfo')
       if (stale()) return
@@ -259,73 +326,91 @@ export class PhoneLink {
         this.directNext = Date.now() + DIRECT_NO_MS
         return
       }
-      pc = new Rtc({ iceServers: info.servers })
-      this.directPeer = pc
-      const dc = pc.createDataChannel(DIRECT_CHANNEL)
-      const opened = new Promise<void>((resolve, reject) => {
-        dc.onopen = () => resolve()
-        setTimeout(() => reject(new Error('The direct link did not open')), 20_000)
-      })
-      opened.catch(() => undefined)
-      await pc.setLocalDescription(await pc.createOffer())
-      await gathered(pc, 5000)
-      const sdp = pc.localDescription?.sdp
-      if (!sdp || stale()) throw new Error('No offer')
-      const answer = await this.call<PhoneLinkAnswer>('phone.link', { sdp } satisfies PhoneLinkOffer)
-      await pc.setRemoteDescription({ type: 'answer', sdp: answer.sdp })
-      await opened
-      if (stale()) throw new Error('Superseded')
-      let pushes: Promise<void> = Promise.resolve()
-      const peer = pc
-      // The link ended on its own (the phone moved networks, the computer went): back to the relay, and catch up.
-      const lost = () => {
-        if (this.directPeer !== peer) return
-        this.closeDirect()
-        this.current = this.relaySend ? 'relay' : null
-        reopen()
-      }
-      pc.onconnectionstatechange = () => {
-        if (['failed', 'closed', 'disconnected'].includes(peer.connectionState)) lost()
-      }
-      let admitted: (ok: boolean) => void = () => undefined
-      const admission = new Promise<boolean>((resolve) => (admitted = resolve))
-      const chan = new FrameChannel(
-        dc,
-        (text) => {
-          let f: RelayHostFrame
-          try {
-            f = JSON.parse(text) as RelayHostFrame
-          } catch {
-            return
-          }
-          if (f.t === 'rpc') this.relayCalls.get(f.id)?.done(f)
-          else if (f.t === 'listen') admitted(f.ok)
-          else if (f.t === 'push') {
-            const box = f.box
-            pushes = pushes.then(async () => onPush(await open<Push>(key, box, LABEL.push))).catch(() => undefined)
-          }
+      const chan = await this.dial(
+        Rtc,
+        info.servers,
+        key,
+        async (sdp) => (await this.call<PhoneLinkAnswer>('phone.link', { sdp } satisfies PhoneLinkOffer)).sdp,
+        onPush,
+        () => {
+          // The link ended on its own (the phone moved networks, the computer went): back to the relay, and catch up.
+          this.closeDirect()
+          this.current = this.relaySend ? 'relay' : null
+          reopen()
         },
-        lost
+        stale
       )
-      this.directChan = chan
-      const auth = await seal(key, { ts: Date.now(), n: randomB64(12) }, LABEL.listen)
-      await chan.send(JSON.stringify({ t: 'listen', phone: this.pairing.phoneId, auth } satisfies RelayPhoneFrame))
-      const ok = await Promise.race([admission, new Promise<boolean>((r) => setTimeout(() => r(false), 10_000))])
-      if (!ok || stale()) throw new Error('The computer did not admit the direct link')
       this.directSend = (frame) => chan.send(frame)
       this.current = 'direct'
       connected('direct')
     } catch {
+      // A newer attempt, or the relay going away, owns the peer now and has closed it; otherwise this one failed.
       if (!stale()) {
         this.closeDirect()
         this.directNext = Date.now() + DIRECT_RETRY_MS
-      } else {
-        try {
-          pc?.close()
-        } catch {
-          // Closed already.
-        }
       }
+    }
+  }
+
+  /**
+   * The backup (A4d): the relay cannot be reached, so the offer goes to the computer through public MQTT brokers, sealed
+   * with the pairing key, and the answer comes back the same way. The link that opens is the same direct link; it is the
+   * only line there is, so this resolves (false) when it ends, like a stream. Throws when no link could be opened.
+   */
+  private async publicStream(key: CryptoKey, ctl: AbortController, onPush: (push: Push) => void, connected: (route: LinkRoute) => void): Promise<boolean> {
+    const Rtc = this.rtc
+    if (!Rtc) throw new Error('No WebRTC here')
+    const topic = await signalTopic(await sessionKeyBytes(this.pairing.keys.priv, this.pairing.computer.key, this.pairing.computer.key, this.pairing.keys.pub))
+    const gen = ++this.directGen
+    const stale = () => gen !== this.directGen || ctl.signal.aborted
+    const waiting = new Map<string, (sdp: string) => void>()
+    const signal = new SignalChannel(this.brokers, topic, (text) => {
+      void open<SignalMessage>(key, text, LABEL.signal).then(
+        (m) => m.from === 'host' && m.t === 'answer' && typeof m.sdp === 'string' && waiting.get(m.id)?.(m.sdp),
+        () => undefined
+      )
+    })
+    signal.start()
+    // An offer is sent again every few seconds (a broker may drop a message, the computer may only now be listening).
+    const exchange = (sdp: string) =>
+      new Promise<string>((resolve, reject) => {
+        const id = randomB64(9).replace(/[^a-z0-9]/gi, '')
+        const send = async () => signal.send(await seal(key, { from: 'phone', t: 'offer', id, sdp, ts: Date.now(), n: randomB64(12) } satisfies SignalMessage, LABEL.signal))
+        const done = () => {
+          clearInterval(tick)
+          clearTimeout(timer)
+          waiting.delete(id)
+        }
+        const timer = setTimeout(() => (done(), reject(new Error('Nobody answered'))), 25_000)
+        const tick = setInterval(() => void send().catch(() => undefined), 3000)
+        waiting.set(id, (answer) => (done(), resolve(answer)))
+        void send().catch(() => undefined)
+      })
+    try {
+      return await new Promise<boolean>((resolve, reject) => {
+        const end = () => {
+          ctl.signal.removeEventListener('abort', end)
+          this.closeDirect()
+          this.current = null
+          resolve(false)
+        }
+        ctl.signal.addEventListener('abort', end)
+        this.dial(Rtc, PUBLIC_ICE, key, exchange, onPush, end, stale).then(
+          (chan) => {
+            if (stale()) return end()
+            this.directSend = (frame) => chan.send(frame)
+            this.current = 'direct'
+            connected('direct')
+          },
+          (e: unknown) => {
+            ctl.signal.removeEventListener('abort', end)
+            this.closeDirect()
+            reject(e instanceof Error ? e : new Error('The direct link failed'))
+          }
+        )
+      })
+    } finally {
+      signal.stop()
     }
   }
 
@@ -372,13 +457,24 @@ export class PhoneLink {
           onState('connected')
         }
         let refused = false
+        let viaRelay = false
         try {
           const key = await this.key
           const relay = this.pairing.relay
-          if (relay && !(await this.atHome())) refused = await this.relayStream(relay, key, ctl, onPush, connected, () => onState('offline'), reopen)
-          else refused = await this.wifiStream(key, ctl, onPush, connected, reopen)
+          if (relay && !(await this.atHome())) {
+            viaRelay = true
+            refused = await this.relayStream(relay, key, ctl, onPush, connected, () => onState('offline'), reopen)
+          } else refused = await this.wifiStream(key, ctl, onPush, connected, reopen)
         } catch {
-          // Dropped, gone quiet, or the computer is not there: try again shortly.
+          // Dropped, gone quiet, or the computer is not there: try again shortly. When it was the relay that could not be
+          // reached, the backup opens a direct link through public brokers instead (A4d).
+          if (viaRelay && !stopped && !ctl.signal.aborted && this.rtc && this.brokers.length) {
+            try {
+              refused = await this.publicStream(await this.key, ctl, onPush, connected)
+            } catch {
+              // No one answered there either.
+            }
+          }
         } finally {
           live = false
           this.current = null
