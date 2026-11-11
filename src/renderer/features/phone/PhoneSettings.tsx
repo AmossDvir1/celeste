@@ -12,6 +12,7 @@ export function PhoneSettings() {
   const refresh = usePhone((s) => s.refresh)
   const setEnabled = usePhone((s) => s.setEnabled)
   const remove = usePhone((s) => s.remove)
+  const setWatch = usePhone((s) => s.setWatch)
   const [qr, setQr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -103,6 +104,10 @@ export function PhoneSettings() {
                     Allowed {when(p.pairedAt)} · last seen {when(p.lastSeen)}
                   </div>
                 </div>
+                <label className="flex items-center gap-2 text-[12.5px] text-ink-muted" title="While the assistant is using this computer, this phone can show its screen live. Off by default: the screen can show private things.">
+                  Show my screen on it
+                  <Switch label={`Show the computer’s screen on ${p.name}`} checked={p.watch === true} onCheckedChange={(on) => void setWatch(p.id, on)} />
+                </label>
                 <Button variant="danger" size="sm" onClick={() => void remove(p.id)}>
                   <Trash2 className="h-3.5 w-3.5" /> Remove
                 </Button>

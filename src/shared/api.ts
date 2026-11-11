@@ -475,6 +475,8 @@ export interface CoreApi {
   'phone.setEnabled': (on: boolean) => Promise<PhoneStatus>
   /** Forgets a phone. It is cut off at once and must pair again. */
   'phone.remove': (phoneId: string) => PhoneStatus
+  /** Allow or stop a phone watching the computer's screen while the assistant uses it (docs/PHONE_PLAN.md 7.3). */
+  'phone.setWatch': (phoneId: string, on: boolean) => PhoneStatus
   /** The person's answer to a phone asking to connect, after comparing the three pictures. */
   'phone.answer': (pairId: string, allow: boolean) => PhoneStatus
 }

@@ -11,6 +11,7 @@ interface PhoneState {
   refresh: () => Promise<void>
   setEnabled: (on: boolean) => Promise<void>
   remove: (phoneId: string) => Promise<void>
+  setWatch: (phoneId: string, on: boolean) => Promise<void>
   answer: (allow: boolean) => Promise<void>
   applyPush: (push: CorePush) => void
 }
@@ -44,6 +45,14 @@ export const usePhone = create<PhoneState>((set, get) => ({
     try {
       set({ status: await core.call('phone.remove', phoneId) })
       useUi.getState().pushToast({ text: 'Phone removed. It has to connect again to use Celeste.' })
+    } catch (err) {
+      report(err)
+    }
+  },
+
+  setWatch: async (phoneId, on) => {
+    try {
+      set({ status: await core.call('phone.setWatch', phoneId, on) })
     } catch (err) {
       report(err)
     }

@@ -16,6 +16,7 @@ import {
   MessageSquare,
   Globe,
   LoaderCircle,
+  Eye,
   MonitorSmartphone,
   Pencil,
   Plug,
@@ -38,6 +39,7 @@ import { useApp } from '../store'
 import { Arc, Shimmer, buzz, greeting, rise } from '../ui'
 import { ModelChip } from '../ModelPicker'
 import { AttachButton, Chips, ProjectFiles, useAttachments } from '../Attach'
+import { WatchScreen } from '../Watch'
 
 const TOOL_ICON: Record<ToolKind, LucideIcon> = {
   read: FileText,
@@ -227,6 +229,29 @@ const ActivityGroup = memo(
   (a, b) => a.detailed === b.detailed && sameItems(a.items, b.items)
 )
 
+/** The assistant using the computer or this phone. While it is using the computer, the person may watch its screen from here. */
+function DesktopRow({ it }: { it: Extract<TimelineItem, { kind: 'desktop' }> }) {
+  const [watching, setWatching] = useState(false)
+  const canWatch = it.where !== 'phone' && !it.ended
+  return (
+    <div className="m-tool">
+      <MonitorSmartphone size={17} />
+      <div className="grow">
+        <div className="l">
+          {it.where === 'phone' ? 'Used this phone' : 'Used the computer'}: {it.reason}
+        </div>
+        <div className="d">{it.ended ? `${it.ended.actions} actions · ${it.ended.why}` : `${it.actions.length} actions so far`}</div>
+      </div>
+      {canWatch && (
+        <button className="btn" aria-label="Watch the computer’s screen" onClick={() => setWatching(true)}>
+          <Eye size={15} /> Watch
+        </button>
+      )}
+      {watching && canWatch && <WatchScreen onClose={() => setWatching(false)} />}
+    </div>
+  )
+}
+
 const Item = memo(function Item({ it, sessionId, detailed }: { it: TimelineItem; sessionId: string; detailed: boolean }) {
   switch (it.kind) {
     case 'user':
@@ -281,17 +306,7 @@ const Item = memo(function Item({ it, sessionId, detailed }: { it: TimelineItem;
         </div>
       )
     case 'desktop':
-      return (
-        <div className="m-tool">
-          <MonitorSmartphone size={17} />
-          <div className="grow">
-            <div className="l">
-              {it.where === 'phone' ? 'Used this phone' : 'Used the computer'}: {it.reason}
-            </div>
-            <div className="d">{it.ended ? `${it.ended.actions} actions · ${it.ended.why}` : `${it.actions.length} actions so far`}</div>
-          </div>
-        </div>
-      )
+      return <DesktopRow it={it} />
     case 'reverted':
       return <div className="notice">The folder was put back ({it.restored} restored, {it.removed} removed).</div>
   }

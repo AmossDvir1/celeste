@@ -40,6 +40,9 @@ export const PHONE_METHODS = [
   /** The addresses to open the direct link with (`[]` → `PhoneLinkInfo`), and the phone's offer of one (`[PhoneLinkOffer]` → `PhoneLinkAnswer`). */
   'phone.linkInfo',
   'phone.link',
+  /** Watch the computer's screen while the assistant uses it (`[PhoneLinkOffer]` → `PhoneLinkAnswer`, a video offer); `phone.watchStop` ends it. */
+  'phone.watch',
+  'phone.watchStop',
   'phone.workflows',
   'phone.runWorkflow',
   'sessions.get',
@@ -73,6 +76,8 @@ export interface PhoneRecord {
   lastSeen: number
   /** How to wake this phone when its app is closed (Firebase Cloud Messaging, through the relay). */
   push?: { token: string; at: number }
+  /** The person allowed this phone to watch the computer's screen while the assistant uses it. Off until switched on. */
+  watch?: boolean
 }
 
 /** What the computer says about itself, before and after pairing. */

@@ -58,6 +58,15 @@ export class MainDesktopHost implements DesktopHost {
     return this.call<Inspection>('inspect', action)
   }
 
+  /** The computer's screen as video for a phone (src/main/desktop/watch.ts): answers the phone's offer. */
+  watchStart(phoneId: string, offer: string, servers: { urls: string[]; username?: string; credential?: string }[]): Promise<string> {
+    return this.call<string>('watch.start', { phoneId, offer, servers }, 30_000)
+  }
+
+  async watchStop(phoneId?: string): Promise<void> {
+    await this.call('watch.stop', phoneId ?? null)
+  }
+
   async bar(state: DesktopBarState | null): Promise<void> {
     await this.call('bar', state)
   }

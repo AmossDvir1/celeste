@@ -392,6 +392,14 @@ async function start(): Promise<void> {
     networkWarning: (address) => checkNetwork(address),
     keyStore: { get: () => getSecret('phone.key'), set: (value) => storeSecret('phone.key', value) },
     announce: announcePhone,
+    // The computer's screen as video, for a phone the person allowed, only while the assistant has the computer.
+    watch: {
+      start: (phoneId, offer, servers) => {
+        if (!desktopControl.active()) return Promise.reject(new Error('The assistant is not using the computer now.'))
+        return desktopHost.watchStart(phoneId, offer, servers)
+      },
+      stop: (phoneId) => desktopHost.watchStop(phoneId)
+    },
     chatTitle: (sessionId) => db.listSessions().find((x) => x.id === sessionId)?.title ?? 'Celeste'
   })
   phoneRef = phone
@@ -414,6 +422,7 @@ async function start(): Promise<void> {
       return status
     },
     'phone.remove': (id) => phone.remove(id),
+    'phone.setWatch': (id, on) => phone.setWatch(id, on === true),
     'phone.answer': (pairId, allow) => phone.answer(pairId, allow),
     ...service.api,
     'app.checkUpdate': () => checkForUpdate(process.env['CELESTE_VERSION'] ?? '0.0.0'),

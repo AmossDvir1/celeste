@@ -24,6 +24,7 @@ import { ControlBar } from './bar'
 import { createWindowsDriver, sleep, type InputDriver } from './driver'
 import { toScreen, type ShotGeometry } from './geometry'
 import { capture, displayOf, type Redaction } from './screen'
+import { WatchService } from './watch'
 import { createWindowsApi, type WinRecord, type WindowsApi } from './windows'
 
 /*
@@ -55,6 +56,13 @@ const barState = z.object({
   paused: z.string().max(300).nullable()
 })
 const windowsArg = z.object({ never: z.array(z.string().max(100)).max(50) })
+const watchArg = z.object({
+  phoneId: z.string().min(1).max(40),
+  offer: z.string().min(10).max(40_000).startsWith('v=0'),
+  servers: z
+    .array(z.object({ urls: z.array(z.string().max(300).regex(/^(stun|turns?):/)).min(1).max(8), username: z.string().max(300).optional(), credential: z.string().max(300).optional() }))
+    .max(8)
+})
 const focusArg = z.object({ id: z.number().int() })
 
 /** How far the mouse may be from where the assistant left it before the person is taken to have moved it. */
@@ -69,6 +77,25 @@ export class DesktopService {
   /** Where the mouse was when the assistant last acted, to see whether the person has moved it since. */
   private lastCursor: Point | null = null
   private readonly bar: ControlBar
+  /** The computer's screen as video, for a phone the person allowed (docs/PHONE_PLAN.md 7.3). Only while the assistant has the screen. */
+  private readonly watch = new WatchService({
+    ready: () => {
+      if (!this.active) return 'The assistant is not using the computer now.'
+      if (this.scope.kind !== 'screen') return `Watching needs the assistant to have the whole screen; this time it has ${describeScope(this.scope)}.`
+      return null
+    },
+    blocked: () => {
+      if (!this.never.length) return false
+      try {
+        return this.windowsApi()
+          .list(true)
+          .some((w) => w.pid !== process.pid && !w.minimized && neverMatches(this.never, w))
+      } catch {
+        // Windows would not say what is on the screen: show nothing.
+        return true
+      }
+    }
+  })
   private active = false
   private readonly protectNew = (_event: unknown, win: BrowserWindow) => this.protect(win, true)
 
@@ -117,6 +144,14 @@ export class DesktopService {
         if (!parsed.success) return { ok: false, reason: 'The action was not valid.' } satisfies DesktopResult
         return this.act(parsed.data as DesktopAction)
       }
+      case 'watch.start': {
+        const parsed = watchArg.safeParse(arg)
+        if (!parsed.success) throw new Error('The request was not valid.')
+        return this.watch.start(parsed.data.phoneId, parsed.data.offer, parsed.data.servers)
+      }
+      case 'watch.stop':
+        this.watch.stop(typeof arg === 'string' ? arg : undefined)
+        return null
       case 'bar': {
         if (arg === null) {
           this.end()
@@ -172,6 +207,8 @@ export class DesktopService {
   }
 
   private end(): void {
+    // A phone watching the screen stops with the control that allowed it.
+    this.watch.stop()
     if (!this.active && !this.bar.windows().length) return
     this.active = false
     this.geometry = null

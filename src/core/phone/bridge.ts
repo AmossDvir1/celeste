@@ -35,6 +35,7 @@ import {
   seal,
   sessionKey,
   type PhoneAbility,
+  type IceServer,
   type PhoneAttachPart,
   type PhoneControlReport,
   type PhoneHello,
@@ -92,6 +93,11 @@ export interface PhoneBridgeDeps {
    * Left out, it is CELESTE_RELAY_URL, then the `phoneRelayUrl` setting, then the project's own.
    */
   relayUrl?: () => string
+  /** The computer's screen as video for a phone (src/main/desktop/watch.ts). Left out: watching is not available. */
+  watch?: {
+    start(phoneId: string, offer: string, servers: IceServer[]): Promise<string>
+    stop(phoneId?: string): Promise<void>
+  }
   /** The public MQTT brokers the backup uses when the relay cannot be reached (A4d). Left out: the built-in list. Tests give their own. */
   publicBrokers?: () => string[]
   /** How long the relay must have been unreachable before the backup starts listening (default 20 seconds). */
@@ -552,6 +558,7 @@ export class PhoneBridge {
     this.savePhones(this.phones().filter((p) => p.id !== phoneId))
     this.keys.delete(phoneId)
     this.seen.delete(phoneId)
+    void this.deps.watch?.stop(phoneId).catch(() => undefined)
     for (const l of [...this.listeners]) {
       if (l.phoneId !== phoneId) continue
       l.end()
@@ -622,6 +629,30 @@ export class PhoneBridge {
         })
         .catch(() => undefined)
     }
+  }
+
+  /** A phone asks to watch the computer's screen: only one the person allowed, and only while the assistant uses the computer. */
+  private async watching(id: number, phone: PhoneRecord, offer: unknown): Promise<SealedReply> {
+    const fail = (error: string): SealedReply => ({ id, ok: false, error })
+    if (!phone.watch) return fail('To watch, switch on “Show the computer’s screen on this phone” in Celeste on the computer (Settings, Phone).')
+    if (!this.deps.watch) return fail('Watching is not available on this computer.')
+    if (typeof offer !== 'string' || offer.length > 40_000 || !offer.startsWith('v=0')) return fail('That was not a valid request.')
+    try {
+      const servers = (await this.relay.iceServers()) ?? PUBLIC_ICE
+      const sdp = await this.deps.watch.start(phone.id, offer, servers)
+      this.touch(phone)
+      return { id, ok: true, result: { sdp } satisfies PhoneLinkAnswer }
+    } catch (err) {
+      return fail(err instanceof Error ? err.message : 'The screen could not be shared.')
+    }
+  }
+
+  /** Allows a phone to watch the computer's screen while the assistant uses it, or takes that back (and ends a view that is on). */
+  setWatch(phoneId: string, on: boolean): PhoneStatus {
+    this.savePhones(this.phones().map((p) => (p.id === phoneId ? (on ? { ...p, watch: true } : withoutWatch(p)) : p)))
+    if (!on) void this.deps.watch?.stop(phoneId).catch(() => undefined)
+    this.deps.onStatus()
+    return this.status()
   }
 
   /** The paired phones that are listening now, the most recently seen first. */
@@ -890,6 +921,11 @@ export class PhoneBridge {
       const offer = (call.params[0] as Partial<PhoneLinkOffer> | undefined)?.sdp
       const sdp = typeof offer === 'string' ? await this.direct.accept(phone.id, offer) : null
       reply = sdp ? { id: call.id, ok: true, result: { sdp } satisfies PhoneLinkAnswer } : { id: call.id, ok: false, error: 'A direct link is not available.' }
+    } else if (call.method === 'phone.watch') {
+      reply = await this.watching(call.id, phone, (call.params[0] as Partial<PhoneLinkOffer> | undefined)?.sdp)
+    } else if (call.method === 'phone.watchStop') {
+      void this.deps.watch?.stop(phone.id).catch(() => undefined)
+      reply = { id: call.id, ok: true, result: null }
     } else if (call.method === 'phone.control') {
       const r = call.params[0] as Partial<PhoneControlReport> | undefined
       if (r && (r.state === 'paused' || r.state === 'resumed' || r.state === 'ended')) {
@@ -1021,6 +1057,11 @@ export class PhoneBridge {
     })
     createReadStream(file).pipe(res)
   }
+}
+
+function withoutWatch(p: PhoneRecord): PhoneRecord {
+  const { watch: _off, ...rest } = p
+  return rest
 }
 
 function withoutPush(p: PhoneRecord): PhoneRecord {
