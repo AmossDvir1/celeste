@@ -50,6 +50,8 @@ interface CelesteNativePlugin {
   shareScreen(opts: { servers: IceServer[] }): Promise<{ sdp: string }>
   shareAnswer(opts: { sdp: string }): Promise<void>
   shareStop(): Promise<void>
+  clipboardInfo(): Promise<{ files: number }>
+  clipboardFiles(): Promise<{ files: { name: string; mime: string; data: string }[] }>
 }
 
 /** Which phone abilities the person switched on, and whether Android's Notification access is on for Celeste. */
@@ -100,7 +102,9 @@ const Native = registerPlugin<CelesteNativePlugin>('CelesteNative', {
       throw new Error('Showing the screen needs the Android app.')
     },
     shareAnswer: async () => undefined,
-    shareStop: async () => undefined
+    shareStop: async () => undefined,
+    clipboardInfo: async () => ({ files: 0 }),
+    clipboardFiles: async () => ({ files: [] })
   } as unknown as CelesteNativePlugin
 })
 
@@ -173,6 +177,20 @@ export const abilities = {
   openNotificationAccess: (): Promise<void> => Native.openNotificationAccess().catch(() => undefined),
   openAppInfo: (): Promise<void> => Native.openAppInfo().catch(() => undefined),
   openAccessibility: (): Promise<void> => Native.openAccessibility().catch(() => undefined)
+}
+
+/** Files (a copied picture, a copied file) on the clipboard: Android's WebView does not hand them to a paste. */
+export const clipboard = {
+  /** How many files the clipboard holds now (0 off Android). */
+  count: (): Promise<number> => Native.clipboardInfo().then((r) => r.files, () => 0),
+  /** Reads them, as the person pressed Paste. */
+  async files(): Promise<File[]> {
+    const { files } = await Native.clipboardFiles()
+    return files.map((f) => {
+      const bytes = Uint8Array.from(atob(f.data), (c) => c.charCodeAt(0))
+      return new File([bytes], f.name, { type: f.mime })
+    })
+  }
 }
 
 /** This phone's screen on the computer (docs/PHONE_PLAN.md 7.3), the part only Android can do: capture it and make the offer. */

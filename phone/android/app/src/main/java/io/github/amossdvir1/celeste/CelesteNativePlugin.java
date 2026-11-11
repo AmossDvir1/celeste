@@ -1,8 +1,13 @@
 package io.github.amossdvir1.celeste;
 
 import android.app.Activity;
+import android.content.ClipData;
+import android.content.ClipDescription;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
+import android.database.Cursor;
+import android.net.Uri;
 import android.net.nsd.NsdManager;
 import android.net.nsd.NsdServiceInfo;
 import android.net.wifi.WifiManager;
@@ -10,7 +15,9 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.media.projection.MediaProjectionManager;
+import android.provider.OpenableColumns;
 import android.provider.Settings;
+import android.util.Base64;
 
 import androidx.activity.result.ActivityResult;
 import androidx.core.content.ContextCompat;
@@ -43,6 +50,78 @@ public class CelesteNativePlugin extends Plugin {
     @Override
     public void load() {
         live = this;
+    }
+
+    // ---- Files on the clipboard (a copied picture or file), to paste into a message ----
+
+    /** How many files are on the clipboard now. Only the description is read, so Android does not say Celeste looked at the clipboard. */
+    @PluginMethod
+    public void clipboardInfo(PluginCall call) {
+        int n = 0;
+        try {
+            ClipboardManager cm = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+            ClipDescription d = cm == null ? null : cm.getPrimaryClipDescription();
+            if (d != null) {
+                for (int i = 0; i < d.getMimeTypeCount(); i++) {
+                    String m = d.getMimeType(i);
+                    if (!m.startsWith("text/") && !m.startsWith("application/x-java") && !ClipDescription.MIMETYPE_UNKNOWN.equals(m)) n++;
+                }
+                // A copied picture or file comes as one clip with one type (or one per item).
+                if (n == 0 && d.getMimeTypeCount() > 0 && d.hasMimeType("text/uri-list")) n = 1;
+            }
+        } catch (Exception ignored) {
+            // Nothing to paste.
+        }
+        JSObject o = new JSObject();
+        o.put("files", n);
+        call.resolve(o);
+    }
+
+    /** The files on the clipboard, for the person who pressed Paste: name, type and bytes (base64), at most 25 MB together. */
+    @PluginMethod
+    public void clipboardFiles(PluginCall call) {
+        try {
+            ClipboardManager cm = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+            ClipData clip = cm == null ? null : cm.getPrimaryClip();
+            JSArray out = new JSArray();
+            long total = 0;
+            for (int i = 0; clip != null && i < clip.getItemCount() && i < 10; i++) {
+                Uri uri = clip.getItemAt(i).getUri();
+                if (uri == null) continue;
+                String type = getContext().getContentResolver().getType(uri);
+                if (type == null) type = clip.getDescription().getMimeTypeCount() > i ? clip.getDescription().getMimeType(i) : "application/octet-stream";
+                String name = null;
+                try (Cursor c = getContext().getContentResolver().query(uri, new String[] {OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+                    if (c != null && c.moveToFirst()) name = c.getString(0);
+                } catch (Exception ignored) {
+                    // No name: one is made up.
+                }
+                if (name == null || name.isEmpty()) name = "pasted-" + (i + 1) + (type.startsWith("image/") ? "." + type.substring(6).replaceAll("[^a-z0-9]", "") : "");
+                java.io.ByteArrayOutputStream b = new java.io.ByteArrayOutputStream();
+                try (java.io.InputStream in = getContext().getContentResolver().openInputStream(uri)) {
+                    if (in == null) continue;
+                    byte[] buf = new byte[16384];
+                    for (int r; (r = in.read(buf)) > 0; ) {
+                        total += r;
+                        if (total > 25L * 1048576) {
+                            call.reject("That is more than 25 MB.");
+                            return;
+                        }
+                        b.write(buf, 0, r);
+                    }
+                }
+                JSObject f = new JSObject();
+                f.put("name", name);
+                f.put("mime", type);
+                f.put("data", Base64.encodeToString(b.toByteArray(), Base64.NO_WRAP));
+                out.put(f);
+            }
+            JSObject o = new JSObject();
+            o.put("files", out);
+            call.resolve(o);
+        } catch (Exception e) {
+            call.reject("Could not read the clipboard.");
+        }
     }
 
     // ---- This phone's screen on the computer (docs/PHONE_PLAN.md 7.3) ----
