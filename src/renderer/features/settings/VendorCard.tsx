@@ -7,7 +7,6 @@ import { cn } from '@/lib/cn'
 import { Badge, Button, Spinner, TextInput } from '@/components/ui'
 import { VendorTile } from '@/components/VendorLogo'
 import { VENDORS } from '@/lib/vendors'
-import { useSettings } from '@/stores/settings'
 import { openExternal, useVendors } from '@/stores/vendors'
 
 const PROGRAM_NAME: Partial<Record<VendorId, string>> = { claude: 'Claude Code', copilot: 'Copilot CLI' }
@@ -34,7 +33,6 @@ export function VendorCard({ id, compact }: { id: VendorId; compact?: boolean })
   const [keyOpen, setKeyOpen] = useState(false)
   const [key, setKey] = useState('')
   const [saving, setSaving] = useState(false)
-  const useOwn = useSettings((s) => s.ownPrograms)
   const [program, setProgram] = useState<VendorProgram>()
   useEffect(() => {
     if (!meta.available || id === 'openai' || id === 'gemini') return
@@ -43,7 +41,7 @@ export function VendorCard({ id, compact }: { id: VendorId; compact?: boolean })
     return () => {
       alive = false
     }
-  }, [id, meta.available, v.status, useOwn])
+  }, [id, meta.available, v.status])
   const programText = programLine(id, program)
   const getting = v.getting !== undefined && v.status !== 'downloading' ? v.getting : undefined
 

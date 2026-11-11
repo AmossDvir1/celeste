@@ -194,7 +194,7 @@ export function ConversationView({ sessionId }: { sessionId: string }) {
               key={sessionId}
               scroller={scroller}
               session={session}
-              onApproval={(requestId, allow, always) => respondApproval(sessionId, requestId, allow, always)}
+              onApproval={(requestId, allow, always, minutes) => respondApproval(sessionId, requestId, allow, always, minutes)}
               onAsk={(requestId, answers) => respondAsk(sessionId, requestId, answers)}
               onRetry={retry}
             />

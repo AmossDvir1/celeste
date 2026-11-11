@@ -55,7 +55,9 @@ class FakeHost implements DesktopHost {
 let host: FakeHost
 let enabled: boolean
 let answer: boolean
-let cards: { sessionId: string; title: string; detail: string }[]
+/** Where the person leaves the slider on the card (the default when not set). */
+let chosen: number | undefined
+let cards: { sessionId: string; title: string; detail: string; slider?: { min: number; max: number; step: number; value: number } }[]
 let log: { sessionId: string; event: DesktopLogEvent }[]
 let neverList: string[]
 let pending: number
@@ -68,6 +70,10 @@ const make = () =>
     askConsent: async (sessionId, request) => {
       cards.push({ sessionId, ...request })
       return answer
+    },
+    askDuration: async (sessionId, request) => {
+      cards.push({ sessionId, ...request })
+      return answer ? (chosen ?? request.slider.value) : null
     },
     never: () => neverList,
     pendingApprovals: () => pending,
@@ -92,6 +98,7 @@ beforeEach(() => {
   host = new FakeHost()
   enabled = true
   answer = true
+  chosen = undefined
   cards = []
   log = []
   neverList = []
@@ -158,7 +165,8 @@ describe('asking', () => {
     expect(cards).toHaveLength(1)
     expect(cards[0]?.detail).toContain('Change the default browser')
     expect(cards[0]?.detail).toContain('see everything on your main screen')
-    expect(cards[0]?.title).toContain('15 minutes')
+    expect(cards[0]?.title).toBe('Let the assistant control this computer')
+    expect(cards[0]?.slider).toEqual({ min: 5, max: 120, step: 5, value: 20, until: 720 })
     expect(host.bars.at(-1)).toMatchObject({ sessionId: 's1', lines: [] })
     expect(events('desktop.started')).toHaveLength(1)
     expect(control.active('s1')).toBe(true)
@@ -209,11 +217,12 @@ describe('asking', () => {
   })
 
   it('is not started with a second card while one is on screen', async () => {
-    let release: (v: boolean) => void = () => undefined
+    let release: (v: number | null) => void = () => undefined
     control = new DesktopControl({
       enabled: () => true,
       host,
-      askConsent: () => new Promise<boolean>((resolve) => (release = resolve)),
+      askConsent: async () => true,
+      askDuration: () => new Promise<number | null>((resolve) => (release = resolve)),
       never: () => [],
       pendingApprovals: () => 0,
       record: (sessionId, event) => log.push({ sessionId, event })
@@ -221,7 +230,7 @@ describe('asking', () => {
     const first = control.call('s1', 'desktop_request_control', { reason: 'x' })
     await vi.advanceTimersByTimeAsync(1)
     expect(await control.call('s2', 'desktop_request_control', { reason: 'y' })).toMatchObject({ isError: true, text: expect.stringContaining('already being asked') })
-    release(true)
+    release(20)
     expect((await first).isError).toBe(false)
   })
 
@@ -395,10 +404,11 @@ describe('limits', () => {
     control.extend()
     await vi.advanceTimersByTimeAsync(1)
     const after = host.bars.at(-1)?.until as number
-    expect(after).toBeGreaterThan(before + 9 * 60_000)
+    // It had 10 minutes left of 20: now it has 15.
+    expect(after).toBeGreaterThan(before + 4 * 60_000)
     expect(events('desktop.action').at(-1)?.event).toMatchObject({ text: 'Added 15 minutes', until: after })
     // Past the original end, and still on.
-    await vi.advanceTimersByTimeAsync(6 * 60_000)
+    await vi.advanceTimersByTimeAsync(11 * 60_000)
     expect(control.active()).toBe(true)
   })
 
@@ -485,7 +495,7 @@ describe('scope', () => {
     const r = await control.call('s1', 'desktop_request_control', { reason: 'Save the note', window: 'notepad' })
     expect(r.isError).toBe(false)
     expect(r.text).toContain('only the window “notes.txt - Notepad” (notepad)')
-    expect(cards[0]?.title).toBe('Let the assistant use “notes.txt - Notepad” for 15 minutes')
+    expect(cards[0]?.title).toBe('Let the assistant use “notes.txt - Notepad”')
     expect(cards[0]?.detail).toContain('and nothing else')
     expect(cards[0]?.detail).not.toContain('see everything')
     expect(host.bars.at(-1)?.scope).toEqual({ kind: 'window', id: 10, title: 'notes.txt - Notepad', app: 'notepad' })
@@ -495,7 +505,7 @@ describe('scope', () => {
     const r = await control.call('s1', 'desktop_request_control', { reason: 'Mail', app: 'Chrome.exe' })
     expect(r.isError).toBe(false)
     expect(host.bars.at(-1)?.scope).toEqual({ kind: 'app', app: 'chrome' })
-    expect(cards[0]?.title).toBe('Let the assistant use chrome for 15 minutes')
+    expect(cards[0]?.title).toBe('Let the assistant use chrome')
   })
 
   it('without either, asks for the whole screen, warns more, and suggests one window', async () => {
@@ -672,8 +682,10 @@ describe('passwords, and buttons that cannot be taken back', () => {
       host,
       askConsent: (sessionId, request) => {
         cards.push({ sessionId, ...request })
-        return ++asked === 1 ? Promise.resolve(true) : new Promise<boolean>((resolve) => (release = resolve))
+        asked++
+        return new Promise<boolean>((resolve) => (release = resolve))
       },
+      askDuration: async () => 20,
       never: () => [],
       pendingApprovals: () => 0,
       record: (sessionId, event) => log.push({ sessionId, event })
@@ -773,6 +785,7 @@ describe('the person’s own hand wins', () => {
       enabled: () => true,
       host,
       askConsent: async () => true,
+      askDuration: async () => 20,
       never: () => [],
       pendingApprovals: (sessionId) => {
         seen.push(sessionId)
@@ -786,9 +799,9 @@ describe('the person’s own hand wins', () => {
   })
 })
 
-describe('how long, the whole screen, and the list of grants', () => {
+describe('how long, and the list of grants', () => {
+  /** The minutes the person leaves the slider at; the card's own start when not set. */
   let length: number | undefined
-  let whole: boolean | undefined
   let kept: unknown[]
   const makeWith = () =>
     new DesktopControl({
@@ -798,9 +811,11 @@ describe('how long, the whole screen, and the list of grants', () => {
         cards.push({ sessionId, ...request })
         return true
       },
+      askDuration: async (sessionId, request) => {
+        cards.push({ sessionId, ...request })
+        return length ?? request.slider.value
+      },
       never: () => [],
-      duration: length === undefined ? undefined : () => length as number,
-      wholeScreen: whole === undefined ? undefined : () => whole as boolean,
       logGrant: (entry) => kept.push(entry),
       pendingApprovals: () => 0,
       record: (sessionId, event) => log.push({ sessionId, event }),
@@ -808,44 +823,58 @@ describe('how long, the whole screen, and the list of grants', () => {
     })
   beforeEach(() => {
     length = undefined
-    whole = undefined
     kept = []
   })
 
-  it('lasts as long as Settings says, and says so on the card', async () => {
-    length = 60 * 60_000
+  it('lasts 20 minutes unless the slider is moved', async () => {
     control = makeWith()
     const before = Date.now()
     await grant()
-    expect(cards[0]?.title).toBe('Let the assistant control this computer for 1 hour')
+    const until = host.bars.at(-1)?.until as number
+    expect(until).toBeGreaterThanOrEqual(before + 20 * 60_000)
+    expect(until).toBeLessThan(before + 21 * 60_000)
+  })
+
+  it('lasts as long as the person set the slider to', async () => {
+    length = 60
+    control = makeWith()
+    const before = Date.now()
+    await grant()
+    expect(cards[0]?.slider).toMatchObject({ min: 5, max: 120, value: 20 })
     expect(host.bars.at(-1)?.until).toBeGreaterThanOrEqual(before + 60 * 60_000)
     await vi.advanceTimersByTimeAsync(59 * 60_000)
     // Nothing was done for five minutes, which ends it whatever the length.
     expect(await control.call('s1', 'desktop_click', { x: 1, y: 1 })).toMatchObject({ isError: true, text: expect.stringContaining('nothing was done') })
   })
 
-  it('stays on for the long choice as long as it is used, and the card says “until you stop it”', async () => {
-    length = DESKTOP_LIMITS.longGrantMs
+  it('can be given two hours at most', async () => {
+    length = 120
+    control = makeWith()
+    const before = Date.now()
+    await grant()
+    expect(host.bars.at(-1)?.until).toBeGreaterThanOrEqual(before + 120 * 60_000)
+    expect(host.bars.at(-1)?.until).toBeLessThan(before + 121 * 60_000)
+    control.extend()
+    await vi.advanceTimersByTimeAsync(1)
+    // +15 min cannot take it past two hours from now.
+    expect(host.bars.at(-1)?.until).toBeLessThanOrEqual(Date.now() + 120 * 60_000)
+  })
+
+  it('stays on for “until I stop it” as long as it is used, and still ends after five minutes of nothing', async () => {
+    length = 720
     control = makeWith()
     await grant()
-    expect(cards[0]?.title).toBe('Let the assistant control this computer until you stop it')
     for (let i = 0; i < 4; i++) {
       await vi.advanceTimersByTimeAsync(4 * 60_000)
       expect((await run('desktop_click', { x: 1, y: 1 })).isError).toBe(false)
     }
     expect(control.active('s1')).toBe(true)
-  })
-
-  it('names a window with the length too', async () => {
-    host.windowList = [{ id: 10, title: 'notes.txt - Notepad', app: 'notepad', focused: true }]
-    length = 60 * 60_000
-    control = makeWith()
-    await control.call('s1', 'desktop_request_control', { reason: 'x', window: 'notepad' })
-    expect(cards[0]?.title).toBe('Let the assistant use “notes.txt - Notepad” for 1 hour')
+    await vi.advanceTimersByTimeAsync(6 * 60_000)
+    expect(await control.call('s1', 'desktop_click', { x: 1, y: 1 })).toMatchObject({ isError: true, text: expect.stringContaining('nothing was done') })
   })
 
   it('does not shorten a long grant when +15 min is pressed', async () => {
-    length = 60 * 60_000
+    length = 60
     control = makeWith()
     await grant()
     const before = host.bars.at(-1)?.until as number
@@ -854,13 +883,25 @@ describe('how long, the whole screen, and the list of grants', () => {
     expect(host.bars.at(-1)?.until).toBe(before)
   })
 
-  it('refuses the whole screen when Settings does not allow it, before any card, and still allows one program or window', async () => {
-    whole = false
+  it('adds time when +15 min is pressed late in a short grant', async () => {
+    length = 5
+    control = makeWith()
+    await grant()
+    const before = host.bars.at(-1)?.until as number
+    control.extend()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(host.bars.at(-1)?.until).toBeGreaterThan(before)
+  })
+
+  it('asks for the whole screen on the card, with the warning and the way out, and names a window without the length', async () => {
     host.windowList = [{ id: 10, title: 'notes.txt - Notepad', app: 'notepad', focused: true }]
     control = makeWith()
-    expect(await control.call('s1', 'desktop_request_control', { reason: 'x' })).toMatchObject({ isError: true, text: expect.stringContaining('not allowed control of the whole screen') })
-    expect(cards).toEqual([])
-    expect((await control.call('s1', 'desktop_request_control', { reason: 'x', app: 'notepad' })).isError).toBe(false)
+    await control.call('s1', 'desktop_request_control', { reason: 'x' })
+    expect(cards[0]?.title).toBe('Let the assistant control this computer')
+    expect(cards[0]?.detail).toContain('ask it to work in one window')
+    control.stop('done')
+    await control.call('s1', 'desktop_request_control', { reason: 'x', window: 'notepad' })
+    expect(cards[1]?.title).toBe('Let the assistant use “notes.txt - Notepad”')
   })
 
   it('keeps a record of each grant when it ends: when, why, what it could use, how long, how many actions, how it ended', async () => {
@@ -881,6 +922,7 @@ describe('how long, the whole screen, and the list of grants', () => {
       enabled: () => true,
       host,
       askConsent: async () => true,
+      askDuration: async () => 20,
       never: () => [],
       logGrant: () => {
         throw new Error('disk full')

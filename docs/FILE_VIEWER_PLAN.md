@@ -29,7 +29,7 @@ Any file the person (or the assistant) points at opens in a **tab of the browser
 
 - Files open as **tabs of the browser pane** (Ctrl+Shift+B): a file tab has a file icon and its name, an address bar that shows the path (not editable), and buttons for "Open in your program" and "Show in folder". Web pages and files sit side by side, as in Claude's browser, which opens HTML, PDF and video paths from the chat in its pane.
 - **How a file is opened:** a produced-file card in the chat (Open now previews, and a menu keeps "Open in your program", "Show in folder" and "Save a copy"), a file in Develop's Files panel, and "Open a file…" in the pane's menu (the system's own dialog). A file path in a Markdown link of a message is for later.
-- **The assistant's tools do not see viewer tabs.** A viewer tab shows a document that may be private, and the tools' rules (a file only from the chat's own folder) cannot judge it, so viewer tabs are left out of `browser_tabs` and of the DevTools endpoint. A `file:` tab (PDF, image, HTML) is a normal tab and the tools' file rule applies to it.
+- **The assistant's tools do not see viewer tabs.** A viewer tab shows a document that may be private, and the tools' file rule cannot judge it, so viewer tabs are left out of `browser_tabs` and of the DevTools endpoint. A `file:` tab (PDF, image, HTML) is a normal tab and the tools' file rule applies to it.
 
 ## 4. How it is built
 

@@ -1,3 +1,5 @@
+import { fileAddress } from './preview'
+
 /*
  * Celeste's browser pane (docs/BROWSER_PLAN.md). What the main process, which owns the pages, tells the window, and what the window may ask
  * of it. The pure helpers here (what an address bar means, which keys the page must hand back) are shared so both sides and the tests agree.
@@ -108,6 +110,8 @@ export interface BrowserCalls {
   focus: { arg: undefined; result: void }
   /** Opens a file in a tab: Chromium shows PDF, images, video and HTML itself; the viewer page shows the rest. Fails with a reason in words. */
   openFile: { arg: { chatId: string; path: string }; result: { id: string; how: 'native' | 'viewer' | 'card' } }
+  /** Opens a file the person attached (its celeste-file://attachments/ address), under the name it was attached with. */
+  openAttachment: { arg: { chatId: string; url: string; name: string }; result: { id: string; how: 'native' | 'viewer' | 'card' } }
   /** Asks, with the system's own dialog, for a file to open. True when one was opened. */
   pickFile: { arg: { chatId: string }; result: boolean }
   /** What the person can do with the file a tab shows, in their own programs. */
@@ -246,6 +250,16 @@ export interface HostTab {
   error: string | null
 }
 
+/** The path in what was given, when it is the path of a file on this computer and not an address or words: a drive path, a file address made by hand, or an absolute path. */
+export function localPath(text: string): string | null {
+  const mangled = /^file:\/\/(?!\/)([A-Za-z]:[\\/].*)$/i.exec(text)
+  if (mangled) return mangled[1]!
+  if (/^[A-Za-z]:[\\/]/.test(text)) return text
+  // An absolute path has a folder or an extension in it; "/" alone, or words that start with a slash, are not one.
+  if (/^\/(?!\/)/.test(text) && /^\/[^/]*[/.]/.test(text)) return text
+  return null
+}
+
 /**
  * The address a tool was given, or null when it is not one: a full address, or something that is plainly a site (example.com). A phrase
  * to search for is not an address, and is refused so the assistant says what it means.
@@ -253,6 +267,9 @@ export interface HostTab {
 export function addressFor(input: string): string | null {
   const text = input.trim()
   if (!text) return null
+  // A path on this computer, as the assistant has it (C:\Users\Dana\a.pdf, /home/dana/a.pdf, or file://C:\x made by hand): a file address.
+  const path = localPath(text)
+  if (path) return fileAddress(path)
   const url = resolveAddress(text, 'google')
   if (!url || url.startsWith(SEARCH_URL.google)) return null
   return url === 'about:blank' ? null : url

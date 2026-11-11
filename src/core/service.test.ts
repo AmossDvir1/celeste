@@ -271,31 +271,30 @@ describe('sessions and their log', () => {
     expect(setup(first.store).api['app.bootstrap']().settings.sidebarWidth).toBe(280)
   })
 
-  it('keeps the settings of desktop control, and refuses a length of time that is not one of the choices', () => {
+  it('keeps the settings of desktop control: off, with no program kept out of it', () => {
     const first = setup()
     const settings = first.api['app.bootstrap']().settings
-    expect([settings.desktopControl, settings.desktopMinutes, settings.desktopWholeScreen, settings.desktopNeverApps]).toEqual([false, 15, true, []])
-    first.api['settings.patch']({ desktopMinutes: 60, desktopWholeScreen: false, desktopNeverApps: [' KeePass ', 'my bank', 'keepass', ''] })
-    expect(() => first.api['settings.patch']({ desktopMinutes: 7 })).toThrow()
+    expect([settings.desktopControl, settings.desktopNeverApps]).toEqual([false, []])
+    first.api['settings.patch']({ desktopNeverApps: [' KeePass ', 'my bank', 'keepass', ''] })
     expect(() => first.api['settings.patch']({ desktopNeverApps: 'keepass' as never })).toThrow()
     expect(() => first.api['settings.patch']({ desktopNeverApps: new Array(51).fill('x') })).toThrow()
     first.service.close()
     const again = setup(first.store).api['app.bootstrap']().settings
-    expect([again.desktopMinutes, again.desktopWholeScreen, again.desktopNeverApps]).toEqual([60, false, ['KeePass', 'my bank', 'keepass']])
+    expect(again.desktopNeverApps).toEqual(['KeePass', 'my bank', 'keepass'])
   })
 
-  it('keeps the browser’s settings: tools on, asking before a new site on, no sites allowed; and cleans the list of sites', () => {
+  it('keeps the browser’s settings: tools on, no sites allowed; and cleans the list of sites', () => {
     const first = setup()
     const before = first.api['app.bootstrap']().settings
-    expect([before.browserTools, before.browserAskSites, before.browserAllowedSites]).toEqual([true, true, []])
-    first.api['settings.patch']({ browserTools: false, browserAskSites: false, browserAllowedSites: [' Shop.Example.com ', 'shop.example.com', 'localhost'] })
+    expect([before.browserTools, before.browserAllowedSites]).toEqual([true, []])
+    first.api['settings.patch']({ browserTools: false, browserAllowedSites: [' Shop.Example.com ', 'shop.example.com', 'localhost'] })
     expect(() => first.api['settings.patch']({ browserAllowedSites: 'example.com' as never })).toThrow()
     expect(() => first.api['settings.patch']({ browserAllowedSites: ['not a site'] })).toThrow()
     expect(() => first.api['settings.patch']({ browserAllowedSites: ['https://example.com'] })).toThrow()
     expect(() => first.api['settings.patch']({ browserAllowedSites: new Array(201).fill('a.test') })).toThrow()
     first.service.close()
     const again = setup(first.store).api['app.bootstrap']().settings
-    expect([again.browserTools, again.browserAskSites, again.browserAllowedSites]).toEqual([false, false, ['shop.example.com', 'localhost']])
+    expect([again.browserTools, again.browserAllowedSites]).toEqual([false, ['shop.example.com', 'localhost']])
   })
 
   it('asks a question that can be answered for this chat, for good, or no, and says which to the one waiting', async () => {
@@ -332,6 +331,25 @@ describe('sessions and their log', () => {
     await flush()
     api['sessions.interrupt'](id)
     expect(await waiting).toBe('deny')
+  })
+
+  it('asks for how long on a slider: the minutes it was left at, kept within its range, or the “until I stop it” time, or no', async () => {
+    const { service, api, pushes } = setup()
+    const { id } = api['sessions.create'](input)
+    const slider = { min: 5, max: 120, step: 5, value: 20, until: 720 }
+    const asks = [0, 1, 2, 3, 4].map(() => service.requestTimed(id, { kind: 'other', title: 'Use the screen', slider }))
+    await flush()
+    const events = pushedEvents(pushes, id)
+      .map((s) => s.event)
+      .filter((e) => e.type === 'approval.requested')
+    expect(events[0]).toMatchObject({ slider })
+    const answer = (n: number, a: { allow: boolean; minutes?: number }) => api['sessions.respondApproval'](id, events[n]!.type === 'approval.requested' ? events[n]!.requestId : '', a)
+    answer(0, { allow: true, minutes: 60 })
+    answer(1, { allow: true })
+    answer(2, { allow: true, minutes: 720 })
+    answer(3, { allow: true, minutes: 100_000 })
+    answer(4, { allow: false, minutes: 60 })
+    expect(await Promise.all(asks)).toEqual([60, 20, 720, 720, null])
   })
 
   it('tells how a chat asks before the agent acts', () => {
@@ -1060,7 +1078,7 @@ describe('naming a session after its first message', () => {
     expect(service).toBeDefined()
   })
 
-  it('does not ask when the setting is off, or when there is no text to name it by', async () => {
+  it('does not ask when there is no text to name it by', async () => {
     const { titler, asked } = naming()
     const { api } = setup(new MemoryStore(), '/data', { titler })
     const quiet = api['sessions.create'](input)
@@ -1068,28 +1086,20 @@ describe('naming a session after its first message', () => {
     const files = api['sessions.create'](input)
     api['sessions.send'](files.id, { text: '', attachments: [] })
     expect(asked).toEqual([])
-
-    api['settings.patch']({ autoTitle: false })
-    const off = api['sessions.create'](input)
-    api['sessions.send'](off.id, { text: 'A perfectly good message', attachments: [] })
-    expect(asked).toEqual([])
   })
 
-  it('works without a titler at all, and keeps the setting, which starts on', () => {
+  it('works without a titler at all', () => {
     const { api, agents } = setup()
     const { id } = api['sessions.create'](input)
     api['sessions.send'](id, { text: 'Just a message', attachments: [] })
     expect(agents[0]?.sent).toHaveLength(1)
-    expect(api['app.bootstrap']().settings.autoTitle).toBe(true)
-    expect(api['settings.patch']({ autoTitle: false }).autoTitle).toBe(false)
   })
 
-  it('keeps the switch for using programs already on the computer, which starts on', () => {
+  it('has no settings for naming chats or for programs already on the computer: both are always on', () => {
     const { api } = setup()
-    expect(api['app.bootstrap']().settings.ownPrograms).toBe(true)
-    expect(api['settings.patch']({ ownPrograms: false }).ownPrograms).toBe(false)
-    expect(api['app.bootstrap']().settings.ownPrograms).toBe(false)
-    expect(api['settings.patch']({ ownPrograms: true }).ownPrograms).toBe(true)
+    const settings = api['app.bootstrap']().settings as unknown as Record<string, unknown>
+    for (const gone of ['autoTitle', 'ownPrograms', 'desktopMinutes', 'desktopWholeScreen', 'browserAskSites']) expect(gone in settings, gone).toBe(false)
+    expect('projectsFolder' in (settings['defaults'] as object)).toBe(false)
   })
 })
 
@@ -1217,5 +1227,38 @@ describe('separate copies of a project', () => {
     expect(boot.find((s) => s.id === copy.id)?.worktree).toBe(true)
     expect(api['sessions.get'](copy.id)?.summary.worktree).toBe(true)
     expect(boot.find((s) => s.id === own.id)?.worktree).toBeUndefined()
+  })
+})
+
+describe('what an attachment is stored as', () => {
+  it('keeps the extension of documents, data, media and archives, in any case, so tools and viewers can tell what they are', async () => {
+    const { attachmentExtension } = await import('./service')
+    const cases: [string, string, string][] = [
+      ['report.DOCX', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx'],
+      ['book.xlsx', 'application/octet-stream', 'xlsx'],
+      ['deck.pptx', '', 'pptx'],
+      ['מיקחק.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation', 'pptx'],
+      ['notes.md', 'text/markdown', 'md'],
+      ['a.tar.gz', 'application/gzip', 'gz'],
+      ['clip.mp4', 'video/mp4', 'mp4'],
+      ['analysis.ipynb', 'application/json', 'ipynb'],
+      ['scan.pdf', 'application/pdf', 'pdf']
+    ]
+    for (const [name, mime, ext] of cases) expect(attachmentExtension(name, mime), name).toBe(ext)
+  })
+
+  it('stores anything that could run when it is opened with no extension of its own, whatever its name or type says', async () => {
+    const { attachmentExtension } = await import('./service')
+    for (const name of ['setup.exe', 'run.bat', 'run.cmd', 'x.ps1', 'x.vbs', 'x.js', 'x.py', 'x.sh', 'x.msi', 'x.lnk', 'x.jar', 'x.scr', 'x.hta', 'x.reg', 'x.dll', 'a.exe.txt.exe', 'noextension', '.hidden']) {
+      expect(attachmentExtension(name, 'application/octet-stream'), name).toBe('bin')
+    }
+    // A type that is known and harmless still decides, when the name's own extension is not a kept one.
+    expect(attachmentExtension('picture', 'image/png')).toBe('png')
+    expect(attachmentExtension('x.exe', 'image/png')).toBe('png')
+  })
+
+  it('never gives an extension longer than the file address allows', async () => {
+    const { attachmentExtension } = await import('./service')
+    for (const name of ['a.markdown', 'a.abcdefgh', 'a.docx']) expect(attachmentExtension(name, '')).toMatch(/^[a-z0-9]{1,5}$/)
   })
 })

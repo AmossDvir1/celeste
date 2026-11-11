@@ -70,10 +70,14 @@ export interface DesktopBarState {
 }
 
 export const DESKTOP_LIMITS = {
-  /** How long a grant lasts, and how much the bar's +15 min adds. */
-  grantMs: 15 * 60_000,
-  /** The longest "until I stop it" lasts, so a grant that is forgotten still ends. */
+  /** How long a grant lasts when the person does not change it on the card. */
+  grantMs: 20 * 60_000,
+  /** The most the slider on the card gives. */
+  maxGrantMs: 120 * 60_000,
+  /** "Until I stop it": the longest it lasts, so a grant that is forgotten still ends (and it ends after idleMs of nothing anyway). */
   longGrantMs: 12 * 60 * 60_000,
+  /** What the bar's +15 min button adds. */
+  extendMs: 15 * 60_000,
   /** A grant with no action for this long ends. */
   idleMs: 5 * 60_000,
   /** The most actions in one grant. */
@@ -87,10 +91,10 @@ export const DESKTOP_LIMITS = {
   barLines: 3
 } as const
 
-/** How long one yes lasts, in minutes: the choices in Settings. 720 is "until I stop it" (twelve hours at most, and still ends after five minutes of nothing). */
-export const DESKTOP_MINUTES = [15, 60, 720] as const
+/** The slider on the card that asks: how long one yes lasts, in minutes. It starts at the default. */
+export const DESKTOP_SLIDER = { min: 5, max: DESKTOP_LIMITS.maxGrantMs / 60_000, step: 5, value: DESKTOP_LIMITS.grantMs / 60_000, until: DESKTOP_LIMITS.longGrantMs / 60_000 } as const
 
-/** "15 minutes", "1 hour", "until you stop it". */
+/** "20 minutes", "1 hour", "2 hours", "until you stop it". */
 export function describeDuration(ms: number): string {
   if (ms >= DESKTOP_LIMITS.longGrantMs) return 'until you stop it'
   const minutes = Math.round(ms / 60_000)

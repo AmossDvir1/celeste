@@ -3,11 +3,12 @@
 // it works with the panel closed; the switch in Settings turns it off; and another program (Playwright, from here) can connect to the
 // browser only while it is allowed, and sees only the browser's tabs.   npm run verify:browser-tools
 // Claude is real (the real SDK and program) but what it says is chosen by a stand-in for Anthropic's API (scripts/lib/stub.mjs).
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { launch, saveSettings } from './lib/app.mjs'
 import { claudeReady, echo, pasteClaudeKey, startStub } from './lib/stub.mjs'
 
@@ -47,6 +48,10 @@ const base = `http://127.0.0.1:${site.address().port}`
 // What the stand-in assistant does, round by round. A round starts with a message of the form "Round <name>".
 const tool = (name, input) => ({ type: 'tool_use', name: `mcp__celeste-devices__${name}`, input })
 const refOf = (text, label) => new RegExp(`${label}[^\\n]*\\[ref=(\\w+)\\]`).exec(text)?.[1]
+// A deck (shown by the viewer) and a page (shown by Chromium itself), both outside any chat's folder.
+const deck = resolve(fileURLToPath(new URL('./fixtures/deck.pptx', import.meta.url)))
+const note = join(profile, 'a note.html')
+writeFileSync(note, '<!doctype html><title>A note</title><h1>A note for Dana</h1>')
 const results = []
 const mem = { tabIds: [], firstTab: '' }
 let round = ''
@@ -88,6 +93,13 @@ const rounds = {
     if (s === 3) return [tool('browser_click', { ref: refOf(results.find((r) => r.round === 'browse' && r.step === 2).text, 'button "Press me"') })]
     return [{ type: 'text', text: 'Round closed is over.' }]
   },
+  openfile: (s) => {
+    if (s === 1) return [tool('browser_open_file', { path: deck })]
+    if (s === 2) return [tool('browser_open_file', { path: note })]
+    if (s === 3) return [tool('browser_tabs', {})]
+    if (s === 4) return [tool('browser_open_file', { path: join(profile, 'not-there.pdf') })]
+    return [{ type: 'text', text: 'Round openfile is over.' }]
+  },
   off: (s) => (s === 1 ? [tool('browser_tabs', {})] : [{ type: 'text', text: 'Round off is over.' }])
 }
 // Rounds on a site that is not this computer (the check points *.test at the local server): open it, read it, click (twice, or once).
@@ -98,12 +110,7 @@ const siteRound = (name, host, clicks) => (s) => {
   return [{ type: 'text', text: `Round ${name} is over.` }]
 }
 Object.assign(rounds, {
-  siteonce: siteRound('siteonce', 'once.test', 2),
-  sitealways: siteRound('sitealways', 'always.test', 1),
-  sitealways2: siteRound('sitealways2', 'always.test', 1),
-  sitealways3: siteRound('sitealways3', 'always.test', 1),
-  sitedeny: siteRound('sitedeny', 'deny.test', 2),
-  sitefree: siteRound('sitefree', 'free.test', 1)
+  siteonce: siteRound('siteonce', 'once.test', 2)
 })
 const script = (r) => {
   if (r.last.kind === 'tool_result') {
@@ -219,52 +226,35 @@ try {
   check('with the switch off, a tool says so and does nothing', got('off', 1).isError && /switched off/.test(got('off', 1).text), got('off', 1).text)
   await saveSettings(page, { browserTools: true })
 
-  console.log('\n# Asking before a new site')
+  console.log('\n# Showing a file to the person')
+  await page.getByRole('button', { name: 'New chat' }).click()
+  await textbox.waitFor()
+  const askedBefore = asked.length
+  await run('openfile')
+  check('a file outside the chat’s folder opens where the chat asks nothing before it acts', !got('openfile', 1).isError && /viewer/.test(got('openfile', 1).text), got('openfile', 1).text)
+  check('the person sees it as a tab named for the file', (await tabs().filter({ hasText: 'deck.pptx' }).count()) === 1, await tabs().allInnerTexts())
+  check('a page Chromium shows itself opens as an ordinary tab', !got('openfile', 2).isError && /normal browser tab/.test(got('openfile', 2).text), got('openfile', 2).text)
+  check('the assistant is told about the page’s tab and not the viewer’s', /A note/.test(got('openfile', 3).text) && !/deck/.test(got('openfile', 3).text), got('openfile', 3).text)
+  check('a file that is not there is said so', got('openfile', 4).isError && /no longer there/.test(got('openfile', 4).text), got('openfile', 4).text)
+  check('and none of it asked anything', asked.length === askedBefore)
+
+  console.log('\n# A site is not asked about (unless the chat is set to Ask: the unit tests cover that)')
   const fresh = async () => {
     await page.getByRole('button', { name: 'New chat' }).click()
     await textbox.waitFor()
   }
   const pageOn = (host) => view(`http://${host}:`)
-  // Yes, for this chat.
   await fresh()
-  await run('siteonce', ['Allow for this chat'])
-  check('acting on a site that is not this computer asks first, and names the site', asked.length === 1 && /Let the assistant use once\.test/.test(asked[0]) && /Click on the page/.test(asked[0]), asked[0])
-  check('the card offers this chat, always, or no', /Allow for this chat/.test(asked[0]) && /Always allow once\.test/.test(asked[0]) && /Deny/.test(asked[0]), asked[0])
-  check('after a yes for this chat both clicks went through, and it asked once', /Clicked/.test(got('siteonce', 3).text) && /Clicked/.test(got('siteonce', 4).text) && (await pageOn('once.test').textContent('#out')) === 'clicked 2', `${got('siteonce', 3).text} | ${got('siteonce', 4).text}`)
-  check('opening the site did not ask (the chat asks nothing before it acts)', !/Open http/.test(asked[0]))
-  // Always.
-  await fresh()
-  await run('sitealways', ['Always allow always.test'])
-  check('Always allow lets the click through', /Clicked/.test(got('sitealways', 3).text), got('sitealways', 3).text)
+  await run('siteonce')
+  check('acting on a site that is not this computer does not ask, and the clicks went through', asked.length === askedBefore && /Clicked/.test(got('siteonce', 3).text) && /Clicked/.test(got('siteonce', 4).text) && (await pageOn('once.test').textContent('#out')) === 'clicked 2', `${asked.length} ${got('siteonce', 3).text} | ${got('siteonce', 4).text}`)
   await settingsBrowser()
-  check('the site is listed in Settings, Browser', await page.getByText('always.test', { exact: true }).isVisible())
+  check('Settings no longer has a switch for asking about sites, and lists no sites when none were allowed', (await page.getByRole('switch', { name: 'Ask before it uses a new site' }).count()) === 0 && (await page.getByText('Sites it may always use').count()) === 0)
+  await saveSettings(page, { browserAllowedSites: ['always.test'] })
   await page.keyboard.press('Escape')
-  await fresh()
-  await run('sitealways2')
-  check('in another chat it is not asked again', /Clicked/.test(got('sitealways2', 3).text) && asked.length === 2, got('sitealways2', 3).text)
-  // Taking it back.
   await settingsBrowser()
+  check('a site that was allowed for good is listed, with a way to take it back', await page.getByText('always.test', { exact: true }).isVisible())
   await page.getByRole('button', { name: 'Stop always allowing always.test' }).click()
-  check('the site can be taken off the list', (await page.getByText('always.test', { exact: true }).count()) === 0)
-  await page.keyboard.press('Escape')
-  await fresh()
-  await run('sitealways3', ['Deny'])
-  check('and it asks again after that (and a no refuses)', asked.length === 3 && got('sitealways3', 3).isError && /did not allow using always\.test/.test(got('sitealways3', 3).text), `${asked.length} ${got('sitealways3', 3).text}`)
-  // No.
-  await fresh()
-  await run('sitedeny', ['Deny'])
-  check('a no refuses, and tells the assistant not to try again', got('sitedeny', 3).isError && /did not allow using deny\.test/.test(got('sitedeny', 3).text), got('sitedeny', 3).text)
-  check('and it is not asked a second time in that chat', got('sitedeny', 4).isError && /said no to deny\.test/.test(got('sitedeny', 4).text) && asked.length === 4, `${asked.length} ${got('sitedeny', 4).text}`)
-  check('nothing was clicked on that site', (await pageOn('deny.test').textContent('#out')) === '')
-  // Off.
-  await settingsBrowser()
-  await page.getByRole('switch', { name: 'Ask before it uses a new site' }).click()
-  await page.keyboard.press('Escape')
-  await fresh()
-  await run('sitefree')
-  check('with asking switched off, any site is used', /Clicked/.test(got('sitefree', 3).text) && asked.length === 4, got('sitefree', 3).text)
-  await settingsBrowser()
-  await page.getByRole('switch', { name: 'Ask before it uses a new site' }).click()
+  check('and it can be taken off the list, which then goes away', (await page.getByText('Sites it may always use').count()) === 0)
   await page.keyboard.press('Escape')
 
   console.log('\n# Settings, Browser')
@@ -306,7 +296,7 @@ try {
   check('switching them on gives an address', /^ws:\/\/127\.0\.0\.1:\d+\/devtools\/browser\/[0-9a-f]{32}$/.test(open.endpoint ?? ''), open.endpoint)
   const outside = await chromium.connectOverCDP(open.endpoint)
   const outsidePages = outside.contexts()[0].pages()
-  check('it sees the browser’s tabs and not Celeste’s own window', outsidePages.length >= 2 && outsidePages.every((p) => p.url().startsWith('http')), outsidePages.map((p) => p.url()).join(' '))
+  check('it sees the browser’s tabs and not Celeste’s own window', outsidePages.length >= 2 && outsidePages.every((p) => /^(https?|file):/.test(p.url())) && !outsidePages.some((p) => /deck\.pptx|celeste-view/.test(p.url())), outsidePages.map((p) => p.url()).join(' '))
   const mine = outsidePages.find((p) => p.url() === `${base}/` || p.url() === base)
   check('and can use one: Playwright reads the page', !!mine && (await mine.title()) === 'Test page')
   await mine.click('#b')

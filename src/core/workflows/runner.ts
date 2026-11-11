@@ -106,7 +106,7 @@ export interface RunnerDeps {
   pause?: (ms: number) => Promise<void>
   platform?: NodeJS.Platform
   /** Whether a step may use the computer: the switches in Settings, Desktop control. Checked before a run starts. */
-  desktop?: { enabled(): boolean; wholeScreen(): boolean }
+  desktop?: { enabled(): boolean }
   /** Why a step cannot use the phone now (phones switched off, none paired, none connected), or null when it can. Checked before a run starts. */
   phone?: { problem(): string | null }
 }
@@ -215,9 +215,6 @@ export class WorkflowRunner {
     for (const node of order) {
       if (node.type === 'agent' && node.computer) {
         if (this.deps.desktop && !this.deps.desktop.enabled()) throw new Error(`“${node.name}” uses the computer, but Desktop control is switched off. Switch it on in Settings, Desktop control.`)
-        if (this.deps.desktop && !this.deps.desktop.wholeScreen() && !node.computer.app?.trim() && !node.computer.window?.trim()) {
-          throw new Error(`“${node.name}” uses the whole screen, which Settings, Desktop control does not allow. Name a program or a window in the step.`)
-        }
       }
       if (node.type === 'agent' && node.phone) {
         const problem = this.deps.phone ? this.deps.phone.problem() : 'Phones are not available here.'

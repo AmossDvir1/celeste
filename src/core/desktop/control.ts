@@ -1,11 +1,12 @@
 import { z } from 'zod'
+import type { ApprovalSlider } from '@shared/agent'
 import type { DesktopGrantRecord } from '@shared/api'
 import {
   blockedKeys,
   chooseScope,
   DESKTOP_LIMITS,
+  DESKTOP_SLIDER,
   describeAction,
-  describeDuration,
   describeScope,
   isConsequential,
   parseKeys,
@@ -58,12 +59,10 @@ export interface DesktopDeps {
   host: DesktopHost
   /** Celeste's own card in the conversation. Resolves true only when the person pressed Allow. */
   askConsent(sessionId: string, request: { title: string; detail: string }): Promise<boolean>
+  /** The same card with a slider for how long (it starts at `slider.value`). Resolves with the minutes the person chose, or null when they said no. */
+  askDuration(sessionId: string, request: { title: string; detail: string; slider: ApprovalSlider }): Promise<number | null>
   /** Programs (or parts of a window title) that are never touched: Settings, Desktop control. Read each time, so a change counts at once. */
   never(): string[]
-  /** How long one yes lasts, in milliseconds. Fifteen minutes when not given. */
-  duration?(): number
-  /** Whether the assistant may ask for the whole screen. Yes when not given. */
-  wholeScreen?(): boolean
   /** Called when control ends, to keep a list of recent grants. */
   logGrant?(entry: DesktopGrantRecord): void
   /** How many questions are waiting for the person in this chat (an approval of a command, say). Control waits while there are any. */
@@ -251,7 +250,8 @@ export class DesktopControl implements ExtraTools {
   extend(): void {
     const g = this.grant
     if (!g) return
-    g.until = Math.max(g.until, this.now() + DESKTOP_LIMITS.grantMs)
+    // At least another stretch from now; a grant that has more left than that keeps it.
+    g.until = Math.max(g.until, this.now() + DESKTOP_LIMITS.extendMs)
     this.arm(g)
     this.deps.record(g.sessionId, { type: 'desktop.action', grantId: g.id, text: 'Added 15 minutes', ok: true, until: g.until })
     void this.showBar(g).catch(() => undefined)
@@ -358,10 +358,6 @@ export class DesktopControl implements ExtraTools {
     if (this.refused.has(sessionId)) return fail('The user said no earlier in this chat. Do not ask again unless they ask you to use the screen.')
     const unsupported = await this.deps.host.unsupported()
     if (unsupported) return fail(unsupported)
-    if (!p.data.app && !p.data.window && this.deps.wholeScreen?.() === false) {
-      return fail('The user has not allowed control of the whole screen (Settings, Desktop control). Ask again with app or window, naming the one program or window you need.')
-    }
-    const length = this.deps.duration?.() ?? DESKTOP_LIMITS.grantMs
 
     // The program or window it asked to be limited to has to be there now.
     let scope: DesktopScope = { kind: 'screen' }
@@ -379,10 +375,11 @@ export class DesktopControl implements ExtraTools {
     const never = this.deps.never()
 
     this.asking = sessionId
-    let allowed = false
+    let minutes: number | null = null
     try {
-      allowed = await this.deps.askConsent(sessionId, {
-        title: scope.kind === 'screen' ? `Let the assistant control this computer ${length >= DESKTOP_LIMITS.longGrantMs ? '' : 'for '}${describeDuration(length)}` : `Let the assistant use ${scope.kind === 'window' ? `“${scope.title.slice(0, 60)}”` : scope.app} ${length >= DESKTOP_LIMITS.longGrantMs ? '' : 'for '}${describeDuration(length)}`,
+      minutes = await this.deps.askDuration(sessionId, {
+        slider: DESKTOP_SLIDER,
+        title: scope.kind === 'screen' ? 'Let the assistant control this computer' : `Let the assistant use ${scope.kind === 'window' ? `“${scope.title.slice(0, 60)}”` : scope.app}`,
         detail: [
           `Why: ${p.data.reason}`,
           '',
@@ -397,7 +394,7 @@ export class DesktopControl implements ExtraTools {
     } finally {
       this.asking = null
     }
-    if (!allowed) {
+    if (minutes === null) {
       this.refused.add(sessionId)
       return fail('The user said no. Do not ask again unless they ask you to use the screen. Tell them what you would have done, or do it another way.')
     }
@@ -408,7 +405,7 @@ export class DesktopControl implements ExtraTools {
       sessionId,
       reason: p.data.reason,
       startedAt: now,
-      until: now + length,
+      until: now + minutes * 60_000,
       lastAt: now,
       actions: 0,
       lines: [],

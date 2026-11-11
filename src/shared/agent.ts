@@ -12,6 +12,16 @@ export interface ApprovalChoices {
   always: string
 }
 
+/** A slider on a question that asks for how long (minutes): where it starts, and its range. Desktop control's card has one. */
+export interface ApprovalSlider {
+  min: number
+  max: number
+  step: number
+  value: number
+  /** When set, the card also offers "Until I stop it", which answers with this many minutes. */
+  until?: number
+}
+
 export type ApprovalMode = 'auto' | 'edits' | 'ask' | 'plan'
 export type ToolKind = 'read' | 'edit' | 'write' | 'shell' | 'web' | 'search' | 'mcp' | 'agent' | 'other'
 
@@ -62,6 +72,8 @@ export type AskAnswers = Record<string, string | string[]>
 export interface ApprovalAnswer {
   allow: boolean
   always?: boolean
+  /** Where the slider of the card was left, when it had one. */
+  minutes?: number
 }
 
 export interface Usage {
@@ -106,7 +118,7 @@ export type AgentEvent =
   | { type: 'tool.started'; id: string; kind: ToolKind; title: string; input?: unknown }
   | { type: 'tool.output'; id: string; text: string }
   | { type: 'tool.completed'; id: string; ok: boolean; result?: string; diff?: FileDiff[] }
-  | { type: 'approval.requested'; requestId: string; kind: ToolKind; title: string; detail?: string; choices?: ApprovalChoices }
+  | { type: 'approval.requested'; requestId: string; kind: ToolKind; title: string; detail?: string; choices?: ApprovalChoices; slider?: ApprovalSlider }
   | { type: 'ask_user.requested'; requestId: string; questions: Question[] }
   | { type: 'usage.updated'; usage: Usage }
   | { type: 'turn.completed'; turnId: string }

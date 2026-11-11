@@ -113,6 +113,7 @@ const schemas = {
   focus: z.undefined(),
   external: z.object({ on: z.boolean() }),
   openFile: z.object({ chatId: id, path }),
+  openAttachment: z.object({ chatId: id, url: text, name: z.string().max(300) }),
   pickFile: z.object({ chatId: id }),
   fileAction: z.object({ id, action: z.enum(['open', 'reveal']) })
 } satisfies Record<BrowserOp, z.ZodTypeAny>
@@ -122,7 +123,8 @@ const coreSchemas = {
   newTab: z.object({ chatId: id, url: text.optional() }),
   selectTab: z.object({ id }),
   closeTab: z.object({ id }),
-  reveal: z.object({ chatId: id })
+  reveal: z.object({ chatId: id }),
+  openFile: z.object({ chatId: id, path })
 }
 
 /** A short reason in plain words for a page that would not load. */
@@ -282,6 +284,10 @@ export class BrowserService {
         if (this.host && !this.host.isDestroyed()) this.host.webContents.send('celeste:browser-reveal', { chatId })
         return undefined
       }
+      case 'openFile': {
+        const { chatId, path: file } = coreSchemas.openFile.parse(raw)
+        return this.openFile(chatId, file)
+      }
       default:
         throw new Error('Unknown browser call')
     }
@@ -381,6 +387,13 @@ export class BrowserService {
         return { endpoint: this.setExternal(!!arg['on']), clients: this.bridge?.externalClients() ?? 0 }
       case 'openFile':
         return this.openFile(String(arg['chatId']), String(arg['path']))
+      case 'openAttachment': {
+        // A file the person attached, as the chat shows it (celeste-file://attachments/<file>): found in the attachments folder, named as it was attached.
+        const u = String(arg['url'])
+        const m = /^celeste-file:\/\/attachments\/([\w-]+\.[a-z0-9]{1,5})$/.exec(u)
+        if (!m) throw new Error('That is not an attached file.')
+        return this.openFile(String(arg['chatId']), join(app.getPath('userData'), 'attachments', m[1]!), String(arg['name'] ?? ''))
+      }
       case 'pickFile': {
         const options = { title: 'Open a file', properties: ['openFile' as const] }
         const chosen = this.host && !this.host.isDestroyed() ? await dialog.showOpenDialog(this.host, options) : await dialog.showOpenDialog(options)
@@ -518,7 +531,7 @@ export class BrowserService {
    * address; what needs turning into something readable is a viewer tab; anything else is a viewer tab that says what it is and why it cannot
    * be shown. A file already open in this chat is shown again, not opened twice.
    */
-  openFile(chatId: string, path: string): { id: string; how: 'native' | 'viewer' | 'card' } {
+  openFile(chatId: string, path: string, shownAs?: string): { id: string; how: 'native' | 'viewer' | 'card' } {
     if (!isAbsolute(path)) throw new Error('That is not the path of a file.')
     let size: number
     try {
@@ -528,8 +541,9 @@ export class BrowserService {
     } catch (e) {
       throw new Error(e instanceof Error && e.message === 'That is not a file.' ? e.message : 'The file is no longer there.')
     }
-    const name = fileTitle(path)
-    const info = previewInfo(name)
+    // A stored attachment is named by an id on disk: the tab and the viewer use the name it was attached with.
+    const name = shownAs?.trim() ? fileTitle(shownAs.trim()) : fileTitle(path)
+    const info = previewInfo(fileTitle(path))
     const address = fileAddress(path)
     const open = [...this.tabs.values()].find((t) => t.chatId === chatId && (t.file?.path === path || (!t.file && t.url === address)))
     if (open) {

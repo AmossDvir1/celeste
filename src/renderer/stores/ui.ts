@@ -18,7 +18,7 @@ function savedBrowserWidth(): number {
     return BROWSER_WIDTH.normal
   }
 }
-export type SettingsSection = 'general' | 'appearance' | 'vendors' | 'agent' | 'tools' | 'browser' | 'desktop' | 'phone' | 'devices' | 'data' | 'about'
+export type SettingsSection = 'general' | 'vendors' | 'tools' | 'browser' | 'desktop' | 'phone' | 'devices' | 'data' | 'about'
 
 /** Settings of the composer before a session exists. A new session copies them. */
 export interface Draft {

@@ -1,6 +1,6 @@
 import { mkdirSync, rmSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
-import type { AgentSession, ApprovalAnswer, ApprovalChoices, ApprovalMode, AskAnswers, AttachmentInfo, ContextRef, SessionMode, ToolKind, UserInput, VendorId } from '@shared/agent'
+import type { AgentSession, ApprovalAnswer, ApprovalChoices, ApprovalSlider, ApprovalMode, AskAnswers, AttachmentInfo, ContextRef, SessionMode, ToolKind, UserInput, VendorId } from '@shared/agent'
 import {
   UNDO_WINDOW_MS,
   type AppSettings,
@@ -21,7 +21,6 @@ import {
   type VendorRecords
 } from '@shared/api'
 import { SIDEBAR_WIDTH } from '@shared/defaults'
-import { DESKTOP_MINUTES } from '@shared/desktop'
 import { coalesceEvents } from '@shared/coalesce'
 import { nextStatus } from '@shared/status'
 import type { AttachmentRow, FileStore, SessionRow, Store } from './store'
@@ -117,7 +116,7 @@ const APPROVALS: ApprovalMode[] = ['auto', 'edits', 'ask', 'plan']
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const THEMES = ['dark', 'light', 'system']
 const VENDOR_IDS: VendorId[] = ['copilot', 'claude', 'openai', 'gemini']
-const SETTINGS_KEYS = ['theme', 'userName', 'wizardDone', 'sidebarCollapsed', 'sidebarWidth', 'autoTitle', 'ownPrograms', 'desktopControl', 'desktopMinutes', 'desktopWholeScreen', 'desktopNeverApps', 'browserTools', 'browserAskSites', 'browserAllowedSites', 'pinnedModels', 'defaults'] as const
+const SETTINGS_KEYS = ['theme', 'userName', 'wizardDone', 'sidebarCollapsed', 'sidebarWidth', 'desktopControl', 'desktopNeverApps', 'browserTools', 'browserAllowedSites', 'pinnedModels', 'defaults'] as const
 const MAX_PINNED = 100
 const TRANSCRIPT_LIMIT = 24_000
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
@@ -134,6 +133,26 @@ const EXTENSIONS: Record<string, string> = {
   'text/markdown': 'md',
   'application/json': 'json',
   'text/csv': 'csv'
+}
+
+/**
+ * The extensions an attachment keeps from its name: documents, data, media and archives. A Word file is stored as `<id>.docx`, so the
+ * assistant, the viewer and the person's programs can tell what it is. Anything that could run when it is opened (programs, scripts,
+ * shortcuts, installers) is not here: it is stored with no extension of its own. At most five letters (the file's address allows that).
+ */
+const KEPT_EXTENSIONS = new Set(
+  (
+    'pdf doc docx dot dotx xls xlsx xlsm xlsb ods odt odp ppt pptx pps rtf csv tsv txt md json jsonl xml yaml yml toml ini log html htm svg ipynb ' +
+    'zip gz tar 7z rar png jpg jpeg gif webp avif bmp ico heic tif tiff mp4 m4v mov webm mkv avi mp3 wav ogg m4a flac aac epub tex srt vtt css ' +
+    'ts tsx jsx c h cpp cs java go rs kt swift sql'
+  ).split(' ')
+)
+
+/** The extension a stored attachment gets: the one its name has when that is a kept kind, else by its type, else none. */
+export function attachmentExtension(name: string, mime: string): string {
+  const fromName = /\.([A-Za-z0-9]{1,5})$/.exec(name)?.[1]?.toLowerCase()
+  if (fromName && KEPT_EXTENSIONS.has(fromName)) return fromName
+  return EXTENSIONS[mime] ?? 'bin'
 }
 
 function oneOf<T extends string>(value: unknown, allowed: readonly T[], what: string): T {
@@ -153,7 +172,7 @@ export class SessionService {
   private readonly undoTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly undoMs: number
   /** Approval cards raised for tool calls that are not the agent's own (device commands), waiting for an answer. */
-  private readonly toolApprovals = new Map<string, { sessionId: string; resolve: (answer: { allow: boolean; always: boolean }) => void }>()
+  private readonly toolApprovals = new Map<string, { sessionId: string; resolve: (answer: { allow: boolean; always: boolean; minutes?: number }) => void }>()
 
   constructor(private readonly opts: ServiceOptions) {
     this.store = opts.store
@@ -252,14 +271,9 @@ export class SessionService {
       wizardDone: (stored.wizardDone as boolean) ?? d.wizardDone,
       sidebarCollapsed: (stored.sidebarCollapsed as boolean) ?? d.sidebarCollapsed,
       sidebarWidth: (stored.sidebarWidth as number | undefined) ?? d.sidebarWidth,
-      autoTitle: (stored.autoTitle as boolean | undefined) ?? d.autoTitle,
-      ownPrograms: (stored.ownPrograms as boolean | undefined) ?? d.ownPrograms,
       desktopControl: (stored.desktopControl as boolean | undefined) ?? d.desktopControl,
-      desktopMinutes: (stored.desktopMinutes as number | undefined) ?? d.desktopMinutes,
-      desktopWholeScreen: (stored.desktopWholeScreen as boolean | undefined) ?? d.desktopWholeScreen,
       desktopNeverApps: (stored.desktopNeverApps as string[] | undefined) ?? d.desktopNeverApps,
       browserTools: (stored.browserTools as boolean | undefined) ?? d.browserTools,
-      browserAskSites: (stored.browserAskSites as boolean | undefined) ?? d.browserAskSites,
       browserAllowedSites: (stored.browserAllowedSites as string[] | undefined) ?? d.browserAllowedSites,
       pinnedModels: (stored.pinnedModels as string[] | undefined) ?? d.pinnedModels,
       defaults: { ...d.defaults, ...(stored.defaults as Partial<AppSettings['defaults']> | undefined) }
@@ -289,16 +303,8 @@ export class SessionService {
     if (patch.userName !== undefined) next.userName = text(patch.userName, 'name', 100)
     if (patch.wizardDone !== undefined) next.wizardDone = patch.wizardDone === true
     if (patch.sidebarCollapsed !== undefined) next.sidebarCollapsed = patch.sidebarCollapsed === true
-    if (patch.autoTitle !== undefined) next.autoTitle = patch.autoTitle === true
-    if (patch.ownPrograms !== undefined) next.ownPrograms = patch.ownPrograms === true
     if (patch.desktopControl !== undefined) next.desktopControl = patch.desktopControl === true
-    if (patch.desktopMinutes !== undefined) {
-      if (!(DESKTOP_MINUTES as readonly number[]).includes(patch.desktopMinutes)) throw new Error('Invalid length of time')
-      next.desktopMinutes = patch.desktopMinutes
-    }
-    if (patch.desktopWholeScreen !== undefined) next.desktopWholeScreen = patch.desktopWholeScreen === true
     if (patch.browserTools !== undefined) next.browserTools = patch.browserTools === true
-    if (patch.browserAskSites !== undefined) next.browserAskSites = patch.browserAskSites === true
     if (patch.browserAllowedSites !== undefined) {
       if (!Array.isArray(patch.browserAllowedSites) || patch.browserAllowedSites.length > 200) throw new Error('Invalid list of sites')
       const sites = patch.browserAllowedSites.map((s) => text(s, 'site', 253).trim().toLowerCase())
@@ -322,7 +328,6 @@ export class SessionService {
       const merged = { ...this.currentSettings().defaults }
       if (d.model !== undefined) merged.model = text(d.model, 'model', 100)
       if (d.approval !== undefined) merged.approval = oneOf(d.approval, APPROVALS, 'approval mode')
-      if (d.projectsFolder !== undefined) merged.projectsFolder = text(d.projectsFolder, 'folder', 500)
       next.defaults = merged
     }
     for (const [key, value] of Object.entries(next)) this.store.setSetting(key, value)
@@ -562,7 +567,7 @@ export class SessionService {
     this.record(id, { type: 'user.message', text: input.text, attachments: input.attachments, ...(context.length ? { context } : {}) }, live)
 
     // The first message names the session: the sidebar shows a short title in place of its first words, a moment later.
-    if (row.lastSeq === 0 && this.opts.titler && input.text.trim().length >= 3 && this.currentSettings().autoTitle) void this.autoTitle(id, row.vendor, row.title, input.text)
+    if (row.lastSeq === 0 && this.opts.titler && input.text.trim().length >= 3 ) void this.autoTitle(id, row.vendor, row.title, input.text)
 
     // What the agent is told: the person's words, then (if the folder was reverted) a note about that, then the files they added.
     // The agent's adapter gets only text and attachments; the files are already in the text.
@@ -825,7 +830,7 @@ export class SessionService {
     if (waiting && waiting.sessionId === id) {
       this.toolApprovals.delete(requestId)
       this.record(id, { type: 'approval.resolved', requestId, allow: answer.allow === true }, { text: '' })
-      waiting.resolve({ allow: answer.allow === true, always: answer.allow === true && answer.always === true })
+      waiting.resolve({ allow: answer.allow === true, always: answer.allow === true && answer.always === true, ...(answer.allow === true && typeof answer.minutes === 'number' ? { minutes: answer.minutes } : {}) })
       return
     }
     const live = this.live.get(id)
@@ -864,10 +869,18 @@ export class SessionService {
     return this.ask(sessionId, request).then((a) => (!a.allow ? 'deny' : a.always ? 'always' : 'once'))
   }
 
-  private ask(sessionId: string, request: { kind: ToolKind; title: string; detail?: string; choices?: ApprovalChoices }): Promise<{ allow: boolean; always: boolean }> {
+  /**
+   * The same card with a slider for how long (minutes). Resolves with the minutes the person left it at, or null for no. Used by desktop
+   * control, whose yes lasts a while.
+   */
+  requestTimed(sessionId: string, request: { kind: ToolKind; title: string; detail?: string; slider: ApprovalSlider }): Promise<number | null> {
+    return this.ask(sessionId, request).then((a) => (a.allow ? Math.min(Math.max(request.slider.max, request.slider.until ?? 0), Math.max(request.slider.min, a.minutes ?? request.slider.value)) : null))
+  }
+
+  private ask(sessionId: string, request: { kind: ToolKind; title: string; detail?: string; choices?: ApprovalChoices; slider?: ApprovalSlider }): Promise<{ allow: boolean; always: boolean; minutes?: number }> {
     const requestId = `tool-${crypto.randomUUID()}`
     // Not tied to the running agent: the answer goes to whoever is waiting, not to the vendor.
-    this.record(sessionId, { type: 'approval.requested', requestId, kind: request.kind, title: request.title, detail: request.detail, ...(request.choices ? { choices: request.choices } : {}) }, { text: '' })
+    this.record(sessionId, { type: 'approval.requested', requestId, kind: request.kind, title: request.title, detail: request.detail, ...(request.choices ? { choices: request.choices } : {}), ...(request.slider ? { slider: request.slider } : {}) }, { text: '' })
     return new Promise((resolve) => this.toolApprovals.set(requestId, { sessionId, resolve }))
   }
 
@@ -1013,8 +1026,8 @@ export class SessionService {
     const name = text(file.name, 'file name', 300).replace(/[\u0000-\u001f]/g, '').trim() || 'file'
     const mime = text(file.mime, 'file type', 120) || 'application/octet-stream'
     if (!(file.data instanceof ArrayBuffer) || file.data.byteLength > MAX_ATTACHMENT_BYTES) throw new Error('That file is too large')
-    // Only known types keep their extension, so a file named .exe is stored inert.
-    const ext = EXTENSIONS[mime] ?? 'bin'
+    // Only kinds that cannot run keep their extension, so a file named .exe is stored inert.
+    const ext = attachmentExtension(name, mime)
     const id = crypto.randomUUID()
     const { file: stored, url } = this.opts.files.save(id, ext, mime, file.data)
     const row: AttachmentRow = {

@@ -42,27 +42,17 @@ export interface AppSettings {
   sidebarCollapsed: boolean
   /** How wide the session list is, in pixels. */
   sidebarWidth: number
-  /** After a session's first message, a small model of its vendor writes a short title for the sidebar. */
-  autoTitle: boolean
-  /** Use a vendor's program that is already on this computer when it passes Celeste's check, instead of downloading one. */
-  ownPrograms: boolean
   /** The assistant may ask to use this computer's mouse and keyboard. Off until the person switches it on. */
   desktopControl: boolean
-  /** How long one yes to desktop control lasts, in minutes: 15, 60 or 720 ("until I stop it"). */
-  desktopMinutes: number
-  /** Whether the assistant may ask for the whole screen. Off: it must name a program or a window. */
-  desktopWholeScreen: boolean
   /** Programs, or words in a window's title, that desktop control never sees or touches (a password manager, a bank). */
   desktopNeverApps: string[]
   /** The assistant may use Celeste's browser (open pages, read, click, type). On unless the person switches it off. */
   browserTools: boolean
-  /** Before the assistant acts on a site it has not been allowed to use (a click, typing), ask. On unless switched off. */
-  browserAskSites: boolean
   /** The sites the person chose "Always allow" for, by host name. */
   browserAllowedSites: string[]
   /** Models the person pinned to the top of the model menu, in the order they were pinned. */
   pinnedModels: string[]
-  defaults: { model: string; approval: ApprovalMode; projectsFolder: string }
+  defaults: { model: string; approval: ApprovalMode }
 }
 export type SettingsPatch = Partial<Omit<AppSettings, 'defaults'>> & { defaults?: Partial<AppSettings['defaults']> }
 

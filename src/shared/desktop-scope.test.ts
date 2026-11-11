@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { appName, chooseScope, DESKTOP_LIMITS, DESKTOP_MINUTES, describeDuration, describeScope, inScope, isConsequential, neverMatches, pressesFocused, type WindowInfo } from './desktop'
+import { appName, chooseScope, DESKTOP_LIMITS, DESKTOP_SLIDER, describeDuration, describeScope, inScope, isConsequential, neverMatches, pressesFocused, type WindowInfo } from './desktop'
 
 const windows: WindowInfo[] = [
   { id: 10, title: 'notes.txt - Notepad', app: 'notepad', focused: true },
@@ -114,8 +114,10 @@ describe('describeDuration', () => {
     expect(describeDuration(2 * 60 * 60_000)).toBe('2 hours')
     expect(describeDuration(DESKTOP_LIMITS.longGrantMs)).toBe('until you stop it')
   })
-  it('has the choices Settings offers, and the last is the long one', () => {
-    expect(DESKTOP_MINUTES).toEqual([15, 60, 720])
-    expect(DESKTOP_MINUTES.at(-1)! * 60_000).toBe(DESKTOP_LIMITS.longGrantMs)
+  it('starts the card’s slider at 20 minutes and lets it go to two hours', () => {
+    expect(DESKTOP_SLIDER).toEqual({ min: 5, max: 120, step: 5, value: 20, until: 720 })
+    expect(DESKTOP_SLIDER.until * 60_000).toBe(DESKTOP_LIMITS.longGrantMs)
+    expect(DESKTOP_SLIDER.value * 60_000).toBe(DESKTOP_LIMITS.grantMs)
+    expect(DESKTOP_SLIDER.max * 60_000).toBe(DESKTOP_LIMITS.maxGrantMs)
   })
 })

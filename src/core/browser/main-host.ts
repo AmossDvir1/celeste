@@ -13,6 +13,8 @@ export interface BrowserHost {
   closeTab(id: string): Promise<void>
   /** Shows the browser beside the chat, if the person has that chat open. */
   reveal(chatId: string): Promise<void>
+  /** Opens a file of this computer in a tab for the person (Chromium shows PDF, images and the like; the viewer page shows documents). */
+  openFile(chatId: string, path: string): Promise<{ id: string; how: 'native' | 'viewer' | 'card' }>
 }
 
 /** The browser host as Core sees it: the real one lives in the main process, and this asks it over the line Core already has to it. */
@@ -62,5 +64,8 @@ export class MainBrowserHost implements BrowserHost {
   }
   async reveal(chatId: string): Promise<void> {
     await this.call('reveal', { chatId })
+  }
+  openFile(chatId: string, path: string): Promise<{ id: string; how: 'native' | 'viewer' | 'card' }> {
+    return this.call('openFile', { chatId, path })
   }
 }

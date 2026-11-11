@@ -1,10 +1,10 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Bot, Database, Globe, Info, Monitor, MousePointer2, Moon, Palette, Plug, Settings as SettingsIcon, Smartphone, Sun, Laptop, X, Plug2 } from 'lucide-react'
+import { Bot, Database, Globe, Info, Monitor, MousePointer2, Moon, Plug, Settings as SettingsIcon, Smartphone, Sun, Laptop, X, Plug2 } from 'lucide-react'
 import { PhoneSettings } from '@/features/phone/PhoneSettings'
 import { cn } from '@/lib/cn'
 import { Modal } from '@/components/Dialog'
 import { Field, SelectField } from '@/components/form'
-import { Button, IconButton, Kbd, Switch, TextInput } from '@/components/ui'
+import { Button, IconButton, Switch, TextInput } from '@/components/ui'
 import { APPROVAL_OPTIONS, VENDORS, VENDOR_ORDER } from '@/lib/vendors'
 import { useModels } from '@/stores/models'
 import { core, revealDataFolder } from '@/api'
@@ -24,9 +24,7 @@ const AUTHOR_URL = 'https://github.com/AmossDvir1'
 
 const SECTIONS: { id: SettingsSection; label: string; icon: typeof Bot }[] = [
   { id: 'general', label: 'General', icon: SettingsIcon },
-  { id: 'appearance', label: 'Appearance', icon: Palette },
   { id: 'vendors', label: 'AI vendors', icon: Plug2 },
-  { id: 'agent', label: 'Agent defaults', icon: Bot },
   { id: 'tools', label: 'Tools & Integrations', icon: Plug },
   { id: 'browser', label: 'Browser', icon: Globe },
   { id: 'desktop', label: 'Desktop control', icon: MousePointer2 },
@@ -56,7 +54,7 @@ function RecentGrants() {
       live = false
     }
   }, [])
-  if (!grants?.length) return <p className="text-[13px] text-ink-faint">Recent times the assistant had the screen will be listed here.</p>
+  if (!grants?.length) return null
   return (
     <div className="space-y-1.5">
       <div className="text-[13px] text-ink-muted">Recent times the assistant had the screen</div>
@@ -110,7 +108,7 @@ function AllowedSites() {
       live = false
     }
   }, [])
-  if (!sites.length) return <p className="text-[13px] text-ink-faint">Sites you choose “Always allow” for will be listed here.</p>
+  if (!sites.length) return null
   return (
     <div className="space-y-1.5">
       <div className="text-[13px] text-ink-muted">Sites it may always use</div>
@@ -138,40 +136,14 @@ function BrowserSection() {
   const setPrefs = (patch: Partial<BrowserPrefs>) => void browserCall('setPrefs', patch).catch(failed)
   return (
     <Section title="Browser" description="Celeste’s own browser, beside the chat. You can use it, and so can the assistant.">
-      <Row title="Let the assistant use the browser" description="It can open pages, read them, click, type and take pictures of them, in its own chat’s tabs. Off: the browser is only yours.">
+      <Row title="Let the assistant use the browser" description="It can open pages, read them, click, type and take pictures of them, in its own chat’s tabs. A chat set to Ask asks before it uses a new site. Off: the browser is only yours.">
         <Switch label="Let the assistant use the browser" checked={settings.browserTools} onCheckedChange={(browserTools) => settings.set({ browserTools })} />
-      </Row>
-      <Row title="Ask before it uses a new site" description="The first time it clicks or types on a site, a card in the chat asks. Pages on this computer, such as one you are building, never ask. Off: it uses any site.">
-        <Switch label="Ask before it uses a new site" checked={settings.browserAskSites} onCheckedChange={(browserAskSites) => settings.set({ browserAskSites })} />
       </Row>
       <AllowedSites />
 
       <Row title="Keep cookies" description="Stay signed in to sites after you quit Celeste. Off: the browser starts signed out each time.">
         <Switch label="Keep cookies" checked={prefs.keepCookies} onCheckedChange={(keepCookies) => setPrefs({ keepCookies })} />
       </Row>
-      <Row title="Clear browsing data" description="Signs you out of every site and forgets what it saved.">
-        <Button size="sm" onClick={() => void browserCall('clearData', undefined).then(() => pushToast({ text: 'Cleared the browser’s cookies, sign-ins and saved data.' }), failed)}>
-          Clear
-        </Button>
-      </Row>
-      <Field label="Open links from chats in">
-        {(id) => (
-          <SelectField id={id} value={prefs.linksIn} onChange={(e) => setPrefs({ linksIn: e.target.value as BrowserPrefs['linksIn'] })} className="max-w-xs">
-            <option value="ask">Ask each time</option>
-            <option value="celeste">Celeste’s browser</option>
-            <option value="system">My browser</option>
-          </SelectField>
-        )}
-      </Field>
-      <Field label="Search engine" hint="Used when you type words, not an address, in the address bar.">
-        {(id) => (
-          <SelectField id={id} value={prefs.search} onChange={(e) => setPrefs({ search: e.target.value as BrowserPrefs['search'] })} className="max-w-xs">
-            <option value="google">Google</option>
-            <option value="duckduckgo">DuckDuckGo</option>
-            <option value="bing">Bing</option>
-          </SelectField>
-        )}
-      </Field>
 
       <div className="space-y-3">
         <Row title="Let other programs control Celeste’s browser" description="Such as Playwright or Playwright MCP, on this computer. Off by default. They see only the browser’s tabs, never Celeste’s windows, and turning this off disconnects them at once.">
@@ -300,15 +272,6 @@ export function ModelSelect({ value, onChange, id }: { value: string; onChange: 
   )
 }
 
-const SHORTCUTS: [string, string][] = [
-  ['Search chats and sessions', 'Ctrl K'],
-  ['New chat', 'Ctrl N'],
-  ['Switch between Chat, Develop and Workflows', 'Ctrl 1 · 2 · 3'],
-  ['Show or hide the sidebar', 'Ctrl B'],
-  ['Open settings', 'Ctrl ,'],
-  ['New line in a message', 'Shift Enter']
-]
-
 const NOTICES = [
   ['Electron', 'MIT'],
   ['React', 'MIT'],
@@ -356,8 +319,6 @@ function UpdateCheck() {
 
 function Content({ section }: { section: SettingsSection }) {
   const settings = useSettings()
-  const closeSettings = useUi((s) => s.closeSettings)
-  const setWizardOpen = useUi((s) => s.setWizardOpen)
   const pushToast = useUi((s) => s.pushToast)
   const resetDraft = useUi((s) => s.resetDraft)
   const dataDir = useUi((s) => s.dataDir)
@@ -367,85 +328,9 @@ function Content({ section }: { section: SettingsSection }) {
   switch (section) {
     case 'general':
       return (
-        <Section title="General" description="Celeste uses your name in the greeting.">
+        <Section title="General" description="Celeste uses your name in the greeting. A new chat starts with the model and the approval you pick here, and you can change them in any chat.">
           <Field label="Your name">{(id) => <TextInput id={id} value={settings.userName} onChange={(e) => settings.set({ userName: e.target.value })} className="max-w-sm" />}</Field>
-          <Row title="Name new chats automatically" description="After your first message, a small, quick model from the same vendor writes a short title for the list. It sees your first message, as the chat itself does, and uses a little of your quota. Off: the title is the first words.">
-            <Switch label="Name new chats automatically" checked={settings.autoTitle} onCheckedChange={(autoTitle) => settings.set({ autoTitle })} />
-          </Row>
-          <div>
-            <h3 className="text-[14px] text-ink">Keyboard shortcuts</h3>
-            <ul className="mt-3 divide-y divide-edge/70 rounded-xl border border-edge">
-              {SHORTCUTS.map(([label, keys]) => (
-                <li key={label} className="flex items-center justify-between px-4 py-2.5 text-[13.5px] text-ink-muted">
-                  {label}
-                  <span className="flex gap-1">
-                    {keys.split(' ').map((k, i) => (k === '·' ? <span key={i}>·</span> : <Kbd key={i}>{k}</Kbd>))}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </Section>
-      )
-    case 'appearance':
-      return (
-        <Section title="Appearance" description="Changes apply right away.">
           <ThemeTiles value={settings.theme} onChange={(theme) => settings.set({ theme })} />
-          <Row title="Show the sidebar" description="Your chats and sessions. Press Ctrl B to toggle.">
-            <Switch label="Show the sidebar" checked={!settings.sidebarCollapsed} onCheckedChange={(v) => settings.set({ sidebarCollapsed: !v })} />
-          </Row>
-        </Section>
-      )
-    case 'vendors':
-      return (
-        <Section title="AI vendors" description="Connect the assistants you use. One is enough, and you can add more any time.">
-          <div className="space-y-3">
-            {VENDOR_ORDER.map((id) => (
-              <VendorCard key={id} id={id} />
-            ))}
-          </div>
-          <Row title="Use programs already on this computer" description="If Claude Code or the Copilot CLI is already installed here and is a version Celeste has been tried with, Celeste uses it instead of downloading its own. Celeste never installs or changes anything outside its own folder. Off: Celeste always uses its own copy.">
-            <Switch label="Use programs already on this computer" checked={settings.ownPrograms} onCheckedChange={(ownPrograms) => settings.set({ ownPrograms })} />
-          </Row>
-          <p className="text-[13px] leading-relaxed text-ink-faint">
-            Celeste has no server of its own. What you ask goes from this computer to your own account with each vendor, and each vendor’s terms apply.
-          </p>
-        </Section>
-      )
-    case 'browser':
-      return <BrowserSection />
-    case 'desktop':
-      return (
-        <Section title="Desktop control" description="Lets the assistant ask to use this computer's screen, mouse and keyboard, for tasks that have no command or tool, such as clicking through a settings page.">
-          <Row title="Let the assistant ask to control this computer" description="Off by default. Even when this is on, it can do nothing until you press Allow on a card in the conversation.">
-            <Switch label="Let the assistant ask to control this computer" checked={settings.desktopControl} onCheckedChange={(desktopControl) => settings.set({ desktopControl })} />
-          </Row>
-          <Field label="How long one yes lasts" hint="After this it ends by itself, and it also ends after five minutes with nothing done. The bar's +15 min adds time. “Until I stop it” still ends after twelve hours.">
-            {(id) => (
-              <SelectField id={id} value={settings.desktopMinutes} onChange={(e) => settings.set({ desktopMinutes: Number(e.target.value) })} className="max-w-xs">
-                <option value={15}>15 minutes</option>
-                <option value={60}>1 hour</option>
-                <option value={720}>Until I stop it</option>
-              </SelectField>
-            )}
-          </Field>
-          <Row title="Let it ask for the whole screen" description="Off: it has to name one program or window, and the rest of the screen stays hidden from it. Recommended for anything that is not a quick job.">
-            <Switch label="Let it ask for the whole screen" checked={settings.desktopWholeScreen} onCheckedChange={(desktopWholeScreen) => settings.set({ desktopWholeScreen })} />
-          </Row>
-          <NeverApps />
-          <RecentGrants />
-          <div className="space-y-2 text-[13px] leading-relaxed text-ink-muted">
-            <p>When you allow it, it lasts 15 minutes in that one chat. A bar stays on screen with a Stop button, and Ctrl+Alt+Esc stops it at once from anywhere. It cannot click or type into Celeste's own windows, or press the stop key.</p>
-            <p>It can be limited to one program or one window, which hides the rest of the screen from it and is what it is told to ask for. If you let it use the whole screen, it can see everything and click and type anywhere you can, so it could send a message, delete something or change a setting. What it sees is sent to your AI vendor, like any attachment. Celeste's checkpoints cannot undo a click.</p>
-            <p>It asks you again before it presses a button called Send, Buy, Delete, Allow and the like (a net, not a guarantee), it does not type into fields that Windows says take a password, and it pauses when you move the mouse.</p>
-            <p>Websites, documents and emails on the screen can contain text that tries to steer it. For anything sensitive, close it first, or use a separate user account or a virtual machine, which is also what AI vendors advise for this kind of tool.</p>
-            <p className="text-ink-faint">Works on Windows for now. It cannot control programs that run as an administrator, the sign-in screen or the lock screen.</p>
-          </div>
-        </Section>
-      )
-    case 'agent':
-      return (
-        <Section title="Agent defaults" description="What a new chat starts with. You can change these in any chat, from the box where you type.">
           <Field label="Default model">
             {(id) => (
               <ModelSelect
@@ -468,16 +353,43 @@ function Content({ section }: { section: SettingsSection }) {
               }}
             />
           </div>
-          <Field label="Projects folder" hint="Develop looks here for projects.">
-            {(id) => (
-              <div className="flex gap-2">
-                <TextInput id={id} value={settings.defaults.projectsFolder} onChange={(e) => settings.setDefaults({ projectsFolder: e.target.value })} />
-                <Button variant="secondary" size="md" onClick={() => pushToast({ text: 'The folder picker arrives with the real app.' })}>
-                  Browse
-                </Button>
+        </Section>
+      )
+    case 'vendors':
+      return (
+        <Section title="AI vendors" description="Connect the assistants you use. One is enough, and you can add more any time.">
+          <div className="space-y-3">
+            {VENDOR_ORDER.map((id) => (
+              <VendorCard key={id} id={id} />
+            ))}
+          </div>
+          <p className="text-[13px] leading-relaxed text-ink-faint">
+            Celeste has no server of its own. What you ask goes from this computer to your own account with each vendor, and each vendor’s terms apply.
+          </p>
+        </Section>
+      )
+    case 'browser':
+      return <BrowserSection />
+    case 'desktop':
+      return (
+        <Section title="Desktop control" description="Lets the assistant ask to use this computer's screen, mouse and keyboard, for tasks that have no command or tool, such as clicking through a settings page.">
+          <Row title="Let the assistant ask to control this computer" description="Off by default. Even when this is on, it can do nothing until you press Allow on a card in the conversation.">
+            <Switch label="Let the assistant ask to control this computer" checked={settings.desktopControl} onCheckedChange={(desktopControl) => settings.set({ desktopControl })} />
+          </Row>
+          <NeverApps />
+          <RecentGrants />
+          <div className="space-y-2 text-[13px] leading-relaxed text-ink-muted">
+            <p>Each time, a card asks how long: 20 minutes unless you move the slider, up to 2 hours. A bar stays on screen with a Stop button, and Ctrl+Alt+Esc stops it at once from anywhere.</p>
+            <p>It asks you again before a button called Send, Buy, Delete or Allow, never types into password fields, and pauses when you move the mouse. What it sees goes to your AI vendor.</p>
+            <details className="text-ink-faint">
+              <summary className="cursor-pointer text-ink-muted">More about what it can do</summary>
+              <div className="mt-2 space-y-2">
+                <p>It can be limited to one program or window, which hides the rest of the screen from it and is what it is told to ask for. With the whole screen it can see everything and click and type anywhere you can, so it could send a message, delete something or change a setting. Celeste's checkpoints cannot undo a click.</p>
+                <p>Websites, documents and emails on the screen can contain text that tries to steer it. For anything sensitive, close it first, or use a separate user account or a virtual machine.</p>
+                <p>Works on Windows for now. It cannot control programs that run as an administrator, the sign-in screen or the lock screen, or Celeste's own windows.</p>
               </div>
-            )}
-          </Field>
+            </details>
+          </div>
         </Section>
       )
     case 'tools':
@@ -511,23 +423,6 @@ function Content({ section }: { section: SettingsSection }) {
             </Button>
           </Row>
           <SeparateCopies />
-          <Row title="Export all sessions" description="A file you can keep or move to another computer.">
-            <Button variant="secondary" size="sm" onClick={() => pushToast({ text: 'Export arrives in a later phase.' })}>
-              Export
-            </Button>
-          </Row>
-          <Row title="Run the setup again" description="Walk through the welcome steps once more.">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                closeSettings()
-                setWizardOpen(true)
-              }}
-            >
-              Run setup
-            </Button>
-          </Row>
           <div className="rounded-xl border border-danger/30 p-4">
             <Row title="Delete all sessions" description="Removes every chat and Develop session from this computer. This cannot be undone.">
               {confirmDelete ? (

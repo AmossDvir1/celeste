@@ -1,6 +1,7 @@
 import type {
   AgentError,
   ApprovalChoices,
+  ApprovalSlider,
   AskAnswers,
   AttachmentInfo,
   ContextRef,
@@ -49,6 +50,8 @@ export type TimelineItem =
       detail?: string
       /** Set when the question can be answered for now or for good: the words for each. */
       choices?: ApprovalChoices
+      /** Set when the question asks for how long: the slider's range and where it starts. */
+      slider?: ApprovalSlider
       status: 'pending' | 'allowed' | 'denied'
     }
   | { kind: 'ask'; id: string; requestId: string; questions: Question[]; answers?: AskAnswers; status: 'pending' | 'answered' }

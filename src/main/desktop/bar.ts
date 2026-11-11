@@ -13,17 +13,17 @@ const PAGE = `<!doctype html><html><head><meta charset="utf-8">
 <style>
   html,body{margin:0;height:100%;background:#10162a;color:#e7ecf8;font:13px/1.45 "Segoe UI",system-ui,sans-serif;overflow:hidden;user-select:none}
   .card>*{flex-shrink:0}
-  .card{box-sizing:border-box;height:100%;padding:10px 14px;border:2px solid #f0a23b;border-radius:12px;display:flex;flex-direction:column;gap:6px}
+  .card{box-sizing:border-box;height:100%;padding:10px 14px;border:2px solid #f5487f;border-radius:12px;display:flex;flex-direction:column;gap:6px}
   .top{display:flex;align-items:center;gap:10px}
-  .dot{width:10px;height:10px;border-radius:50%;background:#f0a23b;box-shadow:0 0 0 0 rgba(240,162,59,.7);animation:p 1.6s infinite}
-  @keyframes p{70%{box-shadow:0 0 0 8px rgba(240,162,59,0)}100%{box-shadow:0 0 0 0 rgba(240,162,59,0)}}
+  .dot{width:10px;height:10px;border-radius:50%;background:#f5487f;box-shadow:0 0 0 0 rgba(245,72,127,.7);animation:p 1.6s infinite}
+  @keyframes p{70%{box-shadow:0 0 0 8px rgba(245,72,127,0)}100%{box-shadow:0 0 0 0 rgba(245,72,127,0)}}
   .title{font-weight:600;flex:1}
   .left{color:#aeb8d1;font-variant-numeric:tabular-nums}
   button{font:inherit;border:1px solid #3a4565;background:#1b2340;color:#e7ecf8;border-radius:8px;padding:4px 10px;cursor:pointer}
   button.stop{background:#d64545;border-color:#d64545;color:#fff;font-weight:600}
   button:hover{filter:brightness(1.15)}
   .scope{color:#aeb8d1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .paused{display:none;align-items:center;gap:10px;background:#3a2a10;border-radius:8px;padding:6px 10px;color:#ffd9a0}
+  .paused{display:none;align-items:center;gap:10px;background:#3a1427;border-radius:8px;padding:6px 10px;color:#ffc2d6}
   .paused span{flex:1}
   button.go{background:#2f7d4f;border-color:#2f7d4f;color:#fff;font-weight:600}
   .log{color:#aeb8d1;font-size:12px;min-height:3.9em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -58,7 +58,7 @@ const PAGE = `<!doctype html><html><head><meta charset="utf-8">
 
 const BORDER = `<!doctype html><html><head><meta charset="utf-8"><style>
   html,body{margin:0;height:100%;background:transparent;overflow:hidden}
-  div{box-sizing:border-box;position:fixed;inset:0;border:5px solid #f0a23b;box-shadow:inset 0 0 24px rgba(240,162,59,.55)}
+  div{box-sizing:border-box;position:fixed;inset:0;border:5px solid #f5487f;box-shadow:inset 0 0 24px rgba(245,72,127,.55)}
 </style></head><body><div></div></body></html>`
 
 /** The bar is taller while it shows why control is paused. */

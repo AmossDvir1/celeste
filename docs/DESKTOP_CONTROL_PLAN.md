@@ -284,3 +284,10 @@ An organisation that does not want this at all can disable it for everyone throu
 - Microsoft, [User Account Control: Only elevate UIAccess applications that are installed in secure locations](https://learn.microsoft.com/en-us/windows/security/threat-protection/security-policy-settings/user-account-control-only-elevate-uiaccess-applications-that-are-installed-in-secure-locations).
 - The nut.js author's notes on moving from robotjs to libnut ([DEV Community](https://dev.to/s1hofmann/nut-js-two-years-recap-39gh)) and the archived [nut-tree/robotjs](https://github.com/nut-tree/robotjs).
 - Anthropic's computer-use documentation: **not read directly for this plan.** Everything above attributed to it comes from secondary sources and must be checked against the current documentation first.
+
+## 15. Changes after the first release (11 Nov 2026)
+
+- **How long one yes lasts is asked on the card.** The setting (15 minutes, 1 hour, until I stop it) is gone. The card has a slider: 20 minutes to start, 5 minutes to 2 hours in steps of 5, and a tick box **Until I stop it** (twelve hours at most, and it still ends after five minutes of nothing). A step of a workflow, which has no slider, gets 20 minutes.
+- **+15 min on the bar** still adds time (at least 15 minutes from now) and never shortens a grant.
+- **The whole-screen switch is gone.** A request that names no program or window raises the card with the strong warning and the way out (say no, ask for one window). A workflow step that names no window is no longer refused up front.
+- **Settings, Desktop control** keeps the master switch and "Never touch these". The recent grants appear only when there are some, and the long text is two lines and a fold.

@@ -523,15 +523,8 @@ describe('an agent step', () => {
     })
 
     it('does not start when Desktop control is switched off, and says where to switch it on', async () => {
-      const { begin } = setup(chain(start(), computerStep(), end()), { deps: { desktop: { enabled: () => false, wholeScreen: () => true } } })
+      const { begin } = setup(chain(start(), computerStep(), end()), { deps: { desktop: { enabled: () => false } } })
       await expect(begin()).rejects.toThrow(/Desktop control is switched off/)
-    })
-
-    it('does not start with the whole screen when Settings does not allow it, but does with a program', async () => {
-      const deps = { desktop: { enabled: () => true, wholeScreen: () => false } }
-      await expect(setup(chain(start(), computerStep({}), end()), { deps }).begin()).rejects.toThrow(/does not allow/)
-      const ok = setup(chain(start(), computerStep({ app: 'chrome' }), end()), { deps })
-      expect((await ok.begin()).status).toBeDefined()
     })
 
     it('is not told about the computer when the step does not use it', async () => {

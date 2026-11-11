@@ -173,7 +173,7 @@ export function reduceEvent(s: Session, e: LogEvent, at: number): Session {
         ...s,
         items: [
           ...closeThinking(s.items, now),
-          { kind: 'approval', id: itemId(), requestId: e.requestId, tool: e.kind, title: e.title, detail: e.detail, ...(e.choices ? { choices: e.choices } : {}), status: 'pending' }
+          { kind: 'approval', id: itemId(), requestId: e.requestId, tool: e.kind, title: e.title, detail: e.detail, ...(e.choices ? { choices: e.choices } : {}), ...(e.slider ? { slider: e.slider } : {}), status: 'pending' }
         ],
         status: 'waiting',
         activity: { label: 'Waiting for your approval', working: false }

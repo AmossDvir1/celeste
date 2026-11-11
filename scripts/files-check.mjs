@@ -2,7 +2,7 @@
 // answer, a document can be opened or saved or shown in its folder, a program can only be shown, and the window cannot name any other
 // file.   npm run verify:files
 // Claude is real (the real SDK and program) but what it says is chosen by a stand-in for Anthropic's API (scripts/lib/stub.mjs).
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { launch, saveSettings } from './lib/app.mjs'
@@ -90,6 +90,24 @@ try {
   const other = await page.evaluate(([p]) => window.celeste.chatFile('s-00000000-0000-0000-0000-000000000000', p, 'reveal'), ['report.csv'])
   const absolute = await ask(join(profile, 'celeste.db'), 'reveal')
   check('a path out of the chat’s folder, another chat, or an absolute path are all refused', !escape.ok && !other.ok && !absolute.ok && (await asked()).length === before)
+
+  console.log('\n# A file attached to a message')
+  await page.locator('input[type=file]').first().setInputFiles({ name: 'דוח.csv', mimeType: 'text/csv', buffer: Buffer.from('a,b\n1,2\n') })
+  await page.getByRole('button', { name: /^Open דוח\.csv/ }).waitFor({ timeout: 10_000 })
+  const kept = readdirSync(join(profile, 'attachments'))
+  check('an attachment keeps its kind of file on disk (a name in Hebrew too)', kept.length === 1 && kept[0].endsWith('.csv'), kept.join(', '))
+  await box.fill('Look at this file')
+  await box.press('Enter')
+  await page.getByText('Okay.').first().waitFor({ timeout: 60_000 })
+  const chip = page.getByRole('button', { name: /^Open דוח\.csv/ })
+  check('the file in the sent message can be clicked to open', (await chip.count()) === 1)
+  await chip.click()
+  await page.getByTestId('browser-tab').filter({ hasText: 'דוח.csv' }).waitFor({ timeout: 10_000 })
+  check('it opens in the browser pane under the name it was attached with', (await page.getByTestId('browser-tab').filter({ hasText: 'דוח.csv' }).count()) === 1)
+  await page.getByTestId('browser-tab').filter({ hasText: 'דוח.csv' }).click()
+  await page.waitForTimeout(500)
+  const shown = app.app.context().pages().find((p) => p.url().startsWith('celeste-view://'))
+  check('and the viewer shows what is in it', Boolean(shown) && (await shown.locator('body').innerText()).includes('1'), shown ? await shown.locator('body').innerText() : 'no viewer page')
 
   console.log('\n# After a restart')
   await page.reload()

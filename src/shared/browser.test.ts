@@ -127,3 +127,26 @@ describe('afterClosing', () => {
     expect(afterClosing([], 'a')).toBeNull()
   })
 })
+
+describe('addressFor and a path on this computer', () => {
+  it('turns a path the way the assistant has it into a file address, and leaves real addresses alone', async () => {
+    const { addressFor, localPath } = await import('./browser')
+    expect(addressFor(String.raw`C:\Users\Dana\my notes\a b.pdf`)).toBe('file:///C:/Users/Dana/my%20notes/a%20b.pdf')
+    expect(addressFor('D:/work/report.docx')).toBe('file:///D:/work/report.docx')
+    expect(addressFor(String.raw`file://C:\Users\Dana\a.pdf`)).toBe('file:///C:/Users/Dana/a.pdf')
+    expect(addressFor('/home/dana/a b.pdf')).toBe('file:///home/dana/a%20b.pdf')
+    expect(addressFor('/Users/dana/notes.md')).toBe('file:///Users/dana/notes.md')
+    expect(addressFor('file:///C:/Users/Dana/a.pdf')).toBe('file:///C:/Users/Dana/a.pdf')
+    expect(addressFor('https://example.com/a')).toBe('https://example.com/a')
+    expect(addressFor('example.com')).toBe('https://example.com')
+    expect(localPath('http://localhost:3000/x')).toBeNull()
+  })
+
+  it('does not take words, a lone slash, or a link made of slashes for a path', async () => {
+    const { addressFor, localPath } = await import('./browser')
+    for (const text of ['/', '//example.com/x', '/help', 'weather in paris', 'c:', 'cd /tmp', '']) {
+      expect(localPath(text), text).toBeNull()
+      expect(addressFor(text), text).toBeNull()
+    }
+  })
+})

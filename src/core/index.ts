@@ -169,7 +169,7 @@ async function start(): Promise<void> {
   // off, so the app checks always run the same program.
   const ownPrograms = new OwnPrograms(
     { claude: OWN_CLAUDE, copilot: OWN_COPILOT },
-    () => process.env['CELESTE_NO_OWN_PROGRAMS'] !== '1' && (db.settings().ownPrograms as boolean | undefined) !== false
+    () => process.env['CELESTE_NO_OWN_PROGRAMS'] !== '1'
   )
   void ownPrograms.refresh().catch(() => undefined)
   const host = createCopilotHost(
@@ -226,8 +226,7 @@ async function start(): Promise<void> {
     push,
     defaults: {
       ...DEFAULT_SETTINGS,
-      userName: friendlyName(),
-      defaults: { ...DEFAULT_SETTINGS.defaults, projectsFolder: join(homedir(), 'Projects') }
+      userName: friendlyName()
     },
   })
   service.init()
@@ -289,7 +288,7 @@ async function start(): Promise<void> {
     store: db,
     push: runPush,
     agent: agentSteps,
-    desktop: { enabled: () => db.settings().desktopControl === true, wholeScreen: () => db.settings().desktopWholeScreen !== false },
+    desktop: { enabled: () => db.settings().desktopControl === true },
     phone: {
       problem: () => {
         const b = phoneRef
@@ -325,9 +324,12 @@ async function start(): Promise<void> {
       if (sessionId.startsWith('wf-')) return stepAsk.get(sessionId)?.(request.title, request.detail) ?? Promise.resolve(false)
       return (service as SessionService).requestApproval(sessionId, { kind: 'other', ...request })
     },
+    // The slider is only on a chat's card: a step of a workflow gets the usual time.
+    askDuration: async (sessionId, request) => {
+      if (sessionId.startsWith('wf-')) return (await (stepAsk.get(sessionId)?.(request.title, request.detail) ?? Promise.resolve(false))) ? request.slider.value : null
+      return (service as SessionService).requestTimed(sessionId, { kind: 'other', ...request })
+    },
     never: () => (db.settings().desktopNeverApps as string[] | undefined) ?? [],
-    duration: () => ((db.settings().desktopMinutes as number | undefined) ?? 15) * 60_000,
-    wholeScreen: () => db.settings().desktopWholeScreen !== false,
     logGrant: (entry) => db.setSetting('desktopGrants', [...((db.settings().desktopGrants as unknown[] | undefined) ?? []), entry].slice(-20)),
     pendingApprovals: (sessionId) => (service as SessionService).pendingApprovals(sessionId),
     record: (sessionId, event) => (service as SessionService).recordDesktop(sessionId, event)
@@ -349,7 +351,6 @@ async function start(): Promise<void> {
     host: browserHost,
     workFolder: (sessionId) => (service as SessionService).workFolder(sessionId),
     approvalMode: (sessionId) => (service as SessionService).approvalOf(sessionId),
-    askSites: () => db.settings().browserAskSites !== false,
     allowedSites: () => (db.settings().browserAllowedSites as string[] | undefined) ?? [],
     allowSite: (site) => db.setSetting('browserAllowedSites', [...new Set([...((db.settings().browserAllowedSites as string[] | undefined) ?? []), site])].slice(0, 200)),
     ask: (sessionId, request) =>
@@ -358,7 +359,10 @@ async function start(): Promise<void> {
         title: request.title,
         detail: request.detail,
         choices: { allow: 'Allow for this chat', always: `Always allow ${request.site}` }
-      })
+      }),
+    // Where a file is opened with no question: the chat's own folder (the project in Develop) and the files attached in chats.
+    fileRoots: (sessionId) => [(service as SessionService).workFolder(sessionId) ?? '', join(dataDir, 'attachments')],
+    askFile: (sessionId, request) => (service as SessionService).requestApproval(sessionId, { kind: 'read', title: request.title, detail: request.detail })
   })
   browserToolsRef = browserTools
   servers.setExtraTools(new CombinedTools([new WorkflowTools(db, runner, (sessionId) => (service as SessionService).workFolder(sessionId)), desktopControl, phoneTools, browserTools]))

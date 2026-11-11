@@ -88,18 +88,11 @@ try {
   await say(page, 'NAME-ME summarize the quarterly numbers')
   await page.getByRole('button', { name: /^Named by the stand-in/ }).waitFor({ timeout: 30_000 })
   check('the first message names the chat: a short title replaces the first words in the list', (await sidebar(page, /NAME-ME summarize/).count()) === 0)
-  const autoTitle = async () => {
-    await page.getByRole('button', { name: 'Settings', exact: true }).click()
-    await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'General' }).click()
-    await page.getByRole('switch', { name: 'Name new chats automatically' }).click()
-    await page.keyboard.press('Escape')
-  }
-  await autoTitle()
+  // There is no switch for it any more: a chat is always named, and a title that is too long is not used.
   await page.getByRole('button', { name: 'New chat' }).click()
-  await say(page, 'NAME-ME again, with the setting off')
+  await say(page, 'A plain message that the stand-in names far too long')
   await page.waitForTimeout(1500)
-  check('with the setting off the first words stay as the title', (await sidebar(page, /NAME-ME again/).count()) === 1)
-  await autoTitle()
+  check('a title that is too long is ignored: the first words stay', (await sidebar(page, /A plain message that/).count()) === 1)
 
   // The session list can be dragged wider and narrower, but only between two limits, and the width is kept.
   const handle = page.getByRole('separator', { name: 'Resize the sidebar' })

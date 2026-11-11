@@ -28,6 +28,7 @@ import { ReviewDialog } from '@/features/develop/ReviewDialog'
 import { useSessions } from '@/stores/sessions'
 import { AttachmentStrip } from './attachments'
 import { AskUserCard } from './AskUserCard'
+import { describeDuration } from '@shared/desktop'
 import { ContextStrip } from './context'
 import { DesktopCard } from './DesktopCard'
 import { FileCards } from './FileCards'
@@ -289,14 +290,18 @@ const APPROVAL_TITLE: Partial<Record<ToolKind, string>> = {
   agent: 'Start a helper agent?'
 }
 
+const describeMinutes = (minutes: number): string => describeDuration(minutes * 60_000)
+
 const ApprovalCard = memo(function ApprovalCard({
   item,
   onAnswer
 }: {
   item: Extract<TimelineItem, { kind: 'approval' }>
-  onAnswer: (requestId: string, allow: boolean, always?: boolean) => void
+  onAnswer: (requestId: string, allow: boolean, always?: boolean, minutes?: number) => void
 }) {
   const Icon = TOOL_ICON[item.tool]
+  const [minutes, setMinutes] = useState(item.slider?.value ?? 0)
+  const [untilStopped, setUntilStopped] = useState(false)
   // A command on a device is Celeste's own approval: it names the device, and cannot be allowed for the whole session.
   const onDevice = item.requestId.startsWith('tool-')
   if (item.status !== 'pending') {
@@ -320,8 +325,36 @@ const ApprovalCard = memo(function ApprovalCard({
           {item.detail ?? item.title}
         </div>
       </div>
+      {item.slider && (
+        <div className="mt-3 space-y-2">
+          <div className="flex items-center gap-3">
+            <label htmlFor={`minutes-${item.requestId}`} className="w-[120px] shrink-0 text-[13px] text-ink-muted">
+              {untilStopped ? 'Until I stop it' : `For ${describeMinutes(minutes)}`}
+            </label>
+            <input
+              id={`minutes-${item.requestId}`}
+              type="range"
+              aria-label={`How long: ${untilStopped ? 'until I stop it' : describeMinutes(minutes)}`}
+              min={item.slider.min}
+              max={item.slider.max}
+              step={item.slider.step}
+              value={minutes}
+              disabled={untilStopped}
+              onChange={(e) => setMinutes(Number(e.target.value))}
+              className="h-1.5 flex-1 cursor-pointer accent-[var(--c-accent)] disabled:opacity-40"
+            />
+          </div>
+          {item.slider.until !== undefined && (
+            <label className="flex items-center gap-2 text-[13px] text-ink-muted">
+              <input type="checkbox" checked={untilStopped} onChange={(e) => setUntilStopped(e.target.checked)} className="accent-[var(--c-accent)]" />
+              Until I stop it
+              <span className="text-ink-faint">(ends by itself after 5 minutes with nothing done, or 12 hours)</span>
+            </label>
+          )}
+        </div>
+      )}
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button variant="primary" size="sm" onClick={() => onAnswer(item.requestId, true)} autoFocus>
+        <Button variant="primary" size="sm" onClick={() => onAnswer(item.requestId, true, undefined, item.slider ? (untilStopped && item.slider.until !== undefined ? item.slider.until : minutes) : undefined)} autoFocus>
           {item.choices?.allow ?? 'Allow'}
         </Button>
         {item.choices ? (
@@ -466,7 +499,7 @@ export function Timeline({
   session: Session
   /** The element that scrolls, to keep what is being read in place when earlier messages are added above it. */
   scroller?: RefObject<HTMLDivElement | null>
-  onApproval: (requestId: string, allow: boolean, always?: boolean) => void
+  onApproval: (requestId: string, allow: boolean, always?: boolean, minutes?: number) => void
   onAsk: (requestId: string, answers: AskAnswers) => void
   onRetry: () => void
 }) {
@@ -484,7 +517,7 @@ export function Timeline({
   // The callbacks the cards get never change, so a card is drawn again only when it itself changes.
   const latest = useRef({ onApproval, onAsk, onRetry })
   latest.current = { onApproval, onAsk, onRetry }
-  const approve = useCallback((requestId: string, allow: boolean, always?: boolean) => latest.current.onApproval(requestId, allow, always), [])
+  const approve = useCallback((requestId: string, allow: boolean, always?: boolean, minutes?: number) => latest.current.onApproval(requestId, allow, always, minutes), [])
   const ask = useCallback((requestId: string, answers: AskAnswers) => latest.current.onAsk(requestId, answers), [])
   const retry = useCallback(() => latest.current.onRetry(), [])
   const sessionId = session.id

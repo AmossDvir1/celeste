@@ -1,9 +1,9 @@
-import { isAbsolute, relative, resolve } from 'node:path'
+import { basename, isAbsolute, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { z } from 'zod'
 import type { Browser, Page, Response } from 'playwright-core'
 import type { ApprovalMode } from '@shared/agent'
-import { addressFor, isLocalUrl, parseUrl, type HostTab } from '@shared/browser'
+import { addressFor, isLocalUrl, localPath, parseUrl, type HostTab } from '@shared/browser'
 import type { ExtraTool, ExtraTools, ToolResult } from '../workflows/tools'
 import type { BrowserHost } from './main-host'
 
@@ -24,16 +24,18 @@ export interface BrowserDeps {
   workFolder(sessionId: string): string | undefined
   /** How to connect to the endpoint. Playwright's, unless a test gives another. */
   connect?: Connect
-  /** How the chat asks before the agent acts. Going to a new site only asks in "Ask" and "Edits"; in "Auto" it does not. */
+  /** How the chat asks before the agent acts. Only "Ask" asks about a site or a file elsewhere; "Auto", "Edits" and "Plan" do not. */
   approvalMode(sessionId: string): ApprovalMode
-  /** The setting "Ask before the assistant uses a new site". Off: nothing below ever asks. */
-  askSites(): boolean
   /** The sites (host names) the person chose Always allow for. */
   allowedSites(): string[]
   /** Remembers a site for good. */
   allowSite(site: string): void
   /** Asks on a card in the chat: yes for this chat, yes for good, or no. Resolves when the person answers, or no when the chat is stopped. */
   ask(sessionId: string, request: { title: string; detail: string; site: string }): Promise<'once' | 'always' | 'deny'>
+  /** The chat's own places for files: its folder (the project folder in Develop) and where its attachments are kept. A file there is opened with no question. */
+  fileRoots(sessionId: string): string[]
+  /** Asks, yes or no, before a file elsewhere on the computer is opened. */
+  askFile(sessionId: string, request: { title: string; detail: string }): Promise<boolean>
 }
 
 async function playwrightConnect(endpoint: string): Promise<Browser> {
@@ -198,6 +200,14 @@ const TOOLS: Def[] = [
     shape: { url: z.string().max(2000).describe('A full address (https://…) or a site such as example.com') },
     readOnly: false
   },
+  {
+    name: 'browser_open_file',
+    title: 'Show a file to the user',
+    description:
+      'Shows a file of this computer to the user in a tab of Celeste’s browser, beside the chat: PDF, images, video, audio and HTML as they are; Word, Excel, PowerPoint, OpenDocument, Markdown, CSV, notebooks, JSON, code and zip files in a built-in viewer. Use it when the user asks to see, open or look at a file, including one they attached (the attachment’s path is given with it). The path is absolute, or relative to this chat’s folder. A file outside this chat’s folder may ask the user first. This is for showing the file: to read a document’s contents yourself, use your other tools.',
+    shape: { path: z.string().min(1).max(1000).describe('The file’s path: absolute, or relative to this chat’s folder') },
+    readOnly: false
+  },
   { name: 'browser_select_tab', title: 'Show a browser tab', description: 'Shows one of this chat’s tabs.', shape: { tab: tab.unwrap() }, readOnly: false },
   { name: 'browser_close_tab', title: 'Close a browser tab', description: 'Closes one of this chat’s tabs.', shape: { tab: tab.unwrap() }, readOnly: false },
   {
@@ -351,6 +361,9 @@ export class BrowserTools implements ExtraTools {
   /** The sites each chat was allowed for this chat only, and the ones it was refused (so it cannot keep asking). */
   private readonly allowedHere = new Map<string, Set<string>>()
   private readonly refusedHere = new Map<string, Set<string>>()
+  /** The files outside the chat's own places that the person said yes or no to, for each chat. */
+  private readonly filesAllowed = new Map<string, Set<string>>()
+  private readonly filesRefused = new Map<string, Set<string>>()
 
   constructor(private readonly deps: BrowserDeps) {
     this.link = new BrowserLink(deps.host, deps.connect ?? playwrightConnect)
@@ -383,40 +396,59 @@ export class BrowserTools implements ExtraTools {
     this.revealed.delete(sessionId)
     this.allowedHere.delete(sessionId)
     this.refusedHere.delete(sessionId)
+    this.filesAllowed.delete(sessionId)
+    this.filesRefused.delete(sessionId)
   }
 
   // ---- files ----------------------------------------------------------------------------------------------------------------------
 
-  /**
-   * A file address is only opened from the chat's own folder (the project folder in Develop). Without this a chat that has no access to
-   * the computer's files could read any of them by opening it in the browser, or by being sent there by a page.
-   */
-  private fileInside(sessionId: string, url: string): void {
+  /** A file address, checked as the file it names (see pathGate). */
+  private async fileGate(sessionId: string, url: string): Promise<void> {
     if (!/^file:/i.test(url)) return
-    const folder = this.deps.workFolder(sessionId)
-    let file: string | null = null
+    let file: string
     try {
-      file = fileURLToPath(url)
+      file = resolve(fileURLToPath(url))
     } catch {
-      file = null
+      throw new Fail('That is not the address of a file.')
     }
-    const rel = folder && file ? relative(resolve(folder), resolve(file)) : null
-    if (rel === null || rel.startsWith('..') || isAbsolute(rel)) throw new Fail('The browser opens files only from this chat’s own folder. This one is outside it.')
+    await this.pathGate(sessionId, file)
+  }
+
+  /**
+   * Opening a file of this computer in the browser. The chat's own places (its folder, its attachments) are free. Elsewhere it is free
+   * too unless the chat is in "Ask" (the person asked to be asked before the assistant acts): then a yes holds for that file in this
+   * chat, and a no is final for it.
+   */
+  private async pathGate(sessionId: string, file: string): Promise<void> {
+    const inside = this.deps.fileRoots(sessionId).filter(Boolean).some((root) => {
+      const rel = relative(resolve(root), file)
+      return !rel.startsWith('..') && !isAbsolute(rel)
+    })
+    if (inside || this.deps.approvalMode(sessionId) !== 'ask') return
+    if (this.filesAllowed.get(sessionId)?.has(file)) return
+    if (this.filesRefused.get(sessionId)?.has(file)) throw new Fail(`The user said no to opening ${file} in this chat. Do not try again unless they ask you to.`)
+    const yes = await this.deps.askFile(sessionId, { title: `Let the assistant open ${basename(file)}`, detail: `Show this file in Celeste’s browser:\n${file}\n\nIt is not in this chat’s own folder or attachments.` })
+    const note = (map: Map<string, Set<string>>) => map.set(sessionId, (map.get(sessionId) ?? new Set()).add(file))
+    if (!yes) {
+      note(this.filesRefused)
+      throw new Fail(`The user did not allow opening ${file}. Do not try again unless they ask you to.`)
+    }
+    note(this.filesAllowed)
   }
 
   // ---- asking before a site is used ---------------------------------------------------------------------------------------------
 
   /**
-   * Before something is done on, or a page is opened on, a site that has not been allowed: asks on a card in the chat. Pages on this
-   * computer never ask. Opening a page asks only where the chat asks before it acts ("Ask" and "Edits"); acting on a page always asks.
+   * Before something is done on, or a page is opened on, a site that has not been allowed: asks on a card in the chat, but only in a chat
+   * that asks before the assistant acts ("Ask"), as Claude's own browser does in its manual mode. In every other mode the person who sent
+   * the assistant to a site wanted it to go there. Pages on this computer never ask. "Always allow" keeps a site for every chat.
    */
-  private async gate(sessionId: string, kind: 'act' | 'open', url: string, what: string): Promise<void> {
-    if (!this.deps.askSites()) return
+  private async gate(sessionId: string, url: string, what: string): Promise<void> {
+    if (this.deps.approvalMode(sessionId) !== 'ask') return
     const u = parseUrl(url)
     if (!u || !/^https?:$/.test(u.protocol) || isLocalUrl(url)) return
     const site = u.hostname.toLowerCase()
     if (this.deps.allowedSites().includes(site) || this.allowedHere.get(sessionId)?.has(site)) return
-    if (kind === 'open' && this.deps.approvalMode(sessionId) === 'auto') return
     if (this.refusedHere.get(sessionId)?.has(site)) throw new Fail(`The user said no to ${site} in this chat. Do not try to use it again unless they ask you to.`)
     const answer = await this.deps.ask(sessionId, {
       title: `Let the assistant use ${site}`,
@@ -486,8 +518,8 @@ The assistant is working in your browser. Allow lets it use ${site} in this chat
     if (name === 'browser_new_tab' || (name === 'browser_navigate' && !['back', 'forward', 'reload'].includes((str('url') ?? '').trim().toLowerCase()) && !(await host.tabs(sessionId)).length)) {
       const url = addressFor(str('url') ?? '')
       if (!url) throw new Fail('That is not an address. Give a full address such as https://example.com, or a site such as example.com.')
-      this.fileInside(sessionId, url)
-      await this.gate(sessionId, 'open', url, `Open ${url}`)
+      await this.fileGate(sessionId, url)
+      await this.gate(sessionId, url, `Open ${url}`)
       await this.reveal(sessionId)
       // Connected first, so the new page is watched from its first request.
       await this.link.ready()
@@ -496,6 +528,33 @@ The assistant is working in your browser. Allow lets it use ${site} in this chat
       const { page, tab: t } = await this.target(sessionId, id, true)
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 })
       return ok(`Opened tab ${id}: ${(await page.title().catch(() => '')) || '(untitled)'} — ${this.describePage(page, t)}`)
+    }
+
+    if (name === 'browser_open_file') {
+      const given = (str('path') ?? '').trim().replace(/^file:\/\/(?=[A-Za-z]:)/i, '')
+      let file: string
+      if (/^file:/i.test(given)) {
+        try {
+          file = resolve(fileURLToPath(given))
+        } catch {
+          throw new Fail('That is not the path of a file.')
+        }
+      } else {
+        const asked = localPath(given) ?? given
+        const base = this.deps.workFolder(sessionId)
+        if (!isAbsolute(asked) && !base) throw new Fail('Give the file’s full path.')
+        file = resolve(isAbsolute(asked) ? asked : resolve(base!, asked))
+      }
+      await this.pathGate(sessionId, file)
+      await this.reveal(sessionId)
+      const shown = await host.openFile(sessionId, file)
+      return ok(
+        shown.how === 'native'
+          ? `Showing ${basename(file)} to the user in tab ${shown.id}; it is a normal browser tab, so browser_screenshot can see it.`
+          : shown.how === 'viewer'
+            ? `Showing ${basename(file)} to the user in Celeste’s viewer. This tab is for the user to look at: to read the file yourself, use your other tools on ${file}.`
+            : `${basename(file)} is shown to the user as a file card; Celeste cannot display this kind of file, but the user can open it in their own program from there.`
+      )
     }
 
     if (name === 'browser_select_tab') {
@@ -515,9 +574,9 @@ The assistant is working in your browser. Allow lets it use ${site} in this chat
 
     await this.reveal(sessionId)
     const { page, tab: t } = await this.target(sessionId, wantedTab)
-    // A page can send its tab to a file (a link, a redirect): what is there is not for the assistant unless it is in the chat's own folder.
-    this.fileInside(sessionId, page.url())
-    if (ACTING.has(name)) await this.gate(sessionId, 'act', page.url(), WHAT[name]?.(a) ?? 'Act on the page')
+    // A tab that shows a file (the assistant opened it, or a link led there) is held to the same rule as opening one.
+    await this.fileGate(sessionId, page.url())
+    if (ACTING.has(name)) await this.gate(sessionId, page.url(), WHAT[name]?.(a) ?? 'Act on the page')
     const locator = (r: string) => page.getByRef(r)
     const where = () => `Now on: ${this.describePage(page, t)}`
     const point = async () => {
@@ -538,8 +597,8 @@ The assistant is working in your browser. Allow lets it use ${site} in this chat
         else {
           const url = addressFor(input)
           if (!url) throw new Fail('That is not an address. Give a full address such as https://example.com, or a site such as example.com.')
-          this.fileInside(sessionId, url)
-          await this.gate(sessionId, 'open', url, `Open ${url}`)
+          await this.fileGate(sessionId, url)
+          await this.gate(sessionId, url, `Open ${url}`)
           await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 })
         }
         return ok(`${(await page.title().catch(() => '')) || '(untitled)'} — ${page.url()}`)

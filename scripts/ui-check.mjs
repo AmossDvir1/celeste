@@ -100,7 +100,7 @@ try {
   await settingsNav(page, 'AI vendors').click()
   await pasteClaudeKey(page)
   await audit(page, 'Settings, AI vendors')
-  for (const section of ['General', 'Appearance', 'Agent defaults', 'Tools & Integrations', 'Browser', 'Devices', 'Data', 'About']) {
+  for (const section of ['General', 'Tools & Integrations', 'Browser', 'Desktop control', 'Phone', 'Devices', 'Data', 'About']) {
     await settingsNav(page, section).click()
     await page.waitForTimeout(150)
     await audit(page, `Settings, ${section}`)

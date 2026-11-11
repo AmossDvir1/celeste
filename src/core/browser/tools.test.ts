@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { Browser } from 'playwright-core'
 import type { ApprovalMode } from '@shared/agent'
@@ -216,6 +216,11 @@ class FakeHost implements BrowserHost {
   async reveal(chat: string) {
     this.revealed.push(chat)
   }
+  readonly opened: { chat: string; path: string }[] = []
+  async openFile(chat: string, path: string) {
+    this.opened.push({ chat, path })
+    return { id: `tab-${++counter}`, how: 'viewer' as const }
+  }
 }
 
 let host: FakeHost
@@ -223,8 +228,11 @@ let enabled: boolean
 /** What the chat is asked, and what the person answers (the next answers are used in turn; with none left, "once"). */
 let asked: { sessionId: string; title: string; detail: string; site: string }[]
 let answers: ('once' | 'always' | 'deny')[]
+/** The questions about a file elsewhere on the computer, and the answers (with none left, yes). */
+let askedFiles: { sessionId: string; title: string; detail: string }[]
+let fileAnswers: boolean[]
+let attached: string
 let mode: ApprovalMode
-let askSites: boolean
 let always: string[]
 let folder: string
 let connects: number
@@ -235,23 +243,29 @@ beforeEach(() => {
   host = new FakeHost()
   asked = []
   answers = []
+  askedFiles = []
+  fileAnswers = []
   mode = 'auto'
-  askSites = true
   always = []
   enabled = true
   connects = 0
   folder = mkdtempSync(join(tmpdir(), 'celeste-browser-tools-'))
+  attached = mkdtempSync(join(tmpdir(), 'celeste-attached-'))
   tools = new BrowserTools({
     enabled: () => enabled,
     host,
     workFolder: (sessionId) => (sessionId === CHAT ? folder : undefined),
     approvalMode: () => mode,
-    askSites: () => askSites,
     allowedSites: () => always,
     allowSite: (site) => void always.push(site),
     ask: async (sessionId, request) => {
       asked.push({ sessionId, ...request })
       return answers.shift() ?? 'once'
+    },
+    fileRoots: (sessionId) => [sessionId === CHAT ? folder : '', attached],
+    askFile: async (sessionId, request) => {
+      askedFiles.push({ sessionId, ...request })
+      return fileAnswers.shift() ?? true
     },
     connect: async () => {
       connects++
@@ -260,7 +274,10 @@ beforeEach(() => {
   })
 })
 
-afterEach(() => rmSync(folder, { recursive: true, force: true }))
+afterEach(() => {
+  rmSync(folder, { recursive: true, force: true })
+  rmSync(attached, { recursive: true, force: true })
+})
 
 const call = (name: string, args: Record<string, unknown> = {}, chat = CHAT) => tools.call(chat, name, args)
 const pageOf = (tab: { page?: FakePage }) => tab.page!
@@ -269,7 +286,7 @@ describe('the tool list', () => {
   it('offers the tools, and marks the ones that only look as read only (so plan mode keeps them)', () => {
     const list = tools.list()
     expect(list.map((t) => t.name)).toEqual([
-      'browser_tabs', 'browser_new_tab', 'browser_select_tab', 'browser_close_tab', 'browser_navigate', 'browser_read_page', 'browser_find', 'browser_get_text', 'browser_click', 'browser_type', 'browser_key', 'browser_fill', 'browser_scroll', 'browser_hover', 'browser_screenshot', 'browser_wait', 'browser_console', 'browser_network', 'browser_eval', 'browser_upload'
+      'browser_tabs', 'browser_new_tab', 'browser_open_file', 'browser_select_tab', 'browser_close_tab', 'browser_navigate', 'browser_read_page', 'browser_find', 'browser_get_text', 'browser_click', 'browser_type', 'browser_key', 'browser_fill', 'browser_scroll', 'browser_hover', 'browser_screenshot', 'browser_wait', 'browser_console', 'browser_network', 'browser_eval', 'browser_upload'
     ])
     const readOnly = list.filter((t) => t.readOnly).map((t) => t.name)
     expect(readOnly.sort()).toEqual(['browser_console', 'browser_find', 'browser_get_text', 'browser_network', 'browser_read_page', 'browser_screenshot', 'browser_tabs', 'browser_wait'])
@@ -540,6 +557,11 @@ describe('the connection', () => {
 })
 
 describe('asking before a site is used', () => {
+  // Only a chat that asks before the assistant acts ("Ask") asks about a site, as Claude's own browser does in its manual mode.
+  beforeEach(() => {
+    mode = 'ask'
+  })
+
   it('asks before acting on a site that has not been allowed, naming the site and the action', async () => {
     host.add(CHAT, 'https://shop.example.com/cart')
     const r = await call('browser_click', { ref: 'e2' })
@@ -619,27 +641,22 @@ describe('asking before a site is used', () => {
     expect(asked).toEqual([])
   })
 
-  it('asks nothing when the setting is off', async () => {
+  it('asks nothing in Auto, Edits or Plan: the person sent the assistant there', async () => {
     host.add(CHAT, 'https://shop.example.com/')
-    askSites = false
-    await call('browser_click', { ref: 'e2' })
-    await call('browser_navigate', { url: 'https://other.example.com' })
+    for (const m of ['auto', 'edits', 'plan'] as const) {
+      tools.sessionGone(CHAT)
+      mode = m
+      expect((await call('browser_click', { ref: 'e2' })).isError, m).toBe(false)
+      expect((await call('browser_navigate', { url: 'https://other.example.com' })).isError, m).toBe(false)
+    }
     expect(asked).toEqual([])
   })
 
-  it('asks before going to a new site only where the chat asks before it acts', async () => {
+  it('asks before going to a new site, and before acting there, only in Ask', async () => {
     host.add(CHAT, 'http://localhost:3000/')
-    mode = 'auto'
     await call('browser_navigate', { url: 'https://news.example.com/' })
-    expect(asked).toEqual([])
-    for (const m of ['ask', 'edits'] as const) {
-      tools.sessionGone(CHAT)
-      mode = m
-      asked.length = 0
-      await call('browser_navigate', { url: 'https://news.example.com/' })
-      expect(asked, m).toHaveLength(1)
-      expect(asked[0]!.detail).toContain('Open https://news.example.com/')
-    }
+    expect(asked).toHaveLength(1)
+    expect(asked[0]!.detail).toContain('Open https://news.example.com/')
   })
 
   it('asks before opening a tab on a new site, and does not open it on a no', async () => {
@@ -679,42 +696,138 @@ describe('asking before a site is used', () => {
 
 describe('files on this computer', () => {
   const fileUrl = (path: string) => pathToFileURL(path).href
+  const elsewhere = () => join(tmpdir(), 'celeste-elsewhere', 'notes.html')
 
-  it('opens a file from the chat’s own folder, with no question, and not from anywhere else', async () => {
+  it('opens a file of the chat’s own folder or its attachments with no question, in every mode', async () => {
     host.add(CHAT, 'http://localhost:3000/')
     mode = 'ask'
     writeFileSync(join(folder, 'page.html'), '<h1>hi</h1>')
-    const inside = await call('browser_navigate', { url: fileUrl(join(folder, 'page.html')) })
-    expect(inside.isError).toBe(false)
-    expect(asked).toEqual([])
-    for (const outside of [join(tmpdir(), 'other.html'), join(folder, '..', 'secret.txt'), 'C:\Windows\win.ini', '/etc/passwd']) {
-      const r = await call('browser_navigate', { url: fileUrl(outside) })
-      expect(r.isError, outside).toBe(true)
-      expect(r.text, outside).toMatch(/only from this chat’s own folder/)
+    writeFileSync(join(attached, 'a1.pdf'), 'x')
+    for (const path of [join(folder, 'page.html'), join(attached, 'a1.pdf')]) {
+      const r = await call('browser_navigate', { url: fileUrl(path) })
+      expect(r.isError, path).toBe(false)
     }
+    expect(askedFiles).toEqual([])
   })
 
-  it('does not open a new tab on a file outside the folder, and brings nothing up for it', async () => {
-    const r = await call('browser_new_tab', { url: fileUrl(join(tmpdir(), 'other.html')) })
+  it('opens a file anywhere with no question in Auto, Edits and Plan', async () => {
+    host.add(CHAT, 'http://localhost:3000/')
+    for (const m of ['auto', 'edits', 'plan'] as const) {
+      mode = m
+      expect((await call('browser_navigate', { url: fileUrl(elsewhere()) })).isError, m).toBe(false)
+    }
+    expect(askedFiles).toEqual([])
+  })
+
+  it('asks before a file elsewhere in Ask, and a yes holds for that file in this chat', async () => {
+    host.add(CHAT, 'http://localhost:3000/')
+    mode = 'ask'
+    expect((await call('browser_navigate', { url: fileUrl(elsewhere()) })).isError).toBe(false)
+    expect((await call('browser_navigate', { url: fileUrl(elsewhere()) })).isError).toBe(false)
+    expect(askedFiles).toHaveLength(1)
+    expect(askedFiles[0]!.detail).toContain('notes.html')
+    // Another file is another question.
+    await call('browser_navigate', { url: fileUrl(join(tmpdir(), 'celeste-elsewhere', 'other.html')) })
+    expect(askedFiles).toHaveLength(2)
+  })
+
+  it('takes a no as final for that file, and does not ask again', async () => {
+    host.add(CHAT, 'http://localhost:3000/')
+    mode = 'ask'
+    fileAnswers = [false]
+    const first = await call('browser_navigate', { url: fileUrl(elsewhere()) })
+    expect(first.isError).toBe(true)
+    expect(first.text).toMatch(/did not allow/)
+    const again = await call('browser_navigate', { url: fileUrl(elsewhere()) })
+    expect(again.isError).toBe(true)
+    expect(again.text).toMatch(/said no/)
+    expect(askedFiles).toHaveLength(1)
+  })
+
+  it('does not open a new tab on a refused file, and brings nothing up for it', async () => {
+    mode = 'ask'
+    fileAnswers = [false]
+    const r = await call('browser_new_tab', { url: fileUrl(elsewhere()) })
     expect(r.isError).toBe(true)
     expect(host.tabsByChat.get(CHAT) ?? []).toHaveLength(0)
     expect(host.revealed).toEqual([])
   })
 
-  it('does not open a file at all in a chat that has no folder', async () => {
-    host.add('chat-no-folder', 'http://localhost:3000/')
-    const r = await call('browser_navigate', { url: fileUrl(join(folder, 'page.html')) }, 'chat-no-folder')
-    expect(r.isError).toBe(true)
-  })
-
-  it('will not read or act on a tab that a page sent to a file outside the folder, but can use one inside', async () => {
-    const t = host.add(CHAT, fileUrl(join(tmpdir(), 'secret.txt')), 'Secret')
+  it('will not read or act on a tab that a page sent to a file the person has not allowed, but can use one inside', async () => {
+    mode = 'ask'
+    fileAnswers = [false]
+    const t = host.add(CHAT, fileUrl(elsewhere()), 'Secret')
     for (const [name, args] of [['browser_read_page', {}], ['browser_get_text', {}], ['browser_screenshot', {}], ['browser_eval', { expression: '1 + 1' }], ['browser_click', { ref: 'e2' }]] as [string, Record<string, unknown>][]) {
       const r = await call(name, args)
       expect(r.isError, name).toBe(true)
-      expect(r.text, name).toMatch(/only from this chat’s own folder/)
     }
+    expect(askedFiles).toHaveLength(1)
     pageOf(t).address = fileUrl(join(folder, 'ok.html'))
     expect((await call('browser_read_page')).isError).toBe(false)
+  })
+
+  it('forgets what was said about files when the chat ends', async () => {
+    host.add(CHAT, 'http://localhost:3000/')
+    mode = 'ask'
+    await call('browser_navigate', { url: fileUrl(elsewhere()) })
+    tools.sessionGone(CHAT)
+    await call('browser_navigate', { url: fileUrl(elsewhere()) })
+    expect(askedFiles).toHaveLength(2)
+  })
+})
+
+describe('browser_open_file', () => {
+  it('shows a file of the chat’s folder (by a relative path) to the person, and brings the browser up once', async () => {
+    writeFileSync(join(folder, 'deck.pptx'), 'x')
+    const r = await call('browser_open_file', { path: 'deck.pptx' })
+    expect(r.isError).toBe(false)
+    expect(r.text).toContain('deck.pptx')
+    expect(host.opened).toEqual([{ chat: CHAT, path: join(folder, 'deck.pptx') }])
+    expect(host.revealed).toEqual([CHAT])
+    await call('browser_open_file', { path: join(folder, 'deck.pptx') })
+    expect(host.revealed).toEqual([CHAT])
+  })
+
+  it('opens an attachment by its full path, in any mode, with no question', async () => {
+    mode = 'ask'
+    const path = join(attached, 'b7e1.pdf')
+    expect((await call('browser_open_file', { path })).isError).toBe(false)
+    expect(askedFiles).toEqual([])
+    expect(host.opened[0]!.path).toBe(path)
+  })
+
+  it('takes a path as a person or the assistant would write it, and a file address', async () => {
+    const path = join(attached, 'שקופיות.pptx')
+    expect((await call('browser_open_file', { path: pathToFileURL(path).href })).isError).toBe(false)
+    expect(host.opened[0]!.path).toBe(path)
+    const win = await call('browser_open_file', { path: 'file://C:/Users/Dana/a.pdf' })
+    expect(win.isError).toBe(false)
+    expect(host.opened[1]!.path).toBe(resolve('C:/Users/Dana/a.pdf'))
+  })
+
+  it('asks before a file elsewhere in Ask, shows it on a yes, and does not on a no', async () => {
+    mode = 'ask'
+    const path = join(tmpdir(), 'celeste-elsewhere', 'report.docx')
+    fileAnswers = [false]
+    const no = await call('browser_open_file', { path })
+    expect(no.isError).toBe(true)
+    expect(host.opened).toEqual([])
+    expect(host.revealed).toEqual([])
+    const other = join(tmpdir(), 'celeste-elsewhere', 'plan.docx')
+    expect((await call('browser_open_file', { path: other })).isError).toBe(false)
+    expect(host.opened).toEqual([{ chat: CHAT, path: other }])
+    expect(askedFiles.map((q) => q.title)).toEqual(['Let the assistant open report.docx', 'Let the assistant open plan.docx'])
+  })
+
+  it('needs a full path in a chat that has no folder', async () => {
+    const r = await call('browser_open_file', { path: 'deck.pptx' }, 'chat-no-folder')
+    expect(r.isError).toBe(true)
+    expect(r.text).toMatch(/full path/)
+  })
+
+  it('says when the browser is switched off', async () => {
+    enabled = false
+    expect((await call('browser_open_file', { path: 'a.pdf' })).isError).toBe(true)
+    expect(host.opened).toEqual([])
   })
 })

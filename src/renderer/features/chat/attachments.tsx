@@ -5,6 +5,7 @@ import type { AttachmentInfo, ContextRef } from '@shared/agent'
 import { core } from '@/api'
 import { cn } from '@/lib/cn'
 import { formatBytes } from '@/lib/format'
+import { openAttachmentInPane } from '@/lib/links'
 import { useDrafts } from '@/stores/drafts'
 import { isContextDrag, readContextDrag } from './context'
 
@@ -183,12 +184,10 @@ function describe(a: AttachmentInfo): string {
 
 /** A file in the composer or a sent message. Hovering or focusing an image shows a larger preview. */
 export function AttachmentChip({ a, onRemove }: { a: AttachmentInfo; onRemove?: () => void }) {
-  const chip = (
-    <div
-      tabIndex={0}
-      aria-label={`${a.name}, ${describe(a)}${isImage(a) ? '. Hover or focus to preview' : ''}`}
-      className="group flex h-12 max-w-[240px] items-center gap-2 rounded-lg border border-edge bg-raised/80 p-1 pr-2 outline-offset-2"
-    >
+  // A file kept by Celeste can be opened in the browser pane (as a tab, in the viewer when it is a document).
+  const openable = !!a.url?.startsWith('celeste-file://attachments/') && !!window.celeste
+  const body = (
+    <>
       {isImage(a) ? (
         <img src={a.url} alt="" className="h-10 w-10 shrink-0 rounded-md object-cover" draggable={false} />
       ) : (
@@ -197,10 +196,31 @@ export function AttachmentChip({ a, onRemove }: { a: AttachmentInfo; onRemove?: 
           <span className="text-[8px] leading-none font-semibold">{extension(a.name)}</span>
         </span>
       )}
-      <span className="flex min-w-0 flex-col leading-tight">
+      <span className="flex min-w-0 flex-col text-left leading-tight">
         <span className="truncate text-[13px] text-ink">{a.name}</span>
         <span className="truncate text-[11px] text-ink-faint">{describe(a)}</span>
       </span>
+    </>
+  )
+  const chip = (
+    <div
+      tabIndex={openable ? undefined : 0}
+      aria-label={openable ? undefined : `${a.name}, ${describe(a)}${isImage(a) ? '. Hover or focus to preview' : ''}`}
+      className="group flex h-12 max-w-[240px] items-center gap-2 rounded-lg border border-edge bg-raised/80 p-1 pr-2 outline-offset-2"
+    >
+      {openable ? (
+        <button
+          type="button"
+          aria-label={`Open ${a.name}, ${describe(a)}`}
+          title="Open in the browser pane"
+          onClick={() => void openAttachmentInPane(a)}
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md outline-offset-2"
+        >
+          {body}
+        </button>
+      ) : (
+        body
+      )}
       {onRemove && (
         <button
           type="button"
