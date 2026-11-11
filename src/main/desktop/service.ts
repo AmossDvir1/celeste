@@ -333,7 +333,18 @@ export class DesktopService {
       return { ok: false, moved: true, reason: 'The person moved the mouse, so control is paused until they press Continue on the control bar.' }
     }
     const celesteHasFocus = BrowserWindow.getAllWindows().some((w) => !w.isDestroyed() && w.isFocused())
-    const refused = refuseForCeleste(a, points, { celesteRects: this.celesteRects(), celesteHasFocus })
+    const refused = refuseForCeleste(a, points, {
+      celesteRects: this.celesteRects(),
+      celesteHasFocus,
+      coveredByOther: (p) => {
+        try {
+          const top = this.windowsApi().at(p)
+          return !!top && top.pid !== process.pid
+        } catch {
+          return false // Not knowing who is on top counts as Celeste.
+        }
+      }
+    })
     if (refused) return { ok: false, reason: refused }
     const outside = this.refuseForScope(a, points)
     if (outside) return { ok: false, reason: outside }

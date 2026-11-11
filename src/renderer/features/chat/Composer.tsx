@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { Paperclip, Send, Square, TriangleAlert, X } from 'lucide-react'
+import { ListPlus, Paperclip, Send, Square, TriangleAlert, X, Zap } from 'lucide-react'
 import type { ContextRef, SessionMode, UserInput } from '@shared/agent'
+import type { SendMode } from '@shared/queue'
 import { cn } from '@/lib/cn'
 import { IconButton } from '@/components/ui'
 import { slugify } from '@shared/workflow'
@@ -29,8 +30,11 @@ export interface ComposerProps {
   context?: ContextRef[]
   onRemoveContext?: (path: string) => void
   busy?: boolean
-  onSend: (input: UserInput) => void | Promise<boolean>
+  /** `mode` says what to do when the assistant is working: wait for its turn, or stop it and send now. */
+  onSend: (input: UserInput, mode: SendMode) => void | Promise<boolean>
   onStop?: () => void
+  /** Up arrow in an empty box: change the newest waiting message. */
+  onEditLast?: () => void
   autoFocus?: boolean
   placeholder?: string
 }
@@ -49,8 +53,9 @@ export function Composer({
   busy,
   onSend,
   onStop,
+  onEditLast,
   autoFocus,
-  placeholder = 'Message Celeste...'
+  placeholder =  'Message Celeste...'
 }: ComposerProps) {
   const areaRef = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -79,12 +84,12 @@ export function Composer({
     if (autoFocus) areaRef.current?.focus()
   }, [autoFocus])
 
-  const submit = async () => {
+  const submit = async (sendMode: SendMode = 'queue') => {
     if (slash.chip) {
       void slash.run()
       return
     }
-    if (busy || sending || !canSend) return
+    if (sending || !canSend) return
     // "/name answer=value" typed out in full is a workflow as well.
     const typed = parseSlash(text)
     const named = typed && useWorkflows.getState().list.find((w) => slugify(w.name) === typed.name)
@@ -95,7 +100,8 @@ export function Composer({
     }
     setSending(true)
     // The prompt is only cleared once it has gone. If sending fails, what was written is still there to fix and send again.
-    const sent = await onSend({ text: text.trim(), attachments: attachments.items, ...(context.length ? { context } : {}) })
+    // While the assistant works, the message waits its turn ('queue') or stops the turn and goes now ('stop').
+    const sent = await onSend({ text: text.trim(), attachments: attachments.items, ...(context.length ? { context } : {}) }, sendMode)
     setSending(false)
     if (sent === false) return
     attachments.clear()
@@ -112,20 +118,51 @@ export function Composer({
     slash.pick(item)
   }
 
-  const sendButton = (
+  const round = cn('flex shrink-0 items-center justify-center rounded-full transition-colors', home ? 'h-[50px] w-[50px]' : 'h-10 w-10')
+  const sendButton = busy ? (
+    <div className="ml-auto flex items-center gap-1.5">
+      {canSend && (
+        <>
+          <button
+            type="button"
+            title="Stop what it is doing and send this now (Ctrl+Enter)"
+            disabled={sending}
+            onClick={() => void submit('stop')}
+            className="flex h-8 shrink-0 items-center gap-1 rounded-full border border-edge-strong px-3 text-[13px] font-medium text-ink-soft transition-colors hover:bg-hover hover:text-ink disabled:opacity-50"
+          >
+            <Zap className="h-3.5 w-3.5" /> Send now
+          </button>
+          <button
+            type="button"
+            aria-label="Add to queue"
+            title="Add to the queue: it is sent when this answer ends (Enter)"
+            disabled={sending}
+            onClick={() => void submit('queue')}
+            className={cn(round, 'bg-accent-soft text-accent-text hover:bg-accent/20 disabled:opacity-50')}
+          >
+            <ListPlus className="h-[18px] w-[18px]" />
+          </button>
+        </>
+      )}
+      <button type="button" aria-label="Stop" onClick={onStop} className={cn(round, 'bg-accent-fill text-accent-ink hover:brightness-110')}>
+        <Square className="h-4 w-4 fill-current" />
+      </button>
+    </div>
+  ) : (
     <button
       type="button"
-      aria-label={busy ? 'Stop' : 'Send message'}
-      disabled={!busy && (!canSend || sending)}
-      onClick={busy ? onStop : submit}
+      aria-label="Send message"
+      disabled={!canSend || sending}
+      onClick={() => void submit()}
       className={cn(
-        'flex shrink-0 items-center justify-center rounded-full transition-colors',
-        home ? 'absolute right-[22px] bottom-[18px] h-[50px] w-[50px]' : 'ml-auto h-10 w-10',
-        busy || canSend ? 'bg-accent-fill text-accent-ink hover:brightness-110' : 'bg-send text-send-ink',
-        !busy && !canSend && 'cursor-default'
+        round,
+        home && 'absolute right-[22px] bottom-[18px]',
+        !home && 'ml-auto',
+        canSend ? 'bg-accent-fill text-accent-ink hover:brightness-110' : 'bg-send text-send-ink',
+        !canSend && 'cursor-default'
       )}
     >
-      {busy ? <Square className="h-4 w-4 fill-current" /> : <Send className={home ? 'h-[22px] w-[22px]' : 'h-[18px] w-[18px]'} />}
+      <Send className={home ? 'h-[22px] w-[22px]' : 'h-[18px] w-[18px]'} />
     </button>
   )
 
@@ -200,9 +237,14 @@ export function Composer({
               return
             }
           }
+          if (e.key === 'ArrowUp' && onEditLast && !text && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && !e.nativeEvent.isComposing) {
+            e.preventDefault()
+            onEditLast()
+            return
+          }
           if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault()
-            submit()
+            void submit(e.ctrlKey || e.metaKey ? 'stop' : 'queue')
           }
         }}
         onPaste={(e) => {

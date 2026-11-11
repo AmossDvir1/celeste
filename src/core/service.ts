@@ -23,6 +23,7 @@ import {
 import { SIDEBAR_WIDTH } from '@shared/defaults'
 import { coalesceEvents } from '@shared/coalesce'
 import { nextStatus } from '@shared/status'
+import { EMPTY_QUEUE, foldQueue, MAX_QUEUED, type QueueAction, type QueueState, type SendMode } from '@shared/queue'
 import type { AttachmentRow, FileStore, SessionRow, Store } from './store'
 import type { Snapshots } from './snapshots'
 import { cleanTitle, type Titler } from './titles'
@@ -76,6 +77,10 @@ interface Live {
   reverted: boolean
   /** Chat: the private folder as it was when the current turn began, to find the files the turn made. */
   filesBefore?: Manifest
+  /** A turn is running or about to: set when a message is handed to the agent, cleared when the turn ends. Status alone lags behind this. */
+  active?: boolean
+  /** The waiting message to send as soon as the turn being stopped ends ("send now"). */
+  sendNext?: string
 }
 
 /**
@@ -174,6 +179,9 @@ export class SessionService {
   /** Approval cards raised for tool calls that are not the agent's own (device commands), waiting for an answer. */
   private readonly toolApprovals = new Map<string, { sessionId: string; resolve: (answer: { allow: boolean; always: boolean; minutes?: number }) => void }>()
 
+  /** Each session's waiting messages, folded from its log the first time they are asked for and kept up to date by `commit`. */
+  private readonly queues = new Map<string, QueueState>()
+
   constructor(private readonly opts: ServiceOptions) {
     this.store = opts.store
     this.undoMs = opts.undoMs ?? UNDO_WINDOW_MS
@@ -191,6 +199,12 @@ export class SessionService {
     // A turn that was running when Celeste closed cannot continue. Say so in the log.
     for (const row of this.store.listSessions()) {
       if (row.status === 'working') this.record(row.id, { type: 'turn.abandoned' }, { text: '' })
+    }
+
+    // Messages that were waiting when Celeste closed are held, not sent: after a crash the person decides what still makes sense.
+    for (const row of this.store.listSessions()) {
+      const q = this.queueOf(row.id)
+      if (q.items.length && !q.paused) this.record(row.id, { type: 'queue.paused' }, { text: '' })
     }
 
     // Attachments that were added to a message and never sent, and are in no draft, are leftovers.
@@ -234,7 +248,8 @@ export class SessionService {
       // The log holds a token at a time; the window is sent whole runs of them, which replay to the same conversation.
       return { summary: this.summary(row), events: coalesceEvents(this.store.events(id)) }
     },
-    'sessions.send': (id, input) => this.send(id, input),
+    'sessions.send': (id, input, mode) => this.send(id, input, mode),
+    'sessions.queue': (id, action) => this.queueAction(id, action),
     'sessions.interrupt': (id) => this.interrupt(id),
     'sessions.respondApproval': (id, requestId, answer) => this.respondApproval(id, requestId, answer),
     'sessions.respondAsk': (id, requestId, answers) => this.respondAsk(id, requestId, answers),
@@ -524,6 +539,10 @@ export class SessionService {
     const row = this.store.getSession(id)
     if (!row || row.deletedAt !== null) return
     const stored = this.store.appendEvent(id, at, event)
+    if (event.type.startsWith('queue.')) {
+      const q = this.queues.get(id)
+      if (q) this.queues.set(id, foldQueue(q, event))
+    }
 
     switch (event.type) {
       case 'user.message':
@@ -544,6 +563,7 @@ export class SessionService {
         live.text = ''
         this.finishCheckpoint(id)
         this.finishFiles(id)
+        this.afterTurn(id, event.type)
         break
     }
 
@@ -553,16 +573,38 @@ export class SessionService {
     if (status !== row.status) this.emitSummary(id)
   }
 
-  private send(id: string, input: UserInput): void {
+  /** Core is running a turn for this session: the agent has been handed a message and its turn has not ended. */
+  private busy(id: string): boolean {
+    const live = this.live.get(id)
+    return !!live && (live.active === true || this.requireSession(id).status !== 'idle')
+  }
+
+  /**
+   * Sends a message. With a `mode` and a turn already running, the message does not go to the agent: it is put in the queue, and
+   * 'stop' then stops the turn and sends it at once. Without a mode it goes to the agent whatever is running.
+   */
+  private send(id: string, input: UserInput, mode?: SendMode): void {
     this.requireSession(id)
     if (typeof input?.text !== 'string' || input.text.length > 200_000 || !Array.isArray(input.attachments) || input.attachments.length > MAX_ATTACHMENTS) {
       throw new Error('Invalid message')
     }
+    if (mode !== undefined && mode !== 'queue' && mode !== 'stop') throw new Error('Invalid send mode')
+    if (mode && this.busy(id)) {
+      const queueId = this.enqueue(id, input)
+      if (mode === 'stop') this.sendNow(id, queueId)
+      return
+    }
+    this.deliver(id, input)
+  }
+
+  /** Hands a message to the agent now. */
+  private deliver(id: string, input: UserInput): void {
     const row = this.requireSession(id)
     const context = this.contextOf(row, input.context)
     // Read before this message is logged, because it is what has happened since the one before.
     const workflows = this.workflowNote(id)
     const live = this.runtime(id)
+    live.active = true
     this.store.linkAttachments(input.attachments.map((a) => a.id), id)
     this.record(id, { type: 'user.message', text: input.text, attachments: input.attachments, ...(context.length ? { context } : {}) }, live)
 
@@ -591,6 +633,126 @@ export class SessionService {
       if (checkpoint) await this.checkpointBefore(id, cwd, live)
       if (this.live.get(id) === live) live.session.send(outgoing)
     })
+  }
+
+  // --- the queue: messages typed while the assistant works ---------------------------------------------
+
+  private queueOf(id: string): QueueState {
+    let q = this.queues.get(id)
+    if (!q) {
+      q = EMPTY_QUEUE
+      for (const stored of this.store.events(id)) q = foldQueue(q, stored.event)
+      this.queues.set(id, q)
+    }
+    return q
+  }
+
+  /** Puts a message at the end of the queue. Its files are linked to the session now, so they are not cleaned up as leftovers. */
+  private enqueue(id: string, input: UserInput): string {
+    const row = this.requireSession(id)
+    const context = this.contextOf(row, input.context)
+    if (this.queueOf(id).items.length >= MAX_QUEUED) throw new Error('Too many messages are waiting. Send or remove one first.')
+    this.store.linkAttachments(input.attachments.map((a) => a.id), id)
+    const queueId = `q-${crypto.randomUUID()}`
+    this.record(
+      id,
+      { type: 'queue.added', id: queueId, text: input.text, attachments: input.attachments, ...(context.length ? { context } : {}), model: row.model, effort: row.effort },
+      this.live.get(id) ?? { text: '' }
+    )
+    return queueId
+  }
+
+  /** Sends a waiting message at once: straight away when nothing is running, else after the running turn has been stopped. */
+  private sendNow(id: string, queueId: string): void {
+    if (!this.queueOf(id).items.some((m) => m.id === queueId)) return
+    const live = this.live.get(id)
+    if (!live || !this.busy(id)) {
+      this.dispatch(id, queueId)
+      return
+    }
+    live.sendNext = queueId
+    this.interrupt(id)
+  }
+
+  /** Takes a message out of the queue and hands it to the agent, with the model and effort it was typed with. */
+  private dispatch(id: string, queueId: string): void {
+    const item = this.queueOf(id).items.find((m) => m.id === queueId)
+    if (!item) return
+    try {
+      const live = this.runtime(id)
+      this.record(id, { type: 'queue.sent', id: queueId }, live)
+      const row = this.requireSession(id)
+      const patch: Partial<Pick<SessionRow, 'model' | 'effort'>> = {}
+      if (item.model && item.model !== row.model) patch.model = item.model
+      if (item.effort !== undefined && item.effort !== row.effort) patch.effort = item.effort
+      if (Object.keys(patch).length) {
+        this.store.patchSession(id, patch)
+        this.emitSummary(id)
+      }
+      this.deliver(id, { text: item.text, attachments: item.attachments, ...(item.context ? { context: item.context } : {}) })
+    } catch (err) {
+      console.error('[core] could not send a waiting message', err)
+    }
+  }
+
+  /**
+   * When a turn ends, the queue moves. A message marked for "send now" goes first. Otherwise the next waiting message goes after a
+   * finished turn, and a turn that was stopped or failed pauses the queue, so nothing is sent that the person did not expect.
+   */
+  private afterTurn(id: string, type: 'turn.completed' | 'turn.interrupted' | 'turn.failed' | 'turn.abandoned'): void {
+    const live = this.live.get(id)
+    if (live) live.active = false
+    const sendNext = live?.sendNext
+    if (live) live.sendNext = undefined
+    // After the event that ended the turn has been delivered (and the files it made have been logged).
+    queueMicrotask(() => {
+      try {
+        const row = this.store.getSession(id)
+        if (!row || row.deletedAt !== null) return
+        const q = this.queueOf(id)
+        if (sendNext && q.items.some((m) => m.id === sendNext)) {
+          this.dispatch(id, sendNext)
+          return
+        }
+        if (!q.items.length || q.paused) return
+        if (type !== 'turn.completed') this.record(id, { type: 'queue.paused' }, this.live.get(id) ?? { text: '' })
+        else if (!this.busy(id)) this.dispatch(id, (q.items[0] as { id: string }).id)
+      } catch (err) {
+        console.error('[core] could not move the queue on', err)
+      }
+    })
+  }
+
+  private queueAction(id: string, action: QueueAction): void {
+    this.requireSession(id)
+    if (typeof action !== 'object' || action === null) throw new Error('Invalid queue action')
+    const q = this.queueOf(id)
+    const live = this.live.get(id) ?? { text: '' }
+    const item = 'queueId' in action ? q.items.find((m) => m.id === action.queueId) : undefined
+    switch (action.type) {
+      case 'edit': {
+        const edited = text(action.text, 'message', 200_000)
+        if (!item) return
+        if (!edited.trim() && !item.attachments.length && !item.context?.length) throw new Error('A waiting message cannot be empty. Remove it instead.')
+        this.record(id, { type: 'queue.edited', id: item.id, text: edited }, live)
+        return
+      }
+      case 'remove':
+        if (item) this.record(id, { type: 'queue.removed', id: item.id }, live)
+        return
+      case 'now':
+        if (item) this.sendNow(id, item.id)
+        return
+      case 'resume':
+        if (q.paused) this.record(id, { type: 'queue.resumed' }, live)
+        if (q.items[0] && !this.busy(id)) this.dispatch(id, q.items[0].id)
+        return
+      case 'clear':
+        for (const m of q.items) this.record(id, { type: 'queue.removed', id: m.id }, live)
+        return
+      default:
+        throw new Error('Invalid queue action')
+    }
   }
 
   /**
@@ -820,6 +982,7 @@ export class SessionService {
    */
   private resume(id: string, message: string): void {
     const live = this.runtime(id)
+    live.active = true
     this.record(id, { type: 'user.message', text: message, attachments: [] }, live)
     live.session.send({ text: message, attachments: [] })
   }
@@ -970,6 +1133,7 @@ export class SessionService {
 
   private purge(id: string): void {
     this.stopRuntime(id)
+    this.queues.delete(id)
     clearTimeout(this.undoTimers.get(id))
     this.undoTimers.delete(id)
     for (const row of this.store.purgeSession(id)) this.opts.files.remove(row.file)

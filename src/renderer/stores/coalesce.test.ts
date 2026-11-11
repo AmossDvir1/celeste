@@ -46,6 +46,6 @@ describe('folding runs of tokens in a log', () => {
 function blank() {
   return {
     id: 's', vendor: 'copilot' as const, mode: 'chat' as const, title: 'T', model: 'm', effort: null, approval: 'auto' as const, status: 'idle' as const,
-    createdAt: 0, updatedAt: 0, lastSeq: 0, items: [], activity: null, loaded: true, foldedSeq: 0
+    createdAt: 0, updatedAt: 0, lastSeq: 0, items: [], activity: null, loaded: true, foldedSeq: 0, queue: { items: [], paused: false }
   }
 }

@@ -10,6 +10,7 @@ import type {
   ToolKind
 } from '@shared/agent'
 import type { CheckpointFile, SessionStatus, SessionSummary } from '@shared/api'
+import type { QueueState } from '@shared/queue'
 import type { ProducedFile } from '@shared/produced'
 
 export type { SessionStatus }
@@ -84,4 +85,6 @@ export interface Session extends SessionSummary {
   loaded: boolean
   /** The newest log entry already replayed into `items`. */
   foldedSeq: number
+  /** Messages typed while the assistant was working, waiting for their turn. Kept in the log, so it is the same on every window and the phone. */
+  queue: QueueState
 }

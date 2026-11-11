@@ -15,6 +15,7 @@ import type {
   TestResult
 } from './devices'
 import type { ProducedFile } from './produced'
+import type { QueueAction, SendMode } from './queue'
 import type { PhonePairRequest, PhoneStatus } from './phone'
 import type { RunSummary, StoredRunEvent, WorkflowDefinition, WorkflowFull, WorkflowSummary } from './workflow'
 import type {
@@ -181,6 +182,15 @@ export type LogEvent =
   | { type: 'files.produced'; files: ProducedFile[]; more: number }
   /** The folder was put back as it was at checkpoint `id`. `undoId` goes back to how it was just before. */
   | { type: 'checkpoint.reverted'; id: string; restored: number; removed: number; undoId: string }
+  /** A message typed while the assistant was working. It waits here, and is sent when the turn ends (see docs/QUEUE_AND_USAGE_PLAN.md). */
+  | { type: 'queue.added'; id: string; text: string; attachments: AttachmentInfo[]; context?: ContextRef[]; model?: string; effort?: Effort | null }
+  | { type: 'queue.edited'; id: string; text: string }
+  | { type: 'queue.removed'; id: string }
+  /** The waiting message was handed to the agent; a `user.message` follows. */
+  | { type: 'queue.sent'; id: string }
+  /** The person stopped the turn, it failed, or Celeste restarted: waiting messages are held until `queue.resumed`. */
+  | { type: 'queue.paused' }
+  | { type: 'queue.resumed' }
 
 /** One file that a turn changed, or that a revert would change. */
 export interface CheckpointFile {
@@ -352,7 +362,10 @@ export interface CoreApi {
 
   'sessions.create': (input: CreateSessionInput) => SessionSummary
   'sessions.get': (id: string) => { summary: SessionSummary; events: StoredEvent[] } | null
-  'sessions.send': (id: string, input: UserInput) => void
+  /** While the assistant works, `mode` decides: 'queue' makes the message wait its turn, 'stop' stops the turn and sends it now. */
+  'sessions.send': (id: string, input: UserInput, mode?: SendMode) => void
+  /** Edit, remove, send now, resume or clear the messages waiting behind the running turn. */
+  'sessions.queue': (id: string, action: QueueAction) => void
   'sessions.interrupt': (id: string) => void
   'sessions.respondApproval': (id: string, requestId: string, answer: ApprovalAnswer) => void
   'sessions.respondAsk': (id: string, requestId: string, answers: AskAnswers) => void

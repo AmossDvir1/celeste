@@ -338,6 +338,25 @@ describe('Celeste’s own windows cannot be used, so the assistant cannot approv
     expect(await click(1000, 500)).toEqual({ ok: true })
   })
 
+  it('allows a click where another program’s window is in front of Celeste, and refuses it where Celeste is on top', async () => {
+    const dialog = rec(40, 'New Document', 'photoshop', { x: 300, y: 200, width: 400, height: 400 })
+    const celesteOnTop = rec(41, 'Celeste', 'electron', CELESTE, { pid: process.pid })
+    s.win.list = [dialog, celesteOnTop]
+    expect(await click(390, 312)).toEqual({ ok: true }) // (500, 400): inside both, the dialog is in front
+    expect(s.calls).toContain('left down')
+    s.calls = []
+    s.win.list = [celesteOnTop, dialog]
+    expect(await click(390, 312)).toMatchObject({ ok: false, reason: expect.stringContaining('inside a Celeste window') })
+    expect(s.calls).toEqual([])
+  })
+
+  it('refuses a drag that ends on Celeste even when it starts on a window in front of it', async () => {
+    const dialog = rec(40, 'New Document', 'photoshop', { x: 100, y: 100, width: 300, height: 300 })
+    s.win.list = [dialog, rec(41, 'Celeste', 'electron', CELESTE, { pid: process.pid })]
+    expect(await call('act', { type: 'drag', from: { x: 150, y: 150 }, to: { x: 390, y: 312 } })).toMatchObject({ ok: false })
+    expect(s.calls).toEqual([])
+  })
+
   it('takes a window that opens during control into account at once', async () => {
     s.windows.push(fakeWindow({ x: 1200, y: 400, width: 400, height: 300 }))
     expect(await click(1000, 400)).toMatchObject({ ok: false })

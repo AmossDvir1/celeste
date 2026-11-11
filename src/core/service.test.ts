@@ -6,6 +6,7 @@ import type { AgentEvent, AgentSession, ApprovalAnswer, AskAnswers, UserInput } 
 import type { CorePush, CreateSessionInput, SessionSummary, StoredEvent } from '@shared/api'
 import { coalesceEvents } from '@shared/coalesce'
 import { DEFAULT_SETTINGS, SIDEBAR_WIDTH } from '@shared/defaults'
+import { EMPTY_QUEUE, foldQueue, MAX_QUEUED, type QueueState } from '@shared/queue'
 import { MemoryFileStore, MemoryStore } from './testing/memory-store'
 import { SessionService, type AdapterFactory } from './service'
 import type { Snapshots } from './snapshots'
@@ -1260,5 +1261,173 @@ describe('what an attachment is stored as', () => {
   it('never gives an extension longer than the file address allows', async () => {
     const { attachmentExtension } = await import('./service')
     for (const name of ['a.markdown', 'a.abcdefgh', 'a.docx']) expect(attachmentExtension(name, '')).toMatch(/^[a-z0-9]{1,5}$/)
+  })
+})
+
+describe('the prompt queue', () => {
+  const msg = (text: string): UserInput => ({ text, attachments: [] })
+  const done = { type: 'turn.completed', turnId: 't' } as const
+  const stopped = { type: 'turn.interrupted', turnId: 't' } as const
+  const queueOf = (api: ReturnType<typeof setup>['api'], id: string): QueueState =>
+    (api['sessions.get'](id)?.events ?? []).reduce((q, e) => foldQueue(q, e.event), EMPTY_QUEUE)
+  const heard = (a: FakeAgent | undefined) => a?.sent.map((m) => m.text)
+
+  it('sends straight away when nothing is running, even in queue mode', () => {
+    const { api, agents } = setup()
+    const { id } = api['sessions.create'](input)
+    api['sessions.send'](id, msg('hello'), 'queue')
+    expect(heard(agents[0])).toEqual(['hello'])
+    expect(queueOf(api, id).items).toEqual([])
+  })
+
+  it('keeps messages typed during a turn and sends them in order as the turns end', async () => {
+    const { api, agents } = setup()
+    const { id } = api['sessions.create'](input)
+    for (const t of ['one', 'two', 'three']) api['sessions.send'](id, msg(t), 'queue')
+    expect(heard(agents[0])).toEqual(['one'])
+    expect(queueOf(api, id).items.map((m) => m.text)).toEqual(['two', 'three'])
+
+    agents[0].emit(done)
+    await flush()
+    expect(heard(agents[0])).toEqual(['one', 'two'])
+    agents[0].emit(done)
+    await flush()
+    expect(heard(agents[0])).toEqual(['one', 'two', 'three'])
+    expect(queueOf(api, id).items).toEqual([])
+    const types = typesOf(api, id)
+    expect(types.indexOf('queue.sent')).toBeLessThan(types.lastIndexOf('user.message'))
+  })
+
+  it('still sends at once, without a mode, whatever is running', () => {
+    const { api, agents } = setup()
+    const { id } = api['sessions.create'](input)
+    api['sessions.send'](id, msg('one'))
+    api['sessions.send'](id, msg('two'))
+    expect(heard(agents[0])).toEqual(['one', 'two'])
+  })
+
+  it('holds the queue when the turn is stopped, until it is resumed', async () => {
+    const { api, agents } = setup()
+    const { id } = api['sessions.create'](input)
+    api['sessions.send'](id, msg('one'), 'queue')
+    api['sessions.send'](id, msg('two'), 'queue')
+    api['sessions.interrupt'](id)
+    agents[0].emit(stopped)
+    await flush()
+    expect(heard(agents[0])).toEqual(['one'])
+    expect(queueOf(api, id)).toMatchObject({ paused: true, items: [{ text: 'two' }] })
+
+    api['sessions.queue'](id, { type: 'resume' })
+    expect(heard(agents[0])).toEqual(['one', 'two'])
+    expect(queueOf(api, id)).toEqual({ items: [], paused: false })
+  })
+
+  it('holds the queue when a turn fails', async () => {
+    const { api, agents } = setup()
+    const { id } = api['sessions.create'](input)
+    api['sessions.send'](id, msg('one'), 'queue')
+    api['sessions.send'](id, msg('two'), 'queue')
+    agents[0].emit({ type: 'turn.failed', turnId: 't', error: { code: 'unknown', message: 'broke', retryable: false } } as AgentEvent)
+    await flush()
+    expect(queueOf(api, id).paused).toBe(true)
+    expect(agents[0].sent).toHaveLength(1)
+  })
+
+  it('stops the turn and sends the message as soon as it has stopped, with "stop"', async () => {
+    const { api, agents } = setup()
+    const { id } = api['sessions.create'](input)
+    api['sessions.send'](id, msg('one'), 'queue')
+    api['sessions.send'](id, msg('urgent'), 'stop')
+    expect(agents[0].interrupted).toBe(1)
+    expect(heard(agents[0])).toEqual(['one'])
+    agents[0].emit(stopped)
+    await flush()
+    expect(heard(agents[0])).toEqual(['one', 'urgent'])
+    expect(queueOf(api, id)).toEqual({ items: [], paused: false })
+  })
+
+  it('"send now" on a waiting message sends that one first and leaves the rest waiting', async () => {
+    const { api, agents } = setup()
+    const { id } = api['sessions.create'](input)
+    for (const t of ['one', 'two', 'three']) api['sessions.send'](id, msg(t), 'queue')
+    api['sessions.queue'](id, { type: 'now', queueId: queueOf(api, id).items[1].id })
+    agents[0].emit(stopped)
+    await flush()
+    expect(heard(agents[0])).toEqual(['one', 'three'])
+    expect(queueOf(api, id)).toMatchObject({ paused: false, items: [{ text: 'two' }] })
+    agents[0].emit(done)
+    await flush()
+    expect(heard(agents[0])).toEqual(['one', 'three', 'two'])
+  })
+
+  it('"send now" on a held queue sends only that message', async () => {
+    const { api, agents } = setup()
+    const { id } = api['sessions.create'](input)
+    for (const t of ['one', 'two', 'three']) api['sessions.send'](id, msg(t), 'queue')
+    agents[0].emit(stopped)
+    await flush()
+    api['sessions.queue'](id, { type: 'now', queueId: queueOf(api, id).items[1].id })
+    expect(heard(agents[0])).toEqual(['one', 'three'])
+    expect(queueOf(api, id).items.map((m) => m.text)).toEqual(['two'])
+  })
+
+  it('edits, removes and clears waiting messages', () => {
+    const { api } = setup()
+    const { id } = api['sessions.create'](input)
+    for (const t of ['one', 'a', 'b', 'c']) api['sessions.send'](id, msg(t), 'queue')
+    const [a, b] = queueOf(api, id).items
+    api['sessions.queue'](id, { type: 'edit', queueId: a.id, text: 'a, changed' })
+    api['sessions.queue'](id, { type: 'remove', queueId: b.id })
+    expect(queueOf(api, id).items.map((m) => m.text)).toEqual(['a, changed', 'c'])
+    expect(() => api['sessions.queue'](id, { type: 'edit', queueId: a.id, text: '  ' })).toThrow()
+    api['sessions.queue'](id, { type: 'clear' })
+    expect(queueOf(api, id).items).toEqual([])
+  })
+
+  it('refuses an unknown mode or action, and too many waiting messages', () => {
+    const { api } = setup()
+    const { id } = api['sessions.create'](input)
+    expect(() => api['sessions.send'](id, msg('x'), 'later' as never)).toThrow('Invalid send mode')
+    expect(() => api['sessions.queue'](id, { type: 'explode' } as never)).toThrow('Invalid queue action')
+    api['sessions.send'](id, msg('running'), 'queue')
+    for (let i = 0; i < MAX_QUEUED; i++) api['sessions.send'](id, msg(`m${i}`), 'queue')
+    expect(() => api['sessions.send'](id, msg('one too many'), 'queue')).toThrow('Too many messages')
+  })
+
+  it('sends a queued message with the model it was typed with', async () => {
+    const { api, agents } = setup()
+    const { id } = api['sessions.create'](input)
+    api['sessions.send'](id, msg('one'), 'queue')
+    api['sessions.send'](id, msg('two'), 'queue')
+    api['sessions.update'](id, { model: 'claude-opus' })
+    expect(queueOf(api, id).items[0].model).toBe('copilot-auto')
+    agents[0].emit(done)
+    await flush()
+    expect(api['sessions.get'](id)?.summary.model).toBe('copilot-auto')
+  })
+
+  it('holds the queue after a restart: nothing is sent by itself, and it can be sent after', async () => {
+    const store = new MemoryStore()
+    const first = setup(store)
+    const { id } = first.api['sessions.create'](input)
+    first.api['sessions.send'](id, msg('one'), 'queue')
+    first.api['sessions.send'](id, msg('two'), 'queue')
+    first.service.close()
+
+    const second = setup(store)
+    await flush()
+    expect(second.agents).toHaveLength(0)
+    expect(queueOf(second.api, id)).toMatchObject({ paused: true, items: [{ text: 'two' }] })
+    second.api['sessions.queue'](id, { type: 'resume' })
+    expect(heard(second.agents[0])).toEqual(['two'])
+    expect(queueOf(second.api, id).items).toEqual([])
+  })
+
+  it('tells the windows about each change to the queue', () => {
+    const { api, pushes } = setup()
+    const { id } = api['sessions.create'](input)
+    api['sessions.send'](id, msg('one'), 'queue')
+    api['sessions.send'](id, msg('two'), 'queue')
+    expect(pushedEvents(pushes, id).map((e) => e.event.type)).toContain('queue.added')
   })
 })

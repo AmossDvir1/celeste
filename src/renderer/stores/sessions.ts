@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { ApprovalMode, AskAnswers, Effort, SessionMode, UserInput } from '@shared/agent'
 import type { CheckpointChanges, CheckpointReview, CorePush, SessionSummary, StoredEvent } from '@shared/api'
+import { EMPTY_QUEUE, type QueueAction, type SendMode } from '@shared/queue'
 import { core } from '@/api'
 import { effortFor } from '@/lib/vendors'
 import { useChanges } from './changes'
@@ -18,9 +19,14 @@ interface SessionsState {
   applyPush: (push: CorePush) => void
   open: (id: string) => void
   home: (mode: SessionMode) => void
-  /** Resolves true when the message was sent. On failure the error is shown and false is returned, so the caller keeps the message. */
-  send: (mode: SessionMode, input: UserInput) => Promise<boolean>
+  /**
+   * Resolves true when the message was sent. On failure the error is shown and false is returned, so the caller keeps the message.
+   * While the assistant works, `sendMode` makes the message wait its turn ('queue') or stops the turn and sends it now ('stop').
+   */
+  send: (mode: SessionMode, input: UserInput, sendMode?: SendMode) => Promise<boolean>
   stop: (id: string) => void
+  /** Edits, removes or sends now a message waiting behind the running turn; resumes or clears a paused queue. */
+  queueAction: (id: string, action: QueueAction) => void
   /** What reverting to a checkpoint would change. Rejects with a message fit to show. */
   previewRevert: (id: string, checkpointId: string) => Promise<CheckpointChanges>
   /** Puts the project folder back as it was at a checkpoint. False, with a message shown, when it could not. */
@@ -43,7 +49,7 @@ function titleFrom(text: string): string {
   return clean.length > 46 ? `${clean.slice(0, 45).trimEnd()}…` : clean
 }
 
-const fromSummary = (summary: SessionSummary, loaded: boolean): Session => ({ ...summary, items: [], activity: null, loaded, foldedSeq: 0 })
+const fromSummary = (summary: SessionSummary, loaded: boolean): Session => ({ ...summary, items: [], activity: null, loaded, foldedSeq: 0, queue: EMPTY_QUEUE })
 
 /**
  * A session whose conversation is loaded keeps the status its own replay produced. Everything else about it
@@ -157,7 +163,7 @@ export const useSessions = create<SessionsState>((set, get) => {
 
     home: (mode) => set((st) => ({ active: { ...st.active, [mode]: null } })),
 
-    send: async (mode, input) => {
+    send: async (mode, input, sendMode) => {
       try {
         let id = get().active[mode]
         if (!id) {
@@ -187,7 +193,7 @@ export const useSessions = create<SessionsState>((set, get) => {
           const sid = created.id
           set((st) => ({ sessions: { ...st.sessions, [sid]: fromSummary(created, true) }, active: { ...st.active, [mode]: sid } }))
         }
-        await core.call('sessions.send', id, input)
+        await core.call('sessions.send', id, input, sendMode)
         return true
       } catch (err) {
         report(err)
@@ -196,6 +202,8 @@ export const useSessions = create<SessionsState>((set, get) => {
     },
 
     stop: (id) => fire(core.call('sessions.interrupt', id)),
+
+    queueAction: (id, action) => fire(core.call('sessions.queue', id, action)),
 
     previewRevert: (id, checkpointId) => core.call('sessions.revertPreview', id, checkpointId),
 

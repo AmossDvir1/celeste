@@ -303,6 +303,12 @@ export function insideRect(p: Point, r: Rect): boolean {
 export interface GuardContext {
   celesteRects: Rect[]
   celesteHasFocus: boolean
+  /**
+   * Whether a window of another program is the one on top at this screen point. Celeste's windows are left out of screenshots, so a point
+   * can look like another program's while Celeste is really in front; a point inside a Celeste window's bounds is only allowed when
+   * this says another program covers it. Left out: any point inside a Celeste window's bounds is refused.
+   */
+  coveredByOther?: (p: Point) => boolean
 }
 
 /** The points on the screen that an action touches (the ends of a drag, the place of a click). Typing and keys have none. */
@@ -326,7 +332,7 @@ export function pointsOf(a: DesktopAction): Point[] {
  */
 export function refuseForCeleste(a: DesktopAction, screenPoints: Point[], ctx: GuardContext): string | null {
   for (const p of screenPoints) {
-    if (ctx.celesteRects.some((r) => insideRect(p, r))) return 'That point is inside a Celeste window. Celeste’s own windows are off limits, so nothing can be approved or stopped from here.'
+    if (ctx.celesteRects.some((r) => insideRect(p, r)) && !ctx.coveredByOther?.(p)) return 'That point is inside a Celeste window. Celeste’s own windows are off limits, so nothing can be approved or stopped from here.'
   }
   if ((a.type === 'type' || a.type === 'key') && ctx.celesteHasFocus) return 'A Celeste window is in front, and it cannot be typed into. Click on the window you want to type in first.'
   return null

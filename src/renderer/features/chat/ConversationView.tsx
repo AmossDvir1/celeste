@@ -15,6 +15,7 @@ import { useWorkflows } from '@/stores/workflows'
 import { DeviceGlyph } from '@/features/devices/parts'
 import { useDevices } from '@/stores/devices'
 import { Composer } from './Composer'
+import { QueueList, type QueueEdit } from './QueueList'
 import { Timeline } from './Timeline'
 import { DropZone, useAttachments } from './attachments'
 
@@ -61,6 +62,7 @@ export function ConversationView({ sessionId }: { sessionId: string }) {
   const session = useSessions((s) => s.sessions[sessionId])
   const send = useSessions((s) => s.send)
   const stop = useSessions((s) => s.stop)
+  const queueAction = useSessions((s) => s.queueAction)
   const setPrefs = useSessions((s) => s.setPrefs)
   const respondApproval = useSessions((s) => s.respondApproval)
   const respondAsk = useSessions((s) => s.respondAsk)
@@ -80,6 +82,8 @@ export function ConversationView({ sessionId }: { sessionId: string }) {
     void loadAttached(sessionId)
   }, [sessionId, loadAttached])
   const [following, setFollowing] = useState(true)
+  const [queueEdit, setQueueEdit] = useState<QueueEdit | null>(null)
+  const dockRef = useRef<HTMLDivElement>(null)
 
   // What differs now from before the first message. It is looked at when the session opens and whenever an answer ends, so the
   // badge, the Changes panel and the file tree all show the same net result.
@@ -216,7 +220,15 @@ export function ConversationView({ sessionId }: { sessionId: string }) {
         )}
 
         <div className="relative z-10 shrink-0 px-6 pb-4">
-          <div className="mx-auto w-full max-w-[820px]">
+          <div ref={dockRef} className="mx-auto w-full max-w-[820px]">
+            <QueueList
+              queue={session.queue}
+              working={busy}
+              onAction={(a) => queueAction(sessionId, a)}
+              editing={queueEdit}
+              onEditing={setQueueEdit}
+              onEditDone={() => dockRef.current?.querySelector('textarea')?.focus()}
+            />
             <Composer
               variant="dock"
               mode={session.mode}
@@ -229,14 +241,18 @@ export function ConversationView({ sessionId }: { sessionId: string }) {
               context={context}
               onRemoveContext={(path) => useDrafts.getState().removeContext(sessionId, path)}
               busy={busy}
-              onSend={async (input: UserInput) => {
-                const sent = await send(session.mode, input)
+              onSend={async (input: UserInput, sendMode) => {
+                const sent = await send(session.mode, input, sendMode)
                 // Context is only cleared once the message has gone; the text is cleared by the composer.
                 if (sent) useDrafts.getState().clear(sessionId)
                 return sent
               }}
               onStop={() => stop(sessionId)}
-              placeholder={session.status === 'waiting' ? 'Answer above to continue…' : 'Message Celeste...'}
+              onEditLast={() => {
+                const last = session.queue.items.at(-1)
+                if (last) setQueueEdit({ id: last.id, text: last.text })
+              }}
+              placeholder={session.status === 'waiting' ? 'Answer above, or type a message to send after…' : busy ? 'Type a message to send after this answer…' : 'Message Celeste...'}
             />
             <div className={cn('mt-2 flex h-4 items-center justify-center gap-2 text-[11px] text-ink-faint')}>
               {onChatGptPlan ? (
@@ -246,6 +262,8 @@ export function ConversationView({ sessionId }: { sessionId: string }) {
                     Manage usage
                   </a>
                 </>
+              ) : busy ? (
+                `Enter to queue · Ctrl + Enter to stop and send now${session.queue.items.length ? ' · ↑ to edit the last one' : ''}`
               ) : (
                 'Shift + Enter for a new line'
               )}

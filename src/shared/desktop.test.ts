@@ -108,4 +108,10 @@ describe('Celeste’s own windows', () => {
   it('lets a point outside every window through', () => {
     expect(refuseForCeleste(click({ x: 1800, y: 900 }), [{ x: 1800, y: 900 }], ctx)).toBeNull()
   })
+
+  it('lets a point inside Celeste’s bounds through only where another program’s window covers it', () => {
+    const covered: GuardContext = { ...ctx, coveredByOther: (p) => p.x < 300 }
+    expect(refuseForCeleste(click({ x: 200, y: 400 }), [{ x: 200, y: 400 }], covered)).toBeNull()
+    expect(refuseForCeleste(click(allowButton), [allowButton], covered)).toMatch(/inside a Celeste window/)
+  })
 })

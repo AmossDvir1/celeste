@@ -22,6 +22,7 @@ const blank = (over: Partial<Session> = {}): Session => ({
   activity: null,
   loaded: true,
   foldedSeq: 0,
+  queue: { items: [], paused: false },
   ...over
 })
 
@@ -275,5 +276,29 @@ describe('files added to a message', () => {
     )
     expect(s.items[0]).toMatchObject({ kind: 'user', context: [{ path: 'src/a.ts', kind: 'file' }, { path: 'docs', kind: 'dir' }] })
     expect((s.items[1] as { context?: unknown }).context).toBeUndefined()
+  })
+})
+
+describe('the prompt queue in the log', () => {
+  it('lists waiting messages in order, with edits, and drops one when it is sent or removed', () => {
+    const s = foldEvents(
+      blank(),
+      log(
+        [1, { type: 'queue.added', id: 'a', text: 'first', attachments: [] }],
+        [2, { type: 'queue.added', id: 'b', text: 'second', attachments: [], model: 'm' }],
+        [3, { type: 'queue.added', id: 'c', text: 'third', attachments: [] }],
+        [4, { type: 'queue.edited', id: 'b', text: 'second, edited' }],
+        [5, { type: 'queue.sent', id: 'a' }],
+        [6, { type: 'queue.removed', id: 'c' }]
+      )
+    )
+    expect(s.queue).toEqual({ paused: false, items: [{ id: 'b', text: 'second, edited', attachments: [], model: 'm' }] })
+  })
+
+  it('holds the queue when paused and forgets that once it is empty', () => {
+    const add: [number, LogEvent] = [1, { type: 'queue.added', id: 'a', text: 'x', attachments: [] }]
+    expect(foldEvents(blank(), log(add, [2, { type: 'queue.paused' }])).queue.paused).toBe(true)
+    expect(foldEvents(blank(), log(add, [2, { type: 'queue.paused' }], [3, { type: 'queue.resumed' }])).queue.paused).toBe(false)
+    expect(foldEvents(blank(), log(add, [2, { type: 'queue.paused' }], [3, { type: 'queue.sent', id: 'a' }])).queue).toEqual({ paused: false, items: [] })
   })
 })

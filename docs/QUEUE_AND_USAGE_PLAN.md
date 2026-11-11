@@ -1,6 +1,6 @@
 # Celeste: Queued prompts and usage Plan
 
-> **Status, 11 November 2026: planned, nothing built.** Two features the owner asked for on 11 November 2026, written down so they can be built after the file viewer (`FILE_VIEWER_PLAN.md`). Referenced from `IMPLEMENTATION_PLAN.md` (decisions 19 and 20). The decisions in section 5 are the defaults I picked.
+> **Status: Part 1 (queue and "Send now") is built on Core, the computer and the phone, with tests; not yet tried by eye in the apps. Not built from Part 1: Steer, dragging to reorder, the "Enter should: Queue / Steer / Ask" setting, and the `verify:queue` script. Part 2 (usage) is planned, nothing built.** Two features the owner asked for on 11 November 2026, written down so they can be built after the file viewer (`FILE_VIEWER_PLAN.md`). Referenced from `IMPLEMENTATION_PLAN.md` (decisions 19 and 20). The decisions in section 5 are the defaults I picked.
 
 # Part 1: Sending while an agent is working
 

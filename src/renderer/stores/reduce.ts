@@ -1,6 +1,7 @@
 import type { AskAnswers, ToolKind } from '@shared/agent'
 import type { LogEvent, StoredEvent } from '@shared/api'
 import { movesSession } from '@shared/status'
+import { foldQueue } from '@shared/queue'
 import { basename } from '@/lib/format'
 import type { Activity, Session, TimelineItem } from './types'
 
@@ -89,6 +90,14 @@ export function reduceEvent(s: Session, e: LogEvent, at: number): Session {
 
     case 'files.produced':
       return { ...s, items: [...s.items, { kind: 'files', id: itemId(), files: e.files, more: e.more }] }
+
+    case 'queue.added':
+    case 'queue.edited':
+    case 'queue.removed':
+    case 'queue.sent':
+    case 'queue.paused':
+    case 'queue.resumed':
+      return { ...s, queue: foldQueue(s.queue, e) }
 
     case 'checkpoint.skipped':
       return { ...s, items: [...s.items, { kind: 'notice', id: itemId(), text: `Celeste could not save the folder before this message, so it cannot be reverted. ${e.reason}` }] }
