@@ -25,6 +25,8 @@ export const PER_SECOND = 8
 /** What one computer may ask the relay to wake phones with: this many an hour, each carrying at most this many characters. */
 export const WAKES_PER_HOUR = 240
 export const MAX_WAKE_BOX = 3500
+/** How many times an hour a computer may ask for the addresses of the direct link. */
+export const TURNS_PER_HOUR = 30
 /** How long Google keeps a wake for a phone that is off, in seconds. */
 export const WAKE_TTL = { min: 30, max: 3600 }
 /** What a request that comes over HTTP (the app's background service has no WebSocket) may wait for the computer's answer. */

@@ -6,6 +6,7 @@
 
 import { DurableObject } from 'cloudflare:workers'
 import { sendWake, type FcmEnv } from './fcm'
+import { iceServers, type TurnEnv } from './turn'
 import {
   CLOSE,
   FORGET_AFTER_MS,
@@ -18,6 +19,7 @@ import {
   PHONE_PROTOCOL,
   ROOM_RE,
   TOKEN_RE,
+  TURNS_PER_HOUR,
   WAKES_PER_HOUR,
   WAKE_TTL,
   hostFrame,
@@ -29,7 +31,7 @@ import {
   type Bucket
 } from './rules'
 
-interface Env extends FcmEnv {
+interface Env extends FcmEnv, TurnEnv {
   ROOMS: DurableObjectNamespace<Room>
 }
 
@@ -124,6 +126,28 @@ export class Room extends DurableObject<Env> {
     answer(await sendWake(this.env, w.token, w.box, ttl))
   }
 
+  /** The computer asks for the addresses of the direct link (STUN, and TURN when the project set it up). */
+  private async turn(ws: WebSocket, text: string): Promise<void> {
+    let id = ''
+    try {
+      id = String((JSON.parse(text) as { id?: unknown }).id ?? '').slice(0, 40)
+    } catch {
+      return
+    }
+    // A handful an hour is plenty: the computer keeps what it got until it nearly expires.
+    const hour = Math.floor(Date.now() / 3_600_000)
+    const used = (await this.ctx.storage.get<{ hour: number; n: number }>('turns')) ?? { hour, n: 0 }
+    const n = used.hour === hour ? used.n : 0
+    if (n >= TURNS_PER_HOUR) return void ws.send(`!turn ${JSON.stringify({ id, ok: false, code: 'LIMIT' })}`)
+    await this.ctx.storage.put('turns', { hour, n: n + 1 })
+    const { servers, turn } = await iceServers(this.env)
+    try {
+      ws.send(`!turn ${JSON.stringify({ id, ok: true, servers, turn })}`)
+    } catch {
+      // The computer is gone.
+    }
+  }
+
   override async fetch(request: Request): Promise<Response> {
     if (new URL(request.url).pathname.endsWith('/rpc')) return this.rpcOverHttp(request)
     const who = role(request.headers.get('sec-websocket-protocol'))
@@ -162,6 +186,7 @@ export class Room extends DurableObject<Env> {
 
     if (tag.role === 'host') {
       if (message.startsWith('!wake ')) return this.wake(ws, message.slice(6))
+      if (message.startsWith('!turn ')) return this.turn(ws, message.slice(6))
       const f = hostFrame(message)
       if (!f) return
       const waiting = this.http.get(f.conn)

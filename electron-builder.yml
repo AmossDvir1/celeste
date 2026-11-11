@@ -20,6 +20,8 @@ asarUnpack:
   - node_modules/@lydell/node-pty-*/**
   # koffi's binary, which sends the mouse and keyboard input of desktop control (a native file cannot be loaded from inside the archive).
   - node_modules/@koromix/koffi-*/**
+  # node-datachannel's binary: the direct link from a phone away from home (docs/PHONE_PLAN.md 7.1).
+  - node_modules/@node-datachannel/**
 
 extraResources:
   - from: LICENSE

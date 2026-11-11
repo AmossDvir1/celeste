@@ -24,7 +24,11 @@ const google = `http://127.0.0.1:${googlePort}`
 const vars = {
   FIREBASE_SERVICE_ACCOUNT: JSON.stringify({ client_email: 'relay@test-proj.iam.gserviceaccount.com', project_id: 'test-proj', private_key: privatePem }),
   FCM_ENDPOINT: google,
-  TOKEN_ENDPOINT: `${google}/token`
+  TOKEN_ENDPOINT: `${google}/token`,
+  // The stand-in for Cloudflare's TURN credentials, on the same port.
+  TURN_KEY_ID: 'turn-key-1',
+  TURN_KEY_API_TOKEN: 'turn-secret',
+  TURN_ENDPOINT: google
 }
 const worker = spawn(
   process.execPath,

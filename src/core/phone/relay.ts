@@ -3,7 +3,7 @@
 // bridge checks every one exactly as it does there. This file only keeps the line up and splits what arrives by phone.
 
 import WebSocket from 'ws'
-import { RELAY_HOST_PROTOCOL, relaySocketUrl } from '@shared/phone'
+import { RELAY_HOST_PROTOCOL, relaySocketUrl, type IceServer } from '@shared/phone'
 
 export type RelayState = 'off' | 'connecting' | 'connected'
 
@@ -100,6 +100,16 @@ export class RelayLine {
         }
         return
       }
+      if (text.startsWith('!turn ')) {
+        try {
+          const r = JSON.parse(text.slice(6)) as { id?: unknown; ok?: unknown; servers?: unknown }
+          const waiting = typeof r.id === 'string' ? this.turns.get(r.id) : undefined
+          if (waiting) waiting(r.ok === true && Array.isArray(r.servers) ? (r.servers as IceServer[]) : null)
+        } catch {
+          // Not an answer.
+        }
+        return
+      }
       if (text === 'pong' || text[CONN] !== ' ') return
       const conn = text.slice(0, CONN)
       const rest = text.slice(CONN + 1)
@@ -139,6 +149,28 @@ export class RelayLine {
     if (this.ws?.readyState !== WebSocket.OPEN) return false
     this.ws.send(`!wake ${JSON.stringify(w)}`)
     return true
+  }
+
+  private readonly turns = new Map<string, (servers: IceServer[] | null) => void>()
+  private cached: { servers: IceServer[]; until: number } | null = null
+
+  /**
+   * The addresses for the direct link (STUN, and TURN when the relay has it), kept for most of their life. Null when the line
+   * is not up or the relay does not answer: the link then stays on the relay.
+   */
+  async iceServers(timeoutMs = 8000): Promise<IceServer[] | null> {
+    if (this.cached && this.cached.until > Date.now()) return this.cached.servers
+    const ws = this.ws
+    if (ws?.readyState !== WebSocket.OPEN) return null
+    const id = Math.random().toString(36).slice(2, 12)
+    const servers = await new Promise<IceServer[] | null>((resolve) => {
+      const timer = setTimeout(() => (this.turns.delete(id), resolve(null)), timeoutMs)
+      this.turns.set(id, (s) => (clearTimeout(timer), this.turns.delete(id), resolve(s)))
+      ws.send(`!turn ${JSON.stringify({ id })}`)
+    })
+    // Credentials last 6 hours; keep them for 2, so a session that starts late still has plenty.
+    if (servers) this.cached = { servers, until: Date.now() + 2 * 3600_000 }
+    return servers
   }
 
   /** Closes one phone's connection at the relay. */

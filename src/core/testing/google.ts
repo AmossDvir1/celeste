@@ -1,10 +1,11 @@
 // A stand-in for the two Google servers the relay talks to to wake a phone: the one that trades a signed request for an
-// access token, and Firebase Cloud Messaging's send. It checks the signature and the token the way Google does, and keeps
+// access token, and Firebase Cloud Messaging's send (and, on the same port, one for Cloudflare's TURN credentials). It checks the signature and the token the way Google does, and keeps
 // what it was asked to send, so tests can see exactly what Google would have been given.
 
 import { createServer, type Server } from 'node:http'
 import { createPrivateKey, createPublicKey, generateKeyPairSync, verify } from 'node:crypto'
 import type { FcmEnv } from '../../../relay/src/fcm'
+import type { TurnEnv } from '../../../relay/src/turn'
 
 export interface SentMessage {
   token: string
@@ -15,8 +16,10 @@ export interface SentMessage {
 
 export interface StandInGoogle {
   /** What the relay needs: the service account (as the secret) and where Google is. */
-  env: Required<Pick<FcmEnv, 'FIREBASE_SERVICE_ACCOUNT' | 'FCM_ENDPOINT' | 'TOKEN_ENDPOINT'>>
+  env: Required<Pick<FcmEnv, 'FIREBASE_SERVICE_ACCOUNT' | 'FCM_ENDPOINT' | 'TOKEN_ENDPOINT'>> & Required<TurnEnv>
   sent: SentMessage[]
+  /** The lifetimes asked of the stand-in for Cloudflare's TURN credentials (it lives here too, on the same port). */
+  turnAsked: number[]
   /** Tokens Google answers "no longer registered" for (the app was removed from the phone). */
   unregistered: Set<string>
   /** How many access tokens were handed out. */
@@ -36,6 +39,7 @@ export async function startGoogle(opts: { privatePem?: string; port?: number } =
   const email = 'relay@test-proj.iam.gserviceaccount.com'
   const sent: SentMessage[] = []
   const unregistered = new Set<string>()
+  const turnAsked: number[] = []
   let issued = 0
   let current = ''
   const b64 = (s: string) => Buffer.from(s, 'base64url')
@@ -62,6 +66,17 @@ export async function startGoogle(opts: { privatePem?: string; port?: number } =
         sent.push({ token: m.token, data: m.data, priority: m.android.priority, ttl: m.android.ttl })
         return reply(200, { name: `projects/test-proj/messages/${sent.length}` })
       }
+      // Cloudflare's TURN credentials: the key id and token are fixed here, and what is handed out is made up.
+      if (req.url === '/v1/turn/keys/turn-key-1/credentials/generate-ice-servers') {
+        if (req.headers.authorization !== 'Bearer turn-secret') return reply(401, {})
+        turnAsked.push((JSON.parse(body) as { ttl: number }).ttl)
+        return reply(201, {
+          iceServers: [
+            { urls: ['stun:stun.cloudflare.com:3478'] },
+            { urls: ['turn:turn.example.test:3478?transport=udp', 'turns:turn.example.test:443?transport=tcp'], username: `user-${turnAsked.length}`, credential: 'made-up' }
+          ]
+        })
+      }
       reply(404, {})
     })
   })
@@ -71,9 +86,13 @@ export async function startGoogle(opts: { privatePem?: string; port?: number } =
     env: {
       FIREBASE_SERVICE_ACCOUNT: JSON.stringify({ client_email: email, project_id: 'test-proj', private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString() }),
       FCM_ENDPOINT: base,
-      TOKEN_ENDPOINT: `${base}/token`
+      TOKEN_ENDPOINT: `${base}/token`,
+      TURN_KEY_ID: 'turn-key-1',
+      TURN_KEY_API_TOKEN: 'turn-secret',
+      TURN_ENDPOINT: base
     },
     sent,
+    turnAsked,
     unregistered,
     tokens: () => issued,
     expireToken: () => void (current = 'expired'),

@@ -588,7 +588,7 @@ function ThisPhone() {
           </span>
           <div className="grow">
             <div className="t">{pairing.computer.name}</div>
-            <div className="s">{route === 'relay' ? 'Away from home, through the relay' : pairing.base.replace(/^https?:\/\//, '')}</div>
+            <div className="s">{route === 'direct' ? 'Away from home, directly' : route === 'relay' ? 'Away from home, through the relay' : pairing.base.replace(/^https?:\/\//, '')}</div>
           </div>
         </div>
         <button className="row tap" style={{ width: '100%', textAlign: 'left', color: 'var(--c-danger)' }} onClick={() => (sure ? useApp.getState().forget() : setSure(true))}>

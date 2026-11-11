@@ -45,7 +45,7 @@
     "verify:desktop": "electron-vite build && node scripts/desktop-check.mjs",
     "verify:phone": "electron-vite build && npm --prefix phone run build && node scripts/phone-check.mjs",
     "verify:relay": "node scripts/relay-check.mjs",
-    "verify:browser":"electron-vite build && node scripts/browser-check.mjs",
+    "verify:browser": "electron-vite build && node scripts/browser-check.mjs",
     "verify:preview": "electron-vite build && node scripts/preview-check.mjs",
     "verify:browser-tools": "electron-vite build && node scripts/browser-tools-check.mjs",
     "verify:mcp": "electron-vite build && node scripts/mcp-check.mjs",
@@ -113,6 +113,7 @@
     "@modelcontextprotocol/sdk": "^1.32.2",
     "bonjour-service": "^1.4.4",
     "koffi": "3.3.4",
+    "node-datachannel": "^0.33.6",
     "playwright-core": "^1.65.0",
     "ssh2": "^1.17.0",
     "ws": "^8.22.2"

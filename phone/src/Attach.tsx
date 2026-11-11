@@ -63,29 +63,34 @@ const randomId = () => {
 
 /** Parts are small enough to pass through the relay (away from home), which drops large messages; the computer takes any up to its own limit. */
 const PART = 192 * 1024
+/** Over a direct link there is no such limit, and fewer, larger parts are faster. */
+const DIRECT_PART = 1_000_000
 
 /** Sends one file to the computer, part by part. Throws a message fit to show. */
 async function upload(file: File, dims: { width: number; height: number } | undefined, cancelled: () => boolean, progress: (fraction: number) => void): Promise<PhoneUploaded | null> {
   const link = useApp.getState().link
   if (!link) throw new Error('Not connected to the computer.')
   const id = randomId()
-  const parts = Math.max(1, Math.ceil(file.size / PART))
-  for (let n = 0; n < parts; n++) {
+  let offset = 0
+  for (let n = 0; ; n++) {
     if (cancelled()) return null
+    // The size follows the route as it is now: a link that falls back to the relay mid-file gets smaller parts again.
+    const end = Math.min(file.size, offset + (link.route === 'direct' ? DIRECT_PART : PART))
+    const last = end >= file.size
     const part: PhoneUploadPart = {
       upload: id,
       name: file.name || 'file',
       mime: file.type || 'application/octet-stream',
       part: n,
-      data: await within(readBase64(file.slice(n * PART, (n + 1) * PART)), 20_000, 'That file could not be read.'),
-      last: n === parts - 1,
+      data: await within(readBase64(file.slice(offset, end)), 20_000, 'That file could not be read.'),
+      last,
       ...(dims ?? {})
     }
     const reply = await within(link.call<PhoneUploaded | { part: number }>('phone.upload', part), 45_000, 'The computer did not answer. Try again.')
-    progress((n + 1) / parts)
-    if (part.last) return reply as PhoneUploaded
+    progress(end / Math.max(1, file.size))
+    offset = end
+    if (last) return reply as PhoneUploaded
   }
-  return null
 }
 
 /** The files chosen for one message, sent to the computer as they are chosen. */

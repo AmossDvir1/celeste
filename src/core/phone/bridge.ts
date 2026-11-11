@@ -37,6 +37,9 @@ import {
   type PhoneAttachPart,
   type PhoneControlReport,
   type PhoneHello,
+  type PhoneLinkAnswer,
+  type PhoneLinkInfo,
+  type PhoneLinkOffer,
   type PhoneMethod,
   type PhonePairRequest,
   type PhoneRecord,
@@ -52,6 +55,7 @@ import {
   type SealedReply,
   type StoredKeyPair
 } from '@shared/phone'
+import { DirectLines } from './direct'
 import { RelayLine } from './relay'
 
 export interface PhoneSettingsStore {
@@ -201,6 +205,37 @@ export class PhoneBridge {
         if (w && !result.ok && result.code === 'UNREGISTERED') this.forgetPush(w.phoneId, w.token)
       }
     })
+    // Direct links from phones (A4c): each open channel is one more connection, like the relay's.
+    this.direct = new DirectLines({
+      onFrame: (conn, text) => void this.relayFrame(conn, text).catch(() => undefined),
+      onGone: (conn) => {
+        for (const l of [...this.listeners]) if (l.conn === conn) this.listeners.delete(l)
+      },
+      iceServers: () => this.relay.iceServers()
+    })
+  }
+
+  private readonly direct: DirectLines
+
+  /** Sends a frame to a phone's connection, whether it is a relay connection or a direct channel. */
+  private out(conn: string, text: string): void {
+    if (this.direct.owns(conn)) this.direct.send(conn, text)
+    else this.relay.send(conn, text)
+  }
+
+  private shut(conn: string): void {
+    if (this.direct.owns(conn)) this.direct.close(conn)
+    else this.relay.close(conn)
+  }
+
+  /**
+   * The listeners to write to: all of them, except that a phone with a direct channel hears only on it (it also keeps its
+   * relay line open to fall back on, and would otherwise get everything twice).
+   */
+  private targets(phoneId?: string): Listener[] {
+    const all = [...this.listeners].filter((l) => phoneId === undefined || l.phoneId === phoneId)
+    const direct = new Set(all.filter((l) => l.conn !== undefined && this.direct.owns(l.conn)).map((l) => l.phoneId))
+    return all.filter((l) => !direct.has(l.phoneId) || (l.conn !== undefined && this.direct.owns(l.conn)))
   }
 
   /** Wakes sent and not yet answered, by id, so a dead token can be forgotten. */
@@ -421,6 +456,7 @@ export class PhoneBridge {
     this.relay.use(null)
     this.listeners.forEach((l) => l.end())
     this.listeners.clear()
+    this.direct.closeAll()
     if (this.pending) this.endPairing('denied')
     await this.stopAnnounce?.().catch(() => undefined)
     this.stopAnnounce = null
@@ -502,7 +538,7 @@ export class PhoneBridge {
     if (!PHONE_PUSHES.includes(push.type)) return
     const notice = this.notice(push)
     if (notice) for (const phone of this.phones()) this.wake(phone, notice)
-    for (const l of this.listeners) {
+    for (const l of this.targets()) {
       l.queue = l.queue
         .then(async () => {
           l.write(await seal(l.key, push, LABEL.push))
@@ -611,8 +647,7 @@ export class PhoneBridge {
   }
 
   private sendTo(phoneId: string, value: PhoneRequestPush | PhoneCancelPush): void {
-    for (const l of this.listeners) {
-      if (l.phoneId !== phoneId) continue
+    for (const l of this.targets(phoneId)) {
       l.queue = l.queue.then(async () => l.write(await seal(l.key, value, LABEL.push))).catch(() => undefined)
     }
   }
@@ -771,6 +806,13 @@ export class PhoneBridge {
         this.deps.onStatus()
         reply = { id: call.id, ok: true, result: null }
       } else reply = { id: call.id, ok: false, error: 'That is not a push token.' }
+    } else if (call.method === 'phone.linkInfo') {
+      // The addresses to open a direct link with; null when this computer cannot make one (the phone stays on the relay).
+      reply = { id: call.id, ok: true, result: { servers: await this.direct.info() } satisfies PhoneLinkInfo }
+    } else if (call.method === 'phone.link') {
+      const offer = (call.params[0] as Partial<PhoneLinkOffer> | undefined)?.sdp
+      const sdp = typeof offer === 'string' ? await this.direct.accept(phone.id, offer) : null
+      reply = sdp ? { id: call.id, ok: true, result: { sdp } satisfies PhoneLinkAnswer } : { id: call.id, ok: false, error: 'A direct link is not available.' }
     } else if (call.method === 'phone.control') {
       const r = call.params[0] as Partial<PhoneControlReport> | undefined
       if (r && (r.state === 'paused' || r.state === 'resumed' || r.state === 'ended')) {
@@ -851,7 +893,7 @@ export class PhoneBridge {
     } catch {
       return
     }
-    const send = (frame: RelayHostFrame) => this.relay.send(conn, JSON.stringify(frame))
+    const send = (frame: RelayHostFrame) => this.out(conn, JSON.stringify(frame))
     if (f.t === 'rpc' && typeof f.id === 'number') {
       let status: number
       let value: { box?: string; error?: string }
@@ -866,7 +908,7 @@ export class PhoneBridge {
       const ok = await this.admit(f.phone, f.auth)
       if (typeof ok === 'string') {
         send({ t: 'listen', ok: false, error: ok })
-        return this.relay.close(conn)
+        return this.shut(conn)
       }
       // The same connection asking again replaces its listener.
       for (const l of [...this.listeners]) if (l.conn === conn) this.listeners.delete(l)
@@ -875,7 +917,7 @@ export class PhoneBridge {
         key: ok.key,
         conn,
         write: (box) => send({ t: 'push', box }),
-        end: () => this.relay.close(conn),
+        end: () => this.shut(conn),
         queue: Promise.resolve()
       })
       this.touch(ok.phone)

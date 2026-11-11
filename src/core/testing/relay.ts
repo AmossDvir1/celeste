@@ -5,6 +5,7 @@
 import { createServer, type Server } from 'node:http'
 import { WebSocketServer, type WebSocket } from 'ws'
 import { sendWake, type FcmEnv } from '../../../relay/src/fcm'
+import { iceServers, type IceServer, type TurnEnv } from '../../../relay/src/turn'
 import { CLOSE, HOST_PROTOCOL, HTTP_RPC_WAIT_MS, MAX_FRAME, MAX_PHONES, MAX_WAKE_BOX, PHONE_PROTOCOL, ROOM_RE, TOKEN_RE, WAKE_TTL, hostFrame, newConn, role, same, sha256Hex, take, type Bucket } from '../../../relay/src/rules'
 
 interface Room {
@@ -25,7 +26,8 @@ export interface StandInRelay {
   stop(): Promise<void>
 }
 
-export async function startRelay(env: FcmEnv = {}): Promise<StandInRelay> {
+/** `fixedIce`: the servers to hand out instead of asking Cloudflare, so tests do not reach the internet. */
+export async function startRelay(env: FcmEnv & TurnEnv & { fixedIce?: IceServer[] } = {}): Promise<StandInRelay> {
   const rooms = new Map<string, Room>()
   const seen: string[] = []
   const http: Server = createServer((req, res) => {
@@ -89,6 +91,11 @@ export async function startRelay(env: FcmEnv = {}): Promise<StandInRelay> {
               if (typeof w.token !== 'string' || !TOKEN_RE.test(w.token) || typeof w.box !== 'string' || w.box.length > MAX_WAKE_BOX) return answer({ ok: false, code: 'INVALID' })
               const ttl = Math.max(WAKE_TTL.min, Math.min(WAKE_TTL.max, typeof w.ttl === 'number' ? Math.floor(w.ttl) : 300))
               void sendWake(env, w.token, w.box, ttl).then(answer)
+              return
+            }
+            if (text.startsWith('!turn ')) {
+              const id = String((JSON.parse(text.slice(6)) as { id?: unknown }).id ?? '')
+              void (env.fixedIce ? Promise.resolve({ servers: env.fixedIce, turn: false }) : iceServers(env)).then(({ servers, turn }) => ws.send(`!turn ${JSON.stringify({ id, ok: true, servers, turn })}`))
               return
             }
             seen.push(text)

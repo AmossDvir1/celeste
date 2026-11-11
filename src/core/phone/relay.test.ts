@@ -204,6 +204,22 @@ describe('the relay, away from home', () => {
   })
 })
 
+describe('the addresses for a direct link', () => {
+  it('are handed to a phone by the computer, from the relay: TURN when the project set it up, STUN alone when not', async () => {
+    const { bridge, google, pairing } = await setup()
+    // Over the relay, as a phone away from home asks.
+    const phone = away(pairing)
+    await waitFor(() => phone.states.includes('connected'))
+    const info = await phone.link.call<{ servers: { urls: string[]; username?: string; credential?: string }[] | null }>('phone.linkInfo')
+    expect(info.servers?.[0]?.urls[0]).toMatch(/^stun:/)
+    expect(info.servers?.some((s) => s.username?.startsWith('user-') && s.urls.some((u) => u.startsWith('turn')))).toBe(true)
+    // Kept for a while, not asked of Cloudflare for every phone.
+    await phone.link.call('phone.linkInfo')
+    if (!REAL) expect(google.turnAsked).toHaveLength(1)
+    expect(bridge.listening()).toHaveLength(1)
+  })
+})
+
 describe('waking a closed app', () => {
   it('wakes a phone through Firebase with a sealed notice only the phone can open', async () => {
     const { bridge, google, pairing } = await setup()

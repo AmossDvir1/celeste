@@ -68,6 +68,20 @@ Without it the relay answers every wake with `NOT_CONFIGURED`, and everything el
 
 The app's background service has no WebSocket, so it answers the computer with an HTTP request to the relay (`POST /v1/<room>/rpc`, the same sealed request as on the Wi-Fi). At most 120 a minute per room.
 
+## The direct link (TURN)
+
+Away from home, the phone and the computer open a **direct WebRTC link** (step A4c) and use it instead of the relay, so large files and live views do not pass through it. They trade their descriptions through the relay as sealed calls; the relay's only part is to hand out the addresses to find each other with (`!turn`, `src/turn.ts`):
+
+- **STUN** (Cloudflare's, free, no key) tells each side its own public address. This alone connects most pairs.
+- **TURN** carries the link's bytes when the two cannot reach each other (some mobile networks, strict Wi-Fi). What it carries is already sealed. Cloudflare's TURN is free up to 1,000 GB a month, then US$0.05 a GB. To switch it on, make a TURN key in the Cloudflare dashboard (**Realtime**, **TURN**, **Create**) and give the Worker both values as secrets:
+
+```bash
+npx wrangler secret put TURN_KEY_ID
+npx wrangler secret put TURN_KEY_API_TOKEN
+```
+
+Without them the relay hands out STUN alone, the link opens whenever the two can reach each other, and when they cannot the phone stays on the relay (which still carries everything, in smaller parts). At most 30 requests an hour per computer; each credential lives 6 hours.
+
 ## Not here yet
 
-- The direct link for files (step A4c). Until then files go through the relay in sealed parts.
+- Nothing for A4c: the direct link is built. The public-signalling backup (A4d) is separate.

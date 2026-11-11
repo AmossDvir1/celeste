@@ -37,6 +37,9 @@ export const PHONE_METHODS = [
   'phone.control',
   /** The phone's push token (Firebase), so the computer can wake it when the app is closed: `[token]`, or `[null]` to forget it. */
   'phone.push',
+  /** The addresses to open the direct link with (`[]` → `PhoneLinkInfo`), and the phone's offer of one (`[PhoneLinkOffer]` → `PhoneLinkAnswer`). */
+  'phone.linkInfo',
+  'phone.link',
   'phone.workflows',
   'phone.runWorkflow',
   'sessions.get',
@@ -459,6 +462,25 @@ export interface PhoneRelayInfo {
   /** Like wss://relay.example.workers.dev */
   url: string
   room: string
+}
+
+/** An address a WebRTC peer uses to find the other: STUN to learn its own, TURN to be carried when it cannot be reached. */
+export interface IceServer {
+  urls: string[]
+  username?: string
+  credential?: string
+}
+
+/** What the computer gives the phone to open a direct link: the servers, or null when it cannot make one. */
+export interface PhoneLinkInfo {
+  servers: IceServer[] | null
+}
+/** The phone's session description, with its candidates gathered (no trickling: two calls open a link). */
+export interface PhoneLinkOffer {
+  sdp: string
+}
+export interface PhoneLinkAnswer {
+  sdp: string
 }
 
 /**
