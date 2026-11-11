@@ -59,6 +59,14 @@ export function PhoneSettings() {
         </p>
       )}
 
+      {status.relay !== 'off' && (
+        <p className="text-[12.5px] text-ink-muted">
+          {status.relay === 'connected'
+            ? 'Away from home: your phone reaches this computer through Celeste’s relay, which can read nothing it passes.'
+            : 'Away from home: connecting to Celeste’s relay…'}
+        </p>
+      )}
+
       {status.enabled && status.running && (
         <div className="flex gap-5 rounded-xl border border-edge p-4">
           <div className="grid h-[208px] w-[208px] shrink-0 place-items-center rounded-lg bg-white">

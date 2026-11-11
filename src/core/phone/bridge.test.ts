@@ -115,7 +115,8 @@ describe('phone bridge', () => {
   it('runs allowed methods for a paired phone and refuses the rest', async () => {
     const { pairing, calls, base } = await paired()
     const link = new PhoneLink(pairing)
-    expect(await link.call('phone.hello')).toEqual({ echo: 'phone.hello', params: [] })
+    // With no relay, the computer says so: a phone that knew one forgets it.
+    expect(await link.call('phone.hello')).toEqual({ echo: 'phone.hello', params: [], relay: null })
     await expect(link.call('sessions.send', 's1', { text: 'hi' })).rejects.toThrow('No such session')
     // A method that is not on the list never reaches Core, even when it is sealed properly.
     const key = await sessionKey(pairing.keys.priv, pairing.computer.key, pairing.computer.key, pairing.keys.pub)

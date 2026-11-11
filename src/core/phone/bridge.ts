@@ -23,12 +23,14 @@ import {
   PHONE_ATTACH_PART,
   PHONE_PROTOCOL,
   PHONE_PUSHES,
+  DEFAULT_RELAY_URL,
   commitment,
   isPhoneMethod,
   makeKeyPair,
   open,
   pairingEmoji,
   randomB64,
+  relayRoom,
   seal,
   sessionKey,
   type PhoneAbility,
@@ -38,14 +40,18 @@ import {
   type PhoneMethod,
   type PhonePairRequest,
   type PhoneRecord,
+  type PhoneRelayInfo,
   type PhoneReply,
   type PhoneCancelPush,
   type PhoneRequestPush,
   type PhoneStatus,
+  type RelayHostFrame,
+  type RelayPhoneFrame,
   type SealedCall,
   type SealedReply,
   type StoredKeyPair
 } from '@shared/phone'
+import { RelayLine } from './relay'
 
 export interface PhoneSettingsStore {
   settings(): Record<string, unknown>
@@ -74,6 +80,11 @@ export interface PhoneBridgeDeps {
   announce?: (port: number, name: string, id: string) => Promise<() => Promise<void>>
   addresses?: () => string[]
   now?: () => number
+  /**
+   * The relay phones reach this computer through away from home (docs/PHONE_PLAN.md 7.1), like wss://relay.example. Empty: none.
+   * Left out, it is CELESTE_RELAY_URL, then the `phoneRelayUrl` setting, then the project's own.
+   */
+  relayUrl?: () => string
   /** Where to listen. Tests use 127.0.0.1. */
   host?: string
   /** A fixed port, for tests. Otherwise one is picked once and kept. */
@@ -143,10 +154,18 @@ interface Pending {
   waiters: Set<() => void>
 }
 
+/** A phone that is listening for pushes: on the Wi-Fi (an open HTTP stream) or through the relay (one of its connections). */
 interface Listener {
   phoneId: string
   key: CryptoKey
-  res: ServerResponse
+  /** Sends one sealed push. */
+  write: (box: string) => void
+  /** Closes the phone's stream. */
+  end: () => void
+  /** Keeps a Wi-Fi stream from going quiet. The relay answers the phone's own pings. */
+  ping?: () => void
+  /** The relay connection it came through. */
+  conn?: string
   queue: Promise<void>
 }
 
@@ -163,7 +182,41 @@ export class PhoneBridge {
   /** Requests sent to a phone, waiting for its reply. */
   private readonly asked = new Map<string, { phoneId: string; sessionId: string; done: (r: PhoneAnswer) => void; acked: () => void; files: Incoming[]; bytes: number }>()
 
-  constructor(private readonly deps: PhoneBridgeDeps) {}
+  private readonly relay: RelayLine
+
+  constructor(private readonly deps: PhoneBridgeDeps) {
+    this.relay = new RelayLine({
+      onFrame: (conn, text) => void this.relayFrame(conn, text).catch(() => undefined),
+      onGone: (conn) => {
+        for (const l of [...this.listeners]) if (l.conn !== undefined && (conn === null || l.conn === conn)) this.listeners.delete(l)
+      },
+      onState: () => this.deps.onStatus()
+    })
+  }
+
+  private relayUrl(): string {
+    const url = this.deps.relayUrl ? this.deps.relayUrl() : (process.env['CELESTE_RELAY_URL'] ?? (this.settings['phoneRelayUrl'] as string | undefined) ?? DEFAULT_RELAY_URL)
+    return /^(wss?|https?):\/\/[^\s/]+/.test(url) ? url.replace(/\/+$/, '') : ''
+  }
+
+  /** Where a paired phone finds this computer away from home, or null when there is no relay. */
+  private async relayInfo(): Promise<PhoneRelayInfo | null> {
+    const url = this.relayUrl()
+    if (!url) return null
+    const { keys } = await this.identity()
+    return { url, room: (await relayRoom(keys.priv)).room }
+  }
+
+  /** Opens the line to the relay while phones are on and one is paired, and closes it otherwise. */
+  private async syncRelay(): Promise<void> {
+    const url = this.relayUrl()
+    if (!url || !this.server || !this.phones().length) return this.relay.use(null)
+    const { keys } = await this.identity()
+    const target = { url, ...(await relayRoom(keys.priv)) }
+    // Switched off, or the last phone removed, while the key was read.
+    if (!this.server || !this.phones().length) return this.relay.use(null)
+    this.relay.use(target)
+  }
 
   private now(): number {
     return this.deps.now?.() ?? Date.now()
@@ -243,6 +296,7 @@ export class PhoneBridge {
       installUrl: port && addresses[0] ? `http://${addresses[0]}:${port}/` : null,
       apk: !!this.deps.apkFile(),
       pending: p && p.state === 'revealed' && p.emoji ? { pairId: p.pairId, name: p.name, emoji: p.emoji, at: p.at } : null,
+      relay: this.relay.state,
       ...(this.lastError ? { error: this.lastError } : {}),
       // Only while no phone is connected: one that is connected shows the network lets it in.
       ...(this.server && this.network.warning && !this.listening().length ? { network: this.network.warning } : {})
@@ -298,13 +352,14 @@ export class PhoneBridge {
     this.server = server
     const port = this.port as number
     if (!this.deps.port) this.deps.store.setSetting('phonePort', port)
-    this.heartbeat = setInterval(() => this.listeners.forEach((l) => l.res.write(': ping\n\n')), HEARTBEAT_MS)
+    this.heartbeat = setInterval(() => this.listeners.forEach((l) => l.ping?.()), HEARTBEAT_MS)
     this.heartbeat.unref?.()
     if (this.deps.announce) {
       this.stopAnnounce = await this.deps.announce(port, this.deps.computerName(), id).catch(() => null)
     }
     this.network.at = 0
     this.checkNetwork()
+    void this.syncRelay()
   }
 
   private listen(port: number): Promise<Server> {
@@ -321,7 +376,8 @@ export class PhoneBridge {
   async stop(): Promise<void> {
     if (this.heartbeat) clearInterval(this.heartbeat)
     this.heartbeat = null
-    this.listeners.forEach((l) => l.res.end())
+    this.relay.use(null)
+    this.listeners.forEach((l) => l.end())
     this.listeners.clear()
     if (this.pending) this.endPairing('denied')
     await this.stopAnnounce?.().catch(() => undefined)
@@ -345,9 +401,10 @@ export class PhoneBridge {
     this.seen.delete(phoneId)
     for (const l of [...this.listeners]) {
       if (l.phoneId !== phoneId) continue
-      l.res.end()
+      l.end()
       this.listeners.delete(l)
     }
+    void this.syncRelay()
     this.deps.onStatus()
     return this.status()
   }
@@ -361,6 +418,7 @@ export class PhoneBridge {
       this.savePhones([...this.phones().filter((x) => x.key !== phone.key), phone])
       p.phoneId = phone.id
       this.endPairing('allowed')
+      void this.syncRelay()
     } else {
       this.endPairing('denied')
     }
@@ -387,8 +445,7 @@ export class PhoneBridge {
     for (const l of this.listeners) {
       l.queue = l.queue
         .then(async () => {
-          const box = await seal(l.key, push, LABEL.push)
-          l.res.write(`data: ${box}\n\n`)
+          l.write(await seal(l.key, push, LABEL.push))
         })
         .catch(() => undefined)
     }
@@ -484,7 +541,7 @@ export class PhoneBridge {
   private sendTo(phoneId: string, value: PhoneRequestPush | PhoneCancelPush): void {
     for (const l of this.listeners) {
       if (l.phoneId !== phoneId) continue
-      l.queue = l.queue.then(async () => void l.res.write(`data: ${await seal(l.key, value, LABEL.push)}\n\n`)).catch(() => undefined)
+      l.queue = l.queue.then(async () => l.write(await seal(l.key, value, LABEL.push))).catch(() => undefined)
     }
   }
 
@@ -658,7 +715,10 @@ export class PhoneBridge {
       } else reply = { id: call.id, ok: false, error: 'Nothing is waiting for that answer.' }
     } else {
       try {
-        reply = { id: call.id, ok: true, result: (await this.deps.call(call.method, call.params, phone)) ?? null }
+        let result = (await this.deps.call(call.method, call.params, phone)) ?? null
+        // The phone learns here where to find this computer away from home, and keeps it with its pairing.
+        if (call.method === 'phone.hello' && result && typeof result === 'object') result = { ...result, relay: await this.relayInfo() }
+        reply = { id: call.id, ok: true, result }
       } catch (err) {
         reply = { id: call.id, ok: false, error: err instanceof Error ? err.message : String(err) }
       }
@@ -666,22 +726,80 @@ export class PhoneBridge {
     return [200, { box: await seal(key, reply, LABEL.response) }]
   }
 
-  private async events(url: URL, res: ServerResponse): Promise<void> {
-    const phone = this.phones().find((p) => p.id === url.searchParams.get('phone'))
-    if (!phone) return end(res, 401, { error: 'This phone is not paired.' })
+  /** A phone asks to listen: it must be paired and prove it with a fresh sealed note. The reason when it may not. */
+  private async admit(phoneId: unknown, auth: unknown): Promise<{ phone: PhoneRecord; key: CryptoKey } | string> {
+    const phone = this.phones().find((p) => p.id === phoneId)
+    if (!phone) return 'This phone is not paired.'
     const key = await this.keyFor(phone)
     try {
-      const proof = await open<{ ts: number; n: string }>(key, url.searchParams.get('auth') ?? '', LABEL.listen)
-      if (!this.fresh(phone.id, proof.ts, proof.n)) return end(res, 401, { error: 'Refused: check the time on the phone.' })
+      const proof = await open<{ ts: number; n: string }>(key, typeof auth === 'string' ? auth : '', LABEL.listen)
+      if (!this.fresh(phone.id, proof.ts, proof.n)) return 'Refused: check the time on the phone.'
     } catch {
-      return end(res, 401, { error: 'This phone is not paired.' })
+      return 'This phone is not paired.'
     }
+    return { phone, key }
+  }
+
+  private async events(url: URL, res: ServerResponse): Promise<void> {
+    const ok = await this.admit(url.searchParams.get('phone'), url.searchParams.get('auth'))
+    if (typeof ok === 'string') return end(res, 401, { error: ok })
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' })
     res.write(': connected\n\n')
-    const listener: Listener = { phoneId: phone.id, key, res, queue: Promise.resolve() }
+    const listener: Listener = {
+      phoneId: ok.phone.id,
+      key: ok.key,
+      write: (box) => void res.write(`data: ${box}\n\n`),
+      end: () => void res.end(),
+      ping: () => void res.write(': ping\n\n'),
+      queue: Promise.resolve()
+    }
     this.listeners.add(listener)
-    this.touch(phone)
+    this.touch(ok.phone)
     res.on('close', () => this.listeners.delete(listener))
+  }
+
+  /**
+   * Something a phone sent through the relay: a sealed request, or a request to listen. Each is checked exactly as on the
+   * Wi-Fi (`rpc`, `admit`); nothing else is answered, so a phone can't be paired, or the app handed out, through the relay.
+   */
+  private async relayFrame(conn: string, text: string): Promise<void> {
+    if (!this.server) return
+    let f: Partial<RelayPhoneFrame>
+    try {
+      f = JSON.parse(text) as Partial<RelayPhoneFrame>
+    } catch {
+      return
+    }
+    const send = (frame: RelayHostFrame) => this.relay.send(conn, JSON.stringify(frame))
+    if (f.t === 'rpc' && typeof f.id === 'number') {
+      let status: number
+      let value: { box?: string; error?: string }
+      try {
+        ;[status, value] = (await this.rpc({ phone: f.phone, box: f.box })) as [number, { box?: string; error?: string }]
+      } catch {
+        ;[status, value] = [400, { error: 'Bad request' }]
+      }
+      return send({ t: 'rpc', id: f.id, status, ...value })
+    }
+    if (f.t === 'listen') {
+      const ok = await this.admit(f.phone, f.auth)
+      if (typeof ok === 'string') {
+        send({ t: 'listen', ok: false, error: ok })
+        return this.relay.close(conn)
+      }
+      // The same connection asking again replaces its listener.
+      for (const l of [...this.listeners]) if (l.conn === conn) this.listeners.delete(l)
+      this.listeners.add({
+        phoneId: ok.phone.id,
+        key: ok.key,
+        conn,
+        write: (box) => send({ t: 'push', box }),
+        end: () => this.relay.close(conn),
+        queue: Promise.resolve()
+      })
+      this.touch(ok.phone)
+      send({ t: 'listen', ok: true })
+    }
   }
 
   private installPage(res: ServerResponse): void {

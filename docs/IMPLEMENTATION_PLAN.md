@@ -716,7 +716,7 @@ A phone whose app is closed shows as asleep, and the assistant is told so instea
 
 **How it is built.** Capacitor 8 (MIT) wraps the React interface as a native iPhone, iPad and Android app and gives it native plugins (Keychain, QR scanner, share extension, local network discovery). The alternatives fit worse. React Native would mean rewriting every screen. A web app saved to the home screen needs a trusted HTTPS address for a computer on your Wi-Fi, which is awkward without a server. The share extension and local discovery need a little Swift.
 
-**No push notifications in v1.** Apple and Google deliver push only with a provider key, and that key can't ship inside an open-source app. So a closed phone gets no "needs you" alert. It shows when the app is opened. An optional small relay run by the project could come later, and it would carry no message content (decision 11).
+**No push notifications in v1.** Apple and Google deliver push only with a provider key, and that key can't ship inside an open-source app. So a closed phone gets no "needs you" alert. It shows when the app is opened. An optional small relay run by the project could come later, and it would carry no message content (decision 11). **Changed 11 November 2026: the owner made notifications a must before shipping. The relay of decision 17 sends a wake-up push through Firebase Cloud Messaging, with no content in it (`PHONE_PLAN.md` 7.1, P-9).**
 
 **Cost and rules.** An iOS app needs an Apple Developer Program account (US$99 a year **Verify**), builds on macOS (a cloud macOS builder in CI is enough), review before the App Store, and TestFlight for betas, whose builds expire after 90 days **Verify**. Android needs a Google Play developer account. Celeste's Apache-2.0 license is fine for both stores.
 
@@ -725,7 +725,7 @@ A phone whose app is closed shows as asleep, and the assistant is told so instea
 | Area | To do |
 |---|---|
 | Release and CI | Build and sign the APK in CI (one stable key kept as a CI secret, so updates install over the old app), attach it to each GitHub Release, run the app's tests on an emulator, and have the computer fetch and cache the released APK to serve it |
-| Away from home (decision 17) | The Cloudflare relay in `relay/`: a transport the computer opens outward, the same sealed messages on top, rate limits per pairing, and its free-tier limits watched. Needed before shipping |
+| Away from home (decision 17) | The Cloudflare relay in `relay/`: a transport the computer opens outward, the same sealed messages on top, rate limits per pairing, and its free-tier limits watched. It also sends the wake-up push (Firebase Cloud Messaging) and sets up a direct WebRTC link for files, with Cloudflare TURN behind it (`PHONE_PLAN.md` 7.1, steps A4a to A4d). Needed before shipping |
 | Keys | The phone bridge's key moves from Celeste's settings to the system's secret store (Electron `safeStorage`) |
 | Networks | Windows: Public-network profile check and the firewall prompt. macOS: Local Network permission. Linux: a firewall note |
 | Workflows and devices | ✅ The **Use the phone** step in the workflow engine (9 November 2026). Still to do: a `phone` device kind beside `ssh`, `hyperv` and `adb` |

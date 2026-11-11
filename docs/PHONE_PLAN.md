@@ -150,7 +150,7 @@ Two lists, so nothing is lost: what is left in the phone app and its link to the
 
 ### Before it ships
 
-1. **Away from home must use a Cloudflare relay, not Tailscale.** Tailscale asks every person to make a Tailscale account and install it on both devices: fine for people who already use it, but not an experience a public app can rely on. A relay makes the app work away from home with nothing to set up, and it can wake a closed app (section 7). Tailscale stays as the advanced option for people who already have it, and as what the owner uses while the app is experimental. The relay brings work of its own, listed in section 7: someone has to run it (a Cloudflare account of the project's), its free-tier limits are shared by every user (**Verify**, and it may need Cloudflare's paid plan if the app grows), it must carry only encrypted bytes with rate limits against abuse, and the privacy statement has to say it sees who is online and when. Decision P-6 is changed accordingly, and P-8 asks for the owner's go-ahead.
+1. **Away from home must use a Cloudflare relay, not Tailscale.** Tailscale asks every person to make a Tailscale account and install it on both devices: fine for people who already use it, but not an experience a public app can rely on. A relay makes the app work away from home with nothing to set up, and it can wake a closed app (section 7). **Added 11 November 2026 (owner: notifications and files can't be compromised):** the relay also sends push notifications through Firebase Cloud Messaging, and files travel over a direct WebRTC link with Cloudflare's TURN service behind it (section 7, P-9). Tailscale stays as the advanced option for people who already have it, and as what the owner uses while the app is experimental. The relay brings work of its own, listed in section 7: someone has to run it (a Cloudflare account of the project's), its free-tier limits are shared by every user (**Verify**, and it may need Cloudflare's paid plan if the app grows), it must carry only encrypted bytes with rate limits against abuse, and the privacy statement has to say it sees who is online and when. Decision P-6 is changed accordingly, and P-8 asks for the owner's go-ahead.
 2. **Every item in "Checked on the owner's real phone" is checked**, phone control above all (done on 9 November 2026, except replying to a real message notification).
 3. **A security review** of the bridge, the pairing, and the accessibility service (`/security-review`), with the plan's rails (5.1) as the checklist.
 4. **A signed APK from CI**, with updates that install over the old app.
@@ -164,7 +164,7 @@ Two lists, so nothing is lost: what is left in the phone app and its link to the
 - **The assistant uses the phone**, and each action is approved on the phone by the person holding it:
   - **Phone abilities**: read and answer notifications, open an app or a link, location, photos and files the person picks, calendar, alarms. These are typed tools. They are fast and never need a screenshot.
   - **Phone control**: see the screen, tap, swipe and type, for anything the abilities don't cover. It has the same rails as desktop control.
-- **No server on the home Wi-Fi.** The phone and the computer talk directly, encrypted end to end. A server is needed only away from home. To ship, that is a Cloudflare relay run by the project (section 7, P-8); during the experiment, none at all with Tailscale.
+- **No server on the home Wi-Fi.** The phone and the computer talk directly, encrypted end to end. A server is needed only away from home. To ship, that is a Cloudflare relay run by the project, which also sends push notifications, with a direct link for files (section 7, P-8 and P-9); during the experiment, none at all with Tailscale.
 
 ## 2. Installing it: the easy way
 
@@ -349,13 +349,58 @@ Exit: "open Settings and turn on the hotspot", done by the stand-in agent on the
 
 | Service | Free tier | Fit |
 |---|---|---|
-| **Cloudflare Workers + Durable Objects** | Free plan: 100,000 requests a day, SQLite-backed Durable Objects, WebSocket **hibernation** (no charge while idle) | **Best fit.** One small Worker in `relay/`, a "Deploy to Cloudflare" button, no card needed **Verify**. Each pairing gets its own Durable Object. WebSocket messages count towards requests **Verify** the ratio |
+| **Cloudflare Workers + Durable Objects** | Free plan: 100,000 requests a day, SQLite-backed Durable Objects, WebSocket **hibernation** (no charge while idle) | **Best fit.** One small Worker in `relay/`, a "Deploy to Cloudflare" button, no card needed **Verify**. Each pairing gets its own Durable Object. Incoming WebSocket messages count towards requests at 20 to 1; outgoing are free |
 | Oracle Cloud Always Free | 4 ARM cores and 24 GB RAM, always on | Plenty, but needs a card, a VM to look after, and Oracle may reclaim idle instances |
 | Render (free web service) | Free, but sleeps when idle | Poor: a relay that sleeps misses the phone |
 | Fly.io, Railway | Trial credit only for new accounts | No |
 | Deno Deploy | Serverless | Poor for long-lived sockets |
 
-3. **Push notifications while away**: the relay (choice 2) can wake the app. Firebase Cloud Messaging is free but needs a Firebase project and its secret per sender, which an open-source desktop app can't ship, so it's not planned. UnifiedPush through the ntfy app, using the free public ntfy.sh server, is an option for people who want it.
+3. **Push notifications while away**: see 7.1. (Until 11 November 2026 this was "not planned"; the owner then made notifications a must.)
+
+### 7.1 The design to ship (11 November 2026)
+
+The owner's rule: **notifications, files and everything else must work away from home, with no compromise, and at no cost while the project has no money.** That rules out a design with no project server, for one reason: Android closes a background app's connections (Samsung phones strictly), and only Google's push service wakes an app reliably. Sending a push needs a secret key, which open-source desktop code can't carry, so the key has to live on a server the project runs. That server is the relay.
+
+| Need | How it is met | Cost |
+|---|---|---|
+| Always reachable | The **relay** (Cloudflare Worker + Durable Objects, one object per pairing). The computer and the phone each open a WebSocket outward to it; it passes the same sealed messages as on the Wi-Fi. | Free plan: 100,000 requests a day, 13,000 GB-s a day, nothing charged while hibernating. Incoming WebSocket messages count 20 to 1; outgoing are free. |
+| Notifications | When the computer has something for a phone that isn't connected, it tells the relay, and the relay asks **Firebase Cloud Messaging** to wake the app. The push carries no content: the app wakes, connects, and fetches the sealed message. | Free |
+| Files and speed | Once both are connected they open a **direct WebRTC data channel** (signalled through the relay), so large files don't pass through the relay. The phone's WebView and Electron both have WebRTC built in. | Free |
+| Files when a direct link fails | **Cloudflare's TURN service** carries the data. The relay hands out short-lived TURN credentials. | Free up to 1,000 GB a month (shared with Cloudflare's SFU), then US$0.05 per GB |
+| Home Wi-Fi | Unchanged. It still works if the relay, Cloudflare or Google is down. | Free |
+
+Everything stays sealed end to end with the pairing keys, so Cloudflare and Google see who is online and when, never content.
+
+**What it asks of the project:** a Cloudflare account and a Firebase project, both the project's own; the Firebase service-account key and the TURN key kept as Worker secrets; rate limits per pairing; the privacy statement updated (the relay and Google's push service see that a phone was woken and when). If the app outgrows the free plan, Cloudflare's paid plan is about US$5 a month.
+
+**To verify before building:**
+- whether Cloudflare's free plan needs a payment card on file
+- signing Firebase's HTTP v1 requests from a Worker (a service-account token made with WebCrypto)
+- that a sideloaded APK receives pushes (it needs Google Play services on the phone, and the app's `google-services.json`, which holds no secret, in the repository)
+- how often a direct link succeeds on the owner's mobile network (general figures are roughly 80 to 95%, lower on mobile carriers; TURN covers the rest)
+- WebRTC on the computer: a hidden Electron window, or `node-datachannel` in Core
+
+**Built so far (11 November 2026): step A4a, the relay.** Not deployed: the project has no Cloudflare account yet, so `DEFAULT_RELAY_URL` is empty and away-from-home is not offered until it is filled in.
+
+- ✅ `relay/`: the Worker and its rules. One room per computer (not per pairing: one line from the computer serves all its phones). The room's name and the secret that proves the computer owns it are made from the computer's private key, so nothing new is stored. WebSocket hibernation, with pings answered without waking the room.
+- ✅ The computer (`src/core/phone/relay.ts`, and the bridge): one WebSocket outward while phones are on and one is paired; it reconnects by itself. Requests and listening through the relay go through the same checks as on the Wi-Fi. Pairing and the app download are never answered through the relay.
+- ✅ The app (`src/shared/phone-client.ts`): the phone learns the relay from the computer on the Wi-Fi (`phone.hello`) and keeps it with its pairing. Each connection asks the Wi-Fi first (1.5 seconds), then goes through the relay, and moves back to the Wi-Fi by itself. This phone shows "Away from home, through the relay".
+- ✅ Limits: 8 phones in a room, 6 MB a message, a burst of 240 messages from a phone and then 8 a second.
+- ✅ Tested: 12 tests through a stand-in relay (`src/core/phone/relay.test.ts`), and the same scenarios through the real Worker running locally (`npm run verify:relay`). That run found two faults the stand-in could not, both fixed: the Worker's message count did not survive between messages, and a phone leaving the relay waited for the socket to finish closing.
+- **Not done:** deploying it (the owner: `relay/README.md`); trying it on a real phone on mobile data; the privacy statement; the app's background line ("Stay connected"), which still works on the Wi-Fi only, so notifications away from home wait for A4b; the relay's typecheck in CI.
+
+### 7.2 Looked at and not chosen as the main path
+
+These need no project server, and none can deliver reliable notifications. The first can stay as a backup for people who refuse any project server.
+
+| Option | How it works | Why not the main path |
+|---|---|---|
+| WebRTC with public signalling (Trystero's way: Nostr relays, MQTT brokers, BitTorrent trackers) | The two exchange sealed "here is my address" messages over free public networks, then talk directly | No push; nobody answers for those networks' uptime or limits; a direct link fails on some mobile networks |
+| iroh (dial a device by its key, direct link with relay fallback) | Node bindings for Windows, Mac (arm64) and Linux; Android binaries | Its public relays are free "for development and testing" only and throttled, so shipping means hosting a relay anyway; the phone needs a native plugin |
+| Hyperswarm / HyperDHT | A public peer-to-peer table, no company servers | A second runtime on Android; no real fallback |
+| Direct address (UPnP port mapping, IPv6) | The phone connects straight to the computer | Works only on some routers and providers, and opens a port to the internet |
+| Tor onion service | The computer publishes a hidden address | Slow, about 20 MB on each side |
+| UnifiedPush through ntfy.sh | Push without Google | The person must install a second app; fine as an option for phones without Google Play services |
 
 ## 8. How it fits the rest of Celeste
 
@@ -366,7 +411,7 @@ Exit: "open Settings and turn on the hotspot", done by the stand-in agent on the
 | Shared | Scopes on every API method, phone tool schemas, and a `phone` device kind beside `ssh`, `hyperv` and `adb`. |
 | Renderer | Settings → Phone: the QR, the phones list and the two settings. The "Android phone" tab in Add a device becomes **Developer connection (advanced)**. The phone layouts, if Capacitor (4.3). |
 | `android/` | The app: Capacitor shell, Kotlin services, and tests. |
-| `relay/` | The Cloudflare Worker, needed before shipping (section 7, P-8). |
+| `relay/` | The Cloudflare Worker, needed before shipping (section 7.1, P-8 and P-9): passes sealed messages, sends the wake-up push, signals the direct link and hands out TURN credentials. |
 | Workflows | A **Use the phone** step, like **Use the computer**. |
 | CI | Builds and signs the APK (the signing key is a CI secret; no fee). Attaches it to releases. Runs the app's tests on an emulator. |
 
@@ -397,7 +442,7 @@ All of these are built (9 November 2026). Sending an SMS or making a call opens 
 | **A1** | **The app as a remote**, after spikes 6.1 and 6.2: scopes on Core methods; the phone bridge; install from the QR; mDNS pairing; Settings → Phone; the app's chats, chat, cards, Stop and workflows; APK in CI and releases; self-update. | L |
 | **A2** | **Phone abilities**: the ability tools with approval cards on the phone, notification access with the restricted-settings guide, the `phone` device kind, and the **Use the phone** step. ✅ Built, except the `phone` device kind (9 November 2026). | L |
 | **A3** | **Phone control**, after spike 6.3: accessibility service, the rails of 5.1, the action tools and the never list. | L |
-| **A4** | **Away from home**: Tailscale steps now, for the experiment; **the Cloudflare relay before shipping** (section 7, P-8). | S–M |
+| **A4** | **Away from home**: Tailscale steps now, for the experiment. Before shipping (section 7.1), in this order: **A4a** the relay (the Worker, the computer's outward WebSocket, the app's relay connection, rate limits); **A4b** push notifications (Firebase in the app, the wake-up from the relay); **A4c** the direct WebRTC link for files, with TURN behind it; **A4d**, optional, the public-signalling backup (7.2). ✅ A4a is built and not deployed (11 November 2026, see 7.1); the rest is not built. | L |
 
 Each step ends with tests, a real-app check, this plan updated with what was and wasn't built, and the CHANGELOG. It was kept on the `phone` branch until the owner decided to merge it (done on 10 November 2026).
 
@@ -418,7 +463,8 @@ Each step ends with tests, a real-app check, this plan updated with what was and
 | Prompt injection from the screen or notifications | Approvals on the phone, never-list apps hidden, nothing while locked, notification text treated as data, the touch pause and Stop, and a second yes for consequential buttons for people who switch it on (off by default, so a grant to control the phone trusts the assistant with the task). |
 | Someone else on the Wi-Fi | Nothing answers before the handshake; a new phone needs **Allow** on the computer with matching emoji. |
 | Battery and data | Element list before screenshots, screenshots only when asked, a cap on actions per grant. |
-| The relay (to ship) is a service someone must run | A Cloudflare account of the project's; sealed messages so it sees no content; rate limits per pairing; free-tier limits watched (**Verify**); and the app still works on the home Wi-Fi if the relay is down. |
+| The relay (to ship) is a service someone must run | A Cloudflare account of the project's; sealed messages so it sees no content; rate limits per pairing; free-tier limits watched; and the app still works on the home Wi-Fi if the relay is down. |
+| Away from home depends on Cloudflare and Google | Both are free at this size. If either is down, away-from-home use or notifications stop until it returns; the home Wi-Fi is unaffected. Nothing they carry can be read. |
 
 ## 12. Decisions for the owner
 
@@ -432,6 +478,7 @@ Each step ends with tests, a real-app check, this plan updated with what was and
 | P-6 | Away from home while it is an experiment: Tailscale? | Yes (**changed 9 November 2026**: it was "Tailscale first, then a self-deployed relay"; see P-8 for shipping) |
 | P-7 | May a phone grant **desktop** control? | No by default; a phone can always stop it |
 | P-8 | To ship: use a Cloudflare relay run by the project, with Tailscale only as an advanced option? | Yes. Before shipping, not before. It needs a Cloudflare account for the project, and the privacy statement has to say what the relay sees (who is online and when, never content) |
+| P-9 | To ship: push notifications through Firebase Cloud Messaging sent by the relay, and files over a direct WebRTC link with Cloudflare TURN behind it (7.1)? | Yes (the owner, 11 November 2026: notifications and files can't be compromised). It needs a Firebase project of the project's. The public-signalling backup (7.2) is optional and comes last |
 
 ## 13. Sources (read 9 November 2026)
 
@@ -444,4 +491,5 @@ Each step ends with tests, a real-app check, this plan updated with what was and
 - [Hosting free tiers side by side, September 2026](https://flaviocopes.com/hosting-free-tiers/)
 - [Tailscale free plan change, April 2026](https://thisisanitsupportgroup.beehiiv.com/p/tailscale-s-free-tier-just-doubled-if-you-ve-been-putting-it-off-today-s-the-morning)
 - [UnifiedPush distributors](https://unifiedpush.org/users/distributors/), [ntfy on phones](https://docs.ntfy.sh/subscribe/phone)
+- Read 11 November 2026: [Cloudflare Realtime TURN FAQ](https://developers.cloudflare.com/realtime/turn/faq/), [Trystero](https://github.com/dmotz/trystero), [iroh FAQ](https://docs.iroh.computer/about/faq) and [JavaScript bindings](https://docs.iroh.computer/languages/javascript), [node-datachannel](https://npmjs.com/package/node-datachannel), [Tailscale on NAT traversal](https://tailscale.com/blog/nat-traversal-improvements-pt-1)
 - Microsoft [Phone Link apps](https://support.microsoft.com/en-us/help/4577325)

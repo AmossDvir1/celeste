@@ -243,6 +243,15 @@ export const useApp = create<AppState>((set, get) => ({
         sessions[s.id] = had ? { ...had, ...s, status: had.loaded ? had.status : s.status } : fresh(s)
       }
       set({ boot, sessions })
+      // Where the computer is found away from home: kept with the pairing, for the next time the Wi-Fi does not reach it.
+      const pairing = get().pairing
+      const relay = boot.relay ?? null
+      if (pairing && boot.relay !== undefined && (pairing.relay?.url !== relay?.url || pairing.relay?.room !== relay?.room)) {
+        const next = { ...pairing, relay }
+        link.setRelay(relay)
+        savePairing(next)
+        set({ pairing: next })
+      }
       // The open conversation may have moved on while the line was down.
       const screen = get().screen
       if (screen.name === 'chat' && sessions[screen.id]?.loaded) void loadLog(screen.id)

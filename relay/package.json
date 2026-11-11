@@ -1,0 +1,16 @@
+{
+  "name": "celeste-relay",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Celeste's relay: passes sealed messages between the phone app and the computer away from home",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --port 8787",
+    "deploy": "wrangler deploy",
+    "typecheck": "wrangler types && node ../node_modules/typescript/bin/tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "wrangler": "^4.160.0"
+  }
+}

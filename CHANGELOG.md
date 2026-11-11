@@ -4,6 +4,10 @@ All notable changes to Celeste. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added
+
+- **The phone app away from home: the relay (first part, not switched on yet).** A small relay in `relay/` (a Cloudflare Worker) lets the phone reach the computer when they are not on the same Wi-Fi. The computer and the phone each connect outward to it, and it passes sealed messages it can't read. The phone tries the Wi-Fi first and goes back to it by itself. Pairing still happens only on the Wi-Fi. It stays off until the project deploys the relay; `CELESTE_RELAY_URL` points Celeste at one for testing. Notifications and large files away from home come next (`docs/PHONE_PLAN.md`, 7.1).
+
 ### Changed
 
 - **Settings are much smaller.** Eleven sections became nine and about 30 controls became 14, because most were questions with one sensible answer. This follows what Grok Bot, Claude and Copilot do: few settings, and the question asked on a card when it matters.

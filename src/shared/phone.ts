@@ -80,6 +80,8 @@ export interface PhoneBootstrap {
   userName: string
   theme: 'dark' | 'light' | 'system'
   sessions: SessionSummary[]
+  /** Where to find this computer away from home, when it has a relay. The phone keeps it with its pairing. */
+  relay?: PhoneRelayInfo | null
 }
 
 /** A project the phone may start a Develop session in: one the person already used for Develop on the computer. */
@@ -234,6 +236,8 @@ export interface PhoneStatus {
   error?: string
   /** Something about the network that keeps phones out (Windows: it is set to Public), with how to fix it. */
   network?: string
+  /** Away from home: `off` when there is no relay or no paired phone, else the line to the relay. */
+  relay: 'off' | 'connecting' | 'connected'
 }
 
 /** The pictures the two screens compare. 64 that are easy to tell apart and to say out loud. */
@@ -389,6 +393,50 @@ export const LABEL = {
   push: 'celeste-push',
   listen: 'celeste-listen'
 } as const
+
+// ── Away from home: the relay (docs/PHONE_PLAN.md 7.1, relay/README.md) ──────────────────────────────────────────────
+// The computer and the phone each open a WebSocket outward to the relay, which passes text between them and reads none
+// of it: every request, reply and push inside is sealed exactly as on the Wi-Fi. Pairing never goes through the relay.
+
+/** The project's relay. Empty until it is deployed: then away-from-home is simply not offered. */
+export const DEFAULT_RELAY_URL = ''
+/** WebSocket subprotocols: how each side says who it is. The computer adds its room secret as a second one. */
+export const RELAY_HOST_PROTOCOL = 'celeste.host'
+export const RELAY_PHONE_PROTOCOL = 'celeste.phone'
+
+/** Where a phone finds its computer away from home. The room name is a secret both sides keep. */
+export interface PhoneRelayInfo {
+  /** Like wss://relay.example.workers.dev */
+  url: string
+  room: string
+}
+
+/** What a phone sends through the relay: the same sealed boxes as `POST /rpc` and `GET /events`. */
+export type RelayPhoneFrame = { t: 'rpc'; id: number; phone: string; box: string } | { t: 'listen'; phone: string; auth: string }
+/** What the computer answers through the relay. */
+export type RelayHostFrame =
+  | { t: 'rpc'; id: number; status: number; box?: string; error?: string }
+  | { t: 'listen'; ok: true }
+  | { t: 'listen'; ok: false; error: string }
+  | { t: 'push'; box: string }
+
+const b64urlText = (b: Uint8Array) => toB64(b).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+
+/**
+ * The computer's room on the relay and the secret that proves the room is its own, both made from its private key, so
+ * there is nothing more to store and nobody else can work them out.
+ */
+export async function relayRoom(priv: Jwk): Promise<{ room: string; secret: string }> {
+  const d = enc.encode(String(priv['d']))
+  const room = await sha256(enc.encode('celeste-relay-room'), d)
+  const secret = await sha256(enc.encode('celeste-relay-host'), d)
+  return { room: b64urlText(room.slice(0, 16)), secret: b64urlText(secret) }
+}
+
+/** The WebSocket address of a room. */
+export function relaySocketUrl(url: string, room: string): string {
+  return `${url.replace(/\/+$/, '').replace(/^http/, 'ws')}/v1/${room}`
+}
 
 /** A sealed request's contents. `n` is random and `ts` is the phone's clock: together they stop a recorded request being sent again. */
 export interface SealedCall {

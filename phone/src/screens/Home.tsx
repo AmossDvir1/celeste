@@ -85,10 +85,12 @@ export function Home({ tab }: { tab: Tab }) {
 }
 
 function Offline({ computer, state }: { computer: string; state: string }) {
+  // With a relay the computer is reached from anywhere: what can be wrong is the computer or the internet, not the Wi-Fi.
+  const anywhere = useApp((s) => !!s.pairing?.relay)
   return (
     <div className="strip off">
       <Wifi size={18} />
-      <span className="grow">{state === 'connecting' ? <Shimmer>Connecting to {computer}</Shimmer> : `Can’t reach ${computer}. Is it on, and on this Wi-Fi?`}</span>
+      <span className="grow">{state === 'connecting' ? <Shimmer>Connecting to {computer}</Shimmer> : `Can’t reach ${computer}. ${anywhere ? 'Is it on, with Celeste open and the internet working?' : 'Is it on, and on this Wi-Fi?'}`}</span>
       {state !== 'connecting' && (
         <button className="btn text sm" onClick={() => useApp.getState().connect()}>
           Retry
@@ -466,6 +468,7 @@ function ThisPhone() {
   const pairing = useApp((s) => s.pairing)
   const boot = useApp((s) => s.boot)
   const linkState = useApp((s) => s.linkState)
+  const route = useApp((s) => (s.linkState === 'connected' ? (s.link?.route ?? null) : null))
   const prefs = useApp((s) => s.prefs)
   const setPrefs = useApp((s) => s.setPrefs)
   const [sure, setSure] = useState(false)
@@ -573,7 +576,7 @@ function ThisPhone() {
           </span>
           <div className="grow">
             <div className="t">{pairing.computer.name}</div>
-            <div className="s">{pairing.base.replace(/^https?:\/\//, '')}</div>
+            <div className="s">{route === 'relay' ? 'Away from home, through the relay' : pairing.base.replace(/^https?:\/\//, '')}</div>
           </div>
         </div>
         <button className="row tap" style={{ width: '100%', textAlign: 'left', color: 'var(--c-danger)' }} onClick={() => (sure ? useApp.getState().forget() : setSure(true))}>
