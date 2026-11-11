@@ -54,7 +54,20 @@ Wrangler prints the Worker's address, like `https://celeste-relay.<account>.work
 
 Cloudflare's free plan allows 100,000 requests a day and 13,000 GB-seconds a day for Durable Objects, shared by everyone who uses the relay. A new connection is one request. Incoming messages count 20 to 1, outgoing ones are free, and a room that is idle is asleep and costs nothing ("ping" is answered without waking it).
 
+## Waking a closed app (Firebase)
+
+When the computer has an approval, a question or a request for a phone, it asks the relay to wake the phone through Firebase Cloud Messaging (FCM). The relay sends **one data message holding one sealed box**: Google sees the phone's token and a block of bytes, never what is inside. The app wakes, opens the box with its own key and shows the notification.
+
+The relay needs the Firebase **service account key** (a JSON file from Firebase console, Project settings, Service accounts, Generate new private key). It is a **secret**: keep it out of the repository, and give it to the Worker like this (from a terminal in this folder, pointing at the file):
+
+```bash
+npx wrangler secret put FIREBASE_SERVICE_ACCOUNT < C:\path\to\the-key.json
+```
+
+Without it the relay answers every wake with `NOT_CONFIGURED`, and everything else works. Limits: 240 wakes an hour per computer, and a box of at most 3,500 characters (Firebase carries about 4 KB).
+
+The app's background service has no WebSocket, so it answers the computer with an HTTP request to the relay (`POST /v1/<room>/rpc`, the same sealed request as on the Wi-Fi). At most 120 a minute per room.
+
 ## Not here yet
 
-- Push notifications (step A4b): the relay asking Firebase Cloud Messaging to wake a closed app.
 - The direct link for files (step A4c). Until then files go through the relay in sealed parts.

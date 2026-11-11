@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "263807313861",
+    "project_id": "celeste-67c2d",
+    "storage_bucket": "celeste-67c2d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:263807313861:android:3eded1764d78f7e6310dac",
+        "android_client_info": {
+          "package_name": "io.github.amossdvir1.celeste"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBEEpnbVkDJvwu7zMRwXZXFgYsRVk7h_G0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

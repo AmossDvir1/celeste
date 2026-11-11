@@ -5,9 +5,31 @@
 // The room uses WebSocket hibernation: while nobody sends anything it is not running, and costs nothing.
 
 import { DurableObject } from 'cloudflare:workers'
-import { CLOSE, FORGET_AFTER_MS, HOST_PROTOCOL, MAX_FRAME, MAX_PHONES, PHONE_PROTOCOL, ROOM_RE, hostFrame, newConn, role, same, sha256Hex, take, type Bucket } from './rules'
+import { sendWake, type FcmEnv } from './fcm'
+import {
+  CLOSE,
+  FORGET_AFTER_MS,
+  HOST_PROTOCOL,
+  HTTP_RPC_PER_MINUTE,
+  HTTP_RPC_WAIT_MS,
+  MAX_FRAME,
+  MAX_PHONES,
+  MAX_WAKE_BOX,
+  PHONE_PROTOCOL,
+  ROOM_RE,
+  TOKEN_RE,
+  WAKES_PER_HOUR,
+  WAKE_TTL,
+  hostFrame,
+  newConn,
+  role,
+  same,
+  sha256Hex,
+  take,
+  type Bucket
+} from './rules'
 
-interface Env {
+interface Env extends FcmEnv {
   ROOMS: DurableObjectNamespace<Room>
 }
 
@@ -15,8 +37,10 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
     if (url.pathname === '/') return new Response('Celeste relay. It passes sealed messages between a phone and its computer, and reads none of them.\n')
-    const m = /^\/v1\/([^/]+)$/.exec(url.pathname)
+    const m = /^\/v1\/([^/]+)(\/rpc)?$/.exec(url.pathname)
     if (!m || !ROOM_RE.test(m[1] as string)) return new Response('Not found', { status: 404 })
+    // The app's background service has no WebSocket: it sends one request over HTTP and waits for the answer.
+    if (m[2]) return request.method === 'POST' ? env.ROOMS.get(env.ROOMS.idFromName(m[1] as string)).fetch(request) : new Response('POST only', { status: 405 })
     if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') return new Response('Expected a WebSocket', { status: 426 })
     if (!role(request.headers.get('sec-websocket-protocol'))) return new Response('Not a Celeste connection', { status: 400 })
     return env.ROOMS.get(env.ROOMS.idFromName(m[1] as string)).fetch(request)
@@ -37,7 +61,71 @@ export class Room extends DurableObject<Env> {
     return this.ctx.getWebSockets('host')[0]
   }
 
+  /** Requests from the app's background service, waiting for the computer's answer. */
+  private readonly http = new Map<string, (text: string) => void>()
+  private httpCount = { minute: 0, n: 0 }
+
+  private async rpcOverHttp(request: Request): Promise<Response> {
+    const json = (status: number, value: unknown) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } })
+    const now = Math.floor(Date.now() / 60_000)
+    if (this.httpCount.minute !== now) this.httpCount = { minute: now, n: 0 }
+    if (++this.httpCount.n > HTTP_RPC_PER_MINUTE) return json(429, { error: 'Too many requests.' })
+    const host = this.host()
+    if (!host) return json(503, { error: 'The computer is not connected.' })
+    const text = await request.text()
+    if (text.length > MAX_FRAME) return json(413, { error: 'Too large.' })
+    let body: { phone?: unknown; box?: unknown }
+    try {
+      body = JSON.parse(text) as typeof body
+    } catch {
+      return json(400, { error: 'Bad request' })
+    }
+    if (typeof body.phone !== 'string' || typeof body.box !== 'string') return json(400, { error: 'Bad request' })
+    const conn = newConn()
+    const answer = new Promise<string | null>((resolve) => {
+      const timer = setTimeout(() => (this.http.delete(conn), resolve(null)), HTTP_RPC_WAIT_MS)
+      this.http.set(conn, (t) => (clearTimeout(timer), this.http.delete(conn), resolve(t)))
+    })
+    host.send(`${conn} ${JSON.stringify({ t: 'rpc', id: 1, phone: body.phone, box: body.box })}`)
+    const reply = await answer
+    if (reply === null) return json(504, { error: 'The computer did not answer.' })
+    try {
+      const f = JSON.parse(reply) as { status?: number; box?: string; error?: string }
+      return f.box ? json(f.status ?? 200, { box: f.box }) : json(f.status ?? 400, { error: f.error ?? 'Refused' })
+    } catch {
+      return json(502, { error: 'Bad answer' })
+    }
+  }
+
+  /** The computer asks for a phone to be woken: sends the box through Google, and says how it went. */
+  private async wake(ws: WebSocket, text: string): Promise<void> {
+    let w: { id?: unknown; token?: unknown; box?: unknown; ttl?: unknown }
+    try {
+      w = JSON.parse(text) as typeof w
+    } catch {
+      return
+    }
+    const id = typeof w.id === 'string' ? w.id.slice(0, 40) : ''
+    const answer = (value: Record<string, unknown>) => {
+      try {
+        ws.send(`!wake ${JSON.stringify({ id, ...value })}`)
+      } catch {
+        // The computer is gone.
+      }
+    }
+    if (typeof w.token !== 'string' || !TOKEN_RE.test(w.token) || typeof w.box !== 'string' || w.box.length > MAX_WAKE_BOX) return answer({ ok: false, code: 'INVALID' })
+    // This many an hour for a computer, kept so it holds when the room sleeps between messages.
+    const hour = Math.floor(Date.now() / 3_600_000)
+    const used = (await this.ctx.storage.get<{ hour: number; n: number }>('wakes')) ?? { hour, n: 0 }
+    const n = used.hour === hour ? used.n : 0
+    if (n >= WAKES_PER_HOUR) return answer({ ok: false, code: 'LIMIT' })
+    await this.ctx.storage.put('wakes', { hour, n: n + 1 })
+    const ttl = Math.max(WAKE_TTL.min, Math.min(WAKE_TTL.max, typeof w.ttl === 'number' && Number.isFinite(w.ttl) ? Math.floor(w.ttl) : 300))
+    answer(await sendWake(this.env, w.token, w.box, ttl))
+  }
+
   override async fetch(request: Request): Promise<Response> {
+    if (new URL(request.url).pathname.endsWith('/rpc')) return this.rpcOverHttp(request)
     const who = role(request.headers.get('sec-websocket-protocol'))
     if (!who) return new Response('Not a Celeste connection', { status: 400 })
 
@@ -73,8 +161,11 @@ export class Room extends DurableObject<Env> {
     if (message.length > MAX_FRAME) return ws.close(CLOSE.tooLarge, 'Too large')
 
     if (tag.role === 'host') {
+      if (message.startsWith('!wake ')) return this.wake(ws, message.slice(6))
       const f = hostFrame(message)
       if (!f) return
+      const waiting = this.http.get(f.conn)
+      if (waiting) return waiting(f.text)
       const phone = this.ctx.getWebSockets(f.conn)[0]
       if (!phone) return ws.send(`${f.conn} -`)
       if (f.text === '!close') return phone.close(CLOSE.byHost, 'The computer closed this line')

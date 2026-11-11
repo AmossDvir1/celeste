@@ -233,7 +233,8 @@ public class CelesteNativePlugin extends Plugin {
             call.reject("Not paired.");
             return;
         }
-        PhoneLine.save(getContext(), base, phone, call.getString("computer", "your computer"), key);
+        PhoneLine.save(getContext(), base, phone, call.getString("computer", "your computer"), key, call.getString("relayUrl"), call.getString("relayRoom"));
+        Push.sync(getContext());
         Intent i = new Intent(getContext(), ConnectionService.class);
         getContext().stopService(i); // Picks up a new address if the computer moved.
         try {
@@ -252,7 +253,8 @@ public class CelesteNativePlugin extends Plugin {
             call.reject("Not paired.");
             return;
         }
-        PhoneLine.save(getContext(), base, phone, call.getString("computer", "your computer"), key);
+        PhoneLine.save(getContext(), base, phone, call.getString("computer", "your computer"), key, call.getString("relayUrl"), call.getString("relayRoom"));
+        Push.sync(getContext());
         call.resolve();
     }
 

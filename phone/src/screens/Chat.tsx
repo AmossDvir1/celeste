@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
@@ -8,6 +8,7 @@ import {
   Bot,
   Calendar,
   Check,
+  ChevronRight,
   Code2,
   FileText,
   FolderGit2,
@@ -23,14 +24,20 @@ import {
   Terminal,
   Workflow,
   X,
+  Zap,
   type LucideIcon
 } from 'lucide-react'
-import type { AskAnswers, Question, ToolKind } from '@shared/agent'
+import type { AskAnswers, ContextRef, Question, ToolKind } from '@shared/agent'
+import type { QueueAction, QueueState, SendMode } from '@shared/queue'
+import { describeDuration } from '@shared/desktop'
 import type { PhoneModelChoice, PhoneNewSession, PhoneProject } from '@shared/phone'
 import type { TimelineItem } from '@/stores/types'
+import { formatDuration } from '@/lib/format'
+import { groupLabel, toBlocks, type ThinkingItem, type ToolItem } from '@/features/chat/blocks'
 import { useApp } from '../store'
 import { Arc, Shimmer, buzz, greeting, rise } from '../ui'
 import { ModelChip } from '../ModelPicker'
+import { AttachButton, Chips, ProjectFiles, useAttachments } from '../Attach'
 
 const TOOL_ICON: Record<ToolKind, LucideIcon> = {
   read: FileText,
@@ -52,6 +59,8 @@ export function Chat({ id }: { id: string }) {
   const box = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
 
+  const blocks = useMemo(() => toBlocks(s?.items ?? [], s?.mode ?? 'chat'), [s?.items, s?.mode])
+
   // Follow the conversation as it grows, unless the person scrolled up to read.
   useLayoutEffect(() => {
     const el = box.current
@@ -68,14 +77,14 @@ export function Chat({ id }: { id: string }) {
   }
   const working = s.status === 'working' || s.status === 'waiting'
   const where = s.mode === 'develop' ? (s.cwd?.split(/[\\/]/).filter(Boolean).pop() ?? 'Develop') : 'Chat'
-  // While Celeste waits on a card, the box answers it (a question with one part) or says to use the card: a message sent
-  // now would only queue behind the question, as the desktop never allows.
+  // While Celeste waits on a card, the box answers it (a question with one part), or what is typed waits in the queue.
   const pendingAsk = [...s.items].reverse().find((it): it is Extract<TimelineItem, { kind: 'ask' }> => it.kind === 'ask' && it.status === 'pending')
   const pendingApproval = s.items.some((it) => it.kind === 'approval' && it.status === 'pending')
   const answerable = pendingAsk && pendingAsk.questions.length === 1 ? pendingAsk : null
   const last = s.items[s.items.length - 1]
   // What Celeste is doing, shown right under the newest message, as on the computer.
   const showActivity = s.activity && !(last?.kind === 'thinking' && last.endedAt === undefined) && !(s.activity.working === false && (pendingAsk || pendingApproval))
+  const placeholder = answerable ? 'Type your answer' : pendingApproval || pendingAsk ? 'Answer above, or type a message to send after' : working ? 'Type a message to send after this answer' : 'Message Celeste'
 
   return (
     <>
@@ -94,9 +103,13 @@ export function Chat({ id }: { id: string }) {
           </div>
         ) : (
           <div className="msgs">
-            {s.items.map((it) => (
-              <Item key={it.id} it={it} sessionId={id} />
-            ))}
+            {blocks.map((b) =>
+              b.kind === 'group' ? (
+                <ActivityGroup key={b.id} items={b.items} detailed={s.mode === 'develop'} />
+              ) : (
+                <Item key={b.item.id} it={b.item} sessionId={id} detailed={s.mode === 'develop'} />
+              )
+            )}
             {s.items.length === 0 && <div className="notice">Nothing here yet.</div>}
             {showActivity && s.activity && (
               <div className="thinking fresh" key={s.activity.label}>
@@ -106,22 +119,24 @@ export function Chat({ id }: { id: string }) {
           </div>
         )}
       </div>
+      <QueueBar sessionId={id} queue={s.queue} working={working} />
       <Composer
         disabled={!online}
         working={working && !answerable}
-        placeholder={answerable ? 'Type your answer' : pendingApproval ? 'Approve or deny above first' : 'Message Celeste'}
-        locked={!answerable && (pendingApproval || !!pendingAsk)}
+        placeholder={placeholder}
+        canAttach={!answerable}
+        projectSession={s.mode === 'develop' && !answerable ? id : undefined}
         extra={<ModelChip value={{ model: s.model, effort: s.effort }} vendor={s.vendor} only={s.vendor} onChange={(c) => void useApp.getState().setModel(id, c)} />}
         onStop={() => {
           buzz(10)
           void useApp.getState().stop(id)
         }}
-        onSend={(text) => {
+        onSend={(text, attachments, context, mode) => {
           if (answerable) {
             const q = answerable.questions[0] as Question
             return useApp.getState().answer(id, answerable.requestId, { [q.question]: q.multiSelect ? [text] : text })
           }
-          return useApp.getState().send(id, text)
+          return useApp.getState().send(id, text, attachments, context, mode)
         }}
       />
       {answerable && working && (
@@ -150,14 +165,77 @@ function Head({ title, sub, onBack, live }: { title: string; sub: string; onBack
   )
 }
 
-const Item = memo(function Item({ it, sessionId }: { it: TimelineItem; sessionId: string }) {
+/** How much of a thought still being written shows, as on the computer. */
+const TAIL = 240
+
+const ThinkingRow = memo(function ThinkingRow({ it }: { it: ThinkingItem }) {
   const [open, setOpen] = useState(false)
+  const streaming = it.endedAt === undefined
+  const text = it.text.trim()
+  const shown = open || !streaming || text.length <= TAIL ? text : `…${text.slice(-TAIL)}`
+  return (
+    <div className="think">
+      <button type="button" className="think-h" aria-expanded={open} disabled={!text} onClick={() => setOpen(!open)}>
+        {streaming ? <Shimmer>Thinking</Shimmer> : `Thought for ${formatDuration((it.endedAt ?? it.startedAt) - it.startedAt)}`}
+      </button>
+      {text && (open || streaming) && <div className="think-t">{shown}</div>}
+    </div>
+  )
+})
+
+const ToolCard = memo(function ToolCard({ it, detailed }: { it: ToolItem; detailed: boolean }) {
+  // In Develop a change or a running command opens by itself; everything else is a tap away.
+  const [open, setOpen] = useState(detailed && (!!it.diff?.length || it.status === 'running'))
+  const Icon = TOOL_ICON[it.tool] ?? Workflow
+  const detail = it.input ?? (it.diff?.length ? `${it.diff.length} ${it.diff.length === 1 ? 'file' : 'files'} changed` : '')
+  return (
+    <div>
+      <button className={`m-tool ${it.status}${it.output ? ' tap' : ''}`} onClick={() => it.output && setOpen(!open)}>
+        <Icon size={17} />
+        <div className="grow">
+          <div className="l">{it.title}</div>
+          {detail && <div className="d mono">{detail}</div>}
+        </div>
+        <span className="st">{it.status === 'running' ? <LoaderCircle size={16} /> : it.status === 'ok' ? <Check size={16} /> : <X size={16} />}</span>
+      </button>
+      {open && it.output && <pre className="tool-out">{(it.status === 'running' ? it.output.split('\n').slice(-8).join('\n') : it.output).slice(-6000)}</pre>}
+    </div>
+  )
+})
+
+const sameItems = (a: readonly unknown[], b: readonly unknown[]) => a.length === b.length && a.every((x, i) => x === b[i])
+
+/** A run of thinking and tool calls folded into one line, closed until opened, exactly as the computer folds it. */
+const ActivityGroup = memo(
+  function ActivityGroup({ items, detailed }: { items: (ToolItem | ThinkingItem)[]; detailed: boolean }) {
+    const [open, setOpen] = useState(false)
+    const { running, text } = groupLabel(items, formatDuration)
+    return (
+      <div className="agroup">
+        <button type="button" className="agroup-h" aria-expanded={open} onClick={() => setOpen(!open)}>
+          <ChevronRight size={15} className={open ? 'open' : ''} />
+          {running ? <Shimmer>{text}</Shimmer> : text}
+        </button>
+        {open && (
+          <div className="agroup-b">
+            {items.map((i) => (i.kind === 'tool' ? <ToolCard key={i.id} it={i} detailed={detailed} /> : <ThinkingRow key={i.id} it={i} />))}
+          </div>
+        )}
+      </div>
+    )
+  },
+  (a, b) => a.detailed === b.detailed && sameItems(a.items, b.items)
+)
+
+const Item = memo(function Item({ it, sessionId, detailed }: { it: TimelineItem; sessionId: string; detailed: boolean }) {
   switch (it.kind) {
     case 'user':
       return (
         <div className="m-user">
           {it.text}
-          {it.attachments.length > 0 && <div className="small faint">{it.attachments.length === 1 ? '1 attachment' : `${it.attachments.length} attachments`}</div>}
+          {it.attachments.length > 0 && (
+            <div className="small faint">{it.attachments.map((a) => a.name).join(', ')}</div>
+          )}
         </div>
       )
     case 'assistant':
@@ -169,30 +247,9 @@ const Item = memo(function Item({ it, sessionId }: { it: TimelineItem; sessionId
         </div>
       )
     case 'thinking':
-      return it.endedAt === undefined ? (
-        <div className="thinking">
-          <Shimmer>Thinking</Shimmer>
-        </div>
-      ) : (
-        <div className="thinking">Thought for {Math.max(1, Math.round((it.endedAt - it.startedAt) / 1000))} s</div>
-      )
-    case 'tool': {
-      const Icon = TOOL_ICON[it.tool] ?? Workflow
-      const detail = it.input ?? (it.diff?.length ? `${it.diff.length} ${it.diff.length === 1 ? 'file' : 'files'} changed` : '')
-      return (
-        <div>
-          <button className={`m-tool ${it.status}${it.output ? ' tap' : ''}`} onClick={() => it.output && setOpen(!open)}>
-            <Icon size={17} />
-            <div className="grow">
-              <div className="l">{it.title}</div>
-              {detail && <div className="d mono">{detail}</div>}
-            </div>
-            <span className="st">{it.status === 'running' ? <LoaderCircle size={16} /> : it.status === 'ok' ? <Check size={16} /> : <X size={16} />}</span>
-          </button>
-          {open && it.output && <pre className="tool-out">{it.output.slice(-6000)}</pre>}
-        </div>
-      )
-    }
+      return <ThinkingRow it={it} />
+    case 'tool':
+      return <ToolCard it={it} detailed={detailed} />
     case 'approval':
       return <Approval it={it} sessionId={sessionId} />
     case 'ask':
@@ -243,6 +300,11 @@ const Item = memo(function Item({ it, sessionId }: { it: TimelineItem; sessionId
 function Approval({ it, sessionId }: { it: Extract<TimelineItem, { kind: 'approval' }>; sessionId: string }) {
   const Icon = TOOL_ICON[it.tool] ?? Workflow
   const pending = it.status === 'pending'
+  const slider = it.slider
+  // How long, for a card that asks (taking control of a computer): the slider, or "Until I stop it", as on the computer.
+  const [minutes, setMinutes] = useState(slider?.value ?? 0)
+  const [untilStopped, setUntilStopped] = useState(false)
+  const howLong = untilStopped ? 'Until I stop it' : `For ${describeDuration(minutes * 60_000)}`
   return (
     <div className={`approval ${pending ? 'pending' : 'done'}`}>
       <div className="hd">
@@ -250,6 +312,33 @@ function Approval({ it, sessionId }: { it: Extract<TimelineItem, { kind: 'approv
         {pending && <span className="faint">Needs you</span>}
       </div>
       {it.detail && <pre className="mono">{it.detail}</pre>}
+      {pending && slider && (
+        <div className="duration">
+          <label htmlFor={`minutes-${it.requestId}`} className="how">
+            {howLong}
+          </label>
+          <input
+            id={`minutes-${it.requestId}`}
+            type="range"
+            aria-label={`How long: ${howLong.toLowerCase()}`}
+            min={slider.min}
+            max={slider.max}
+            step={slider.step}
+            value={minutes}
+            disabled={untilStopped}
+            onChange={(e) => setMinutes(Number(e.target.value))}
+          />
+          {slider.until !== undefined && (
+            <button type="button" role="checkbox" aria-checked={untilStopped} className="until" onClick={() => setUntilStopped(!untilStopped)}>
+              <span className={`box${untilStopped ? ' on' : ''}`}>{untilStopped && <Check size={14} />}</span>
+              <span>
+                Until I stop it
+                <span className="faint"> (ends by itself after 5 minutes with nothing done, or 12 hours)</span>
+              </span>
+            </button>
+          )}
+        </div>
+      )}
       {pending ? (
         <div className="acts">
           <button
@@ -265,10 +354,11 @@ function Approval({ it, sessionId }: { it: Extract<TimelineItem, { kind: 'approv
             className="btn primary"
             onClick={() => {
               buzz(12)
-              void useApp.getState().approve(sessionId, it.requestId, true)
+              const answer = slider ? (untilStopped && slider.until !== undefined ? slider.until : minutes) : undefined
+              void useApp.getState().approve(sessionId, it.requestId, true, answer)
             }}
           >
-            Approve
+            {it.choices?.allow ?? 'Approve'}
           </button>
         </div>
       ) : (
@@ -367,21 +457,28 @@ function Composer({
   onSend,
   onStop,
   placeholder = 'Message Celeste',
-  locked = false,
+  canAttach = true,
+  projectSession,
   extra
 }: {
   disabled: boolean
+  /** A turn is running, so a message waits its turn (or stops it and goes now). */
   working: boolean
-  onSend: (text: string) => Promise<void>
+  onSend: (text: string, attachments: string[], context: ContextRef[], mode: SendMode) => Promise<void>
   onStop?: () => void
   placeholder?: string
-  /** Celeste waits on a card that the box cannot answer: nothing can be typed until it is answered. */
-  locked?: boolean
+  /** Files can be added to what is sent (not when the box answers a question). */
+  canAttach?: boolean
+  /** A Develop session: its project's files can be added too. */
+  projectSession?: string
   /** Shown above the box: the model. */
   extra?: ReactNode
 }) {
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
+  const [context, setContext] = useState<ContextRef[]>([])
+  const [picking, setPicking] = useState(false)
+  const att = useAttachments()
   const ta = useRef<HTMLTextAreaElement>(null)
   useEffect(() => {
     const el = ta.current
@@ -389,14 +486,16 @@ function Composer({
     el.style.height = '42px'
     el.style.height = `${Math.min(el.scrollHeight, 140)}px`
   }, [text])
-  const send = async () => {
-    const t = text.trim()
-    if (!t || sending) return
-    buzz(6)
+  const ready = (!!text.trim() || att.ids.length > 0 || context.length > 0) && !att.sending
+  const send = async (mode: SendMode = 'queue') => {
+    if (!ready || sending) return
+    buzz(mode === 'stop' ? 12 : 6)
     setSending(true)
     try {
-      await onSend(t)
+      await onSend(text.trim(), att.ids, context, mode)
       setText('')
+      setContext([])
+      att.clear()
     } catch {
       // The store said why; the text stays so nothing is lost.
     } finally {
@@ -405,19 +504,108 @@ function Composer({
   }
   return (
     <div className="composer-wrap" style={disabled ? { opacity: 0.5, pointerEvents: 'none' } : undefined}>
-      {extra && <div className="modelbar">{extra}</div>}
+      {(extra || projectSession) && (
+        <div className="modelbar">
+          {extra}
+          {projectSession && canAttach && (
+            <button type="button" className="mchip" aria-label="Add project files" onClick={() => setPicking(true)}>
+              <FolderGit2 size={14} />
+              <span className="nm">Project files</span>
+            </button>
+          )}
+        </div>
+      )}
+      <Chips files={att.files} context={context} onRemoveFile={att.remove} onRemoveContext={(p) => setContext((c) => c.filter((x) => x.path !== p))} />
       <div className="composer">
-        <textarea ref={ta} rows={1} placeholder={placeholder} value={text} disabled={locked} onChange={(e) => setText(e.target.value)} />
-        {working && onStop ? (
+        {canAttach && <AttachButton onPick={att.add} />}
+        <textarea ref={ta} rows={1} placeholder={placeholder} value={text} onChange={(e) => setText(e.target.value)} />
+        {working && ready ? (
+          <>
+            <button className="sendbtn now" aria-label="Stop and send now" disabled={sending} onClick={() => void send('stop')}>
+              <Zap size={18} />
+            </button>
+            <button className="sendbtn ready" aria-label="Add to queue" disabled={sending} onClick={() => void send('queue')}>
+              {sending ? <LoaderCircle size={20} className="spin" /> : <ArrowUp size={20} />}
+            </button>
+          </>
+        ) : working && onStop ? (
           <button className="sendbtn stop" aria-label="Stop" onClick={onStop}>
             <Square size={16} fill="currentColor" />
           </button>
         ) : (
-          <button className={`sendbtn${text.trim() ? ' ready' : ''}`} aria-label="Send" disabled={sending} onClick={() => void send()}>
+          <button className={`sendbtn${ready ? ' ready' : ''}`} aria-label="Send" disabled={sending} onClick={() => void send()}>
             {sending ? <LoaderCircle size={20} className="spin" /> : <ArrowUp size={20} />}
           </button>
         )}
       </div>
+      {working && ready && onStop && (
+        <button className="btn text sm stop-under" onClick={onStop}>
+          Stop
+        </button>
+      )}
+      {picking && projectSession && <ProjectFiles sessionId={projectSession} picked={context} onChange={setContext} onClose={() => setPicking(false)} />}
+    </div>
+  )
+}
+
+/** The messages typed while Celeste works, above the box: tap one to send it now (stopping the answer), change it or remove it. */
+function QueueBar({ sessionId, queue, working }: { sessionId: string; queue: QueueState; working: boolean }) {
+  const [editing, setEditing] = useState<{ id: string; text: string } | null>(null)
+  if (queue.items.length === 0) return null
+  const act = (a: QueueAction) => void useApp.getState().queueAction(sessionId, a)
+  const save = () => {
+    const was = queue.items.find((m) => m.id === editing?.id)
+    if (editing && was && editing.text.trim() && editing.text !== was.text) act({ type: 'edit', queueId: editing.id, text: editing.text })
+    setEditing(null)
+  }
+  return (
+    <div className="qbar" role="list" aria-label="Messages waiting">
+      {queue.paused && (
+        <div className="qpaused">
+          <span>Paused{working ? '' : ', so nothing is sent by itself'}.</span>
+          <button type="button" onClick={() => act({ type: 'resume' })}>
+            Send {queue.items.length === 1 ? 'it' : 'them'}
+          </button>
+          <button type="button" className="mute" onClick={() => act({ type: 'clear' })}>
+            Clear
+          </button>
+        </div>
+      )}
+      {queue.items.map((m) => {
+        const mine = editing?.id === m.id
+        const files = m.attachments.length + (m.context?.length ?? 0)
+        return (
+          <div className="qrow" role="listitem" key={m.id}>
+            {mine ? (
+              <input autoFocus value={editing.text} aria-label="Edit the waiting message" onChange={(e) => setEditing({ id: m.id, text: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && save()} />
+            ) : (
+              <span className="qt">{m.text.trim() || (files === 1 ? '1 file' : `${files} files`)}</span>
+            )}
+            {mine ? (
+              <>
+                <button aria-label="Save" onClick={save}>
+                  <Check size={18} />
+                </button>
+                <button aria-label="Cancel" onClick={() => setEditing(null)}>
+                  <X size={18} />
+                </button>
+              </>
+            ) : (
+              <>
+                <button aria-label={working ? 'Stop and send this now' : 'Send now'} onClick={() => act({ type: 'now', queueId: m.id })}>
+                  <Zap size={18} />
+                </button>
+                <button aria-label="Edit" onClick={() => setEditing({ id: m.id, text: m.text })}>
+                  <Pencil size={18} />
+                </button>
+                <button aria-label="Remove" onClick={() => act({ type: 'remove', queueId: m.id })}>
+                  <X size={18} />
+                </button>
+              </>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -561,22 +749,26 @@ export function NewChat() {
 function SeededComposer({ seed, disabled, how, extra }: { seed: string; disabled: boolean; how: PhoneNewSession; extra?: ReactNode }) {
   const [text, setText] = useState(seed)
   const [sending, setSending] = useState(false)
+  const att = useAttachments()
+  const ready = (!!text.trim() || att.ids.length > 0) && !att.sending
   return (
     <div className="composer-wrap" style={disabled ? { opacity: 0.5, pointerEvents: 'none' } : undefined}>
       {extra && <div className="modelbar">{extra}</div>}
+      <Chips files={att.files} context={[]} onRemoveFile={att.remove} onRemoveContext={() => undefined} />
       <div className="composer">
+        <AttachButton onPick={att.add} />
         <textarea rows={1} autoFocus={!!seed} placeholder="Message Celeste" value={text} onChange={(e) => setText(e.target.value)} />
         <button
-          className={`sendbtn${text.trim() ? ' ready' : ''}`}
+          className={`sendbtn${ready ? ' ready' : ''}`}
           aria-label="Send"
           disabled={sending}
           onClick={async () => {
-            const t = text.trim()
-            if (!t) return
+            if (!ready) return
             buzz(6)
             setSending(true)
             try {
-              await useApp.getState().newChat(t, how)
+              await useApp.getState().newChat(text.trim(), how, att.ids)
+              att.clear()
             } catch {
               setSending(false)
             }

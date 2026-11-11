@@ -1,9 +1,25 @@
 // What a paired phone's requests do. Only PHONE_METHODS get here (the bridge refuses the rest); this keeps each one to
-// what a remote should do: no attachments from the computer's disk, only folders the person already used, their usual settings.
+// what a remote should do: files only as the phone sends them itself, project files only inside the project of a Develop
+// session, only folders the person already used, their usual settings.
 
-import type { Effort, ModelInfo, VendorId } from '@shared/agent'
+import type { AttachmentInfo, ContextRef, Effort, ModelInfo, VendorId } from '@shared/agent'
 import type { CoreApi, SessionSummary } from '@shared/api'
-import type { PhoneBootstrap, PhoneMethod, PhoneModelChoice, PhoneModels, PhoneNewSession, PhoneProject, PhoneWorkflow } from '@shared/phone'
+import {
+  PHONE_ATTACH_PART,
+  PHONE_CONTEXT_MAX,
+  PHONE_UPLOAD_MAX_BYTES,
+  PHONE_UPLOAD_MAX_FILES,
+  type PhoneBootstrap,
+  type PhoneMessage,
+  type PhoneMethod,
+  type PhoneModelChoice,
+  type PhoneModels,
+  type PhoneNewSession,
+  type PhoneProject,
+  type PhoneUploaded,
+  type PhoneUploadPart,
+  type PhoneWorkflow
+} from '@shared/phone'
 import { checkInputs, type InputDef, type WorkflowFull } from '@shared/workflow'
 
 /** What a workflow's Start step asks for. */
@@ -71,11 +87,115 @@ export async function recentProjects(a: Api): Promise<PhoneProject[]> {
   return out
 }
 
-export function phoneCalls(api: () => Api, computerName: () => string): (method: PhoneMethod, params: unknown[]) => Promise<unknown> {
+interface Upload {
+  name: string
+  mime: string
+  parts: Buffer[]
+  bytes: number
+  next: number
+  width?: number
+  height?: number
+}
+
+const UPLOAD_ID = /^[\w-]{8,64}$/
+const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/
+const PART_CHARS = Math.ceil(PHONE_ATTACH_PART / 3) * 4
+/** Files saved for a phone and not yet sent: kept per phone, the oldest let go past this many. */
+const KEPT_UPLOADS = 2 * PHONE_UPLOAD_MAX_FILES
+
+const pixels = (n: unknown) => (typeof n === 'number' && Number.isInteger(n) && n > 0 && n < 100_000 ? n : undefined)
+
+export function phoneCalls(
+  api: () => Api,
+  computerName: () => string
+): (method: PhoneMethod, params: unknown[], phone?: { id: string }) => Promise<unknown> {
   const kept = new Map<VendorId, ModelInfo[]>()
-  return async (method, params) => {
+  const uploading = new Map<string, Upload>()
+  const saved = new Map<string, Map<string, AttachmentInfo>>()
+
+  /** A file arrives in parts, in order. The last part saves it on the computer as an attachment. */
+  const receive = (a: Api, phoneId: string, p: Partial<PhoneUploadPart> | undefined): PhoneUploaded | { part: number } => {
+    if (!a['attachments.save']) throw new Error('Not available from a phone.')
+    if (!p || typeof p.upload !== 'string' || !UPLOAD_ID.test(p.upload)) throw new Error('That file could not be sent. Try again.')
+    const key = `${phoneId}:${p.upload}`
+    const fail = (message: string): never => {
+      uploading.delete(key)
+      throw new Error(message)
+    }
+    let up = uploading.get(key)
+    if (p.part === 0 && !up) {
+      const mine = [...uploading.keys()].filter((k) => k.startsWith(`${phoneId}:`))
+      while (mine.length >= PHONE_UPLOAD_MAX_FILES) uploading.delete(mine.shift() as string)
+      up = {
+        name: baseName(String(p.name ?? '')).slice(0, 200) || 'file',
+        mime: String(p.mime ?? '').slice(0, 100) || 'application/octet-stream',
+        parts: [],
+        bytes: 0,
+        next: 0,
+        width: pixels(p.width),
+        height: pixels(p.height)
+      }
+      uploading.set(key, up)
+    }
+    if (!up || p.part !== up.next) return fail('That file could not be sent. Try again.')
+    const data = typeof p.data === 'string' ? p.data : ''
+    if (data.length > PART_CHARS || !BASE64.test(data)) return fail('That file could not be sent. Try again.')
+    const bytes = Buffer.from(data, 'base64')
+    up.bytes += bytes.length
+    if (up.bytes > PHONE_UPLOAD_MAX_BYTES) return fail('That file is over 25 MB.')
+    up.parts.push(bytes)
+    up.next += 1
+    if (!p.last) return { part: up.next }
+    uploading.delete(key)
+    if (!up.bytes) throw new Error('That file is empty.')
+    const whole = Buffer.concat(up.parts)
+    const info = a['attachments.save']({
+      name: up.name,
+      mime: up.mime,
+      data: whole.buffer.slice(whole.byteOffset, whole.byteOffset + whole.byteLength) as ArrayBuffer,
+      ...(up.width && up.height ? { width: up.width, height: up.height } : {})
+    })
+    const mine = saved.get(phoneId) ?? new Map<string, AttachmentInfo>()
+    saved.set(phoneId, mine)
+    mine.set(info.id, info)
+    while (mine.size > KEPT_UPLOADS) {
+      const [oldest] = mine.keys()
+      mine.delete(oldest as string)
+      a['attachments.discard']?.(oldest as string)
+    }
+    return { id: info.id, name: info.name, mime: info.mime, size: info.size }
+  }
+
+  /** The files this phone sent, by the ids it gives. Nothing else on the computer can be named. */
+  const files = (phoneId: string, ids: unknown): AttachmentInfo[] => {
+    if (ids === undefined || ids === null) return []
+    if (!Array.isArray(ids)) throw new Error('That message could not be sent. Try again.')
+    const unique = [...new Set(ids.map(String))]
+    if (unique.length > PHONE_UPLOAD_MAX_FILES) throw new Error(`Attach at most ${PHONE_UPLOAD_MAX_FILES} files.`)
+    const mine = saved.get(phoneId)
+    return unique.map((id) => {
+      const info = mine?.get(id)
+      if (!info) throw new Error('A file is no longer on the computer. Attach it again.')
+      return info
+    })
+  }
+  const used = (phoneId: string, list: AttachmentInfo[]) => {
+    const mine = saved.get(phoneId)
+    for (const f of list) mine?.delete(f.id)
+  }
+
+  return async (method, params, phone) => {
     const a = api()
+    const phoneId = phone?.id ?? ''
     switch (method) {
+      case 'phone.upload':
+        return receive(a, phoneId, params[0] as Partial<PhoneUploadPart> | undefined)
+      case 'phone.discard': {
+        const id = String(params[0] ?? '')
+        if (saved.get(phoneId)?.delete(id)) a['attachments.discard']?.(id)
+        return undefined
+      }
+
       case 'phone.models': {
         const reply: PhoneModels = { models: await connectedModels(a, kept), pinned: a['app.bootstrap']().settings.pinnedModels ?? [] }
         return reply
@@ -115,11 +235,12 @@ export function phoneCalls(api: () => Api, computerName: () => string): (method:
         return recentProjects(a)
       case 'phone.newChat': {
         const text = String(params[0] ?? '').slice(0, 100_000)
-        if (!text.trim()) throw new Error('Write something first.')
+        const sent = files(phoneId, params[2])
+        if (!text.trim() && !sent.length) throw new Error('Write something first.')
         const how = (params[1] as PhoneNewSession | undefined) ?? { mode: 'chat' }
         const b = a['app.bootstrap']()
         const newest = (mode: 'chat' | 'develop') => b.sessions.filter((s) => s.mode === mode).sort((x, y) => y.updatedAt - x.updatedAt)[0]
-        const title = titleFromText(text)
+        const title = titleFromText(text.trim() ? text : (sent[0]?.name ?? ''))
         // A model the phone picked is checked before anything is made, a separate copy included.
         const picked = how.model ? await checkChoice(a, kept, how) : null
         let place: { cwd?: string; branch?: string } = {}
@@ -147,15 +268,22 @@ export function phoneCalls(api: () => Api, computerName: () => string): (method:
           approval: like?.approval ?? b.settings.defaults.approval,
           ...place
         })
-        a['sessions.send'](created.id, { text, attachments: [] })
+        a['sessions.send'](created.id, { text, attachments: sent })
+        used(phoneId, sent)
         return created
       }
       case 'sessions.send': {
-        // Text only: a phone cannot point at files on the computer.
-        const [id, input] = params as [unknown, { text?: unknown } | undefined]
+        // Words, files the phone sent itself, and files of the project (the computer checks those stay inside it).
+        const [id, input, mode] = params as [unknown, Partial<PhoneMessage> | undefined, unknown]
         const text = String(input?.text ?? '').slice(0, 100_000)
-        if (!text.trim()) throw new Error('Write something first.')
-        return a['sessions.send'](String(id), { text, attachments: [] })
+        const sent = files(phoneId, input?.attachments)
+        const context = Array.isArray(input?.context) ? (input.context as ContextRef[]) : []
+        if (context.length > PHONE_CONTEXT_MAX) throw new Error(`Add at most ${PHONE_CONTEXT_MAX} project files.`)
+        if (!text.trim() && !sent.length && !context.length) throw new Error('Write something first.')
+        const sendMode = mode === 'queue' || mode === 'stop' ? mode : undefined
+        const done = await a['sessions.send'](String(id), { text, attachments: sent, ...(context.length ? { context } : {}) }, sendMode)
+        used(phoneId, sent)
+        return done
       }
       default: {
         const fn = a[method as keyof CoreApi] as ((...x: unknown[]) => unknown) | undefined

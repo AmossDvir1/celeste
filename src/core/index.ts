@@ -294,7 +294,7 @@ async function start(): Promise<void> {
         const b = phoneRef
         if (!b?.enabled) return 'phones are switched off. Switch them on in Settings, Phone.'
         if (!b.phones().length) return 'no phone is paired with Celeste. Connect one in Settings, Phone.'
-        if (!b.listening().length) return 'the phone is not connected. Open Celeste on it, or switch on “Stay connected” in its This phone tab.'
+        if (!b.reachable().length) return 'the phone is not connected. Open Celeste on it, or switch on “Stay connected” in its This phone tab.'
         return null
       }
     },
@@ -391,7 +391,8 @@ async function start(): Promise<void> {
     onControl: (_phoneId, report) => phoneTools.controlReport(report),
     networkWarning: (address) => checkNetwork(address),
     keyStore: { get: () => getSecret('phone.key'), set: (value) => storeSecret('phone.key', value) },
-    announce: announcePhone
+    announce: announcePhone,
+    chatTitle: (sessionId) => db.listSessions().find((x) => x.id === sessionId)?.title ?? 'Celeste'
   })
   phoneRef = phone
   // A released Celeste has no APK of its own until the first time phones are switched on: it is fetched then, from the

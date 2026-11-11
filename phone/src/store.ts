@@ -3,8 +3,9 @@
 
 import { flushSync } from 'react-dom'
 import { create } from 'zustand'
-import type { AskAnswers } from '@shared/agent'
+import type { AskAnswers, ContextRef } from '@shared/agent'
 import type { CorePush, SessionSummary, StoredEvent } from '@shared/api'
+import { EMPTY_QUEUE, type QueueAction, type SendMode } from '@shared/queue'
 import type { PhoneBootstrap, PhoneCancelPush, PhoneModelChoice, PhoneModels, PhoneNewSession, PhoneRequestPush } from '@shared/phone'
 import { PhoneLink, type LinkState, type PhonePairing } from '@shared/phone-client'
 import type { RunSummary } from '@shared/workflow'
@@ -84,7 +85,7 @@ export async function restorePairing(): Promise<void> {
   useApp.setState({ pairing, screen: pairing ? { name: 'home', tab: 'chats' } : { name: 'setup' } })
 }
 
-const fresh = (summary: SessionSummary): Session => ({ ...summary, items: [], activity: null, loaded: false, foldedSeq: 0 })
+const fresh = (summary: SessionSummary): Session => ({ ...summary, items: [], activity: null, loaded: false, foldedSeq: 0, queue: EMPTY_QUEUE })
 
 interface AppState {
   pairing: PhonePairing | null
@@ -114,12 +115,15 @@ interface AppState {
   connect: () => void
   refresh: () => Promise<void>
   openChat: (id: string) => Promise<void>
-  send: (id: string, text: string) => Promise<void>
-  newChat: (text: string, how?: PhoneNewSession) => Promise<void>
+  /** While the assistant works, `mode` makes the message wait its turn ('queue') or stops the turn and sends it now ('stop'). */
+  send: (id: string, text: string, attachments?: string[], context?: ContextRef[], mode?: SendMode) => Promise<void>
+  /** Edits, removes or sends now a message waiting behind the running turn; resumes or clears a paused queue. */
+  queueAction: (id: string, action: QueueAction) => Promise<void>
+  newChat: (text: string, how?: PhoneNewSession, attachments?: string[]) => Promise<void>
   stop: (id: string) => Promise<void>
   loadModels: () => Promise<void>
   setModel: (id: string, choice: PhoneModelChoice) => Promise<void>
-  approve: (id: string, requestId: string, allow: boolean) => Promise<void>
+  approve: (id: string, requestId: string, allow: boolean, minutes?: number) => Promise<void>
   answer: (id: string, requestId: string, answers: AskAnswers) => Promise<void>
   loadRuns: () => Promise<void>
   applyPush: (push: CorePush | PhoneRequestPush | PhoneCancelPush) => void
@@ -251,6 +255,8 @@ export const useApp = create<AppState>((set, get) => ({
         link.setRelay(relay)
         savePairing(next)
         set({ pairing: next })
+        // Android's background parts learn it too: they reach the computer through the relay when the Wi-Fi does not.
+        void shareLine(next)
       }
       // The open conversation may have moved on while the line was down.
       const screen = get().screen
@@ -266,20 +272,28 @@ export const useApp = create<AppState>((set, get) => ({
     if (!get().sessions[id]?.loaded) await loadLog(id)
   },
 
-  send: async (id, text) => {
+  send: async (id, text, attachments, context, mode) => {
     try {
-      await get().link?.call('sessions.send', id, { text, attachments: [] })
+      await get().link?.call('sessions.send', id, { text, attachments: attachments ?? [], ...(context?.length ? { context } : {}) }, mode)
     } catch (err) {
       get().say(err instanceof Error ? err.message : 'Not sent.')
       throw err
     }
   },
 
-  newChat: async (text, how) => {
+  queueAction: async (id, action) => {
+    try {
+      await get().link?.call('sessions.queue', id, action)
+    } catch (err) {
+      get().say(err instanceof Error ? err.message : 'That did not work.')
+    }
+  },
+
+  newChat: async (text, how, attachments) => {
     const link = get().link
     if (!link) return
     try {
-      const s = await link.call<SessionSummary>('phone.newChat', text, how ?? { mode: 'chat' })
+      const s = await link.call<SessionSummary>('phone.newChat', text, how ?? { mode: 'chat' }, attachments ?? [])
       set({ sessions: { ...get().sessions, [s.id]: fresh(s) } })
       get().go({ name: 'chat', id: s.id }, 'none')
       await loadLog(s.id)
@@ -321,12 +335,12 @@ export const useApp = create<AppState>((set, get) => ({
     }
   },
 
-  approve: async (id, requestId, allow) => {
+  approve: async (id, requestId, allow, minutes) => {
     const s = get().sessions[id]
     if (s?.loaded) set({ sessions: { ...get().sessions, [id]: resolveApproval(s, requestId, allow) } })
     void clearNotification(requestId)
     try {
-      await get().link?.call('sessions.respondApproval', id, requestId, { allow })
+      await get().link?.call('sessions.respondApproval', id, requestId, { allow, ...(minutes !== undefined ? { minutes } : {}) })
     } catch (err) {
       get().say(err instanceof Error ? err.message : 'The answer did not reach the computer.')
     }

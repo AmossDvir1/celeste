@@ -31,14 +31,23 @@ export const PHONE_METHODS = [
   'phone.reply',
   'phone.ack',
   'phone.attach',
+  /** A file the person attaches to a message, in parts: `[PhoneUploadPart]`. `phone.discard` drops one that is not sent. */
+  'phone.upload',
+  'phone.discard',
   'phone.control',
+  /** The phone's push token (Firebase), so the computer can wake it when the app is closed: `[token]`, or `[null]` to forget it. */
+  'phone.push',
   'phone.workflows',
   'phone.runWorkflow',
   'sessions.get',
   'sessions.send',
+  /** Edit, remove, send now, resume or clear the messages waiting behind a running turn. */
+  'sessions.queue',
   'sessions.interrupt',
   'sessions.respondApproval',
   'sessions.respondAsk',
+  /** The project folder of a Develop session, folder by folder, to choose files to add to a message. */
+  'sessions.listFiles',
   'workflows.list',
   'runs.list',
   'runs.get',
@@ -59,6 +68,8 @@ export interface PhoneRecord {
   key: string
   pairedAt: number
   lastSeen: number
+  /** How to wake this phone when its app is closed (Firebase Cloud Messaging, through the relay). */
+  push?: { token: string; at: number }
 }
 
 /** What the computer says about itself, before and after pairing. */
@@ -210,6 +221,45 @@ export const PHONE_ATTACH_PART = 1_048_576
 export const PHONE_ATTACH_MAX_FILES = 10
 /** All the files for one request together. */
 export const PHONE_ATTACH_MAX_BYTES = 40 * 1_048_576
+
+/**
+ * Part of a file the person attaches to a message on the phone, with `phone.upload`. The parts of one file go in order under
+ * the same `upload`; the last one saves it on the computer and answers with its `PhoneUploaded`.
+ */
+export interface PhoneUploadPart {
+  /** Chosen by the phone for this file: 8 to 64 letters, digits, `_` and `-`. */
+  upload: string
+  name: string
+  mime: string
+  /** Which part of the file, from 0. */
+  part: number
+  /** The part's bytes, base64 (at most `PHONE_ATTACH_PART` bytes). */
+  data: string
+  /** The file's last part. */
+  last: boolean
+  /** Of an image. */
+  width?: number
+  height?: number
+}
+/** A file saved from `phone.upload`; its `id` goes in the `attachments` of a message. */
+export interface PhoneUploaded {
+  id: string
+  name: string
+  mime: string
+  size: number
+}
+/** The most a phone may attach to one message, as on the computer. */
+export const PHONE_UPLOAD_MAX_FILES = 10
+export const PHONE_UPLOAD_MAX_BYTES = 25 * 1_048_576
+/** Files and folders of the project a message may carry (Develop), as on the computer. */
+export const PHONE_CONTEXT_MAX = 20
+
+/** What `sessions.send` takes from a phone: the words, the ids of files sent with `phone.upload`, and files of the project (Develop). */
+export interface PhoneMessage {
+  text: string
+  attachments?: string[]
+  context?: { path: string; kind: 'file' | 'dir' }[]
+}
 
 /** A pairing waiting for the person at the computer. */
 export interface PhonePairRequest {
@@ -410,6 +460,15 @@ export interface PhoneRelayInfo {
   url: string
   room: string
 }
+
+/**
+ * What a wake carries (sealed for the phone, in one Firebase data message): either something the person should see, or
+ * one of the pushes the app's stream carries. The phone opens it with the same key as everything else.
+ */
+export type PhoneWake =
+  | { type: 'notify'; kind: 'approval' | 'ask'; id: string; sessionId: string; chat: string; text: string }
+  | PhoneRequestPush
+  | PhoneCancelPush
 
 /** What a phone sends through the relay: the same sealed boxes as `POST /rpc` and `GET /events`. */
 export type RelayPhoneFrame = { t: 'rpc'; id: number; phone: string; box: string } | { t: 'listen'; phone: string; auth: string }

@@ -45,6 +45,7 @@ import {
   type PhoneCancelPush,
   type PhoneRequestPush,
   type PhoneStatus,
+  type PhoneWake,
   type RelayHostFrame,
   type RelayPhoneFrame,
   type SealedCall,
@@ -85,6 +86,8 @@ export interface PhoneBridgeDeps {
    * Left out, it is CELESTE_RELAY_URL, then the `phoneRelayUrl` setting, then the project's own.
    */
   relayUrl?: () => string
+  /** The title of a chat, for the notification a closed phone is woken with. */
+  chatTitle?: (sessionId: string) => string
   /** Where to listen. Tests use 127.0.0.1. */
   host?: string
   /** A fixed port, for tests. Otherwise one is picked once and kept. */
@@ -190,8 +193,47 @@ export class PhoneBridge {
       onGone: (conn) => {
         for (const l of [...this.listeners]) if (l.conn !== undefined && (conn === null || l.conn === conn)) this.listeners.delete(l)
       },
-      onState: () => this.deps.onStatus()
+      onState: () => this.deps.onStatus(),
+      onWake: (id, result) => {
+        const w = this.wakes.get(id)
+        this.wakes.delete(id)
+        // Google says the phone's token is dead (the app was removed, or the token was replaced): forget it.
+        if (w && !result.ok && result.code === 'UNREGISTERED') this.forgetPush(w.phoneId, w.token)
+      }
     })
+  }
+
+  /** Wakes sent and not yet answered, by id, so a dead token can be forgotten. */
+  private readonly wakes = new Map<string, { phoneId: string; token: string }>()
+
+  private forgetPush(phoneId: string, token: string): void {
+    const p = this.phones().find((x) => x.id === phoneId)
+    if (!p?.push || p.push.token !== token) return
+    this.savePhones(this.phones().map((x) => (x.id === phoneId ? withoutPush(x) : x)))
+    this.deps.onStatus()
+  }
+
+  /** True when a closed app on this phone can be woken: the phone gave a token and the line to the relay is up. */
+  private wakeable(phone: PhoneRecord): boolean {
+    return !!phone.push && this.relay.state === 'connected'
+  }
+
+  /**
+   * Wakes a phone whose app may be closed: Firebase delivers `wake`, sealed for the phone, and the phone shows it. Sent even
+   * when the phone is listening (its app may be asleep with the line still open); the phone shows each request once.
+   */
+  private wake(phone: PhoneRecord, wake: PhoneWake, ttlSeconds = 300): void {
+    const token = phone.push?.token
+    if (!token || this.relay.state !== 'connected') return
+    void (async () => {
+      const box = await seal(await this.keyFor(phone), wake, LABEL.push)
+      // Firebase carries about 4 KB: something larger is left to the lines that are open.
+      if (box.length > 3500) return
+      const id = randomB64(6).replace(/[^a-z0-9]/gi, '')
+      this.wakes.set(id, { phoneId: phone.id, token })
+      setTimeout(() => this.wakes.delete(id), 60_000).unref?.()
+      if (!this.relay.wake({ id, token, box, ttl: ttlSeconds })) this.wakes.delete(id)
+    })().catch(() => undefined)
   }
 
   private relayUrl(): string {
@@ -439,9 +481,27 @@ export class PhoneBridge {
     }, 30_000).unref?.()
   }
 
+  /** What the person should be told about, from what Core pushes: an approval or a question waiting for them. */
+  private notice(push: CorePush): PhoneWake | null {
+    if (push.type !== 'event') return null
+    const e = push.stored.event
+    const chat = (this.deps.chatTitle?.(push.sessionId) ?? 'Celeste').slice(0, 120)
+    if (e.type === 'approval.requested') {
+      const text = `${e.title}${e.detail ? `: ${e.detail}` : ''}`.slice(0, 1200)
+      return { type: 'notify', kind: 'approval', id: e.requestId, sessionId: push.sessionId, chat, text }
+    }
+    if (e.type === 'ask_user.requested') {
+      const text = (e.questions[0]?.question ?? 'Celeste has a question for you.').slice(0, 1200)
+      return { type: 'notify', kind: 'ask', id: e.requestId, sessionId: push.sessionId, chat, text }
+    }
+    return null
+  }
+
   /** Sends a push to every phone that is listening, sealed for each, in order. */
   broadcast(push: CorePush): void {
     if (!PHONE_PUSHES.includes(push.type)) return
+    const notice = this.notice(push)
+    if (notice) for (const phone of this.phones()) this.wake(phone, notice)
     for (const l of this.listeners) {
       l.queue = l.queue
         .then(async () => {
@@ -459,13 +519,22 @@ export class PhoneBridge {
       .sort((a, b) => b.lastSeen - a.lastSeen)
   }
 
+  /** The paired phones the computer can reach now: listening, or with a closed app that can be woken. Most recently seen first. */
+  reachable(): PhoneRecord[] {
+    const ids = new Set([...this.listeners].map((l) => l.phoneId))
+    return this.phones()
+      .filter((p) => ids.has(p.id) || this.wakeable(p))
+      .sort((a, b) => b.lastSeen - a.lastSeen)
+  }
+
   /**
    * Asks a phone to do something (a phone ability). The phone shows the person a card and answers with `phone.reply`.
    * Resolves with its answer, or with a refusal when it does not answer in time or the line goes.
    */
   ask(phoneId: string, ability: PhoneAbility, args: Record<string, unknown>, chat: string, timeoutMs = 180_000, sessionId = '', ackMs = 12_000): Promise<PhoneAnswer> {
+    const target = this.phones().find((p) => p.id === phoneId)
     const targets = [...this.listeners].filter((l) => l.phoneId === phoneId)
-    if (!targets.length) return Promise.resolve({ ok: false, text: 'The phone is not connected.' })
+    if (!targets.length && !(target && this.wakeable(target))) return Promise.resolve({ ok: false, text: 'The phone is not connected.' })
     const id = randomB64(12).replace(/[^a-z0-9]/gi, '')
     const push: PhoneRequestPush = { type: 'phoneRequest', request: { id, ability, args, chat } }
     return new Promise((resolve) => {
@@ -490,6 +559,8 @@ export class PhoneBridge {
       }
       this.asked.set(id, { phoneId, sessionId, done: finish, acked: () => clearTimeout(noAck), files: [], bytes: 0 })
       this.sendTo(phoneId, push)
+      // The app may be closed: the same request goes through Firebase too (the phone shows each request once).
+      if (target) this.wake(target, push, 120)
     })
   }
 
@@ -504,9 +575,10 @@ export class PhoneBridge {
       byPhone.set(a.phoneId, [...(byPhone.get(a.phoneId) ?? []), id])
       a.done({ ok: false, text: why ?? 'The user stopped it.' })
     }
-    for (const phone of this.listening()) {
+    for (const phone of this.reachable()) {
       const push: PhoneCancelPush = { type: 'phoneCancel', ids: byPhone.get(phone.id) ?? [], endControl: true, ...(why ? { why } : {}) }
       this.sendTo(phone.id, push)
+      this.wake(phone, push, 120)
     }
   }
 
@@ -690,6 +762,15 @@ export class PhoneBridge {
       const waiting = typeof r?.id === 'string' ? this.asked.get(r.id) : undefined
       if (waiting && waiting.phoneId === phone.id) waiting.acked()
       reply = { id: call.id, ok: true, result: null }
+    } else if (call.method === 'phone.push') {
+      // Firebase's token for this phone, or null when the phone no longer wants to be woken.
+      const token = call.params[0]
+      if (token === null || (typeof token === 'string' && /^[A-Za-z0-9:_-]{20,4096}$/.test(token))) {
+        const now = this.now()
+        this.savePhones(this.phones().map((p) => (p.id === phone.id ? (token ? { ...p, push: { token, at: now } } : withoutPush(p)) : p)))
+        this.deps.onStatus()
+        reply = { id: call.id, ok: true, result: null }
+      } else reply = { id: call.id, ok: false, error: 'That is not a push token.' }
     } else if (call.method === 'phone.control') {
       const r = call.params[0] as Partial<PhoneControlReport> | undefined
       if (r && (r.state === 'paused' || r.state === 'resumed' || r.state === 'ended')) {
@@ -821,6 +902,11 @@ export class PhoneBridge {
     })
     createReadStream(file).pipe(res)
   }
+}
+
+function withoutPush(p: PhoneRecord): PhoneRecord {
+  const { push: _gone, ...rest } = p
+  return rest
 }
 
 function str(v: unknown, max: number): string {

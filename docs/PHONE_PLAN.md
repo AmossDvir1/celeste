@@ -8,7 +8,7 @@
 - **Phone bridge** (`src/core/phone/`): an HTTP server on the Wi-Fi, only while Settings → Phone is on. It serves the install page and the APK, and announces `_celeste._tcp`.
 - **Pairing**: a commitment, then the computer's key and nonce, then the phone's reveal. Both screens show three pictures, and the person presses Allow on the computer.
 - **Requests and pushes**: requests are sealed with AES-GCM and refused when replayed; pushes are a sealed Server-Sent Events stream.
-- **Limits**: a short list of methods (`PHONE_METHODS`), and a message from the phone is text only.
+- **Limits**: a short list of methods (`PHONE_METHODS`). A message from the phone carries text, files the phone sent itself (`phone.upload`, in parts, then named by id), and, in Develop, project files as relative paths that the computer re-checks.
 - **Settings → Phone**: the switch, the QR code, the phones with Remove, and the "wants to connect" prompt.
 
 **The app** (`phone/`, Capacitor 8 + React, the reviewed mock's design):
@@ -387,7 +387,18 @@ Everything stays sealed end to end with the pairing keys, so Cloudflare and Goog
 - ✅ The app (`src/shared/phone-client.ts`): the phone learns the relay from the computer on the Wi-Fi (`phone.hello`) and keeps it with its pairing. Each connection asks the Wi-Fi first (1.5 seconds), then goes through the relay, and moves back to the Wi-Fi by itself. This phone shows "Away from home, through the relay".
 - ✅ Limits: 8 phones in a room, 6 MB a message, a burst of 240 messages from a phone and then 8 a second.
 - ✅ Tested: 12 tests through a stand-in relay (`src/core/phone/relay.test.ts`), and the same scenarios through the real Worker running locally (`npm run verify:relay`). That run found two faults the stand-in could not, both fixed: the Worker's message count did not survive between messages, and a phone leaving the relay waited for the socket to finish closing.
-- **Not done:** trying it on a real phone on mobile data; the privacy statement; the app's background line ("Stay connected"), which still works on the Wi-Fi only, so notifications away from home wait for A4b; the relay's typecheck in CI.
+- **Not done:** trying it on a real phone on mobile data; the relay's typecheck in CI.
+
+**Step A4b, waking a closed app (11 November 2026): built, not yet tried with real Firebase.**
+
+- ✅ The design is not "a wake-up, then connect" but **a wake that carries the notice itself**: one Firebase data message with one sealed box (`PhoneWake`, `src/shared/phone.ts`), opened by the phone with its pairing key. The phone needs no connection to the relay to show a notification, and Google sees only a token and bytes.
+- ✅ The relay (`relay/src/fcm.ts`, `worker.ts`): the computer's `!wake` frame becomes an FCM HTTP v1 send, authorised by a service-account JWT signed with WebCrypto (RS256); the access token is kept until it expires and renewed once on a 401. Limits in `rules.ts`. The key is the Worker secret `FIREBASE_SERVICE_ACCOUNT`.
+- ✅ The relay's `POST /v1/<room>/rpc`: the app's background service has no WebSocket, so its answers (`phone.ack`, `phone.reply`, `phone.attach`) go as HTTP requests that the relay hands to the computer's line and answers with the reply.
+- ✅ The computer (`bridge.ts`): the phone sends its token with `phone.push` (kept in the phone's record); an approval or a question (`approval.requested`, `ask_user.requested`), a request for the phone (`ask`) and a Stop (`cancel`) each wake every paired phone that has a token, even one that is listening (its app may be asleep). A token Google calls UNREGISTERED is forgotten. `reachable()` (listening, or wakeable) replaces `listening()` where a phone is picked for an ability and where a workflow checks the phone, so an ability can start a closed app.
+- ✅ The app (`FcmService`, `Push`, `PhoneLine`): Firebase Cloud Messaging in the build (`firebase-messaging`, BoM 35.1.0; the Google Services plugin was already wired and applies when `google-services.json` is there). `FcmService` opens the box and shows the notification, hands a request to the same code the app's stream uses (which shows each request once), or clears the cards on a Stop. `PhoneLine` tries the Wi-Fi for 2.5 seconds and then the relay. The token is sent to the computer when the app connects and when Firebase renews it.
+- ✅ Tested: five tests through the stand-in relay with a stand-in Google (`src/core/testing/google.ts`, which checks the JWT signature and the access token the way Google does), and the same five through the **real Worker** (`npm run verify:relay`, which gives the Worker a key and the stand-in Google's address).
+- **Not done:** the service-account key given to the relay (the owner: `relay/README.md`); a real wake on the owner's phone; a notification when a turn finishes (not sent: it would buzz the phone for every turn while the person works at the computer); clearing a notification when the approval is answered somewhere else (no such event exists in Core yet); the app on a phone without Google Play services (no wake-ups, everything else works).
+- **Known limit:** Android does not deliver Firebase messages to an app the person force-stopped, until they open it again.
 
 ### 7.2 Looked at and not chosen as the main path
 
@@ -442,7 +453,7 @@ All of these are built (9 November 2026). Sending an SMS or making a call opens 
 | **A1** | **The app as a remote**, after spikes 6.1 and 6.2: scopes on Core methods; the phone bridge; install from the QR; mDNS pairing; Settings → Phone; the app's chats, chat, cards, Stop and workflows; APK in CI and releases; self-update. | L |
 | **A2** | **Phone abilities**: the ability tools with approval cards on the phone, notification access with the restricted-settings guide, the `phone` device kind, and the **Use the phone** step. ✅ Built, except the `phone` device kind (9 November 2026). | L |
 | **A3** | **Phone control**, after spike 6.3: accessibility service, the rails of 5.1, the action tools and the never list. | L |
-| **A4** | **Away from home**: Tailscale steps now, for the experiment. Before shipping (section 7.1), in this order: **A4a** the relay (the Worker, the computer's outward WebSocket, the app's relay connection, rate limits); **A4b** push notifications (Firebase in the app, the wake-up from the relay); **A4c** the direct WebRTC link for files, with TURN behind it; **A4d**, optional, the public-signalling backup (7.2). ✅ A4a is built and not deployed (11 November 2026, see 7.1); the rest is not built. | L |
+| **A4** | **Away from home**: Tailscale steps now, for the experiment. Before shipping (section 7.1), in this order: **A4a** the relay (the Worker, the computer's outward WebSocket, the app's relay connection, rate limits); **A4b** push notifications (Firebase in the app, the wake-up from the relay); **A4c** the direct WebRTC link for files, with TURN behind it; **A4d**, optional, the public-signalling backup (7.2). ✅ A4a is built and deployed, and A4b is built and awaits the Firebase key and a test on the phone (11 November 2026, see 7.1); A4c and A4d are not built. | L |
 
 Each step ends with tests, a real-app check, this plan updated with what was and wasn't built, and the CHANGELOG. It was kept on the `phone` branch until the owner decided to merge it (done on 10 November 2026).
 

@@ -325,7 +325,7 @@ export class PhoneTools implements ExtraTools {
     const invalid = check(name, a)
     if (invalid) return { text: invalid, isError: true }
     if (!b.enabled) return { text: 'Phones are switched off in Celeste’s settings.', isError: true }
-    const phone = b.listening()[0]
+    const phone = b.reachable()[0]
     if (!phone) {
       return {
         text: b.phones().length

@@ -13,6 +13,8 @@ export interface RelayLineDeps {
   /** A phone's connection closed, or the whole line dropped (`conn` null): its listeners go. */
   onGone: (conn: string | null) => void
   onState: (state: RelayState) => void
+  /** How a wake went: `ok`, or why it did not (the relay's code: UNREGISTERED means the phone's token is dead). */
+  onWake?: (id: string, result: { ok: boolean; code?: string }) => void
   /** How often to ask the relay whether the line is still there. Tests use a short one. */
   pingMs?: number
 }
@@ -89,6 +91,15 @@ export class RelayLine {
       this.heard = Date.now()
       if (binary) return
       const text = data.toString()
+      if (text.startsWith('!wake ')) {
+        try {
+          const r = JSON.parse(text.slice(6)) as { id?: unknown; ok?: unknown; code?: unknown }
+          if (typeof r.id === 'string') this.deps.onWake?.(r.id, { ok: r.ok === true, ...(typeof r.code === 'string' ? { code: r.code } : {}) })
+        } catch {
+          // Not an answer.
+        }
+        return
+      }
       if (text === 'pong' || text[CONN] !== ' ') return
       const conn = text.slice(0, CONN)
       const rest = text.slice(CONN + 1)
@@ -121,6 +132,13 @@ export class RelayLine {
 
   send(conn: string, text: string): void {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(`${conn} ${text}`)
+  }
+
+  /** Asks the relay to wake a phone through Firebase with this sealed box. False when the line is not up. */
+  wake(w: { id: string; token: string; box: string; ttl: number }): boolean {
+    if (this.ws?.readyState !== WebSocket.OPEN) return false
+    this.ws.send(`!wake ${JSON.stringify(w)}`)
+    return true
   }
 
   /** Closes one phone's connection at the relay. */

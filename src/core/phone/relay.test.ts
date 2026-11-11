@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import type { CorePush } from '@shared/api'
-import { RELAY_HOST_PROTOCOL, RELAY_PHONE_PROTOCOL, relaySocketUrl, type PhoneBootstrap, type PhoneCancelPush, type PhonePairRequest, type PhoneRequestPush } from '@shared/phone'
+import { LABEL, RELAY_HOST_PROTOCOL, RELAY_PHONE_PROTOCOL, open, relaySocketUrl, seal, sessionKey, type PhoneBootstrap, type PhoneCancelPush, type PhonePairRequest, type PhoneRequestPush, type PhoneWake, type SealedReply } from '@shared/phone'
 import { PhoneLink, pair, type LinkState, type PhonePairing } from '@shared/phone-client'
 import { BURST, CLOSE, hostFrame, role, take } from '../../../relay/src/rules'
+import { startGoogle, type StandInGoogle } from '../testing/google'
 import { startRelay, type StandInRelay } from '../testing/relay'
 import { PhoneBridge } from './bridge'
 
@@ -16,11 +17,17 @@ afterEach(async () => {
  * go through it instead of the stand-in. What needs the stand-in's own controls is left out there.
  */
 const REAL = process.env['CELESTE_RELAY_TEST_URL']
+/** With the real Worker: where `verify:relay` told it Google is, and the key it was told to trust. */
+const REAL_GOOGLE = REAL ? (JSON.parse(process.env['CELESTE_RELAY_TEST_GOOGLE'] ?? 'null') as { port: number; privatePem: string } | null) : null
 const standIn = REAL ? it.skip : it
+
+const FAKE_TOKEN = 'fcm-token-for-the-test-phone:APA91b' + 'x'.repeat(60)
 
 /** A computer with phones on, a relay, and one phone paired on the Wi-Fi. */
 async function setup() {
-  const relay: StandInRelay = REAL ? { url: REAL, seen: [], dropAll: () => undefined, stop: async () => undefined } : await startRelay()
+  const google: StandInGoogle = await startGoogle(REAL_GOOGLE ?? {})
+  stops.push(() => google.stop())
+  const relay: StandInRelay = REAL ? { url: REAL, seen: [], dropAll: () => undefined, stop: async () => undefined } : await startRelay(google.env)
   stops.push(() => relay.stop())
   const settings: Record<string, unknown> = { phoneEnabled: true }
   const bridge: PhoneBridge = new PhoneBridge({
@@ -34,7 +41,8 @@ async function setup() {
     addresses: () => ['127.0.0.1'],
     host: '127.0.0.1',
     port: 0,
-    relayUrl: () => relay.url
+    relayUrl: () => relay.url,
+    chatTitle: () => 'Build the app'
   })
   await bridge.start()
   stops.push(() => bridge.stop())
@@ -45,7 +53,21 @@ async function setup() {
   // On the Wi-Fi the phone learns where the computer is away from home.
   const boot = await new PhoneLink(pairing).call<PhoneBootstrap>('phone.hello')
   expect(boot.relay?.url).toBe(relay.url)
-  return { relay, bridge, base, settings, pairing: { ...pairing, relay: boot.relay } as PhonePairing }
+  return { relay, google, bridge, base, settings, pairing: { ...pairing, relay: boot.relay } as PhonePairing }
+}
+
+/** What the app's background service does when it is woken: opens the sealed box Firebase brought, and answers over HTTP. */
+async function woken(pairing: PhonePairing, box: string): Promise<PhoneWake> {
+  const key = await sessionKey(pairing.keys.priv, pairing.computer.key, pairing.computer.key, pairing.keys.pub)
+  return open<PhoneWake>(key, box, LABEL.push)
+}
+async function answerOverHttp(relay: StandInRelay, pairing: PhonePairing, method: string, params: unknown[]): Promise<{ status: number; reply?: SealedReply }> {
+  const key = await sessionKey(pairing.keys.priv, pairing.computer.key, pairing.computer.key, pairing.keys.pub)
+  const call = { id: 1, method, params, ts: Date.now(), n: Math.random().toString(36).repeat(3).slice(2, 18) }
+  const url = `${relay.url.replace(/^ws/, 'http')}/v1/${pairing.relay!.room}/rpc`
+  const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: JSON.stringify({ phone: pairing.phoneId, box: await seal(key, call, LABEL.request) }) })
+  const v = (await res.json()) as { box?: string }
+  return { status: res.status, ...(v.box ? { reply: await open<SealedReply>(key, v.box, LABEL.response) } : {}) }
 }
 
 /** A phone that is away from home: the computer's Wi-Fi address does not answer it, until `home.at` is set. */
@@ -179,6 +201,88 @@ describe('the relay, away from home', () => {
     for (let i = 0; i < BURST + 20; i++) ws.send('{}')
     await waitFor(() => closed !== 0)
     expect(closed).toBe(CLOSE.tooFast)
+  })
+})
+
+describe('waking a closed app', () => {
+  it('wakes a phone through Firebase with a sealed notice only the phone can open', async () => {
+    const { bridge, google, pairing } = await setup()
+    const link = new PhoneLink(pairing)
+    await expect(link.call('phone.push', 'short')).rejects.toThrow('That is not a push token.')
+    await link.call('phone.push', FAKE_TOKEN)
+    expect(bridge.phones()[0]?.push?.token).toBe(FAKE_TOKEN)
+
+    bridge.broadcast({ type: 'event', sessionId: 's1', stored: { seq: 1, at: 1, event: { type: 'approval.requested', requestId: 'r1', kind: 'shell', title: 'Run npm test', detail: 'in D:/secret-project' } } } as CorePush)
+    bridge.broadcast({ type: 'event', sessionId: 's1', stored: { seq: 2, at: 2, event: { type: 'turn.completed', turnId: 't' } } } as CorePush)
+    await waitFor(() => google.sent.length >= 1)
+    await new Promise((r) => setTimeout(r, 200))
+    expect(google.sent).toHaveLength(1)
+    const m = google.sent[0]!
+    expect(m).toMatchObject({ token: FAKE_TOKEN, priority: 'HIGH', ttl: '300s' })
+    expect(Object.keys(m.data)).toEqual(['b'])
+    expect(m.data['b']).not.toContain('npm test')
+    expect(await woken(pairing, m.data['b']!)).toEqual({ type: 'notify', kind: 'approval', id: 'r1', sessionId: 's1', chat: 'Build the app', text: 'Run npm test: in D:/secret-project' })
+
+    // The phone no longer wants to be woken.
+    await link.call('phone.push', null)
+    expect(bridge.phones()[0]?.push).toBeUndefined()
+  })
+
+  it('asks a closed phone to do something, and takes its answer over HTTP, with no stream open', async () => {
+    const { bridge, google, relay, pairing } = await setup()
+    await new PhoneLink(pairing).call('phone.push', FAKE_TOKEN)
+    expect(bridge.listening()).toHaveLength(0)
+    expect(bridge.reachable().map((p) => p.id)).toEqual([pairing.phoneId])
+
+    const asked = bridge.ask(pairing.phoneId, 'status', {}, 'Build the app', 20_000, 's1', 20_000)
+    await waitFor(() => google.sent.length === 1)
+    expect(google.sent[0]).toMatchObject({ ttl: '120s' })
+    const wake = (await woken(pairing, google.sent[0]!.data['b']!)) as PhoneRequestPush
+    expect(wake).toMatchObject({ type: 'phoneRequest', request: { ability: 'status', chat: 'Build the app' } })
+
+    // The service says it got it, then answers: both are sealed requests POSTed to the relay.
+    expect((await answerOverHttp(relay, pairing, 'phone.ack', [{ id: wake.request.id }])).reply).toMatchObject({ ok: true })
+    expect((await answerOverHttp(relay, pairing, 'phone.reply', [{ id: wake.request.id, ok: true, text: 'The phone is here.' }])).reply).toMatchObject({ ok: true })
+    expect(await asked).toEqual({ ok: true, text: 'The phone is here.' })
+  })
+
+  it('asks the phone to drop its cards when Stop is pressed, even with the app closed', async () => {
+    const { bridge, google, pairing } = await setup()
+    await new PhoneLink(pairing).call('phone.push', FAKE_TOKEN)
+    void bridge.ask(pairing.phoneId, 'status', {}, 'chat', 20_000, 's1', 20_000)
+    await waitFor(() => google.sent.length === 1)
+    bridge.cancel('s1', 'Stopped.')
+    await waitFor(() => google.sent.length === 2)
+    expect(await woken(pairing, google.sent[1]!.data['b']!)).toMatchObject({ type: 'phoneCancel', endControl: true, why: 'Stopped.' })
+  })
+
+  it('forgets a token Google says is no longer registered, and carries on after an access token expires', async () => {
+    const { bridge, google, pairing } = await setup()
+    const link = new PhoneLink(pairing)
+    await link.call('phone.push', FAKE_TOKEN)
+    const approval = (n: number) => ({ type: 'event', sessionId: 's1', stored: { seq: n, at: n, event: { type: 'approval.requested', requestId: `r${n}`, kind: 'shell', title: 'Run it' } } }) as CorePush
+
+    bridge.broadcast(approval(1))
+    await waitFor(() => google.sent.length === 1)
+    google.expireToken()
+    bridge.broadcast(approval(2))
+    await waitFor(() => google.sent.length === 2)
+    expect(google.tokens()).toBe(2)
+
+    google.unregistered.add(FAKE_TOKEN)
+    bridge.broadcast(approval(3))
+    await waitFor(() => bridge.phones()[0]?.push === undefined)
+    expect(google.sent).toHaveLength(2)
+    expect(bridge.reachable()).toHaveLength(0)
+  })
+
+  it('does not answer a request over HTTP when the computer is not connected, or for a phone that is not paired', async () => {
+    const { bridge, relay, pairing } = await setup()
+    const stranger = { ...pairing, phoneId: 'nobody' }
+    expect((await answerOverHttp(relay, stranger, 'sessions.get', ['x'])).status).toBe(401)
+    await bridge.setEnabled(false)
+    await waitFor(() => bridge.status().relay === 'off')
+    expect((await answerOverHttp(relay, pairing, 'sessions.get', ['x'])).status).toBe(503)
   })
 })
 

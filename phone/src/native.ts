@@ -17,15 +17,27 @@ export interface FoundComputer {
   id?: string
 }
 
+/** What Android keeps of the pairing so its background parts can reach the computer: on the Wi-Fi, and through the relay. */
+interface LineOpts {
+  base: string
+  phoneId: string
+  computer: string
+  key: string
+  relayUrl?: string
+  relayRoom?: string
+}
+
+const relayOf = (p: PhonePairing) => (p.relay ? { relayUrl: p.relay.url, relayRoom: p.relay.room } : {})
+
 interface CelesteNativePlugin {
   /** Looks for `_celeste._tcp` on the Wi-Fi for `ms` milliseconds. */
   discover(opts: { ms: number }): Promise<{ found: FoundComputer[] }>
   /** The name the person gave the phone ("Galaxy S24"), else its model. */
   deviceName(): Promise<{ name: string }>
   /** Starts the background line: its own encrypted stream from the computer, for notifications with the app closed. */
-  startService(opts: { base: string; phoneId: string; computer: string; key: string }): Promise<void>
+  startService(opts: LineOpts): Promise<void>
   stopService(opts: { forget?: boolean }): Promise<void>
-  setLine(opts: { base: string; phoneId: string; computer: string; key: string }): Promise<void>
+  setLine(opts: LineOpts): Promise<void>
   handleRequest(opts: { request: string }): Promise<void>
   abilities(): Promise<AbilityState>
   setAbility(opts: { ability: string; on: boolean }): Promise<void>
@@ -117,7 +129,7 @@ export async function keepRunning(on: boolean, pairing: PhonePairing | null, for
   try {
     if (on && pairing) {
       const key = await sessionKeyBytes(pairing.keys.priv, pairing.computer.key, pairing.computer.key, pairing.keys.pub)
-      await Native.startService({ base: pairing.base, phoneId: pairing.phoneId, computer: pairing.computer.name, key: toB64(key) })
+      await Native.startService({ base: pairing.base, phoneId: pairing.phoneId, computer: pairing.computer.name, key: toB64(key), ...relayOf(pairing) })
     } else await Native.stopService({ forget })
   } catch {
     // Not on Android, or Android refused: the app still works while it is open.
@@ -128,7 +140,7 @@ export async function keepRunning(on: boolean, pairing: PhonePairing | null, for
 export async function shareLine(pairing: PhonePairing): Promise<void> {
   try {
     const key = await sessionKeyBytes(pairing.keys.priv, pairing.computer.key, pairing.computer.key, pairing.keys.pub)
-    await Native.setLine({ base: pairing.base, phoneId: pairing.phoneId, computer: pairing.computer.name, key: toB64(key) })
+    await Native.setLine({ base: pairing.base, phoneId: pairing.phoneId, computer: pairing.computer.name, key: toB64(key), ...relayOf(pairing) })
   } catch {
     // Not on Android.
   }

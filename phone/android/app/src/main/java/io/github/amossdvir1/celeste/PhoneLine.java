@@ -8,6 +8,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
@@ -35,16 +36,22 @@ final class PhoneLine {
     final String base;
     final String phoneId;
     final String computer;
+    /** Where the computer is reached away from home: the relay's https address and this computer's room on it. Null: none. */
+    final String relay;
+    final String room;
     private final SecretKeySpec key;
 
-    PhoneLine(String base, String phoneId, String computer, byte[] key) {
+    PhoneLine(String base, String phoneId, String computer, byte[] key, String relay, String room) {
         this.base = base;
         this.phoneId = phoneId;
         this.computer = computer;
         this.key = new SecretKeySpec(key, "AES");
+        this.relay = relay;
+        this.room = room;
     }
 
-    static void save(Context ctx, String base, String phoneId, String computer, String keyB64) {
+    /** `relayUrl` is as the app keeps it (wss://…); a request goes to the same address over https. */
+    static void save(Context ctx, String base, String phoneId, String computer, String keyB64, String relayUrl, String room) {
         String key;
         try {
             key = SecureStore.seal(keyB64);
@@ -52,8 +59,12 @@ final class PhoneLine {
             // No Keystore on this phone (rare): the key stays in the app's private storage, as before.
             key = keyB64;
         }
+        boolean hasRelay = relayUrl != null && !relayUrl.isEmpty() && room != null && !room.isEmpty();
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                .putString("base", base).putString("phone", phoneId).putString("computer", computer).putString("key", key).apply();
+                .putString("base", base).putString("phone", phoneId).putString("computer", computer).putString("key", key)
+                .putString("relay", hasRelay ? relayUrl.replaceFirst("^ws", "http").replaceAll("/+$", "") : null)
+                .putString("room", hasRelay ? room : null)
+                .apply();
     }
 
     static void clear(Context ctx) {
@@ -64,7 +75,7 @@ final class PhoneLine {
         SharedPreferences p = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         String base = p.getString("base", null), phone = p.getString("phone", null), key = SecureStore.open(p.getString("key", null));
         if (base == null || phone == null || key == null) return null;
-        return new PhoneLine(base, phone, p.getString("computer", "your computer"), Base64.decode(key, Base64.DEFAULT));
+        return new PhoneLine(base, phone, p.getString("computer", "your computer"), Base64.decode(key, Base64.DEFAULT), p.getString("relay", null), p.getString("room", null));
     }
 
     String seal(String json, String label) throws Exception {
@@ -104,30 +115,51 @@ final class PhoneLine {
         return h;
     }
 
+    /** The computer answered, but not with a result (it refused, or does not know this phone). */
+    static final class Refused extends Exception {
+        Refused(String message) {
+            super(message);
+        }
+    }
+
     /** One sealed request, as the app makes them. Throws when the computer refuses or cannot be reached. */
     JSONObject call(String method, JSONArray params) throws Exception {
         JSONObject req = new JSONObject().put("id", 1).put("method", method).put("params", params).put("ts", System.currentTimeMillis()).put("n", nonce());
-        JSONObject body = new JSONObject().put("phone", phoneId).put("box", seal(req.toString(), LABEL_REQUEST));
-        HttpURLConnection h = (HttpURLConnection) new URL(base + "/rpc").openConnection();
-        h.setConnectTimeout(8000);
-        h.setReadTimeout(20000);
+        String body = new JSONObject().put("phone", phoneId).put("box", seal(req.toString(), LABEL_REQUEST)).toString();
+        String text;
+        if (relay == null) {
+            text = post(base + "/rpc", body, 8000);
+        } else {
+            try {
+                // At home the computer answers at once; away, it does not, and the request goes through the relay.
+                text = post(base + "/rpc", body, 2500);
+            } catch (IOException e) {
+                text = post(relay + "/v1/" + room + "/rpc", body, 8000);
+            }
+        }
+        JSONObject reply = new JSONObject(open(new JSONObject(text).getString("box"), LABEL_RESPONSE));
+        if (!reply.optBoolean("ok")) throw new Refused(reply.optString("error", "Refused"));
+        return reply;
+    }
+
+    /** POSTs a sealed request and returns the answer's text. An IOException means the other end could not be reached. */
+    private static String post(String url, String body, int connectMs) throws Exception {
+        HttpURLConnection h = (HttpURLConnection) new URL(url).openConnection();
+        h.setConnectTimeout(connectMs);
+        h.setReadTimeout(30000);
         h.setDoOutput(true);
         h.setRequestMethod("POST");
         h.setRequestProperty("content-type", "text/plain");
         try (OutputStream o = h.getOutputStream()) {
-            o.write(body.toString().getBytes(StandardCharsets.UTF_8));
+            o.write(body.getBytes(StandardCharsets.UTF_8));
         }
         int status = h.getResponseCode();
-        if (status != 200) throw new Exception("The computer answered " + status);
-        String text;
+        if (status != 200) throw new Refused("The computer answered " + status);
         try (InputStream in = h.getInputStream()) {
             ByteArrayOutputStream b = new ByteArrayOutputStream();
             byte[] buf = new byte[4096];
             for (int r; (r = in.read(buf)) > 0; ) b.write(buf, 0, r);
-            text = b.toString("UTF-8");
+            return b.toString("UTF-8");
         }
-        JSONObject reply = new JSONObject(open(new JSONObject(text).getString("box"), LABEL_RESPONSE));
-        if (!reply.optBoolean("ok")) throw new Exception(reply.optString("error", "Refused"));
-        return reply;
     }
 }

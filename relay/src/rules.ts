@@ -22,6 +22,17 @@ export const MAX_FRAME = 6_000_000
 /** A phone's frames: this many at once, refilled at this many a second. Past it the phone's socket is closed. */
 export const BURST = 240
 export const PER_SECOND = 8
+/** What one computer may ask the relay to wake phones with: this many an hour, each carrying at most this many characters. */
+export const WAKES_PER_HOUR = 240
+export const MAX_WAKE_BOX = 3500
+/** How long Google keeps a wake for a phone that is off, in seconds. */
+export const WAKE_TTL = { min: 30, max: 3600 }
+/** What a request that comes over HTTP (the app's background service has no WebSocket) may wait for the computer's answer. */
+export const HTTP_RPC_WAIT_MS = 25_000
+export const HTTP_RPC_PER_MINUTE = 120
+/** FCM registration tokens: letters, digits, and : _ - */
+export const TOKEN_RE = /^[A-Za-z0-9:_-]{20,4096}$/
+
 /** A room nobody's computer has come back to for this long is forgotten. */
 export const FORGET_AFTER_MS = 60 * 24 * 3600_000
 

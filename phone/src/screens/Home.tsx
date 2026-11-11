@@ -18,6 +18,7 @@ export function Home({ tab }: { tab: Tab }) {
   const [scrolled, setScrolled] = useState(false)
   const [compact, setCompact] = useState(false)
   const waiting = useMemo(() => Object.values(sessions).filter((s) => s.status === 'waiting').length, [sessions])
+  const busy = useMemo(() => Object.values(sessions).some((s) => s.status === 'working'), [sessions])
   const title = { chats: 'Chats', workflows: 'Workflows', phone: 'This phone' }[tab]
   const online = linkState === 'connected'
 
@@ -77,6 +78,7 @@ export function Home({ tab }: { tab: Tab }) {
             </span>
             {label}
             {id === 'chats' && waiting > 0 && <span className="badge">{waiting}</span>}
+            {id === 'chats' && waiting === 0 && busy && tab !== 'chats' && <span className="tabdot" title="Working" />}
           </button>
         ))}
       </nav>
@@ -172,6 +174,8 @@ function Chats() {
                   </div>
                   <Preview s={s} />
                 </div>
+                {s.status === 'working' && <WorkingDot />}
+                {s.status === 'waiting' && <span className="wdot still" aria-hidden />}
               </button>
             ))}
           </div>
@@ -179,6 +183,14 @@ function Chats() {
       )}
       <div style={{ height: 96 }} />
     </>
+  )
+}
+
+function WorkingDot() {
+  return (
+    <span className="wdot" role="img" aria-label="Working">
+      <i />
+    </span>
   )
 }
 
@@ -192,8 +204,8 @@ function Preview({ s }: { s: Session }) {
     )
   if (s.status === 'working')
     return (
-      <div className="prev">
-        <Shimmer>Working</Shimmer>
+      <div className="prev accent-t">
+        <Shimmer>Working…</Shimmer>
       </div>
     )
   const where = s.mode === 'develop' ? (s.cwd?.split(/[\\/]/).filter(Boolean).pop() ?? 'Develop') + (s.branch ? ` · ${s.branch}` : '') : 'Chat'

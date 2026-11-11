@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Bootstrap, CreateSessionInput, SessionPatch, SessionSummary, VendorRecords } from '@shared/api'
-import type { ModelInfo, UserInput, VendorId } from '@shared/agent'
+import type { AttachmentInfo, ModelInfo, UserInput, VendorId } from '@shared/agent'
 import { DEFAULT_SETTINGS } from '@shared/defaults'
 import type { PhoneModels } from '@shared/phone'
 import { phoneCalls, titleFromText } from './calls'
@@ -12,6 +12,8 @@ const summary = (over: Partial<SessionSummary>): SessionSummary => ({
 function fakeApi(sessions: SessionSummary[]) {
   const created: CreateSessionInput[] = []
   const sent: { id: string; input: UserInput }[] = []
+  const saved: { name: string; mime: string; data: ArrayBuffer }[] = []
+  const discarded: string[] = []
   const api = {
     'app.bootstrap': (): Bootstrap => ({ settings: { ...DEFAULT_SETTINGS, userName: 'Dana', defaults: { ...DEFAULT_SETTINGS.defaults, model: 'claude-sonnet', approval: 'ask' } }, settingsStored: true, vendors: {}, sessions, drafts: {}, dataDir: '/d', version: '1.2.0' }),
     'sessions.create': (input: CreateSessionInput) => {
@@ -19,9 +21,14 @@ function fakeApi(sessions: SessionSummary[]) {
       return summary({ id: 'new', ...input })
     },
     'sessions.send': (id: string, input: UserInput) => void sent.push({ id, input }),
+    'attachments.save': (f: { name: string; mime: string; data: ArrayBuffer }): AttachmentInfo => {
+      saved.push(f)
+      return { id: `att${saved.length}`, name: f.name, mime: f.mime, size: f.data.byteLength }
+    },
+    'attachments.discard': (id: string) => void discarded.push(id),
     'sessions.interrupt': (id: string) => void sent.push({ id, input: { text: 'STOP', attachments: [] } })
   }
-  return { api, created, sent }
+  return { api, created, sent, saved, discarded }
 }
 
 describe('phone calls', () => {
@@ -50,11 +57,55 @@ describe('phone calls', () => {
     expect(created[0]).toMatchObject({ vendor: 'claude', model: 'claude-sonnet', approval: 'ask' })
   })
 
-  it('a message from the phone is text only: no files from the computer, no project context', async () => {
-    const { api, sent } = fakeApi([])
-    await phoneCalls(() => api, () => 'PC')('sessions.send', ['s1', { text: 'hello', attachments: [{ id: 'x', name: 'C:/secret.txt' }], context: [{ path: '/etc' }] }])
-    expect(sent).toEqual([{ id: 's1', input: { text: 'hello', attachments: [] } }])
-    await expect(phoneCalls(() => api, () => 'PC')('sessions.send', ['s1', { text: '  ' }])).rejects.toThrow('Write something first.')
+  it('a message from the phone carries only files the phone sent itself, and project files for the computer to check', async () => {
+    const { api, sent, saved, discarded } = fakeApi([])
+    const call = phoneCalls(() => api, () => 'PC')
+    const phone = { id: 'p1' }
+    const data = Buffer.from('hello world')
+    const part = (upload: string, n: number, bytes: Buffer, last: boolean) => ({ upload, name: 'C:\\x\\notes.txt', mime: 'text/plain', part: n, data: bytes.toString('base64'), last })
+    expect(await call('phone.upload', [part('up-12345678', 0, data.subarray(0, 5), false)], phone)).toEqual({ part: 1 })
+    const up = (await call('phone.upload', [part('up-12345678', 1, data.subarray(5), true)], phone)) as { id: string; name: string; size: number }
+    expect(up).toMatchObject({ name: 'notes.txt', size: 11 })
+    expect(Buffer.from(saved[0]?.data as ArrayBuffer).toString()).toBe('hello world')
+
+    await call('sessions.send', ['s1', { text: 'hello', attachments: [up.id], context: [{ path: 'src/a.ts', kind: 'file' }] }], phone)
+    expect(sent[0]).toMatchObject({ id: 's1', input: { text: 'hello', context: [{ path: 'src/a.ts', kind: 'file' }] } })
+    expect(sent[0]?.input.attachments.map((x) => x.id)).toEqual([up.id])
+    // Used once.
+    await expect(call('sessions.send', ['s1', { text: 'again', attachments: [up.id] }], phone)).rejects.toThrow('no longer on the computer')
+
+    // A file only the phone that sent it can use; nothing else on the computer can be named.
+    const other = (await call('phone.upload', [part('up-87654321', 0, data, true)], phone)) as { id: string }
+    await expect(call('sessions.send', ['s1', { text: 'x', attachments: [other.id] }], { id: 'p2' })).rejects.toThrow('no longer on the computer')
+    await expect(call('sessions.send', ['s1', { text: 'x', attachments: ['C:/secret.txt'] }], phone)).rejects.toThrow('no longer on the computer')
+
+    await call('phone.discard', [other.id], phone)
+    expect(discarded).toEqual([other.id])
+    await call('sessions.send', ['s1', { text: '', context: [{ path: 'a', kind: 'dir' }] }], phone)
+    expect(sent).toHaveLength(2)
+    await expect(call('sessions.send', ['s1', { text: '  ' }], phone)).rejects.toThrow('Write something first.')
+  })
+
+  it('refuses a file that arrives out of order, is not base64, or is too big', async () => {
+    const { api } = fakeApi([])
+    const call = phoneCalls(() => api, () => 'PC')
+    const base = { name: 'a.bin', mime: 'application/octet-stream', last: false }
+    await expect(call('phone.upload', [{ ...base, upload: 'up-aaaaaaaa', part: 1, data: 'AAAA' }], { id: 'p' })).rejects.toThrow('could not be sent')
+    await expect(call('phone.upload', [{ ...base, upload: 'up-bbbbbbbb', part: 0, data: '!!not base64' }], { id: 'p' })).rejects.toThrow('could not be sent')
+    await expect(call('phone.upload', [{ ...base, upload: '../x', part: 0, data: 'AAAA' }], { id: 'p' })).rejects.toThrow('could not be sent')
+    const chunk = Buffer.alloc(1_048_576).toString('base64')
+    for (let i = 0; i < 25; i++) await call('phone.upload', [{ ...base, upload: 'up-cccccccc', part: i, data: chunk }], { id: 'p' })
+    await expect(call('phone.upload', [{ ...base, upload: 'up-cccccccc', part: 25, data: 'AAAA' }], { id: 'p' })).rejects.toThrow('over 25 MB')
+  })
+
+  it('a new chat can start with a file alone, titled by its name', async () => {
+    const { api, created, sent } = fakeApi([])
+    const call = phoneCalls(() => api, () => 'PC')
+    const up = (await call('phone.upload', [{ upload: 'up-dddddddd', name: 'plan.pdf', mime: 'application/pdf', part: 0, data: 'AAAA', last: true }], { id: 'p' })) as { id: string }
+    await call('phone.newChat', ['', { mode: 'chat' }, [up.id]], { id: 'p' })
+    expect(created[0]?.title).toBe('plan.pdf')
+    expect(sent[0]?.input.attachments).toHaveLength(1)
+    await expect(call('phone.newChat', ['', { mode: 'chat' }, []], { id: 'p' })).rejects.toThrow('Write something first.')
   })
 
   it('passes the other allowed methods through', async () => {
@@ -194,5 +245,28 @@ describe('phone calls', () => {
     expect(titleFromText('  hello   there ')).toBe('hello there')
     expect(titleFromText('')).toBe('New chat')
     expect(titleFromText('x'.repeat(80))).toHaveLength(60)
+  })
+})
+
+describe('phone queue calls', () => {
+  it('passes a valid send mode on and ignores any other', async () => {
+    const modes: unknown[] = []
+    const { api } = fakeApi([])
+    const spy = { ...api, 'sessions.send': (_id: string, _input: UserInput, mode?: unknown) => void modes.push(mode) }
+    const call = phoneCalls(() => spy, () => 'PC')
+    const phone = { id: 'p1' }
+    await call('sessions.send', ['s1', { text: 'a' }, 'queue'], phone)
+    await call('sessions.send', ['s1', { text: 'b' }, 'stop'], phone)
+    await call('sessions.send', ['s1', { text: 'c' }, 'rm -rf'], phone)
+    await call('sessions.send', ['s1', { text: 'd' }], phone)
+    expect(modes).toEqual(['queue', 'stop', undefined, undefined])
+  })
+
+  it('forwards queue actions to Core', async () => {
+    const seen: unknown[][] = []
+    const { api } = fakeApi([])
+    const spy = { ...api, 'sessions.queue': (...a: unknown[]) => void seen.push(a) }
+    await phoneCalls(() => spy, () => 'PC')('sessions.queue', ['s1', { type: 'resume' }], { id: 'p1' })
+    expect(seen).toEqual([['s1', { type: 'resume' }]])
   })
 })
