@@ -33,6 +33,8 @@ Celeste has a browser of its own. It works like any browser: the sites you open 
 - **When an assistant uses it** (you can switch that off in Settings; the first time it acts on a site that is not on your computer, it asks you), what it reads from a page, the pictures it takes of a page, and what it types go to your AI vendor as part of the chat, and stay in the chat's history on your computer. Close or avoid pages you do not want an assistant to read while it is working.
 - **Other programs** (such as Playwright MCP) can use the browser only if you switch that on in Settings. It is off by default, listens on this computer only, and needs a secret address that changes each time Celeste starts.
 
+- **Files you open in Celeste** (Word, Excel, PowerPoint, PDF, images, Markdown and the rest) are read on your computer and drawn by a page that cannot reach the internet or your other files. Nothing in them is sent anywhere by Celeste. If an assistant is told about a file, that is part of your conversation like anything else.
+
 ## Workflows you share
 
 A shared workflow file holds the steps and nothing about your computer. Celeste leaves out the value of headers that look like secrets and the devices you used, but a command or a prompt you wrote is part of the file: read it before you share it.

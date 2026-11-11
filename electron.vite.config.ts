@@ -42,6 +42,8 @@ export default defineConfig({
   },
   renderer: {
     root: resolve('src/renderer'),
+    // Two pages: the app, and the viewer that shows files (docs/FILE_VIEWER_PLAN.md), which runs apart from the app.
+    build: { rollupOptions: { input: { index: resolve('src/renderer/index.html'), viewer: resolve('src/renderer/viewer.html') } } },
     plugins: [react(), tailwindcss(), devCsp],
     server: { fs: { allow: [searchForWorkspaceRoot(process.cwd()), ...fontFolders] } },
     resolve: {

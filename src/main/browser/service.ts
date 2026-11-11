@@ -1,7 +1,12 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { app, BrowserWindow, clipboard, Menu, session, shell, WebContentsView, type ContextMenuParams, type Session, type WebContents } from 'electron'
+import { randomBytes } from 'node:crypto'
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { basename, isAbsolute, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { app, BrowserWindow, clipboard, dialog, Menu, session, shell, WebContentsView, type ContextMenuParams, type Session, type WebContents } from 'electron'
 import { z } from 'zod'
+import { canOpenFile, formatBytes } from '@shared/produced'
+import { fileAddress, fileTitle, previewInfo, VIEWER_MAX_BYTES, type ViewerView } from '@shared/preview'
+import { serveViewer } from '../viewer/protocol'
 import { CdpBridge, type BridgeTab } from './bridge'
 import {
   afterClosing,
@@ -44,9 +49,24 @@ const ASKED: Record<string, string> = {
   'display-capture': 'share your screen'
 }
 
+/** A file a viewer tab was opened with. The token is what the viewer page asks for it by (see viewer/protocol.ts). */
+interface FileInfo {
+  path: string
+  name: string
+  size: number
+  token: string
+  /** The viewer page's view for it, or 'card' when nothing shows it. */
+  view: ViewerView | 'card'
+  label: string
+  note?: string
+}
+
 interface Tab {
   id: string
   chatId: string
+  kind: 'web' | 'file'
+  /** Set for a viewer tab. Its `url` is then the file's own address, to show; the page it loads is the viewer's. */
+  file: FileInfo | null
   /** The page. Null until something is opened, and again after the tab was put away. */
   view: WebContentsView | null
   url: string
@@ -71,6 +91,7 @@ interface DownloadRecord extends BrowserDownload {
 
 const rect = z.object({ x: z.number().finite(), y: z.number().finite(), width: z.number().finite().min(0), height: z.number().finite().min(0) })
 const id = z.string().min(1).max(60)
+const path = z.string().min(1).max(1000)
 const text = z.string().max(4000)
 const schemas = {
   state: z.undefined(),
@@ -90,7 +111,10 @@ const schemas = {
   dismissDownload: z.object({ id }),
   closeChat: z.object({ chatId: id }),
   focus: z.undefined(),
-  external: z.object({ on: z.boolean() })
+  external: z.object({ on: z.boolean() }),
+  openFile: z.object({ chatId: id, path }),
+  pickFile: z.object({ chatId: id }),
+  fileAction: z.object({ id, action: z.enum(['open', 'reveal']) })
 } satisfies Record<BrowserOp, z.ZodTypeAny>
 
 const coreSchemas = {
@@ -131,8 +155,21 @@ export class BrowserService {
   /** The DevTools endpoint Playwright connects to: Core's tools, and other programs when the person allows them. */
   private bridge: CdpBridge | null = null
 
-  constructor(private readonly prefsFile: string) {
+  /** The files viewer tabs were opened with, by token. Forgotten when the tab closes. */
+  private readonly fileTokens = new Map<string, string>()
+  /** Whether the window is in its dark theme, for the viewer page to match. */
+  private dark = true
+
+  constructor(
+    private readonly prefsFile: string,
+    private readonly viewer: { appDir: string; devUrl?: string | undefined } = { appDir: '' }
+  ) {
     this.prefs = this.readPrefs()
+  }
+
+  /** The window's theme, told by the window. */
+  setDark(dark: boolean): void {
+    this.dark = dark
   }
 
   private readPrefs(): BrowserPrefs {
@@ -156,9 +193,11 @@ export class BrowserService {
     ses.setPermissionRequestHandler((wc, permission, callback, details) => this.onPermission(wc, permission, callback, details as { requestingUrl?: string; mediaTypes?: string[] }))
     ses.setPermissionCheckHandler((_wc, permission, origin) => SAFE_PERMISSIONS.has(permission) || this.decided.get(`${origin}|${permission}`) === true)
     ses.on('will-download', (_event, item, wc) => this.onDownload(item, wc))
+    serveViewer(ses, { appDir: this.viewer.appDir, devUrl: this.viewer.devUrl, fileOf: (token) => this.fileTokens.get(token) ?? null })
     if (!this.prefs.keepCookies) await ses.clearStorageData().catch(() => undefined)
     const bridge = new CdpBridge({
-      tabs: () => [...this.tabs.values()].filter((t) => t.view) as BridgeTab[],
+      // A viewer tab shows a document that may be private: neither the assistant's tools nor other programs see it.
+      tabs: () => [...this.tabs.values()].filter((t) => t.view && t.kind === 'web') as BridgeTab[],
       createTab: async (url) => {
         // A page opened by a program belongs to the chat on screen, or to none.
         const tab = this.createTab(this.chat ?? 'external', url)
@@ -218,7 +257,7 @@ export class BrowserService {
         return this.bridge?.internalEndpoint() ?? null
       case 'tabs': {
         const { chatId } = coreSchemas.tabs.parse(raw)
-        const mine = [...this.tabs.values()].filter((t) => t.chatId === chatId)
+        const mine = [...this.tabs.values()].filter((t) => t.chatId === chatId && t.kind === 'web')
         // Playwright finds a tab's page by the id its own DevTools gives it, so every page is attached first.
         for (const tab of mine) if (tab.view) await this.bridge?.ensureAttached(tab as BridgeTab).catch(() => undefined)
         const shown = this.selected.get(chatId)
@@ -340,6 +379,30 @@ export class BrowserService {
         return undefined
       case 'external':
         return { endpoint: this.setExternal(!!arg['on']), clients: this.bridge?.externalClients() ?? 0 }
+      case 'openFile':
+        return this.openFile(String(arg['chatId']), String(arg['path']))
+      case 'pickFile': {
+        const options = { title: 'Open a file', properties: ['openFile' as const] }
+        const chosen = this.host && !this.host.isDestroyed() ? await dialog.showOpenDialog(this.host, options) : await dialog.showOpenDialog(options)
+        const first = chosen.filePaths[0]
+        if (chosen.canceled || !first) return false
+        this.openFile(String(arg['chatId']), first)
+        return true
+      }
+      case 'fileAction': {
+        const tab = this.tabs.get(String(arg['id']))
+        const file = tab ? this.pathOf(tab) : null
+        if (!file) throw new Error('This tab does not show a file.')
+        if (arg['action'] === 'reveal') {
+          shell.showItemInFolder(file)
+          return undefined
+        }
+        // Only documents are opened with the person's own program; a program or script can only be shown in its folder.
+        if (!canOpenFile(basename(file))) throw new Error('Celeste only opens documents with your own program. Show this one in its folder instead.')
+        const failed = await shell.openPath(file)
+        if (failed) throw new Error(failed)
+        return undefined
+      }
     }
   }
 
@@ -360,7 +423,7 @@ export class BrowserService {
   }
 
   private createTab(chatId: string, url?: string, background = false): Tab {
-    const tab: Tab = { id: `tab-${Date.now().toString(36)}-${++this.next}`, chatId, view: null, url: '', title: '', loading: false, error: null, lastUsed: Date.now(), targetId: null }
+    const tab: Tab = { id: `tab-${Date.now().toString(36)}-${++this.next}`, chatId, kind: 'web', file: null, view: null, url: '', title: '', loading: false, error: null, lastUsed: Date.now(), targetId: null }
     this.tabs.set(tab.id, tab)
     if (!background || !this.selected.has(chatId)) this.selected.set(chatId, tab.id)
     if (url) this.load(tab, url)
@@ -375,6 +438,7 @@ export class BrowserService {
     const after = afterClosing(order, tabId)
     this.dropView(tab)
     this.tabs.delete(tabId)
+    if (tab.file) this.fileTokens.delete(tab.file.token)
     if (this.selected.get(tab.chatId) === tabId) {
       if (after) this.selected.set(tab.chatId, after)
       else this.selected.delete(tab.chatId)
@@ -438,8 +502,73 @@ export class BrowserService {
     view.setVisible(false)
     // A page that has never navigated does not answer DevTools commands until it does, so one with no address starts at a blank page
     // (the tab's own address stays empty, and the panel keeps showing its hint).
-    void view.webContents.loadURL(tab.url || 'about:blank').catch(() => undefined)
-    this.bridge?.announce(tab as BridgeTab)
+    void view.webContents.loadURL(tab.file ? this.viewerUrl(tab.file) : tab.url || 'about:blank').catch(() => undefined)
+    if (tab.kind === 'web') this.bridge?.announce(tab as BridgeTab)
+  }
+
+  /** The viewer page, told which file (by token) and how to show it. */
+  private viewerUrl(f: FileInfo): string {
+    const q = new URLSearchParams({ t: f.token, n: f.name, v: f.view, l: f.label, s: String(f.size), d: this.dark ? 'dark' : 'light' })
+    if (f.note) q.set('c', f.note)
+    return `celeste-view://app/viewer.html?${q.toString()}`
+  }
+
+  /**
+   * Opens a file in a tab (docs/FILE_VIEWER_PLAN.md). What Chromium shows itself (PDF, images, video, HTML) is a tab on the file's own
+   * address; what needs turning into something readable is a viewer tab; anything else is a viewer tab that says what it is and why it cannot
+   * be shown. A file already open in this chat is shown again, not opened twice.
+   */
+  openFile(chatId: string, path: string): { id: string; how: 'native' | 'viewer' | 'card' } {
+    if (!isAbsolute(path)) throw new Error('That is not the path of a file.')
+    let size: number
+    try {
+      const info = statSync(path)
+      if (!info.isFile()) throw new Error('That is not a file.')
+      size = info.size
+    } catch (e) {
+      throw new Error(e instanceof Error && e.message === 'That is not a file.' ? e.message : 'The file is no longer there.')
+    }
+    const name = fileTitle(path)
+    const info = previewInfo(name)
+    const address = fileAddress(path)
+    const open = [...this.tabs.values()].find((t) => t.chatId === chatId && (t.file?.path === path || (!t.file && t.url === address)))
+    if (open) {
+      this.selected.set(chatId, open.id)
+      this.touch(open)
+      if (!open.view) this.ensureView(open)
+      this.changed(true)
+      return { id: open.id, how: info.how }
+    }
+    if (info.how === 'native') return { id: this.createTab(chatId, address).id, how: 'native' }
+    let view: FileInfo['view'] = info.how === 'viewer' ? info.view : 'card'
+    let note = info.how === 'card' ? info.note : undefined
+    if (view !== 'card' && size > VIEWER_MAX_BYTES) {
+      view = 'card'
+      note = `This file is ${formatBytes(size)}, which is too large to show here.`
+    }
+    const file: FileInfo = { path, name, size, token: randomBytes(16).toString('hex'), view, label: info.label, ...(note ? { note } : {}) }
+    const tab = this.createTab(chatId)
+    tab.kind = 'file'
+    tab.file = file
+    tab.url = address
+    tab.title = name
+    this.fileTokens.set(file.token, path)
+    this.ensureView(tab)
+    this.changed(true)
+    return { id: tab.id, how: view === 'card' ? 'card' : 'viewer' }
+  }
+
+  /** The path of the file a tab shows (a viewer tab, or a tab on a file address), or null. */
+  private pathOf(tab: Tab): string | null {
+    if (tab.file) return tab.file.path
+    if (/^file:/i.test(tab.url)) {
+      try {
+        return fileURLToPath(tab.url)
+      } catch {
+        return null
+      }
+    }
+    return null
   }
 
   private dropView(tab: Tab): void {
@@ -482,13 +611,15 @@ export class BrowserService {
       this.changed()
     })
     wc.on('did-navigate', (_e, url) => {
+      // A viewer tab keeps showing the file's own address, not the viewer page's.
+      if (tab.file) return
       // The blank page a new tab starts on is not an address the person typed.
       if (url !== 'about:blank' || tab.url) tab.url = url
       tab.error = null
       this.changed(true)
     })
     wc.on('did-navigate-in-page', (_e, url, isMain) => {
-      if (isMain) tab.url = url
+      if (isMain && !tab.file) tab.url = url
       this.changed()
     })
     wc.on('did-fail-load', (_e, code, description, url, isMain) => {
@@ -505,11 +636,12 @@ export class BrowserService {
       this.changed(true)
     })
     const guard = (event: { preventDefault(): void }, url: string) => {
-      if (!isOpenable(url)) event.preventDefault()
+      // A viewer tab stays on the viewer: nothing it shows may take it anywhere else.
+      if (tab.file ? !url.startsWith('celeste-view://app/') : !isOpenable(url)) event.preventDefault()
     }
     wc.on('will-navigate', guard)
     wc.on('will-redirect', guard)
-    wc.setWindowOpenHandler((details) => this.onOpen(tab, details))
+    wc.setWindowOpenHandler((details) => (tab.file ? { action: 'deny' as const } : this.onOpen(tab, details)))
     wc.on('did-create-window', (win) => {
       // A sign-in popup stays on the web: it may not go to a file or an app link, and may not open windows of its own.
       win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
@@ -699,6 +831,8 @@ export class BrowserService {
       const history = wc?.navigationHistory
       return {
         id: t.id,
+        kind: t.kind,
+        ...(t.file ? { file: { path: t.file.path, name: t.file.name, label: t.file.label } } : {}),
         chatId: t.chatId,
         url: t.url,
         title: t.title,

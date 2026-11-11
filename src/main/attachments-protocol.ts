@@ -1,6 +1,7 @@
 import { join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, net, protocol } from 'electron'
+import { VIEW_SCHEME } from './viewer/protocol'
 
 /**
  * `celeste-file://attachments/<id>.<ext>` shows an attached file in the window. It serves the attachments
@@ -11,7 +12,11 @@ const FILE = /^[\w-]+\.[a-z0-9]{1,5}$/
 
 /** Must run before the app is ready. */
 export function registerAttachmentScheme(): void {
-  protocol.registerSchemesAsPrivileged([{ scheme: SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } }])
+  protocol.registerSchemesAsPrivileged([
+    { scheme: SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
+    // The viewer's pages and the file each viewer tab was opened with (see viewer/protocol.ts).
+    { scheme: VIEW_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } }
+  ])
 }
 
 export function serveAttachments(): void {

@@ -10,8 +10,19 @@ export interface BrowserRect {
   height: number
 }
 
+/** A file a tab shows (docs/FILE_VIEWER_PLAN.md): its path, name and kind of file. */
+export interface BrowserFile {
+  path: string
+  name: string
+  /** "Word document", "Spreadsheet"…, for the tab's tooltip. */
+  label: string
+}
+
 export interface BrowserTab {
   id: string
+  /** A page of the web (or a file Chromium shows itself), or a file the viewer page shows. */
+  kind: 'web' | 'file'
+  file?: BrowserFile
   /** The chat this tab belongs to. */
   chatId: string
   url: string
@@ -95,6 +106,12 @@ export interface BrowserCalls {
   closeChat: { arg: { chatId: string }; result: void }
   /** Gives the keyboard to the page. */
   focus: { arg: undefined; result: void }
+  /** Opens a file in a tab: Chromium shows PDF, images, video and HTML itself; the viewer page shows the rest. Fails with a reason in words. */
+  openFile: { arg: { chatId: string; path: string }; result: { id: string; how: 'native' | 'viewer' | 'card' } }
+  /** Asks, with the system's own dialog, for a file to open. True when one was opened. */
+  pickFile: { arg: { chatId: string }; result: boolean }
+  /** What the person can do with the file a tab shows, in their own programs. */
+  fileAction: { arg: { id: string; action: 'open' | 'reveal' }; result: void }
   /** Lets other programs (Playwright MCP, a script) connect to the browser, or turns them out. `endpoint` is where they connect, or null while they are not allowed. */
   external: { arg: { on: boolean }; result: BrowserExternal }
 }

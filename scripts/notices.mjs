@@ -8,7 +8,7 @@ const root = resolve(import.meta.dirname, '..')
 const own = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 
 // Libraries that the interface bundles (so they are devDependencies) but that are in every installer all the same.
-const BUNDLED = ['react', 'react-dom', 'radix-ui', 'lucide-react', 'zustand', 'react-markdown', 'remark-gfm', '@fontsource-variable/outfit', '@fontsource-variable/jetbrains-mono', '@xterm/xterm', '@xterm/addon-fit', '@xyflow/react']
+const BUNDLED = ['react', 'react-dom', 'radix-ui', 'lucide-react', 'zustand', 'react-markdown', 'remark-gfm', '@fontsource-variable/outfit', '@fontsource-variable/jetbrains-mono', '@xterm/xterm', '@xterm/addon-fit', '@xyflow/react', 'docx-preview', 'pptx-preview', 'jszip', 'xlsx']
 // The vendors' own programs are downloaded by the person's computer from the vendors' registry; they are not part of what is shipped.
 const NOT_SHIPPED = /^@github\/copilot-sdk-(darwin|linux|linuxmusl|win32)-|^@anthropic-ai\/claude-agent-sdk-(darwin|linux|win32)-/
 

@@ -28,7 +28,7 @@ const desktop = new DesktopService({
 })
 core.setDesktop(desktop)
 // The browser pane (docs/BROWSER_PLAN.md): the pages are views laid over the window; the window says which are shown and where.
-const browser = new BrowserService(join(app.getPath('userData'), 'browser.json'))
+const browser = new BrowserService(join(app.getPath('userData'), 'browser.json'), { appDir: join(__dirname, '../renderer'), devUrl: DEV_URL })
 /** The web contents of Celeste's own windows, the only ones the bridge answers (a page in the browser has no bridge, and a sign-in popup is not one of these). */
 const ownContents = new WeakSet<WebContents>()
 core.setBrowser(browser)
@@ -125,6 +125,8 @@ ipcMain.on('celeste:theme', (event, payload: { color?: unknown; symbolColor?: un
   const { color, symbolColor } = payload ?? {}
   if (typeof color !== 'string' || typeof symbolColor !== 'string') return
   if (!HEX.test(color) || !HEX.test(symbolColor)) return
+  // The viewer page matches the window's theme, on every system.
+  browser.setDark(color === '#080c17')
   const win = BrowserWindow.fromWebContents(event.sender)
   if (!win || isMac) return
   win.setBackgroundColor(color)
@@ -170,6 +172,17 @@ ipcMain.handle('celeste:chat-file', async (event, sessionId: unknown, path: unkn
     if (!canOpenFile(name)) return { ok: false, message: 'Celeste only opens documents. Show this one in its folder instead.' }
     const failed = await shell.openPath(found.file)
     return failed ? { ok: false, message: failed } : { ok: true }
+  }
+  if (action === 'preview') {
+    // Shown in a tab of the browser pane, for the chat the file belongs to.
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (win) browser.bind(win)
+    try {
+      browser.openFile(sessionId as string, found.file)
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, message: err instanceof Error ? err.message : 'Could not open the file.' }
+    }
   }
   if (action === 'save') {
     const win = BrowserWindow.fromWebContents(event.sender)

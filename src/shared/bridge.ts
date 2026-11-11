@@ -20,7 +20,7 @@ export interface CelesteBridge {
     hint(name: string): Promise<string | null>
   }
   /** A file the agent made in a chat's private folder: open it, show it in its folder, or save a copy. The window names it by session and path; the main process checks it. */
-  chatFile(sessionId: string, path: string, action: 'open' | 'reveal' | 'save'): Promise<{ ok: boolean; message?: string }>
+  chatFile(sessionId: string, path: string, action: 'open' | 'reveal' | 'save' | 'preview'): Promise<{ ok: boolean; message?: string }>
   /** Asks where to save a text file and writes it there. `saved` is the file's name, or null when the person cancels. */
   saveText(suggestedName: string, text: string): Promise<{ saved: string | null }>
   /** Asks for a file to open and reads it as text (at most 1 MB). Null when the person cancels. */

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ArrowLeft, ArrowRight, Download, Ellipsis, ExternalLink, Folder, Globe, LoaderCircle, Plus, RotateCw, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Download, Ellipsis, ExternalLink, FileText, Folder, FolderOpen, Globe, LoaderCircle, Plus, RotateCw, X } from 'lucide-react'
 import { displayUrl, type BrowserTab } from '@shared/browser'
 import { cn } from '@/lib/cn'
 import { Button, IconButton } from '@/components/ui'
@@ -15,7 +15,7 @@ function TabStrip({ tabs, selected, onNew }: { tabs: BrowserTab[]; selected: str
     <div aria-label="Browser tabs" role="group" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
       {tabs.map((t) => {
         const active = t.id === selected
-        const label = t.title || displayUrl(t.url) || 'New tab'
+        const label = t.file?.name ?? (t.title || displayUrl(t.url) || 'New tab')
         return (
           <div
             key={t.id}
@@ -32,7 +32,13 @@ function TabStrip({ tabs, selected, onNew }: { tabs: BrowserTab[]; selected: str
               onClick={() => void browserCall('selectTab', { id: t.id })}
               className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
             >
-              {t.loading ? <LoaderCircle aria-label="Loading" className="h-3.5 w-3.5 shrink-0 animate-spin" /> : <Globe aria-hidden className="h-3.5 w-3.5 shrink-0 opacity-70" />}
+              {t.loading ? (
+                <LoaderCircle aria-label="Loading" className="h-3.5 w-3.5 shrink-0 animate-spin" />
+              ) : t.kind === 'file' ? (
+                <FileText aria-hidden className="h-3.5 w-3.5 shrink-0 opacity-70" />
+              ) : (
+                <Globe aria-hidden className="h-3.5 w-3.5 shrink-0 opacity-70" />
+              )}
               <span className="truncate">{label}</span>
             </button>
             <button
@@ -53,10 +59,12 @@ function TabStrip({ tabs, selected, onNew }: { tabs: BrowserTab[]; selected: str
   )
 }
 
-function PageMenu({ tab }: { tab: BrowserTab | undefined }) {
+function PageMenu({ chatId, tab }: { chatId: string; tab: BrowserTab | undefined }) {
   const prefs = useBrowser((s) => s.prefs)
   const pushToast = useUi((s) => s.pushToast)
   const openSettings = useUi((s) => s.openSettings)
+  // A tab that shows a file: a viewer tab, or a page on a file address.
+  const isFileTab = !!tab && (tab.kind === 'file' || /^file:/i.test(tab.url))
   return (
     <Menu.Root>
       <Menu.Trigger asChild>
@@ -65,7 +73,21 @@ function PageMenu({ tab }: { tab: BrowserTab | undefined }) {
         </IconButton>
       </Menu.Trigger>
       <Menu.Content align="end" className="min-w-[250px]">
-        <Menu.Item disabled={!tab?.url} onSelect={() => tab && void browserCall('openExternal', { url: tab.url })}>
+        <Menu.Item onSelect={() => void browserCall('pickFile', { chatId }).catch((e: Error) => pushToast({ text: e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') }))}>
+          <FolderOpen className="h-3.5 w-3.5" /> Open a file…
+        </Menu.Item>
+        {isFileTab && (
+          <>
+            <Menu.Item onSelect={() => tab && void browserCall('fileAction', { id: tab.id, action: 'open' }).catch((e: Error) => pushToast({ text: e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') }))}>
+              <ExternalLink className="h-3.5 w-3.5" /> Open in your own program
+            </Menu.Item>
+            <Menu.Item onSelect={() => tab && void browserCall('fileAction', { id: tab.id, action: 'reveal' }).catch(() => undefined)}>
+              <Folder className="h-3.5 w-3.5" /> Show in its folder
+            </Menu.Item>
+          </>
+        )}
+        <Menu.Separator />
+        <Menu.Item disabled={!tab?.url || tab?.kind === 'file'} onSelect={() => tab && void browserCall('openExternal', { url: tab.url })}>
           <ExternalLink className="h-3.5 w-3.5" /> Open in my browser
         </Menu.Item>
         <Menu.Item disabled={!tab?.url} onSelect={() => tab && void browserCall('action', { id: tab.id, action: 'devtools' })}>
@@ -102,15 +124,18 @@ function PageMenu({ tab }: { tab: BrowserTab | undefined }) {
 }
 
 function Toolbar({ chatId, tab, addressRef }: { chatId: string; tab: BrowserTab | undefined; addressRef: React.RefObject<HTMLInputElement | null> }) {
-  const [text, setText] = useState(tab?.url ?? '')
+  // A viewer tab shows the file's path, which is not typed over.
+  const shown = tab ? (tab.file?.path ?? tab.url) : ''
+  const fileTab = tab?.kind === 'file'
+  const [text, setText] = useState(shown)
   const [editing, setEditing] = useState(false)
   // While the person is not typing, the bar shows where the page is.
   useEffect(() => {
-    if (!editing) setText(tab?.url ?? '')
-  }, [tab?.url, tab?.id, editing])
+    if (!editing) setText(shown)
+  }, [shown, tab?.id, editing])
   const go = () => {
     const input = text.trim()
-    if (!input) return
+    if (!input || fileTab) return
     if (tab) void browserCall('navigate', { id: tab.id, input })
     else void browserCall('newTab', { chatId, url: input })
     addressRef.current?.blur()
@@ -119,10 +144,10 @@ function Toolbar({ chatId, tab, addressRef }: { chatId: string; tab: BrowserTab 
   const act = (action: 'back' | 'forward' | 'reload' | 'stop') => tab && void browserCall('action', { id: tab.id, action })
   return (
     <div className="flex h-12 shrink-0 items-center gap-1 border-b border-edge/70 px-2">
-      <IconButton label="Back (Alt+Left)" size="sm" disabled={!tab?.canGoBack} onClick={() => act('back')}>
+      <IconButton label="Back (Alt+Left)" size="sm" disabled={!tab?.canGoBack || fileTab} onClick={() => act('back')}>
         <ArrowLeft className="h-4 w-4" />
       </IconButton>
-      <IconButton label="Forward (Alt+Right)" size="sm" disabled={!tab?.canGoForward} onClick={() => act('forward')}>
+      <IconButton label="Forward (Alt+Right)" size="sm" disabled={!tab?.canGoForward || fileTab} onClick={() => act('forward')}>
         <ArrowRight className="h-4 w-4" />
       </IconButton>
       {tab?.loading ? (
@@ -139,6 +164,7 @@ function Toolbar({ chatId, tab, addressRef }: { chatId: string; tab: BrowserTab 
         value={text}
         spellCheck={false}
         aria-label="Address"
+        readOnly={fileTab}
         placeholder="Search or type an address"
         onChange={(e) => setText(e.target.value)}
         onFocus={(e) => {
@@ -149,13 +175,13 @@ function Toolbar({ chatId, tab, addressRef }: { chatId: string; tab: BrowserTab 
         onKeyDown={(e) => {
           if (e.key === 'Enter') go()
           if (e.key === 'Escape') {
-            setText(tab?.url ?? '')
+            setText(shown)
             e.currentTarget.blur()
           }
         }}
         className="mx-1 h-8 min-w-0 flex-1 rounded-full border border-edge bg-field px-3.5 text-[13px] text-ink outline-none placeholder:text-ink-faint focus:border-accent/60"
       />
-      <PageMenu tab={tab} />
+      <PageMenu chatId={chatId} tab={tab} />
     </div>
   )
 }

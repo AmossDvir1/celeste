@@ -1,4 +1,4 @@
-import { Archive, FileCode2, FileImage, FileSpreadsheet, FileText, File as FileIcon, FolderOpen, Globe, Save } from 'lucide-react'
+import { Archive, ExternalLink, FileCode2, FileImage, FileSpreadsheet, FileText, File as FileIcon, FolderOpen, Globe, Save } from 'lucide-react'
 import { canOpenFile, fileKind, formatBytes, type FileKind, type ProducedFile } from '@shared/produced'
 import { Button, IconButton } from '@/components/ui'
 import { useUi } from '@/stores/ui'
@@ -19,16 +19,19 @@ const nameOf = (path: string) => path.slice(path.lastIndexOf('/') + 1)
 const folderOf = (path: string) => (path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '')
 
 /**
- * The files the agent made while answering, under the answer. A document opens with the computer's own program; anything that
+ * The files the agent made while answering, under the answer. Open shows a file in the browser pane (Office documents, PDF, images,
+ * video, Markdown and more, see FILE_VIEWER_PLAN.md); a document can also be opened with the computer's own program, and anything that
  * could run is only shown in its folder (the main process refuses to start it either way). A copy can be saved anywhere.
  */
 export function FileCards({ sessionId, files, more }: { sessionId: string; files: ProducedFile[]; more: number }) {
   const pushToast = useUi((s) => s.pushToast)
-  const act = async (path: string, action: 'open' | 'reveal' | 'save') => {
+  const act = async (path: string, action: 'open' | 'reveal' | 'save' | 'preview') => {
     try {
       const result = await window.celeste?.chatFile(sessionId, path, action)
       if (result && !result.ok && result.message) pushToast({ text: result.message })
       else if (result?.ok && result.message) pushToast({ text: result.message })
+      // A file shown in the browser pane brings the pane up beside the chat.
+      else if (result?.ok && action === 'preview') useUi.getState().revealBrowser()
     } catch {
       pushToast({ text: 'Could not do that with the file.' })
     }
@@ -56,10 +59,13 @@ export function FileCards({ sessionId, files, more }: { sessionId: string; files
                   {folder && ` · in ${folder}`}
                 </div>
               </div>
+              <Button variant="soft" size="sm" aria-label={`Open ${name}`} onClick={() => void act(f.path, 'preview')}>
+                Open
+              </Button>
               {canOpenFile(name) && (
-                <Button variant="soft" size="sm" aria-label={`Open ${name}`} onClick={() => void act(f.path, 'open')}>
-                  Open
-                </Button>
+                <IconButton label={`Open ${name} in your own program`} size="sm" onClick={() => void act(f.path, 'open')}>
+                  <ExternalLink className="h-[15px] w-[15px]" />
+                </IconButton>
               )}
               <IconButton label={`Show ${name} in its folder`} size="sm" onClick={() => void act(f.path, 'reveal')}>
                 <FolderOpen className="h-[15px] w-[15px]" />

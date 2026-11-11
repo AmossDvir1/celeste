@@ -37,6 +37,9 @@ vendor account.
   conversation in it, and let the assistant use it too: it can open pages, read them, click, type and fill in forms, in its
   own chat's tabs, and it **asks before using a new site**. Programs like Playwright can use it as well, if you switch that
   on in Settings.
+- **Open files without leaving Celeste.** Word, Excel, PowerPoint, PDF, images, video, Markdown, notebooks, spreadsheets, code
+  and more open in a tab of the browser pane, from the file cards under an answer, from the project's files, or from "Open a
+  file…". A file is shown by a page that has no connection to Celeste or the internet.
 - **Let it use your screen, if you want (Windows, off by default).** The assistant can ask to use this computer's mouse and
   keyboard for a task that has no command or tool. You allow it each time, it is limited in time, and you can stop it with
   Ctrl+Alt+Esc from anywhere.
@@ -155,6 +158,7 @@ is not built yet says so.
 | Tools (MCP) | **Working.** Add a tool once and every assistant can use it |
 | Devices (SSH, Hyper-V, Android) | **Working against test fixtures**, not yet tried on a wide range of real hardware. Read-only by default, with approvals |
 | Browser | **Built, next release.** Real pages, tabs for each chat, popups for sign-ins, and the assistant's use of it through Playwright (20 tools, asking before a new site). Checked in the real app with a stand-in for the assistant, and with the real Playwright MCP; not yet tried with Copilot, and sign-in to Google, Microsoft and GitHub, downloads and video not yet tried by hand |
+| File viewer | **Built, next release.** Word, Excel, PowerPoint, OpenDocument, RTF, PDF, images, video, Markdown, notebooks, CSV, code, zip. Checked in the real app with files made for the purpose; layout is close, not exact, for Office files, and the old `.doc` and `.ppt` are not shown. Video and your own real documents not yet tried by hand |
 | Desktop control | **Windows only, off by default.** Tried with a stand-in for the assistant on one screen, not yet with a real assistant or other screen setups |
 | Celeste for Android | **Experimental, next release.** Tried on a Galaxy S24 and an Android emulator. Same Wi-Fi only |
 | Installers | Windows (`.exe`, `.msi`) and macOS (`.dmg`). Not signed with a paid certificate yet; no automatic updates (there is a manual check) |

@@ -25,6 +25,11 @@ All notable changes to Celeste. The format follows [Keep a Changelog](https://ke
   - **Care with your files.** The assistant opens a file in the browser only from its own chat's folder (the project folder in Develop). A page cannot open a file, and a sign-in popup cannot go to one.
   - Checked with the real Playwright MCP against the browser's address, and with sign-in popups that talk back to their page.
   - `npm run verify:browser` and `npm run verify:browser-tools` check it. Playwright (about 14 MB) and the `ws` library now ship with the app.
+- **Files open inside Celeste.** Open on a file under an answer, a file in Develop's Files panel, or "Open a file…" in the browser's menu shows it in a tab of the browser pane.
+  - **Documents:** Word (`.docx`), Excel (`.xlsx`, `.xls`, `.ods`, `.csv`, `.tsv`: a sheet at a time, with column letters and row numbers), PowerPoint (`.pptx`: all slides, or one at a time), OpenDocument text and presentations, and RTF (a simplified view). Old `.doc` and `.ppt` say so and offer your own program.
+  - **Everything else useful:** PDF, images, video, audio and web pages (Chromium shows them itself), Markdown (with a contents list), notebooks, JSON (as a tree), source and text files (line numbers, wrapping, find), and zip archives (what is inside).
+  - **Safe by design:** a file is shown by a page that has no connection to Celeste and cannot reach the web or any other file. The assistant's browser tools never see a file tab, and "Open in your own program" still opens only documents.
+  - `npm run verify:preview` opens a real file of every kind and checks what shows. Details: docs/FILE_VIEWER_PLAN.md.
 - **Celeste for Android (experimental)**: use Celeste from your phone on the same Wi-Fi.
   - **Settings → Phone** shows a QR code. The page it opens on the phone offers the app.
   - **Connecting**: the app finds the computer by itself. You compare three pictures on both screens and press Allow on the computer.

@@ -19,6 +19,23 @@ export async function openInPane(url: string): Promise<boolean> {
   return true
 }
 
+/**
+ * Opens a file in a tab of the browser pane, beside the chat that is open: Chromium shows PDF, images, video and web pages itself, and
+ * the viewer shows Office documents, Markdown, tables and more (docs/FILE_VIEWER_PLAN.md). Says why in a message when it cannot.
+ */
+export async function openFileInPane(path: string): Promise<boolean> {
+  const chatId = activeChat()
+  if (!chatId || !window.celeste) return false
+  try {
+    await browserCall('openFile', { chatId, path })
+    useUi.getState().revealBrowser()
+    return true
+  } catch (e) {
+    useUi.getState().pushToast({ text: e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : 'Could not open the file.' })
+    return false
+  }
+}
+
 export const openInMyBrowser = (url: string): Promise<void> => browserCall('openExternal', { url }).catch(() => undefined)
 
 /**

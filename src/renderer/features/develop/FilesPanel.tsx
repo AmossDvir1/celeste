@@ -1,3 +1,4 @@
+import { openFileInPane } from '@/lib/links'
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { ArrowLeft, ChevronRight, FileText, Folder, FolderOpen, Plus, RefreshCw } from 'lucide-react'
 import type { ContextRef } from '@shared/agent'
@@ -246,6 +247,9 @@ export function FilesPanel() {
             <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-ink" title={viewing}>
               {viewing}
             </span>
+            <Button variant="secondary" size="sm" onClick={() => void openFileInPane(`${session.cwd ?? ''}${session.cwd?.includes('\\') ? '\\' : '/'}${viewing}`)}>
+              Open in the browser
+            </Button>
             <Button variant="secondary" size="sm" onClick={() => addToMessage({ path: viewing, kind: 'file' })}>
               Add to message
             </Button>
