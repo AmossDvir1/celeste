@@ -31,6 +31,7 @@ import { draftWorkflow } from './workflows/draft'
 import { WorkflowRunner } from './workflows/runner'
 import { WorkflowService } from './workflows/service'
 import { CombinedTools, WorkflowTools } from './workflows/tools'
+import { randomUUID } from 'node:crypto'
 import { DesktopControl } from './desktop/control'
 import { MainDesktopHost } from './desktop/main-host'
 import { MainBrowserHost } from './browser/main-host'
@@ -100,6 +101,8 @@ let api: CoreApi | undefined
 let store: SqliteStore | undefined
 let terminalsRef: TerminalService | undefined
 let desktopRef: DesktopControl | undefined
+/** Phones' offers to show their screen, waiting for the window's answer. */
+const views = new Map<string, { resolve: (sdp: string) => void; reject: (e: Error) => void }>()
 const desktopHost = new MainDesktopHost((message) => parent.postMessage(message))
 const browserHost = new MainBrowserHost((message) => parent.postMessage(message))
 let browserToolsRef: BrowserTools | undefined
@@ -392,6 +395,21 @@ async function start(): Promise<void> {
     networkWarning: (address) => checkNetwork(address),
     keyStore: { get: () => getSecret('phone.key'), set: (value) => storeSecret('phone.key', value) },
     announce: announcePhone,
+    // A phone's screen shown in the window: the offer goes to the window, which answers with `phone.viewAnswer`.
+    view: {
+      offer: (phoneId, name, sdp, servers) =>
+        new Promise<string>((resolve, reject) => {
+          const requestId = randomUUID()
+          const done = () => {
+            clearTimeout(timer)
+            views.delete(requestId)
+          }
+          const timer = setTimeout(() => (done(), reject(new Error('Celeste on the computer did not answer.'))), 20_000)
+          views.set(requestId, { resolve: (s) => (done(), resolve(s)), reject: (e) => (done(), reject(e)) })
+          push({ type: 'phoneView', requestId, phoneId, name, offer: sdp, servers })
+        }),
+      end: (phoneId) => push({ type: 'phoneViewEnd', phoneId })
+    },
     // The computer's screen as video, for a phone the person allowed, only while the assistant has the computer.
     watch: {
       start: (phoneId, offer, servers) => {
@@ -423,6 +441,14 @@ async function start(): Promise<void> {
     },
     'phone.remove': (id) => phone.remove(id),
     'phone.setWatch': (id, on) => phone.setWatch(id, on === true),
+    // The window's answer to a phone that offered to show its screen (the offer is waiting in `views`).
+    'phone.viewAnswer': (requestId, sdp) => {
+      const v = views.get(String(requestId))
+      if (!v) return
+      if (typeof sdp === 'string' && sdp) v.resolve(sdp)
+      else v.reject(new Error('The computer could not show the screen.'))
+    },
+    'phone.viewStop': (phoneId) => phone.viewStop(String(phoneId)),
     'phone.answer': (pairId, allow) => phone.answer(pairId, allow),
     ...service.api,
     'app.checkUpdate': () => checkForUpdate(process.env['CELESTE_VERSION'] ?? '0.0.0'),

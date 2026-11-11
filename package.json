@@ -46,6 +46,7 @@
     "verify:phone": "electron-vite build && npm --prefix phone run build && node scripts/phone-check.mjs",
     "verify:relay": "node scripts/relay-check.mjs",
     "verify:watch": "node scripts/watch-check.mjs",
+    "verify:view": "electron-vite build && node scripts/view-check.mjs",
     "verify:browser": "electron-vite build && node scripts/browser-check.mjs",
     "verify:preview": "electron-vite build && node scripts/preview-check.mjs",
     "verify:browser-tools": "electron-vite build && node scripts/browser-tools-check.mjs",

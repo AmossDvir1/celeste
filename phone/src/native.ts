@@ -5,7 +5,7 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
 import { App } from '@capacitor/app'
 import { LocalNotifications } from '@capacitor/local-notifications'
-import { sessionKeyBytes, toB64 } from '@shared/phone'
+import { sessionKeyBytes, toB64, type IceServer } from '@shared/phone'
 import type { PhonePairing } from '@shared/phone-client'
 
 export interface FoundComputer {
@@ -46,6 +46,10 @@ interface CelesteNativePlugin {
   openNotificationAccess(): Promise<void>
   openAppInfo(): Promise<void>
   openAccessibility(): Promise<void>
+  /** This phone's screen on the computer: Android's own dialog, then the WebRTC offer (the addresses gathered). */
+  shareScreen(opts: { servers: IceServer[] }): Promise<{ sdp: string }>
+  shareAnswer(opts: { sdp: string }): Promise<void>
+  shareStop(): Promise<void>
 }
 
 /** Which phone abilities the person switched on, and whether Android's Notification access is on for Celeste. */
@@ -91,7 +95,12 @@ const Native = registerPlugin<CelesteNativePlugin>('CelesteNative', {
     setAbility: async () => undefined,
     openNotificationAccess: async () => undefined,
     openAppInfo: async () => undefined,
-    openAccessibility: async () => undefined
+    openAccessibility: async () => undefined,
+    shareScreen: async () => {
+      throw new Error('Showing the screen needs the Android app.')
+    },
+    shareAnswer: async () => undefined,
+    shareStop: async () => undefined
   } as unknown as CelesteNativePlugin
 })
 
@@ -164,6 +173,29 @@ export const abilities = {
   openNotificationAccess: (): Promise<void> => Native.openNotificationAccess().catch(() => undefined),
   openAppInfo: (): Promise<void> => Native.openAppInfo().catch(() => undefined),
   openAccessibility: (): Promise<void> => Native.openAccessibility().catch(() => undefined)
+}
+
+/** This phone's screen on the computer (docs/PHONE_PLAN.md 7.3), the part only Android can do: capture it and make the offer. */
+export const screen = {
+  start: (servers: IceServer[]): Promise<{ sdp: string }> => Native.shareScreen({ servers }),
+  answer: (sdp: string): Promise<void> => Native.shareAnswer({ sdp }),
+  stop: (): Promise<void> => Native.shareStop().catch(() => undefined),
+  /** Calls `listener` when the capture ends on its own (the screen locked, Android's chip was used, the link was lost). */
+  onEnded(listener: (why: string) => void): () => void {
+    let off: (() => void) | null = null
+    let stopped = false
+    void (Native as unknown as { addListener(e: string, f: (d: { why?: string }) => void): Promise<{ remove(): void }> })
+      .addListener('shareEnded', (d) => listener(d.why ?? ''))
+      .then((h) => {
+        if (stopped) h.remove()
+        else off = () => h.remove()
+      })
+      .catch(() => undefined)
+    return () => {
+      stopped = true
+      off?.()
+    }
+  }
 }
 
 /** A card that asks the person something: a phone ability, phone control, or a second yes. */

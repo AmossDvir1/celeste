@@ -48,6 +48,7 @@ import {
   type PhoneRelayInfo,
   type PhoneReply,
   type PhoneCancelPush,
+  type PhoneViewStopPush,
   type PhoneRequestPush,
   type PhoneStatus,
   type PhoneWake,
@@ -97,6 +98,11 @@ export interface PhoneBridgeDeps {
   watch?: {
     start(phoneId: string, offer: string, servers: IceServer[]): Promise<string>
     stop(phoneId?: string): Promise<void>
+  }
+  /** A phone's screen shown in the window (docs/PHONE_PLAN.md 7.3): the window answers the phone's offer. Left out: not available. */
+  view?: {
+    offer(phoneId: string, name: string, sdp: string, servers: IceServer[]): Promise<string>
+    end(phoneId: string): void
   }
   /** The public MQTT brokers the backup uses when the relay cannot be reached (A4d). Left out: the built-in list. Tests give their own. */
   publicBrokers?: () => string[]
@@ -559,6 +565,7 @@ export class PhoneBridge {
     this.keys.delete(phoneId)
     this.seen.delete(phoneId)
     void this.deps.watch?.stop(phoneId).catch(() => undefined)
+    this.deps.view?.end(phoneId)
     for (const l of [...this.listeners]) {
       if (l.phoneId !== phoneId) continue
       l.end()
@@ -645,6 +652,26 @@ export class PhoneBridge {
     } catch (err) {
       return fail(err instanceof Error ? err.message : 'The screen could not be shared.')
     }
+  }
+
+  /** A phone offers to show its own screen here: the person said yes on the phone (Android's own dialog), so only the offer is checked. */
+  private async viewing(id: number, phone: PhoneRecord, offer: unknown): Promise<SealedReply> {
+    const fail = (error: string): SealedReply => ({ id, ok: false, error })
+    if (!this.deps.view) return fail('Showing the phone’s screen is not available on this computer.')
+    if (typeof offer !== 'string' || offer.length > 40_000 || !offer.startsWith('v=0')) return fail('That was not a valid request.')
+    try {
+      const servers = (await this.relay.iceServers()) ?? PUBLIC_ICE
+      const sdp = await this.deps.view.offer(phone.id, phone.name, offer, servers)
+      this.touch(phone)
+      return { id, ok: true, result: { sdp } satisfies PhoneLinkAnswer }
+    } catch (err) {
+      return fail(err instanceof Error ? err.message : 'The screen could not be shown.')
+    }
+  }
+
+  /** The person pressed Stop on the computer's panel: the phone is told to stop sharing its screen. */
+  viewStop(phoneId: string): void {
+    this.sendTo(phoneId, { type: 'phoneViewStop' } satisfies PhoneViewStopPush)
   }
 
   /** Allows a phone to watch the computer's screen while the assistant uses it, or takes that back (and ends a view that is on). */
@@ -754,7 +781,7 @@ export class PhoneBridge {
     return null
   }
 
-  private sendTo(phoneId: string, value: PhoneRequestPush | PhoneCancelPush): void {
+  private sendTo(phoneId: string, value: PhoneRequestPush | PhoneCancelPush | PhoneViewStopPush): void {
     for (const l of this.targets(phoneId)) {
       l.queue = l.queue.then(async () => l.write(await seal(l.key, value, LABEL.push))).catch(() => undefined)
     }
@@ -923,6 +950,11 @@ export class PhoneBridge {
       reply = sdp ? { id: call.id, ok: true, result: { sdp } satisfies PhoneLinkAnswer } : { id: call.id, ok: false, error: 'A direct link is not available.' }
     } else if (call.method === 'phone.watch') {
       reply = await this.watching(call.id, phone, (call.params[0] as Partial<PhoneLinkOffer> | undefined)?.sdp)
+    } else if (call.method === 'phone.view') {
+      reply = await this.viewing(call.id, phone, (call.params[0] as Partial<PhoneLinkOffer> | undefined)?.sdp)
+    } else if (call.method === 'phone.viewStop') {
+      this.deps.view?.end(phone.id)
+      reply = { id: call.id, ok: true, result: null }
     } else if (call.method === 'phone.watchStop') {
       void this.deps.watch?.stop(phone.id).catch(() => undefined)
       reply = { id: call.id, ok: true, result: null }

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import type { CorePush } from '@shared/api'
-import { LABEL, open, seal, sessionKey, type PhonePairRequest, type PhoneCancelPush, type PhoneRequestPush, type SealedReply } from '@shared/phone'
+import { LABEL, open, seal, sessionKey, type PhonePairRequest, type PhoneCancelPush, type PhoneViewStopPush, type PhoneRequestPush, type SealedReply } from '@shared/phone'
 import { PhoneLink, pair, type LinkState, type PhonePairing } from '@shared/phone-client'
 import { PhoneBridge, isPrivate } from './bridge'
 
@@ -153,7 +153,7 @@ describe('phone bridge', () => {
 
   it('streams the pushes a phone may see, sealed, in order', async () => {
     const { pairing, bridge } = await paired()
-    const got: (CorePush | PhoneRequestPush | PhoneCancelPush)[] = []
+    const got: (CorePush | PhoneRequestPush | PhoneCancelPush | PhoneViewStopPush)[] = []
     const states: LinkState[] = []
     const stop = new PhoneLink(pairing).listen((p) => got.push(p), (s) => states.push(s))
     await waitFor(() => states.includes('connected'))
@@ -181,7 +181,7 @@ describe('phone bridge', () => {
 
   it('starts the stream again when it goes quiet past the pings, and pushes reach the new one', async () => {
     const { pairing, bridge } = await paired()
-    const got: (CorePush | PhoneRequestPush | PhoneCancelPush)[] = []
+    const got: (CorePush | PhoneRequestPush | PhoneCancelPush | PhoneViewStopPush)[] = []
     const states: LinkState[] = []
     // The bridge pings every 20 s: a phone that expects to hear something every 300 ms takes the line for dead.
     const stop = new PhoneLink(pairing, { silentMs: 300 }).listen((p) => got.push(p), (s) => states.push(s))
@@ -196,7 +196,7 @@ describe('phone bridge', () => {
 
   it('opens a new stream at once when asked, without going offline, and pushes reach it', async () => {
     const { pairing, bridge } = await paired()
-    const got: (CorePush | PhoneRequestPush | PhoneCancelPush)[] = []
+    const got: (CorePush | PhoneRequestPush | PhoneCancelPush | PhoneViewStopPush)[] = []
     const states: LinkState[] = []
     const link = new PhoneLink(pairing)
     const stop = link.listen((p) => got.push(p), (s) => states.push(s))

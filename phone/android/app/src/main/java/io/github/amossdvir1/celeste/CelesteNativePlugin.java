@@ -1,5 +1,6 @@
 package io.github.amossdvir1.celeste;
 
+import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.net.nsd.NsdManager;
@@ -8,8 +9,10 @@ import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.media.projection.MediaProjectionManager;
 import android.provider.Settings;
 
+import androidx.activity.result.ActivityResult;
 import androidx.core.content.ContextCompat;
 
 import com.getcapacitor.JSArray;
@@ -17,6 +20,7 @@ import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 import java.net.Inet4Address;
@@ -39,6 +43,50 @@ public class CelesteNativePlugin extends Plugin {
     @Override
     public void load() {
         live = this;
+    }
+
+    // ---- This phone's screen on the computer (docs/PHONE_PLAN.md 7.3) ----
+
+    private com.getcapacitor.JSArray shareServers;
+
+    /** Asks Android's own dialog for permission to capture the screen, then makes the WebRTC offer and answers with it. */
+    @PluginMethod
+    public void shareScreen(PluginCall call) {
+        MediaProjectionManager m = (MediaProjectionManager) getContext().getSystemService(Context.MEDIA_PROJECTION_SERVICE);
+        if (m == null) {
+            call.reject("This phone cannot share its screen.");
+            return;
+        }
+        shareServers = call.getArray("servers");
+        startActivityForResult(call, m.createScreenCaptureIntent(), "shareConsent");
+    }
+
+    @ActivityCallback
+    private void shareConsent(PluginCall call, ActivityResult result) {
+        if (call == null) return;
+        if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null) {
+            call.reject("Sharing the screen was not allowed on this phone.");
+            return;
+        }
+        ScreenShareService.begin(getContext(), result.getData(), shareServers, call);
+    }
+
+    /** The computer's answer to the offer. */
+    @PluginMethod
+    public void shareAnswer(PluginCall call) {
+        ScreenShare.answer(call.getString("sdp", ""));
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void shareStop(PluginCall call) {
+        ScreenShare.stop(false, null);
+        call.resolve();
+    }
+
+    /** The capture ended on its own (the screen locked, the person used Android's chip, the connection was lost). */
+    void shareEnded(JSObject o) {
+        notifyListeners("shareEnded", o);
     }
 
     /** A secret of the app's screens (the pairing), from storage encrypted with a Keystore key. */

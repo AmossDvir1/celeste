@@ -39,6 +39,7 @@ import { useApp } from '../store'
 import { Arc, Shimmer, buzz, greeting, rise } from '../ui'
 import { ModelChip } from '../ModelPicker'
 import { AttachButton, Chips, ProjectFiles, useAttachments } from '../Attach'
+import { ShareButton } from '../Share'
 import { WatchScreen } from '../Watch'
 
 const TOOL_ICON: Record<ToolKind, LucideIcon> = {
@@ -247,6 +248,7 @@ function DesktopRow({ it }: { it: Extract<TimelineItem, { kind: 'desktop' }> }) 
           <Eye size={15} /> Watch
         </button>
       )}
+      {it.where === 'phone' && !it.ended && <ShareButton />}
       {watching && canWatch && <WatchScreen onClose={() => setWatching(false)} />}
     </div>
   )

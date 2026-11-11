@@ -477,6 +477,10 @@ export interface CoreApi {
   'phone.remove': (phoneId: string) => PhoneStatus
   /** Allow or stop a phone watching the computer's screen while the assistant uses it (docs/PHONE_PLAN.md 7.3). */
   'phone.setWatch': (phoneId: string, on: boolean) => PhoneStatus
+  /** The window's answer to a `phoneView` push: its WebRTC answer, or null when it cannot show it. */
+  'phone.viewAnswer': (requestId: string, sdp: string | null) => void
+  /** The person pressed Stop on the panel showing a phone's screen: the phone is told to stop sharing. */
+  'phone.viewStop': (phoneId: string) => void
   /** The person's answer to a phone asking to connect, after comparing the three pictures. */
   'phone.answer': (pairId: string, allow: boolean) => PhoneStatus
 }
@@ -514,6 +518,10 @@ export type CorePush =
   | { type: 'phone' }
   /** A phone is asking to connect (the person compares the pictures and answers), or no longer is (null). */
   | { type: 'phonePairing'; request: PhonePairRequest | null }
+  /** A phone offers to show its screen here (docs/PHONE_PLAN.md 7.3): the window answers with `phone.viewAnswer`. */
+  | { type: 'phoneView'; requestId: string; phoneId: string; name: string; offer: string; servers: { urls: string[]; username?: string; credential?: string }[] }
+  /** That phone stopped showing its screen. */
+  | { type: 'phoneViewEnd'; phoneId: string }
 
 /** Wire format over the message port between the window and Core. */
 export type CoreRequest = { id: number; method: CoreMethod; params: unknown[] }

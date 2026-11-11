@@ -49,6 +49,12 @@
             </intent-filter>
         </service>
 
+        <!-- Showing this phone's screen on the computer: Android needs this service running while the screen is captured. -->
+        <service
+            android:name=".ScreenShareService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+
         <receiver
             android:name=".ApprovalReceiver"
             android:exported="false" />
@@ -116,6 +122,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Phone abilities: set an alarm or timer in the clock app; find an app to open by its name. -->
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />

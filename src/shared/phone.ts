@@ -43,6 +43,9 @@ export const PHONE_METHODS = [
   /** Watch the computer's screen while the assistant uses it (`[PhoneLinkOffer]` → `PhoneLinkAnswer`, a video offer); `phone.watchStop` ends it. */
   'phone.watch',
   'phone.watchStop',
+  /** Show this phone's screen on the computer (`[PhoneLinkOffer]`, a video offer, → `PhoneLinkAnswer`); `phone.viewStop` ends it. */
+  'phone.view',
+  'phone.viewStop',
   'phone.workflows',
   'phone.runWorkflow',
   'sessions.get',
@@ -167,6 +170,10 @@ export interface PhoneRequest {
 export interface PhoneRequestPush {
   type: 'phoneRequest'
   request: PhoneRequest
+}
+/** Sent on a phone's stream when the person pressed Stop on the computer's panel showing the phone's screen: stop sharing it. */
+export interface PhoneViewStopPush {
+  type: 'phoneViewStop'
 }
 /** Sent on a phone's stream when the person pressed Stop in the chat: drop these requests' cards, and end phone control. */
 export interface PhoneCancelPush {
