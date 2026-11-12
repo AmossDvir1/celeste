@@ -38,7 +38,7 @@ import { groupLabel, toBlocks, type ThinkingItem, type ToolItem } from '@/featur
 import { useApp } from '../store'
 import { Arc, Shimmer, buzz, greeting, rise } from '../ui'
 import { ModelChip } from '../ModelPicker'
-import { AttachButton, Chips, PasteChip, ProjectFiles, pastedFiles, useAttachments } from '../Attach'
+import { AttachButton, Chips, ProjectFiles, pastedFiles, useAttachments } from '../Attach'
 import { WatchScreen } from '../Watch'
 
 const TOOL_ICON: Record<ToolKind, LucideIcon> = {
@@ -540,7 +540,6 @@ function Composer({
         </div>
       )}
       <Chips files={att.files} context={context} onRemoveFile={att.remove} onRemoveContext={(p) => setContext((c) => c.filter((x) => x.path !== p))} />
-      {canAttach && <PasteChip onPick={att.add} />}
       <div className="composer">
         {canAttach && <AttachButton onPick={att.add} />}
         <textarea ref={ta} rows={1} placeholder={placeholder} value={text} onChange={(e) => setText(e.target.value)} onPaste={canAttach ? (e) => pastedFiles(e, att.add) : undefined} />
@@ -780,7 +779,6 @@ function SeededComposer({ seed, disabled, how, extra }: { seed: string; disabled
     <div className="composer-wrap" style={disabled ? { opacity: 0.5, pointerEvents: 'none' } : undefined}>
       {extra && <div className="modelbar">{extra}</div>}
       <Chips files={att.files} context={[]} onRemoveFile={att.remove} onRemoveContext={() => undefined} />
-      <PasteChip onPick={att.add} />
       <div className="composer">
         <AttachButton onPick={att.add} />
         <textarea rows={1} autoFocus={!!seed} placeholder="Message Celeste" value={text} onChange={(e) => setText(e.target.value)} onPaste={(e) => pastedFiles(e, att.add)} />

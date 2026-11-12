@@ -46,8 +46,6 @@ interface CelesteNativePlugin {
   openNotificationAccess(): Promise<void>
   openAppInfo(): Promise<void>
   openAccessibility(): Promise<void>
-  clipboardInfo(): Promise<{ files: number }>
-  clipboardFiles(): Promise<{ files: { name: string; mime: string; data: string }[] }>
 }
 
 /** Which phone abilities the person switched on, and whether Android's Notification access is on for Celeste. */
@@ -94,8 +92,6 @@ const Native = registerPlugin<CelesteNativePlugin>('CelesteNative', {
     openNotificationAccess: async () => undefined,
     openAppInfo: async () => undefined,
     openAccessibility: async () => undefined,
-    clipboardInfo: async () => ({ files: 0 }),
-    clipboardFiles: async () => ({ files: [] })
   } as unknown as CelesteNativePlugin
 })
 
@@ -170,17 +166,26 @@ export const abilities = {
   openAccessibility: (): Promise<void> => Native.openAccessibility().catch(() => undefined)
 }
 
-/** Files (a copied picture, a copied file) on the clipboard: Android's WebView does not hand them to a paste. */
-export const clipboard = {
-  /** How many files the clipboard holds now (0 off Android). */
-  count: (): Promise<number> => Native.clipboardInfo().then((r) => r.files, () => 0),
-  /** Reads them, as the person pressed Paste. */
-  async files(): Promise<File[]> {
-    const { files } = await Native.clipboardFiles()
-    return files.map((f) => {
-      const bytes = Uint8Array.from(atob(f.data), (c) => c.charCodeAt(0))
-      return new File([bytes], f.name, { type: f.mime })
+/**
+ * Pictures and files pasted into the message box (from the keyboard's clipboard, or the Paste in the text's menu): Android's
+ * web view does not give them to the page's own paste, so the app's WebView sends them here. Returns how to stop listening.
+ */
+export function onPasted(handler: (files: File[], error?: string) => void): () => void {
+  let off: (() => void) | null = null
+  let stopped = false
+  void (Native as unknown as { addListener(e: string, f: (d: { files?: { name: string; mime: string; data: string }[]; error?: string }) => void): Promise<{ remove(): void }> })
+    .addListener('pasted', (d) => {
+      const files = (d.files ?? []).map((f) => new File([Uint8Array.from(atob(f.data), (c) => c.charCodeAt(0))], f.name, { type: f.mime }))
+      handler(files, d.error)
     })
+    .then((h) => {
+      if (stopped) h.remove()
+      else off = () => h.remove()
+    })
+    .catch(() => undefined)
+  return () => {
+    stopped = true
+    off?.()
   }
 }
 

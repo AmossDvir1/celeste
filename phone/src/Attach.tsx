@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowLeft, Check, ChevronRight, ClipboardPaste, FileText, Folder, LoaderCircle, Paperclip, X } from 'lucide-react'
+import { ArrowLeft, Check, ChevronRight, FileText, Folder, LoaderCircle, Paperclip, X } from 'lucide-react'
 import type { ContextRef } from '@shared/agent'
 import type { FileListing } from '@shared/api'
 import { PHONE_CONTEXT_MAX, PHONE_UPLOAD_MAX_BYTES, PHONE_UPLOAD_MAX_FILES, type PhoneUploaded, type PhoneUploadPart } from '@shared/phone'
-import { clipboard } from './native'
+import { onPasted } from './native'
 import { useApp } from './store'
 import { Shimmer, buzz } from './ui'
 
@@ -207,6 +207,9 @@ export function useAttachments() {
     setFiles([])
   }
 
+  // Pictures and files pasted into the box (the keyboard's clipboard, or Paste in the text's menu) join the message.
+  useEffect(() => onPasted((files, error) => (error ? useApp.getState().say(error) : files.length && add(files))), [add])
+
   // Leaving with files that were never sent: the computer lets them go.
   useEffect(
     () => () => {
@@ -238,50 +241,6 @@ export function pastedFiles(e: { clipboardData: DataTransfer | null; preventDefa
   if (!files.length) return
   e.preventDefault()
   add(files)
-}
-
-/**
- * "Paste" for a picture or file that was copied (a screenshot, a photo, a file from another app). Shown only while the
- * clipboard holds one, which is looked at often but only by its description: the files themselves are read when it is pressed.
- */
-export function PasteChip({ onPick }: { onPick: (files: File[]) => void }) {
-  const [count, setCount] = useState(0)
-  const [busy, setBusy] = useState(false)
-  useEffect(() => {
-    let live = true
-    const look = () => !document.hidden && void clipboard.count().then((n) => live && setCount(n))
-    look()
-    const timer = setInterval(look, 2000)
-    document.addEventListener('visibilitychange', look)
-    window.addEventListener('focus', look)
-    return () => {
-      live = false
-      clearInterval(timer)
-      document.removeEventListener('visibilitychange', look)
-      window.removeEventListener('focus', look)
-    }
-  }, [])
-  if (!count) return null
-  return (
-    <div className="achips">
-      <button
-        type="button"
-        className="achip"
-        disabled={busy}
-        aria-label={count === 1 ? 'Paste the copied file' : `Paste the ${count} copied files`}
-        onClick={() => {
-          setBusy(true)
-          clipboard.files().then(
-            (files) => files.length && onPick(files),
-            (err: unknown) => useApp.getState().say(err instanceof Error ? err.message : 'Could not paste that.')
-          ).finally(() => setBusy(false))
-        }}
-      >
-        {busy ? <LoaderCircle size={16} className="spin" /> : <ClipboardPaste size={16} />}
-        <span className="nm">{count === 1 ? 'Paste copied file' : `Paste ${count} copied files`}</span>
-      </button>
-    </div>
-  )
 }
 
 export function AttachButton({ onPick, disabled }: { onPick: (files: File[]) => void; disabled?: boolean }) {
