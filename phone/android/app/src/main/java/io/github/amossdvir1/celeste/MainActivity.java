@@ -13,22 +13,13 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(CelesteNativePlugin.class);
         super.onCreate(savedInstanceState);
-        if (savedInstanceState == null) {
-            shared(getIntent());
-            asked(getIntent());
-        }
+        if (savedInstanceState == null) shared(getIntent());
     }
 
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         shared(intent);
-        asked(intent);
-    }
-
-    /** Opened from the notification that asks to show this screen on the computer: the app asks Android's permission now. */
-    private void asked(Intent intent) {
-        if (intent != null && intent.getBooleanExtra(ScreenShare.EXTRA_ASKED, false)) CelesteNativePlugin.shareAsked = true;
     }
 
     /** Text or a link shared to Celeste from another app: kept for the app to start a chat with. */

@@ -43,9 +43,6 @@ export const PHONE_METHODS = [
   /** Watch the computer's screen while the assistant uses it (`[PhoneLinkOffer]` → `PhoneLinkAnswer`, a video offer); `phone.watchStop` ends it. */
   'phone.watch',
   'phone.watchStop',
-  /** Show this phone's screen on the computer (`[PhoneLinkOffer]`, a video offer, → `PhoneLinkAnswer`); `phone.viewStop` ends it. */
-  'phone.view',
-  'phone.viewStop',
   'phone.workflows',
   'phone.runWorkflow',
   'sessions.get',
@@ -170,14 +167,6 @@ export interface PhoneRequest {
 export interface PhoneRequestPush {
   type: 'phoneRequest'
   request: PhoneRequest
-}
-/** Sent when the person presses "Show phone screen" on the computer: the phone asks Android's own permission and starts sharing. */
-export interface PhoneViewStartPush {
-  type: 'phoneViewStart'
-}
-/** Sent on a phone's stream when the person pressed Stop on the computer's panel showing the phone's screen: stop sharing it. */
-export interface PhoneViewStopPush {
-  type: 'phoneViewStop'
 }
 /** Sent on a phone's stream when the person pressed Stop in the chat: drop these requests' cards, and end phone control. */
 export interface PhoneCancelPush {
@@ -510,7 +499,6 @@ export type PhoneWake =
   | { type: 'notify'; kind: 'approval' | 'ask'; id: string; sessionId: string; chat: string; text: string }
   | PhoneRequestPush
   | PhoneCancelPush
-  | PhoneViewStartPush
 
 /** What a phone sends through the relay: the same sealed boxes as `POST /rpc` and `GET /events`. */
 export type RelayPhoneFrame = { t: 'rpc'; id: number; phone: string; box: string } | { t: 'listen'; phone: string; auth: string }

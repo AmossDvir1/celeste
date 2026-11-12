@@ -24,8 +24,6 @@ import {
   type PhoneLinkOffer,
   type PhoneMethod,
   type PhoneCancelPush,
-  type PhoneViewStartPush,
-  type PhoneViewStopPush,
   type PhoneRelayInfo,
   type PhoneRequestPush,
   type RelayHostFrame,
@@ -114,7 +112,7 @@ export type LinkState = 'connecting' | 'connected' | 'offline' | 'refused'
  */
 const SILENT_MS = 45_000
 
-type Push = CorePush | PhoneRequestPush | PhoneCancelPush | PhoneViewStopPush | PhoneViewStartPush
+type Push = CorePush | PhoneRequestPush | PhoneCancelPush
 /** How the phone reaches the computer just now: straight over the Wi-Fi, or through the relay. */
 export type LinkRoute = 'wifi' | 'relay' | 'direct'
 

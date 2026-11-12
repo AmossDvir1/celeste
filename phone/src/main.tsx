@@ -5,8 +5,7 @@ import { createRoot } from 'react-dom/client'
 import { x25519 } from '@noble/curves/ed25519.js'
 import { setX25519Fallback } from '@shared/phone'
 import { App } from './App'
-import { onBack, onResume, onShared, screen, setupNotifications } from './native'
-import { useShare } from './Share'
+import { onBack, onResume, onShared, setupNotifications } from './native'
 import { restorePairing, useApp } from './store'
 
 // Older WebViews (before Chrome 133) have no X25519 in WebCrypto: the audited pure-JS one stands in.
@@ -29,15 +28,7 @@ void setupNotifications((action, extra) => {
   void st.openChat(extra.sessionId)
 })
 onBack(() => useApp.getState().back())
-// "Show phone screen" was pressed on the computer while the app is open: Android's dialog comes up at once.
-useApp.subscribe((s, before) => {
-  if (s.shareAsked !== before.shareAsked) void useShare.getState().start()
-})
-// ... or it was pressed while the app was closed or away: the notification opened the app, which asks now.
-const shareIfAsked = () => void screen.takeAsked().then((yes) => yes && void useShare.getState().start())
-shareIfAsked()
 onResume(() => {
-  shareIfAsked()
   const st = useApp.getState()
   if (!st.pairing) return
   // The WebView froze the page while it was hidden, and a stream open across that never delivers again: a new one says

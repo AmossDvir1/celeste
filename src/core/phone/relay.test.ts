@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import type { CorePush } from '@shared/api'
-import { LABEL, RELAY_HOST_PROTOCOL, RELAY_PHONE_PROTOCOL, open, relaySocketUrl, seal, sessionKey, type PhoneBootstrap, type PhoneCancelPush, type PhoneViewStartPush, type PhoneViewStopPush, type PhonePairRequest, type PhoneRequestPush, type PhoneWake, type SealedReply } from '@shared/phone'
+import { LABEL, RELAY_HOST_PROTOCOL, RELAY_PHONE_PROTOCOL, open, relaySocketUrl, seal, sessionKey, type PhoneBootstrap, type PhoneCancelPush, type PhonePairRequest, type PhoneRequestPush, type PhoneWake, type SealedReply } from '@shared/phone'
 import { PhoneLink, pair, type LinkState, type PhonePairing } from '@shared/phone-client'
 import { BURST, CLOSE, hostFrame, role, take } from '../../../relay/src/rules'
 import { startGoogle, type StandInGoogle } from '../testing/google'
@@ -72,7 +72,7 @@ async function answerOverHttp(relay: StandInRelay, pairing: PhonePairing, method
 
 /** A phone that is away from home: the computer's Wi-Fi address does not answer it, until `home.at` is set. */
 function away(pairing: PhonePairing, home = { at: false }) {
-  const got: (CorePush | PhoneRequestPush | PhoneCancelPush | PhoneViewStopPush | PhoneViewStartPush)[] = []
+  const got: (CorePush | PhoneRequestPush | PhoneCancelPush)[] = []
   const states: LinkState[] = []
   const link = new PhoneLink(pairing, { fetch: (...a) => (home.at ? fetch(...a) : Promise.reject(new Error('unreachable'))), probeMs: 300, homeCheckMs: 100 })
   const stop = link.listen((p) => got.push(p), (s) => states.push(s))

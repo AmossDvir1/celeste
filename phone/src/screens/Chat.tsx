@@ -39,7 +39,6 @@ import { useApp } from '../store'
 import { Arc, Shimmer, buzz, greeting, rise } from '../ui'
 import { ModelChip } from '../ModelPicker'
 import { AttachButton, Chips, PasteChip, ProjectFiles, pastedFiles, useAttachments } from '../Attach'
-import { ShareButton } from '../Share'
 import { WatchScreen } from '../Watch'
 
 const TOOL_ICON: Record<ToolKind, LucideIcon> = {
@@ -258,7 +257,6 @@ function DesktopRow({ it }: { it: Extract<TimelineItem, { kind: 'desktop' }> }) 
         </div>
         <div className="d">{it.ended ? `${it.ended.actions} actions · ${it.ended.why}` : `${it.actions.length} actions so far`}</div>
       </div>
-      {it.where === 'phone' && !it.ended && <ShareButton />}
     </div>
   )
 }

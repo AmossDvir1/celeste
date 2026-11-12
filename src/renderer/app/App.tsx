@@ -13,7 +13,6 @@ import { ChangesPanel, TerminalPanel } from '@/features/develop/panels'
 import { FilesPanel } from '@/features/develop/FilesPanel'
 import { SearchDialog } from '@/features/search/SearchDialog'
 import { PhonePairingDialog } from '@/features/phone/PhonePairingDialog'
-import { PhoneScreenPanel } from '@/features/phone/PhoneScreenPanel'
 import { SettingsDialog } from '@/features/settings/SettingsDialog'
 import { ToolsPanel } from '@/features/tools/ToolsPanel'
 import { Wizard } from '@/features/wizard/Wizard'
@@ -172,7 +171,6 @@ export function App() {
         <McpImportDialog />
         <FolderPicker />
         <PhonePairingDialog />
-        <PhoneScreenPanel />
         <LinkChoiceDialog />
         <Toasts />
       </div>

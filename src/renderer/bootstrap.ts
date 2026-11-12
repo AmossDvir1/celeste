@@ -4,7 +4,6 @@ import { useDrafts } from '@/stores/drafts'
 import { useMcp } from '@/stores/mcp'
 import { useModels } from '@/stores/models'
 import { usePhone } from '@/stores/phone'
-import { usePhoneView } from '@/stores/phoneView'
 import { useRuns } from '@/stores/runs'
 import { useSessions } from '@/stores/sessions'
 import { setSaveErrorHandler, useSettings } from '@/stores/settings'
@@ -42,7 +41,6 @@ export async function bootstrap(): Promise<void> {
     useWorkflows.getState().applyPush(push)
     useRuns.getState().applyPush(push)
     usePhone.getState().applyPush(push)
-    usePhoneView.getState().applyPush(push)
   })
   // A phone may already be waiting for an answer from before this window opened.
   void usePhone.getState().refresh()

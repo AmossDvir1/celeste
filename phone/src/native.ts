@@ -5,7 +5,7 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
 import { App } from '@capacitor/app'
 import { LocalNotifications } from '@capacitor/local-notifications'
-import { sessionKeyBytes, toB64, type IceServer } from '@shared/phone'
+import { sessionKeyBytes, toB64 } from '@shared/phone'
 import type { PhonePairing } from '@shared/phone-client'
 
 export interface FoundComputer {
@@ -46,12 +46,6 @@ interface CelesteNativePlugin {
   openNotificationAccess(): Promise<void>
   openAppInfo(): Promise<void>
   openAccessibility(): Promise<void>
-  /** This phone's screen on the computer: Android's own dialog, then the WebRTC offer (the addresses gathered). */
-  shareScreen(opts: { servers: IceServer[] }): Promise<{ sdp: string }>
-  shareAnswer(opts: { sdp: string }): Promise<void>
-  shareStop(): Promise<void>
-  /** The person opened the app from the "show this screen on your computer?" notification (once). */
-  takeShareAsked(): Promise<{ asked: boolean }>
   clipboardInfo(): Promise<{ files: number }>
   clipboardFiles(): Promise<{ files: { name: string; mime: string; data: string }[] }>
 }
@@ -100,12 +94,6 @@ const Native = registerPlugin<CelesteNativePlugin>('CelesteNative', {
     openNotificationAccess: async () => undefined,
     openAppInfo: async () => undefined,
     openAccessibility: async () => undefined,
-    shareScreen: async () => {
-      throw new Error('Showing the screen needs the Android app.')
-    },
-    shareAnswer: async () => undefined,
-    shareStop: async () => undefined,
-    takeShareAsked: async () => ({ asked: false }),
     clipboardInfo: async () => ({ files: 0 }),
     clipboardFiles: async () => ({ files: [] })
   } as unknown as CelesteNativePlugin
@@ -193,31 +181,6 @@ export const clipboard = {
       const bytes = Uint8Array.from(atob(f.data), (c) => c.charCodeAt(0))
       return new File([bytes], f.name, { type: f.mime })
     })
-  }
-}
-
-/** This phone's screen on the computer (docs/PHONE_PLAN.md 7.3), the part only Android can do: capture it and make the offer. */
-export const screen = {
-  start: (servers: IceServer[]): Promise<{ sdp: string }> => Native.shareScreen({ servers }),
-  answer: (sdp: string): Promise<void> => Native.shareAnswer({ sdp }),
-  stop: (): Promise<void> => Native.shareStop().catch(() => undefined),
-  /** True once if the app was opened from the notification that asks to show this screen on the computer. */
-  takeAsked: (): Promise<boolean> => Native.takeShareAsked().then((r) => r.asked, () => false),
-  /** Calls `listener` when the capture ends on its own (the screen locked, Android's chip was used, the link was lost). */
-  onEnded(listener: (why: string) => void): () => void {
-    let off: (() => void) | null = null
-    let stopped = false
-    void (Native as unknown as { addListener(e: string, f: (d: { why?: string }) => void): Promise<{ remove(): void }> })
-      .addListener('shareEnded', (d) => listener(d.why ?? ''))
-      .then((h) => {
-        if (stopped) h.remove()
-        else off = () => h.remove()
-      })
-      .catch(() => undefined)
-    return () => {
-      stopped = true
-      off?.()
-    }
   }
 }
 

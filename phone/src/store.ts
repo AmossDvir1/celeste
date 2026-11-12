@@ -6,12 +6,12 @@ import { create } from 'zustand'
 import type { AskAnswers, ContextRef } from '@shared/agent'
 import type { CorePush, SessionSummary, StoredEvent } from '@shared/api'
 import { EMPTY_QUEUE, type QueueAction, type SendMode } from '@shared/queue'
-import type { PhoneBootstrap, PhoneCancelPush, PhoneModelChoice, PhoneModels, PhoneNewSession, PhoneRequestPush, PhoneViewStartPush, PhoneViewStopPush } from '@shared/phone'
+import type { PhoneBootstrap, PhoneCancelPush, PhoneModelChoice, PhoneModels, PhoneNewSession, PhoneRequestPush } from '@shared/phone'
 import { PhoneLink, type LinkState, type PhonePairing } from '@shared/phone-client'
 import type { RunSummary } from '@shared/workflow'
 import { foldEvents, resolveApproval, resolveAsk } from '@/stores/reduce'
 import type { Session } from '@/stores/types'
-import { cards, clearNotification, discover, handlePhoneRequest, isNative, keepRunning, notificationsAllowed, notify, screen, secure, shareLine } from './native'
+import { cards, clearNotification, discover, handlePhoneRequest, isNative, keepRunning, notificationsAllowed, notify, secure, shareLine } from './native'
 
 export type Tab = 'chats' | 'workflows' | 'phone'
 export type Screen = { name: 'setup' } | { name: 'home'; tab: Tab } | { name: 'chat'; id: string } | { name: 'new' }
@@ -104,8 +104,6 @@ interface AppState {
   toast: { text: string; at: number } | null
   /** Set when the computer removed this phone. */
   removed: boolean
-  /** Counts "Show phone screen" presses on the computer: each one starts sharing (main.tsx watches it). */
-  shareAsked: number
 
   go: (screen: Screen, nav?: Nav) => void
   back: () => boolean
@@ -128,7 +126,7 @@ interface AppState {
   approve: (id: string, requestId: string, allow: boolean, minutes?: number) => Promise<void>
   answer: (id: string, requestId: string, answers: AskAnswers) => Promise<void>
   loadRuns: () => Promise<void>
-  applyPush: (push: CorePush | PhoneRequestPush | PhoneCancelPush | PhoneViewStopPush | PhoneViewStartPush) => void
+  applyPush: (push: CorePush | PhoneRequestPush | PhoneCancelPush) => void
 }
 
 let unlisten: (() => void) | null = null
@@ -149,7 +147,6 @@ export const useApp = create<AppState>((set, get) => ({
   prefs: load<Prefs>(PREFS_KEY, { theme: 'system', stay: false, notify: true }),
   toast: null,
   removed: false,
-  shareAsked: 0,
 
   go: (screen, nav = 'forward') => {
     // Pages slide and the chat title glides into the header, with the View Transitions API the WebView has.
@@ -399,13 +396,6 @@ export const useApp = create<AppState>((set, get) => ({
         return
       case 'phoneCancel':
         void cards.cancel(push)
-        return
-      case 'phoneViewStart':
-        set((s) => ({ shareAsked: s.shareAsked + 1 }))
-        return
-      case 'phoneViewStop':
-        // Stop was pressed on the panel on the computer: stop showing this screen.
-        void screen.stop()
         return
       case 'run': {
         const runs = [push.run, ...get().runs.filter((r) => r.id !== push.run.id)].sort((a, b) => b.startedAt - a.startedAt).slice(0, 30)
