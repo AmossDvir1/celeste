@@ -101,6 +101,8 @@ export function ConversationView({ sessionId }: { sessionId: string }) {
     for (const it of session?.items ?? []) if (it.kind === 'tool') it.diff?.forEach((d) => paths.add(d.path))
     return paths.size
   }, [saved, net, session?.items])
+  // Every message sent here, oldest first, for Up and Down in the message box.
+  const prompts = useMemo(() => (session?.items ?? []).flatMap((i) => (i.kind === 'user' ? [i.text] : [])), [session?.items])
 
   // Start at the end when a session opens.
   useLayoutEffect(() => {
@@ -230,6 +232,7 @@ export function ConversationView({ sessionId }: { sessionId: string }) {
               onEditDone={() => dockRef.current?.querySelector('textarea')?.focus()}
             />
             <Composer
+              key={sessionId}
               variant="dock"
               mode={session.mode}
               text={text}
@@ -250,8 +253,11 @@ export function ConversationView({ sessionId }: { sessionId: string }) {
               onStop={() => stop(sessionId)}
               onEditLast={() => {
                 const last = session.queue.items.at(-1)
-                if (last) setQueueEdit({ id: last.id, text: last.text })
+                if (!last) return false
+                setQueueEdit({ id: last.id, text: last.text })
+                return true
               }}
+              history={prompts}
               placeholder={session.status === 'waiting' ? 'Answer above, or type a message to send after…' : busy ? 'Type a message to send after this answer…' : 'Message Celeste...'}
             />
             <div className={cn('mt-2 flex h-4 items-center justify-center gap-2 text-[11px] text-ink-faint')}>

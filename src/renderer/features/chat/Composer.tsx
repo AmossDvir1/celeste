@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { ListPlus, Paperclip, Send, Square, TriangleAlert, X, Zap } from 'lucide-react'
 import type { ContextRef, SessionMode, UserInput } from '@shared/agent'
 import type { SendMode } from '@shared/queue'
@@ -15,6 +15,33 @@ import { ApprovalPicker, ModelControls, type Prefs } from './controls'
 import { SlashList, WorkflowChip, parseSlash, useSlash } from './slash'
 
 const NO_CONTEXT: ContextRef[] = []
+const NO_HISTORY: string[] = []
+
+/** The visual line (counting from 0, wrapped lines included) that the caret at `pos` is on, measured with a hidden copy of the box. */
+function caretLine(el: HTMLTextAreaElement, pos: number): number {
+  const style = getComputedStyle(el)
+  const mirror = document.createElement('div')
+  for (const name of Array.from(style)) mirror.style.setProperty(name, style.getPropertyValue(name))
+  Object.assign(mirror.style, {
+    position: 'absolute',
+    visibility: 'hidden',
+    top: '0',
+    left: '-9999px',
+    height: 'auto',
+    overflow: 'hidden',
+    whiteSpace: 'pre-wrap',
+    overflowWrap: 'break-word'
+  })
+  // The marker is the character right after the caret: a zero-width one at a wrap point would stay on the line above.
+  const marker = document.createElement('span')
+  marker.textContent = el.value.charAt(pos) || '\u200b'
+  mirror.append(el.value.slice(0, pos), marker)
+  document.body.appendChild(mirror)
+  const lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.2
+  const line = Math.round(marker.offsetTop / lineHeight)
+  mirror.remove()
+  return line
+}
 
 export interface ComposerProps {
   variant: 'home' | 'dock'
@@ -33,8 +60,10 @@ export interface ComposerProps {
   /** `mode` says what to do when the assistant is working: wait for its turn, or stop it and send now. */
   onSend: (input: UserInput, mode: SendMode) => void | Promise<boolean>
   onStop?: () => void
-  /** Up arrow in an empty box: change the newest waiting message. */
-  onEditLast?: () => void
+  /** Up arrow in an empty box: change the newest waiting message. Returns false when there is none. */
+  onEditLast?: () => boolean
+  /** The messages sent in this conversation, oldest first. Up and Down step through them, like a shell. */
+  history?: string[]
   autoFocus?: boolean
   placeholder?: string
 }
@@ -54,6 +83,7 @@ export function Composer({
   onSend,
   onStop,
   onEditLast,
+  history = NO_HISTORY,
   autoFocus,
   placeholder =  'Message Celeste...'
 }: ComposerProps) {
@@ -71,6 +101,10 @@ export function Composer({
   const imageBlocked = model?.images === false && attachments.items.some((a) => a.mime.startsWith('image/'))
   // While a message is being sent the prompt stays in the box, and it is not sent twice.
   const [sending, setSending] = useState(false)
+  // Which earlier prompt Up/Down is showing (an index into `history`), or null when the box holds the person's own text.
+  const [recall, setRecall] = useState<number | null>(null)
+  // Set when Up/Down moves to another prompt: the caret goes to its first line, and the arrow keys move line by line from there.
+  const caretToStart = useRef(false)
 
   // Grow with the text, up to a limit.
   useEffect(() => {
@@ -83,6 +117,19 @@ export function Composer({
   useEffect(() => {
     if (autoFocus) areaRef.current?.focus()
   }, [autoFocus])
+
+  useLayoutEffect(() => {
+    if (!caretToStart.current) return
+    caretToStart.current = false
+    areaRef.current?.setSelectionRange(0, 0)
+  }, [recall, text])
+
+  /** Shows the prompt at `index` of the history in the box. */
+  function recallAt(index: number | null) {
+    caretToStart.current = index !== null
+    setRecall(index)
+    onText(index === null ? '' : history[index])
+  }
 
   const submit = async (sendMode: SendMode = 'queue') => {
     if (slash.chip) {
@@ -105,6 +152,7 @@ export function Composer({
     setSending(false)
     if (sent === false) return
     attachments.clear()
+    setRecall(null)
     onText('')
   }
 
@@ -216,7 +264,10 @@ export function Composer({
         rows={1}
         placeholder={placeholder}
         aria-label="Message"
-        onChange={(e) => onText(e.target.value)}
+        onChange={(e) => {
+          setRecall(null)
+          onText(e.target.value)
+        }}
         aria-controls={slash.open ? listId : undefined}
         aria-activedescendant={slash.open ? `${listId}-${slash.index}` : undefined}
         onKeyDown={(e) => {
@@ -237,10 +288,32 @@ export function Composer({
               return
             }
           }
-          if (e.key === 'ArrowUp' && onEditLast && !text && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && !e.nativeEvent.isComposing) {
-            e.preventDefault()
-            onEditLast()
-            return
+          const arrow = e.key === 'ArrowUp' || e.key === 'ArrowDown'
+          const plainKey = !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && !e.nativeEvent.isComposing
+          if (arrow && plainKey && recall === null && !text) {
+            if (e.key === 'ArrowUp' && onEditLast?.()) {
+              e.preventDefault()
+              return
+            }
+            if (e.key === 'ArrowUp' && history.length > 0) {
+              e.preventDefault()
+              recallAt(history.length - 1)
+              return
+            }
+          }
+          if (arrow && plainKey && recall !== null) {
+            const el = e.currentTarget
+            // Inside a prompt the arrows move the caret line by line; they change prompt only from the top or bottom line.
+            if (e.key === 'ArrowUp' && caretLine(el, el.selectionStart) === 0 && recall > 0) {
+              e.preventDefault()
+              recallAt(recall - 1)
+              return
+            }
+            if (e.key === 'ArrowDown' && caretLine(el, el.selectionEnd) === caretLine(el, el.value.length)) {
+              e.preventDefault()
+              recallAt(recall < history.length - 1 ? recall + 1 : null)
+              return
+            }
           }
           if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault()
