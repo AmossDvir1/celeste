@@ -255,6 +255,35 @@ html[data-nav=tab]::view-transition-new(screen) { animation:.3s var(--ease) .06s
 .m-tool.failed .st { color:var(--c-danger); }
 .m-tool.running .st { animation:rotate 1s linear infinite; color:var(--c-accent-text); }
 .tool-out { margin:-4px 0 0; padding:10px 12px; border-radius:0 0 14px 14px; background:var(--c-canvas); border:1px solid var(--c-edge); border-top:0; font-size:12px; max-height:240px; overflow:auto; white-space:pre-wrap; word-break:break-all; color:var(--c-ink-muted); }
+
+/* A box that scrolls under a thin bar (AutoScroll): the bar fades in while scrolling and out a second after. */
+.autoscroll { position:relative; }
+/* No overscroll-behavior here: even when the box has nothing to scroll, "contain" stops a swipe from reaching the chat. */
+.as-body { max-height:260px; overflow-y:auto; scrollbar-width:none; }
+.as-body::-webkit-scrollbar { display:none; }
+.as-bar { position:absolute; right:3px; top:0; width:4px; border-radius:4px; background:var(--c-ink-faint); opacity:0; transform:scaleX(.4); transform-origin:right center; transition:opacity .25s var(--ease), transform .25s var(--ease); pointer-events:none; }
+.as-bar.on { opacity:.7; transform:none; }
+.tool-box { margin:-4px 0 0; background:var(--c-canvas); border:1px solid var(--c-edge); border-top:0; border-radius:0 0 14px 14px; overflow:hidden; }
+.tool-box .as-body { padding:10px 12px; }
+.tool-txt { margin:0; font-size:12px; white-space:pre-wrap; word-break:break-all; color:var(--c-ink-muted); }
+.tool-diff { margin:-4px 0 0; background:var(--c-canvas); border:1px solid var(--c-edge); border-top:0; border-radius:0 0 14px 14px; overflow:hidden; }
+.tool-diff .as-body { padding:4px 0 8px; }
+.df-file { padding-bottom:6px; }
+.df-h { display:flex; align-items:center; gap:8px; padding:6px 12px; font-size:12px; background:var(--c-raised); }
+.df-p { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--c-ink); }
+.df-new { padding:0 6px; border-radius:6px; font-size:11px; color:var(--c-success); background:color-mix(in srgb, var(--c-success) 15%, transparent); }
+.df-add { color:var(--c-success); }
+.df-del { color:var(--c-danger); }
+.df-note { padding:8px 12px; font-size:12.5px; color:var(--c-ink-muted); }
+.df-at { padding:3px 12px; font-size:11.5px; color:var(--c-ink-faint); }
+.df-l { display:grid; grid-template-columns:30px 30px 1fr; font-size:12px; line-height:1.6; }
+.df-l .n { padding-right:6px; text-align:right; color:var(--c-ink-faint); opacity:.7; }
+.df-l .t { white-space:pre-wrap; word-break:break-all; padding-right:10px; color:var(--c-ink-muted); }
+.df-l.add { background:color-mix(in srgb, var(--c-success) 12%, transparent); }
+.df-l.add .t { color:var(--c-success); }
+.df-l.del { background:color-mix(in srgb, var(--c-danger) 12%, transparent); }
+.df-l.del .t { color:var(--c-danger); }
+
 .thinking { font-size:13.5px; color:var(--c-ink-faint); padding:0 4px; display:flex; align-items:center; gap:8px; }
 /* Thinking and tool calls folded into one line, opened with a tap. */
 .agroup-h, .think-h { display:flex; align-items:center; gap:6px; padding:2px 4px; font-size:13.5px; color:var(--c-ink-muted); text-align:left; }
@@ -345,6 +374,8 @@ input.opt.other:focus { border-color:var(--c-accent-edge); box-shadow:0 0 0 3px 
 
 .toast { position:absolute; left:16px; right:16px; bottom:calc(96px + env(safe-area-inset-bottom)); background:var(--c-ink); color:var(--c-canvas); border-radius:16px; padding:13px 16px; font-size:14px; display:flex; gap:10px; align-items:center; animation:toast-in .45s var(--spring) both; box-shadow:var(--shadow-pop); z-index:50; }
 @keyframes toast-in { from { transform:translateY(20px) scale(.96); opacity:0 } }
+.toast span { flex:1; min-width:0; }
+.toast-act { flex:none; background:none; border:0; padding:4px 2px 4px 10px; font:inherit; font-weight:700; color:var(--c-accent-text); cursor:pointer; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; }

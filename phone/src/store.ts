@@ -4,7 +4,7 @@
 import { flushSync } from 'react-dom'
 import { create } from 'zustand'
 import type { AskAnswers, ContextRef } from '@shared/agent'
-import type { CorePush, SessionSummary, StoredEvent } from '@shared/api'
+import { UNDO_WINDOW_MS, type CorePush, type SessionSummary, type StoredEvent } from '@shared/api'
 import { EMPTY_QUEUE, type QueueAction, type SendMode } from '@shared/queue'
 import type { PhoneBootstrap, PhoneCancelPush, PhoneModelChoice, PhoneModels, PhoneNewSession, PhoneRequestPush } from '@shared/phone'
 import { PhoneLink, type LinkState, type PhonePairing } from '@shared/phone-client'
@@ -101,13 +101,14 @@ interface AppState {
   screen: Screen
   nav: Nav
   prefs: Prefs
-  toast: { text: string; at: number } | null
+  toast: { text: string; at: number; action?: { label: string; run: () => void } } | null
   /** Set when the computer removed this phone. */
   removed: boolean
 
   go: (screen: Screen, nav?: Nav) => void
   back: () => boolean
-  say: (text: string) => void
+  /** Shows a short note; `action` adds a button (Undo) that stays for the computer's undo window. */
+  say: (text: string, action?: { label: string; run: () => void }) => void
   setPrefs: (patch: Partial<Prefs>) => void
 
   paired: (p: PhonePairing) => void
@@ -121,6 +122,10 @@ interface AppState {
   queueAction: (id: string, action: QueueAction) => Promise<void>
   newChat: (text: string, how?: PhoneNewSession, attachments?: string[]) => Promise<void>
   stop: (id: string) => Promise<void>
+  /** Delete a chat, on the computer too. Drops it here at once and offers Undo for the computer's undo window. */
+  remove: (id: string) => Promise<void>
+  /** Brings back a chat removed with `remove`, if the computer has not purged it yet. */
+  undoRemove: (id: string, gone?: Session) => Promise<void>
   loadModels: () => Promise<void>
   setModel: (id: string, choice: PhoneModelChoice) => Promise<void>
   approve: (id: string, requestId: string, allow: boolean, minutes?: number) => Promise<void>
@@ -170,12 +175,14 @@ export const useApp = create<AppState>((set, get) => ({
     return false
   },
 
-  say: (text) => {
+  say: (text, action) => {
     const at = Date.now()
-    set({ toast: { text, at } })
+    // The button hides the note when pressed, then runs the action.
+    const wrapped = action && { label: action.label, run: () => { set({ toast: null }); action.run() } }
+    set({ toast: { text, at, action: wrapped } })
     setTimeout(() => {
       if (get().toast?.at === at) set({ toast: null })
-    }, 3000)
+    }, action ? UNDO_WINDOW_MS : 3000)
   },
 
   setPrefs: (patch) => {
@@ -308,6 +315,34 @@ export const useApp = create<AppState>((set, get) => ({
       await get().link?.call('sessions.interrupt', id)
     } catch (err) {
       get().say(err instanceof Error ? err.message : 'Could not stop it.')
+    }
+  },
+
+  remove: async (id) => {
+    const link = get().link
+    if (!link) return
+    const gone = get().sessions[id]
+    try {
+      await link.call('sessions.remove', id)
+      const { [id]: _gone, ...rest } = get().sessions
+      set({ sessions: rest })
+      const screen = get().screen
+      if (screen.name === 'chat' && screen.id === id) get().go({ name: 'home', tab: 'chats' }, 'back')
+      get().say(`Deleted “${gone?.title ?? 'chat'}”`, { label: 'Undo', run: () => void get().undoRemove(id, gone) })
+    } catch (err) {
+      get().say(err instanceof Error ? err.message : 'Could not delete it.')
+    }
+  },
+
+  undoRemove: async (id, gone) => {
+    const link = get().link
+    if (!link) return
+    try {
+      const back = await link.call<SessionSummary | null>('sessions.restore', id)
+      if (!back) return get().say('Too late to undo.')
+      set({ sessions: { ...get().sessions, [id]: gone ? { ...gone, ...back } : fresh(back) } })
+    } catch (err) {
+      get().say(err instanceof Error ? err.message : 'Could not undo.')
     }
   },
 

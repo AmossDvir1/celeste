@@ -89,7 +89,7 @@ describe('the relay, away from home', () => {
     expect(bridge.listening()).toHaveLength(1)
 
     expect(await phone.link.call('sessions.get', 'a-private-chat-id')).toEqual({ echo: 'sessions.get' })
-    await expect(phone.link.call('sessions.remove' as never, 'x')).rejects.toThrow('Not available from a phone.')
+    await expect(phone.link.call('sessions.removeAll' as never)).rejects.toThrow('Not available from a phone.')
 
     bridge.broadcast({ type: 'removed', id: 'first-private-thing' })
     bridge.broadcast({ type: 'removed', id: 'second-private-thing' })

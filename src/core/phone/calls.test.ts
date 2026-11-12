@@ -137,6 +137,19 @@ describe('phone calls', () => {
     await expect(phoneCalls(() => api, () => 'PC')('runs.list', [])).rejects.toThrow('Not available from a phone.')
   })
 
+  it('deletes a chat for the phone, and brings it back when the phone asks within the undo window', async () => {
+    const removed: string[] = []
+    const api = {
+      ...fakeApi([]).api,
+      'sessions.remove': (id: string) => void removed.push(id),
+      'sessions.restore': (id: string) => (id === 's7' ? summary({ id: 's7' }) : null),
+    }
+    const call = phoneCalls(() => api, () => 'PC')
+    await call('sessions.remove', ['s7'])
+    expect(removed).toEqual(['s7'])
+    expect(await call('sessions.restore', ['s7'])).toMatchObject({ id: 's7' })
+  })
+
   it('lists the projects used for Develop, a separate copy counting for its project, newest first', async () => {
     const { api } = fakeApi([
       summary({ id: 'a', mode: 'develop', cwd: 'D:/code/site', updatedAt: 5 }),

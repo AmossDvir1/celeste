@@ -13,7 +13,7 @@
 
 **The app** (`phone/`, Capacitor 8 + React, the reviewed mock's design):
 - **Setup**: finds the computer by mDNS, or takes a typed address.
-- **Chats**: the greeting, search and a "needs you" banner. A chat follows live with the desktop's own reducer: Markdown, tools, approval and question cards, Stop.
+- **Chats**: the greeting, search and a "needs you" banner. A chat follows live with the desktop's own reducer: Markdown, tools, approval and question cards, Stop. A trash button in a chat's header deletes it after a confirm step (`sessions.remove` on the computer, which removes it from this phone too). Like the desktop, the delete is soft: an Undo button in the note stays for the computer's undo window (`sessions.restore`), then the chat is gone for good.
 - **New chat**: uses the newest chat's assistant and model.
 - **Workflows**: runs, read only.
 - **This phone**: notifications, Stay connected, theme, and Disconnect.

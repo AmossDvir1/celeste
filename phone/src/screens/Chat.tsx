@@ -1,4 +1,5 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
@@ -23,12 +24,13 @@ import {
   Search,
   Square,
   Terminal,
+  Trash2,
   Workflow,
   X,
   Zap,
   type LucideIcon
 } from 'lucide-react'
-import type { AskAnswers, ContextRef, Question, ToolKind } from '@shared/agent'
+import type { AskAnswers, ContextRef, FileDiff, Question, ToolKind } from '@shared/agent'
 import type { QueueAction, QueueState, SendMode } from '@shared/queue'
 import { describeDuration } from '@shared/desktop'
 import type { PhoneModelChoice, PhoneNewSession, PhoneProject } from '@shared/phone'
@@ -38,6 +40,8 @@ import { groupLabel, toBlocks, type ThinkingItem, type ToolItem } from '@/featur
 import { useApp } from '../store'
 import { Arc, Shimmer, buzz, greeting, rise } from '../ui'
 import { ModelChip } from '../ModelPicker'
+import { AutoScroll } from '../AutoScroll'
+import { continueNumbering } from '@shared/numbering'
 import { AttachButton, Chips, ProjectFiles, pastedFiles, useAttachments } from '../Attach'
 import { WatchScreen } from '../Watch'
 
@@ -61,6 +65,7 @@ export function Chat({ id }: { id: string }) {
   const box = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
   const [watching, setWatching] = useState(false)
+  const [confirming, setConfirming] = useState(false)
 
   const blocks = useMemo(() => toBlocks(s?.items ?? [], s?.mode ?? 'chat'), [s?.items, s?.mode])
 
@@ -94,7 +99,16 @@ export function Chat({ id }: { id: string }) {
 
   return (
     <>
-      <Head title={s.title || 'New chat'} sub={`${where} · on ${computer}`} onBack={() => go({ name: 'home', tab: 'chats' }, 'back')} live={online} />
+      <Head title={s.title || 'New chat'} sub={`${where} · on ${computer}`} onBack={() => go({ name: 'home', tab: 'chats' }, 'back')} onDelete={() => setConfirming(true)} live={online} />
+      {confirming &&
+        createPortal(
+          <DeleteSheet
+            title={s.title || 'New chat'}
+            onCancel={() => setConfirming(false)}
+            onDelete={() => void useApp.getState().remove(id)}
+          />,
+          document.querySelector('.app') ?? document.body
+        )}
             {usingComputer && (
               <div className="usebar">
                 <span className="dot live" style={{ width: 8, height: 8 }} />
@@ -167,7 +181,7 @@ export function Chat({ id }: { id: string }) {
   )
 }
 
-function Head({ title, sub, onBack, live }: { title: string; sub: string; onBack: () => void; live: boolean }) {
+function Head({ title, sub, onBack, onDelete, live }: { title: string; sub: string; onBack: () => void; onDelete?: () => void; live: boolean }) {
   return (
     <div className="chathead">
       <button className="iconbtn" aria-label="Back" onClick={onBack}>
@@ -178,6 +192,35 @@ function Head({ title, sub, onBack, live }: { title: string; sub: string; onBack
         <div className="b">
           <span className={`dot live${live ? '' : ' off'}`} style={{ width: 6, height: 6 }} />
           {sub}
+        </div>
+      </div>
+      {onDelete && (
+        <button className="iconbtn" aria-label="Delete this chat" onClick={onDelete}>
+          <Trash2 size={20} />
+        </button>
+      )}
+    </div>
+  )
+}
+
+/** Asks once before a chat is deleted for good, on the computer too. */
+function DeleteSheet({ title, onCancel, onDelete }: { title: string; onCancel: () => void; onDelete: () => void }) {
+  return (
+    <div className="card-layer">
+      <div className="scrim" onClick={onCancel} />
+      <div className="sheet" role="dialog" aria-label="Delete this chat?">
+        <div className="handle" />
+        <h1 className="h-l" style={{ fontSize: 20 }}>
+          Delete “{title}”?
+        </h1>
+        <div className="reason">It is removed from this computer and your phone. You can undo it for a few seconds.</div>
+        <div className="btnrow" style={{ marginTop: 16 }}>
+          <button className="btn tonal" onClick={onCancel}>
+            Keep it
+          </button>
+          <button className="btn danger" onClick={onDelete}>
+            Delete
+          </button>
         </div>
       </div>
     </div>
@@ -202,14 +245,54 @@ const ThinkingRow = memo(function ThinkingRow({ it }: { it: ThinkingItem }) {
   )
 })
 
+/** Why a file's change has no lines to show, or null when it has some. */
+const noLinesWhy = (d: FileDiff) =>
+  d.binary ? 'This file is not text, so there are no lines to show.' : d.truncated ? 'This change is too large to show here.' : d.hunks.length === 0 ? (d.status === 'added' ? 'An empty file.' : 'No text lines changed.') : null
+
+/** The changed lines of every file, with the lines around them, in one box that scrolls. */
+function DiffBox({ diffs }: { diffs: FileDiff[] }) {
+  return (
+    <AutoScroll className="tool-diff">
+      {diffs.map((d) => {
+        const why = noLinesWhy(d)
+        return (
+          <div key={d.path} className="df-file">
+            <div className="df-h">
+              <span className="df-p mono">{d.path}</span>
+              {d.status === 'added' && <span className="df-new">new</span>}
+              <span className="df-add">+{d.added}</span>
+              <span className="df-del">−{d.removed}</span>
+            </div>
+            {why && <div className="df-note">{why}</div>}
+            {!why &&
+              d.hunks.map((h, n) => (
+                <div key={`${n}-${h.header}`}>
+                  <div className="df-at mono">{h.header}</div>
+                  {h.lines.map((l, i) => (
+                    <div key={i} className={`df-l ${l.type}`}>
+                      <span className="n">{l.oldNo ?? ''}</span>
+                      <span className="n">{l.newNo ?? ''}</span>
+                      <span className="t mono">{`${l.type === 'add' ? '+' : l.type === 'del' ? '−' : ' '} ${l.text}`}</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+          </div>
+        )
+      })}
+    </AutoScroll>
+  )
+}
+
 const ToolCard = memo(function ToolCard({ it, detailed }: { it: ToolItem; detailed: boolean }) {
-  // In Develop a change or a running command opens by itself; everything else is a tap away.
-  const [open, setOpen] = useState(detailed && (!!it.diff?.length || it.status === 'running'))
+  // A change or a read opens on a tap; only a running command opens by itself in Develop.
+  const [open, setOpen] = useState(detailed && it.status === 'running')
   const Icon = TOOL_ICON[it.tool] ?? Workflow
   const detail = it.input ?? (it.diff?.length ? `${it.diff.length} ${it.diff.length === 1 ? 'file' : 'files'} changed` : '')
+  const expandable = !!it.output || !!it.diff?.length
   return (
     <div>
-      <button className={`m-tool ${it.status}${it.output ? ' tap' : ''}`} onClick={() => it.output && setOpen(!open)}>
+      <button className={`m-tool ${it.status}${expandable ? ' tap' : ''}`} onClick={() => expandable && setOpen(!open)}>
         <Icon size={17} />
         <div className="grow">
           <div className="l">{it.title}</div>
@@ -217,7 +300,12 @@ const ToolCard = memo(function ToolCard({ it, detailed }: { it: ToolItem; detail
         </div>
         <span className="st">{it.status === 'running' ? <LoaderCircle size={16} /> : it.status === 'ok' ? <Check size={16} /> : <X size={16} />}</span>
       </button>
-      {open && it.output && <pre className="tool-out">{(it.status === 'running' ? it.output.split('\n').slice(-8).join('\n') : it.output).slice(-6000)}</pre>}
+      {open && !!it.diff?.length && <DiffBox diffs={it.diff} />}
+      {open && it.output && (
+        <AutoScroll className="tool-box">
+          <pre className="tool-txt">{(it.status === 'running' ? it.output.split('\n').slice(-8).join('\n') : it.output).slice(-6000)}</pre>
+        </AutoScroll>
+      )}
     </div>
   )
 })
@@ -475,6 +563,29 @@ function Ask({ it, sessionId }: { it: Extract<TimelineItem, { kind: 'ask' }>; se
   )
 }
 
+/** Enter on a numbered list item continues the list, the same as the desktop's Shift+Enter (phone keyboards have no Shift). */
+function useListEnter(setText: (t: string) => void) {
+  const area = useRef<HTMLTextAreaElement | null>(null)
+  const caret = useRef<number | null>(null)
+  useLayoutEffect(() => {
+    if (caret.current === null || !area.current) return
+    area.current.setSelectionRange(caret.current, caret.current)
+    caret.current = null
+  })
+  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return
+    const el = e.currentTarget
+    if (el.selectionStart !== el.selectionEnd) return
+    const edit = continueNumbering(el.value, el.selectionStart)
+    if (!edit) return
+    e.preventDefault()
+    area.current = el
+    caret.current = edit.caret
+    setText(edit.text)
+  }
+  return onKeyDown
+}
+
 function Composer({
   disabled,
   working,
@@ -504,6 +615,7 @@ function Composer({
   const [picking, setPicking] = useState(false)
   const att = useAttachments()
   const ta = useRef<HTMLTextAreaElement>(null)
+  const onListEnter = useListEnter(setText)
   useEffect(() => {
     const el = ta.current
     if (!el) return
@@ -542,7 +654,7 @@ function Composer({
       <Chips files={att.files} context={context} onRemoveFile={att.remove} onRemoveContext={(p) => setContext((c) => c.filter((x) => x.path !== p))} />
       <div className="composer">
         {canAttach && <AttachButton onPick={att.add} />}
-        <textarea ref={ta} rows={1} placeholder={placeholder} value={text} onChange={(e) => setText(e.target.value)} onPaste={canAttach ? (e) => pastedFiles(e, att.add) : undefined} />
+        <textarea ref={ta} rows={1} placeholder={placeholder} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onListEnter} onPaste={canAttach ? (e) => pastedFiles(e, att.add) : undefined} />
         {working && ready ? (
           <>
             <button className="sendbtn now" aria-label="Stop and send now" disabled={sending} onClick={() => void send('stop')}>
@@ -774,6 +886,7 @@ function SeededComposer({ seed, disabled, how, extra }: { seed: string; disabled
   const [text, setText] = useState(seed)
   const [sending, setSending] = useState(false)
   const att = useAttachments()
+  const onListEnter = useListEnter(setText)
   const ready = (!!text.trim() || att.ids.length > 0) && !att.sending
   return (
     <div className="composer-wrap" style={disabled ? { opacity: 0.5, pointerEvents: 'none' } : undefined}>
@@ -781,7 +894,7 @@ function SeededComposer({ seed, disabled, how, extra }: { seed: string; disabled
       <Chips files={att.files} context={[]} onRemoveFile={att.remove} onRemoveContext={() => undefined} />
       <div className="composer">
         <AttachButton onPick={att.add} />
-        <textarea rows={1} autoFocus={!!seed} placeholder="Message Celeste" value={text} onChange={(e) => setText(e.target.value)} onPaste={(e) => pastedFiles(e, att.add)} />
+        <textarea rows={1} autoFocus={!!seed} placeholder="Message Celeste" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onListEnter} onPaste={(e) => pastedFiles(e, att.add)} />
         <button
           className={`sendbtn${ready ? ' ready' : ''}`}
           aria-label="Send"

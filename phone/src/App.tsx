@@ -40,6 +40,11 @@ export function App() {
         <div className="toast" key={toast.at}>
           <Info size={18} />
           <span>{toast.text}</span>
+          {toast.action && (
+            <button className="toast-act" onClick={toast.action.run}>
+              {toast.action.label}
+            </button>
+          )}
         </div>
       )}
     </div>

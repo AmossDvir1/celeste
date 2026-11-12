@@ -12,6 +12,7 @@ import { connectedVendors, useVendors } from '@/stores/vendors'
 import { AttachmentStrip, type AttachmentsApi } from './attachments'
 import { ContextStrip } from './context'
 import { ApprovalPicker, ModelControls, type Prefs } from './controls'
+import { continueNumbering } from '../../../shared/numbering'
 import { SlashList, WorkflowChip, parseSlash, useSlash } from './slash'
 
 const NO_CONTEXT: ContextRef[] = []
@@ -105,6 +106,8 @@ export function Composer({
   const [recall, setRecall] = useState<number | null>(null)
   // Set when Up/Down moves to another prompt: the caret goes to its first line, and the arrow keys move line by line from there.
   const caretToStart = useRef(false)
+  // Set when Shift+Enter renumbers a list: the caret goes to the start of the new item once the text has changed.
+  const pendingCaret = useRef<number | null>(null)
 
   // Grow with the text, up to a limit.
   useEffect(() => {
@@ -123,6 +126,12 @@ export function Composer({
     caretToStart.current = false
     areaRef.current?.setSelectionRange(0, 0)
   }, [recall, text])
+
+  useLayoutEffect(() => {
+    if (pendingCaret.current === null) return
+    areaRef.current?.setSelectionRange(pendingCaret.current, pendingCaret.current)
+    pendingCaret.current = null
+  }, [text])
 
   /** Shows the prompt at `index` of the history in the box. */
   function recallAt(index: number | null) {
@@ -313,6 +322,19 @@ export function Composer({
               e.preventDefault()
               recallAt(recall < history.length - 1 ? recall + 1 : null)
               return
+            }
+          }
+          if (e.key === 'Enter' && e.shiftKey && !e.nativeEvent.isComposing) {
+            const el = e.currentTarget
+            if (el.selectionStart === el.selectionEnd) {
+              const edit = continueNumbering(el.value, el.selectionStart)
+              if (edit) {
+                e.preventDefault()
+                setRecall(null)
+                pendingCaret.current = edit.caret
+                onText(edit.text)
+                return
+              }
             }
           }
           if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {

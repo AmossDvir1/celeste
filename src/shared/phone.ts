@@ -50,6 +50,9 @@ export const PHONE_METHODS = [
   /** Edit, remove, send now, resume or clear the messages waiting behind a running turn. */
   'sessions.queue',
   'sessions.interrupt',
+  /** Delete a chat for good (the computer's own undo is not offered on the phone). */
+  'sessions.remove',
+  'sessions.restore',
   'sessions.respondApproval',
   'sessions.respondAsk',
   /** The project folder of a Develop session, folder by folder, to choose files to add to a message. */
