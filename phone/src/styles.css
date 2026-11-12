@@ -413,5 +413,65 @@ svg.vlogo.sm { width:13px; height:13px; }
 
 /* The computer's screen, live (Watch.tsx). */
 .watchbox { position:relative; border-radius:14px; overflow:hidden; background:#000; border:1px solid var(--c-edge); aspect-ratio:16/10; display:flex; align-items:center; justify-content:center; }
-.watchvid { width:100%; height:100%; object-fit:contain; background:#000; }
+.watchvid { width:100%; height:100%; object-fit:contain; background:#000; opacity:0; transition:opacity .4s var(--ease); }
+.watchvid.on { opacity:1; }
+.watchvid::-webkit-media-controls, .watchvid::-webkit-media-controls-start-playback-button, .watchvid::-webkit-media-controls-overlay-play-button { display:none !important; -webkit-appearance:none; }
 .watchnote { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; padding:18px; color:var(--c-ink-soft); font-size:14.5px; }
+.watchload { position:absolute; inset:0; display:grid; place-items:center; background:radial-gradient(circle at 50% 50%, rgb(255 255 255 / .05), transparent 65%); }
+.watchload .orbit { width:38px; height:38px; border-radius:50%; border:3px solid var(--c-edge-strong); border-top-color:var(--c-accent-text); animation:rotate .9s linear infinite; box-shadow:0 0 24px rgb(201 40 94 / .25); }
+
+/* Shown under the chat header while the computer is under Celeste's control, so Watch is always in reach. */
+.usebar { flex:none; display:flex; align-items:center; gap:12px; padding:8px 12px 8px 16px; background:var(--c-raised); border-bottom:1px solid var(--c-edge); position:relative; z-index:2; animation:strip-in .35s var(--ease) both; }
+.usebar .grow { flex:1; min-width:0; }
+.usebar .a { font-size:13.5px; font-weight:600; color:var(--c-ink-soft); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.usebar .b { font-size:12px; color:var(--c-ink-faint); }
+
+/* Sideways. The system bars and camera cutout can sit left or right, so everything keeps clear of them. */
+.app { padding-left:env(safe-area-inset-left); padding-right:env(safe-area-inset-right); }
+.card-layer .sheet { padding-left:calc(20px + env(safe-area-inset-left)); padding-right:calc(20px + env(safe-area-inset-right)); max-height:calc(100% - env(safe-area-inset-top) - 8px); overflow-y:auto; overscroll-behavior:contain; }
+.card-layer .sheet.tall { max-height:min(84%, calc(100% - env(safe-area-inset-top) - 8px)); }
+.toast { left:calc(16px + env(safe-area-inset-left)); right:calc(16px + env(safe-area-inset-right)); }
+.fab { right:calc(16px + env(safe-area-inset-right)); }
+.mlist { margin-left:-20px; margin-right:-20px; }
+
+@media (min-width:700px) {
+  .card-layer .sheet { left:0; right:0; margin:0 auto; width:min(640px, 100%); box-sizing:border-box; border-radius:30px; bottom:8px; }
+  .card-layer .sheet.watchsheet { width:min(860px, 100%); }
+}
+
+/* A short screen (a phone on its side): less chrome, more room for the conversation. */
+@media (orientation:landscape) and (max-height:520px) {
+  .appbar { height:48px; }
+  .navbar { height:52px; flex-direction:row; }
+  .navbar button { flex-direction:row; gap:8px; font-size:13px; }
+  .navbar .ind { width:44px; height:28px; }
+  .navbar .badge { top:6px; left:calc(50% + 4px); }
+  .navbar .tabdot { top:10px; left:calc(50% - 6px); }
+  .hero { padding:0 20px 8px; }
+  .greet { font-size:22px; margin:4px 0 2px; }
+  .hero .overline { display:none; }
+  .bigtitle { font-size:24px; margin:2px 0 0; }
+  .section-title { margin-top:12px; margin-bottom:6px; }
+  .search { height:42px; margin-bottom:8px; }
+  .arc, .bg-arc { height:220px; }
+  .fab { bottom:62px; height:48px; }
+  .newchat { padding-top:20px; }
+  .pair { padding-top:16px; gap:10px; }
+  .chathead { height:52px; }
+  .usebar { padding-top:5px; padding-bottom:5px; }
+  .msgs { padding-top:10px; padding-bottom:12px; }
+  .composer-wrap { padding:4px 10px 6px; }
+  .modelbar { padding-bottom:4px; }
+  .composer-wrap:has(textarea:focus) .modelbar { display:none; }
+  .toast { bottom:calc(64px + env(safe-area-inset-bottom)); }
+  .qbar { max-height:36vh; }
+  .card-layer .sheet { padding-top:8px; padding-bottom:calc(14px + env(safe-area-inset-bottom)); }
+  .card-layer .handle { margin-bottom:8px; }
+  .card-layer .sheet.tall { max-height:calc(100% - env(safe-area-inset-top) - 4px); }
+  .card-layer .sheet.tall:not(.watchsheet) .mlist { flex:0 0 auto; overflow:visible; }
+  .card-layer .sheet.watchsheet { display:grid; grid-template-columns:minmax(0, 1fr) 210px; column-gap:18px; align-content:center; align-items:start; }
+  .watchsheet > * { grid-column:2; }
+  .watchsheet > .handle { display:none; }
+  .watchsheet > .watchbox { grid-column:1; grid-row:1 / span 5; align-self:center; }
+  .watchsheet > .watchnote2 { margin-top:8px !important; }
+}

@@ -128,6 +128,17 @@ public class CelesteNativePlugin extends Plugin {
 
     private com.getcapacitor.JSArray shareServers;
 
+    /** The person opened the app from the "show this screen on your computer?" notification, and the app has not asked yet. */
+    static volatile boolean shareAsked;
+
+    @PluginMethod
+    public void takeShareAsked(PluginCall call) {
+        JSObject o = new JSObject();
+        o.put("asked", shareAsked);
+        shareAsked = false;
+        call.resolve(o);
+    }
+
     /** Asks Android's own dialog for permission to capture the screen, then makes the WebRTC offer and answers with it. */
     @PluginMethod
     public void shareScreen(PluginCall call) {

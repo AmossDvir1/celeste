@@ -4,7 +4,8 @@ import { Eye, Square } from 'lucide-react'
 import type { IceServer, PhoneLinkAnswer, PhoneLinkInfo, PhoneLinkOffer } from '@shared/phone'
 import { PUBLIC_ICE } from '@shared/signal'
 import { useApp } from './store'
-import { Shimmer } from './ui'
+
+const BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
 
 /*
  * The computer's screen, live, while the assistant uses it (docs/PHONE_PLAN.md 7.3). The phone makes a WebRTC offer that only
@@ -76,7 +77,7 @@ export function WatchScreen({ onClose }: { onClose: () => void }) {
   return createPortal(
     <div className={`card-layer${leaving ? ' out' : ''}`}>
       <div className="scrim" onClick={close} />
-      <div className="sheet tall" role="dialog" aria-label="The computer’s screen">
+      <div className="sheet tall watchsheet" role="dialog" aria-label="The computer’s screen">
         <div className="handle" />
         <div className="overline" style={{ fontSize: 10 }}>
           Live view
@@ -85,14 +86,19 @@ export function WatchScreen({ onClose }: { onClose: () => void }) {
           The computer’s screen
         </h1>
         <div className="watchbox">
-          <video ref={video} className="watchvid" muted playsInline autoPlay />
-          {state.phase !== 'live' && (
-            <div className="watchnote">
-              {state.phase === 'failed' ? state.message : <Shimmer>{state.phase === 'asking' ? 'Asking the computer' : 'Connecting'}</Shimmer>}
-            </div>
+          {/* A blank poster stops the webview drawing its own big grey play symbol while there is no picture yet. */}
+          <video ref={video} className={`watchvid${state.phase === 'live' ? ' on' : ''}`} poster={BLANK} muted playsInline autoPlay controls={false} disablePictureInPicture />
+          {state.phase === 'failed' ? (
+            <div className="watchnote">{state.message}</div>
+          ) : (
+            state.phase !== 'live' && (
+              <div className="watchload" role="status" aria-label="Loading the computer’s screen">
+                <span className="orbit" />
+              </div>
+            )
           )}
         </div>
-        <p className="small faint" style={{ margin: '10px 2px 0' }}>
+        <p className="small faint watchnote2" style={{ margin: '10px 2px 0' }}>
           <Eye size={12} style={{ verticalAlign: '-1px' }} /> Watching only. It ends when Celeste stops using the computer, or when you close this.
         </p>
         <button className="btn primary block" style={{ marginTop: 14 }} onClick={close}>

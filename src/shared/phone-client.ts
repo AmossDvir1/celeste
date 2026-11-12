@@ -24,6 +24,7 @@ import {
   type PhoneLinkOffer,
   type PhoneMethod,
   type PhoneCancelPush,
+  type PhoneViewStartPush,
   type PhoneViewStopPush,
   type PhoneRelayInfo,
   type PhoneRequestPush,
@@ -113,7 +114,7 @@ export type LinkState = 'connecting' | 'connected' | 'offline' | 'refused'
  */
 const SILENT_MS = 45_000
 
-type Push = CorePush | PhoneRequestPush | PhoneCancelPush | PhoneViewStopPush
+type Push = CorePush | PhoneRequestPush | PhoneCancelPush | PhoneViewStopPush | PhoneViewStartPush
 /** How the phone reaches the computer just now: straight over the Wi-Fi, or through the relay. */
 export type LinkRoute = 'wifi' | 'relay' | 'direct'
 
@@ -127,6 +128,8 @@ const DIRECT_RETRY_MS = 45_000
 const DIRECT_NO_MS = 10 * 60_000
 /** A request through the relay that is not answered in this long has failed. */
 const RELAY_CALL_MS = 60_000
+/** How long a call waits for the line to the computer to come back before it tries the Wi-Fi address. */
+const LINE_WAIT_MS = 15_000
 
 /** A paired phone's line to the computer: sealed calls, and a stream of sealed pushes that reconnects by itself. */
 export class PhoneLink {
@@ -189,7 +192,7 @@ export class PhoneLink {
     const sealed = await seal(key, call, LABEL.request)
     const unreachable = () => new PhoneError(`Can’t reach ${this.pairing.computer.name}.`)
     let box: string
-    const send = this.frameSend()
+    const send = this.frameSend() ?? (await this.lineComingBack())
     if (send) {
       const answer = await new Promise<Extract<RelayHostFrame, { t: 'rpc' }>>((resolve, reject) => {
         const timer = setTimeout(() => this.relayCalls.get(call.id)?.fail(), RELAY_CALL_MS)
@@ -218,6 +221,23 @@ export class PhoneLink {
     const reply = await open<SealedReply>(key, box, LABEL.response)
     if (!reply.ok) throw new PhoneError(reply.error)
     return reply.result as T
+  }
+
+  /**
+   * With a relay known and no line up, the stream is being opened again (the app has just come back, or the network
+   * changed): away from home that line is the only way, so a call waits for it instead of failing at once on the Wi-Fi
+   * address that cannot be reached. Null when the Wi-Fi turns out to be the route, or the line does not come back.
+   */
+  private async lineComingBack(): Promise<((frame: RelayPhoneFrame) => void) | null> {
+    if (!this.pairing.relay || !this.reopenStream) return null
+    const until = Date.now() + LINE_WAIT_MS
+    while (Date.now() < until) {
+      if (this.current === 'wifi') return null
+      const send = this.frameSend()
+      if (send) return send
+      await new Promise((r) => setTimeout(r, 100))
+    }
+    return null
   }
 
   /** Where a frame goes now: over the direct link when it is up, otherwise through the relay (null: neither). */

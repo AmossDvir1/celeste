@@ -62,35 +62,78 @@ const randomId = () => {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-/** Parts are small enough to pass through the relay (away from home), which drops large messages; the computer takes any up to its own limit. */
-const PART = 192 * 1024
-/** Over a direct link there is no such limit, and fewer, larger parts are faster. */
-const DIRECT_PART = 1_000_000
+/** Parts keep each request small on a slow line; the computer takes any size up to its own limit. */
+const PART = 384 * 1024
+/** Parts in flight at once: away from home each one waits a round trip through the relay, so one at a time is slow. */
+const PARALLEL = 4
 
-/** Sends one file to the computer, part by part. Throws a message fit to show. */
+class Stopped extends Error {}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/** A failure of the line itself (worth trying again), as opposed to the computer refusing the file. */
+const transient = (err: unknown) => err instanceof Error && (err.message.startsWith('Can’t reach') || err.message.includes('did not answer'))
+
+/** Sends one file to the computer, in parts that go several at a time. Throws a message fit to show. */
 async function upload(file: File, dims: { width: number; height: number } | undefined, cancelled: () => boolean, progress: (fraction: number) => void): Promise<PhoneUploaded | null> {
-  const link = useApp.getState().link
-  if (!link) throw new Error('Not connected to the computer.')
+  if (!useApp.getState().link) throw new Error('Not connected to the computer.')
   const id = randomId()
-  let offset = 0
-  for (let n = 0; ; n++) {
-    if (cancelled()) return null
-    // The size follows the route as it is now: a link that falls back to the relay mid-file gets smaller parts again.
-    const end = Math.min(file.size, offset + (link.route === 'direct' ? DIRECT_PART : PART))
-    const last = end >= file.size
+  const total = Math.max(1, Math.ceil(file.size / PART))
+  let sent = 0
+  let failed = false
+
+  const sendPart = async (n: number): Promise<PhoneUploaded | { part: number }> => {
+    const start = n * PART
+    const end = Math.min(file.size, start + PART)
     const part: PhoneUploadPart = {
       upload: id,
       name: file.name || 'file',
       mime: file.type || 'application/octet-stream',
       part: n,
-      data: await within(readBase64(file.slice(offset, end)), 20_000, 'That file could not be read.'),
-      last,
+      data: await within(readBase64(file.slice(start, end)), 20_000, 'That file could not be read.'),
+      last: n === total - 1,
       ...(dims ?? {})
     }
-    const reply = await within(link.call<PhoneUploaded | { part: number }>('phone.upload', part), 45_000, 'The computer did not answer. Try again.')
-    progress(end / Math.max(1, file.size))
-    offset = end
-    if (last) return reply as PhoneUploaded
+    for (let attempt = 0; ; attempt++) {
+      if (cancelled()) throw new Stopped()
+      const link = useApp.getState().link
+      if (!link) throw new Error('Not connected to the computer.')
+      try {
+        const reply = await within(link.call<PhoneUploaded | { part: number }>('phone.upload', part), 20_000, 'The computer did not answer. Try again.')
+        sent += end - start
+        progress(Math.min(1, sent / Math.max(1, file.size)))
+        return reply
+      } catch (err) {
+        // A part sent again is harmless: the computer keeps one of each.
+        if (!transient(err) || attempt >= 3) throw err
+        // A line that went quiet (a direct link the mobile network dropped) is replaced, not waited on.
+        if (err instanceof Error && err.message.includes('did not answer')) link.reopen()
+        await sleep(500 * 2 ** attempt)
+      }
+    }
+  }
+
+  try {
+    // The first part makes the file on the computer; the middle ones then go together; the last waits for them all.
+    const first = await sendPart(0)
+    if (total === 1) return first as PhoneUploaded
+    let next = 1
+    const worker = async () => {
+      while (!failed && next < total - 1) {
+        const n = next++
+        try {
+          await sendPart(n)
+        } catch (err) {
+          failed = true
+          throw err
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(PARALLEL, total - 2) }, worker))
+    return (await sendPart(total - 1)) as PhoneUploaded
+  } catch (err) {
+    if (err instanceof Stopped) return null
+    throw err
   }
 }
 
@@ -127,10 +170,10 @@ export function useAttachments() {
       chain.current = chain.current.then(async () => {
         if (cancelled.current.delete(key)) return
         try {
-          const dims = preview ? await sizeOfImage(preview) : undefined
+          const original = preview ? await sizeOfImage(preview) : undefined
           const done = await upload(
             file,
-            dims,
+            original,
             () => cancelled.current.has(key),
             (progress) => setFiles((l) => l.map((x) => (x.key === key ? { ...x, progress } : x)))
           )

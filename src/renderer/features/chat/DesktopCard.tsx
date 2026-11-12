@@ -1,5 +1,8 @@
 import { Check, MousePointer2, Pause, Smartphone, X } from 'lucide-react'
+import { core } from '@/api'
+import { Button } from '@/components/ui'
 import { cn } from '@/lib/cn'
+import { useUi } from '@/stores/ui'
 import type { TimelineItem } from '@/stores/types'
 
 const SHOWN = 8
@@ -32,6 +35,21 @@ export function DesktopCard({ item }: { item: Extract<TimelineItem, { kind: 'des
             : 'The assistant controlled this computer'}
       </div>
       <div className="mt-1 text-[13px] text-ink-muted">{item.reason}</div>
+      {phone && live && (
+        <div className="mt-2.5">
+          <Button
+            size="sm"
+            onClick={() =>
+              void core.call('phone.viewRequest').then(
+                (n) => useUi.getState().pushToast({ text: n ? 'Asked the phone. Allow it there, in Android’s dialog, and its screen appears here.' : 'The phone is not connected.' }),
+                () => useUi.getState().pushToast({ text: 'Could not ask the phone.' })
+              )
+            }
+          >
+            <Smartphone className="h-3.5 w-3.5" /> Show phone screen
+          </Button>
+        </div>
+      )}
       {item.actions.length > 0 && (
         <ul className="mt-2.5 space-y-1 font-mono text-[12.5px]">
           {hidden > 0 && <li className="text-ink-faint">… {hidden} earlier {hidden === 1 ? 'action' : 'actions'}</li>}

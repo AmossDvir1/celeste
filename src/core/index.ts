@@ -449,6 +449,7 @@ async function start(): Promise<void> {
       else v.reject(new Error('The computer could not show the screen.'))
     },
     'phone.viewStop': (phoneId) => phone.viewStop(String(phoneId)),
+    'phone.viewRequest': () => phone.viewRequest(),
     'phone.answer': (pairId, allow) => phone.answer(pairId, allow),
     ...service.api,
     'app.checkUpdate': () => checkForUpdate(process.env['CELESTE_VERSION'] ?? '0.0.0'),

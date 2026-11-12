@@ -43,6 +43,9 @@ public class FcmService extends FirebaseMessagingService {
                 case "phoneCancel":
                     ConnectionService.cancelled(this, wake);
                     return;
+                case "phoneViewStart":
+                    ScreenShare.asked(this);
+                    return;
                 default:
             }
         } catch (Exception e) {

@@ -45,6 +45,7 @@ export function ModelChip({
   const online = useApp((s) => s.linkState === 'connected')
   const [open, setOpen] = useState(false)
   const found = models?.models.find((m) => m.id === value.model)
+  const shownEffort = found ? effortFor(found, value.effort) : value.effort
   const v = found?.vendor ?? vendor ?? (value.model.startsWith('claude') ? 'claude' : 'copilot')
   // Read again each time the sheet opens: the person may have connected an assistant on the computer meanwhile.
   useEffect(() => {
@@ -64,7 +65,7 @@ export function ModelChip({
       >
         <VendorLogo id={v} className="vlogo" />
         <span className="nm">{found?.label ?? labelOf(value.model)}</span>
-        {value.effort && (!found || found.efforts.length > 0) ? <span className="ef">· {EFFORT_NAME[value.effort]}</span> : null}
+        {shownEffort ? <span className="ef">· {EFFORT_NAME[shownEffort]}</span> : null}
         <ChevronDown size={14} className="faint" />
       </button>
       {/* Over the whole app, as the request cards are, not inside the message box. */}
@@ -94,6 +95,8 @@ function ModelSheet({
   const pinned = offered.filter((m) => models?.pinned.includes(m.id))
   const vendors = [...new Set(offered.map((m) => m.vendor))]
   const current = offered.find((m) => m.id === value.model)
+  // A session started with no effort runs at the model's own default, so that is the one to show as chosen.
+  const chosenEffort = current ? effortFor(current, value.effort) : value.effort
   const pick = (m: ModelInfo) => {
     buzz(6)
     onChange({ model: m.id, effort: effortFor(m, value.effort) })
@@ -163,7 +166,7 @@ function ModelSheet({
               {current.efforts.map((e) => (
                 <button
                   key={e}
-                  className={value.effort === e ? 'on' : ''}
+                  className={chosenEffort === e ? 'on' : ''}
                   onClick={() => {
                     buzz(5)
                     onChange({ model: current.id, effort: e })

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import type { CorePush } from '@shared/api'
-import type { IceServer, PhonePairRequest, PhoneViewStopPush } from '@shared/phone'
+import type { IceServer, PhonePairRequest, PhoneViewStartPush, PhoneViewStopPush } from '@shared/phone'
 import { PhoneLink, pair, type PhonePairing } from '@shared/phone-client'
 import { PhoneBridge } from './bridge'
 
@@ -135,5 +135,20 @@ describe('showing the phone’s screen on the computer', () => {
     while (!got.some((p) => p.type === 'phoneViewStop') && Date.now() < end) await new Promise((r) => setTimeout(r, 25))
     expect(got.filter((p) => p.type === 'phoneViewStop')).toHaveLength(1)
   })
-})
 
+  it('asks the phones to start sharing when the person presses Show phone screen on the computer', async () => {
+    const { link, bridge } = await setup()
+    const got: (CorePush | PhoneViewStartPush)[] = []
+    stops.push(link.listen((p) => got.push(p as CorePush | PhoneViewStartPush), () => undefined))
+    await new Promise((r) => setTimeout(r, 300))
+    expect(bridge.viewRequest()).toBe(1)
+    const end = Date.now() + 5000
+    while (!got.some((p) => p.type === 'phoneViewStart') && Date.now() < end) await new Promise((r) => setTimeout(r, 25))
+    expect(got.filter((p) => p.type === 'phoneViewStart')).toHaveLength(1)
+  })
+
+  it('asks nobody when no phone is connected', async () => {
+    const { bridge } = await setup()
+    expect(bridge.viewRequest()).toBe(0)
+  })
+})

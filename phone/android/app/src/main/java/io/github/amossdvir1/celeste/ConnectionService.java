@@ -124,6 +124,10 @@ public class ConnectionService extends Service {
                 cancelled(this, push);
                 return;
             }
+            if ("phoneViewStart".equals(type)) {
+                ScreenShare.asked(this);
+                return;
+            }
             if ("phoneRequest".equals(type)) {
                 Abilities.onRequest(this, line, push.getJSONObject("request"));
                 return;

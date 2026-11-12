@@ -48,6 +48,7 @@ import {
   type PhoneRelayInfo,
   type PhoneReply,
   type PhoneCancelPush,
+  type PhoneViewStartPush,
   type PhoneViewStopPush,
   type PhoneRequestPush,
   type PhoneStatus,
@@ -669,6 +670,19 @@ export class PhoneBridge {
     }
   }
 
+  /**
+   * "Show phone screen" was pressed on the computer: every paired phone that can be reached is asked to start sharing, on its
+   * open stream and, for a closed app, by a wake. Android's own dialog then asks the person on the phone: no app can skip it.
+   */
+  viewRequest(): number {
+    const asked = this.reachable()
+    for (const phone of asked) {
+      this.sendTo(phone.id, { type: 'phoneViewStart' } satisfies PhoneViewStartPush)
+      this.wake(phone, { type: 'phoneViewStart' }, 120)
+    }
+    return asked.length
+  }
+
   /** The person pressed Stop on the computer's panel: the phone is told to stop sharing its screen. */
   viewStop(phoneId: string): void {
     this.sendTo(phoneId, { type: 'phoneViewStop' } satisfies PhoneViewStopPush)
@@ -781,7 +795,7 @@ export class PhoneBridge {
     return null
   }
 
-  private sendTo(phoneId: string, value: PhoneRequestPush | PhoneCancelPush | PhoneViewStopPush): void {
+  private sendTo(phoneId: string, value: PhoneRequestPush | PhoneCancelPush | PhoneViewStopPush | PhoneViewStartPush): void {
     for (const l of this.targets(phoneId)) {
       l.queue = l.queue.then(async () => l.write(await seal(l.key, value, LABEL.push))).catch(() => undefined)
     }

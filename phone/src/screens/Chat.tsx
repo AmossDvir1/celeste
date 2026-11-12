@@ -61,6 +61,7 @@ export function Chat({ id }: { id: string }) {
   const go = useApp((st) => st.go)
   const box = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
+  const [watching, setWatching] = useState(false)
 
   const blocks = useMemo(() => toBlocks(s?.items ?? [], s?.mode ?? 'chat'), [s?.items, s?.mode])
 
@@ -85,6 +86,9 @@ export function Chat({ id }: { id: string }) {
   const pendingApproval = s.items.some((it) => it.kind === 'approval' && it.status === 'pending')
   const answerable = pendingAsk && pendingAsk.questions.length === 1 ? pendingAsk : null
   const last = s.items[s.items.length - 1]
+  // The computer is under Celeste's control right now: its screen can be watched.
+  const liveDesktop = [...s.items].reverse().find((it): it is Extract<TimelineItem, { kind: 'desktop' }> => it.kind === 'desktop' && it.where !== 'phone')
+  const usingComputer = liveDesktop && !liveDesktop.ended ? liveDesktop : null
   // What Celeste is doing, shown right under the newest message, as on the computer.
   const showActivity = s.activity && !(last?.kind === 'thinking' && last.endedAt === undefined) && !(s.activity.working === false && (pendingAsk || pendingApproval))
   const placeholder = answerable ? 'Type your answer' : pendingApproval || pendingAsk ? 'Answer above, or type a message to send after' : working ? 'Type a message to send after this answer' : 'Message Celeste'
@@ -92,8 +96,21 @@ export function Chat({ id }: { id: string }) {
   return (
     <>
       <Head title={s.title || 'New chat'} sub={`${where} · on ${computer}`} onBack={() => go({ name: 'home', tab: 'chats' }, 'back')} live={online} />
-      <div
-        className="content"
+            {usingComputer && (
+              <div className="usebar">
+                <span className="dot live" style={{ width: 8, height: 8 }} />
+                <div className="grow">
+                  <div className="a">Celeste is using your computer</div>
+                  <div className="b">{usingComputer.actions.length} {usingComputer.actions.length === 1 ? 'action' : 'actions'} so far</div>
+                </div>
+                <button className="btn sm tonal" aria-label="Watch the computer’s screen" onClick={() => setWatching(true)}>
+                  <Eye size={15} /> Watch
+                </button>
+              </div>
+            )}
+            {watching && usingComputer && <WatchScreen onClose={() => setWatching(false)} />}
+            <div
+              className="content"
         ref={box}
         onScroll={(e) => {
           const el = e.currentTarget
@@ -230,10 +247,8 @@ const ActivityGroup = memo(
   (a, b) => a.detailed === b.detailed && sameItems(a.items, b.items)
 )
 
-/** The assistant using the computer or this phone. While it is using the computer, the person may watch its screen from here. */
+/** The assistant using the computer or this phone. Watching the computer is offered by the bar under the header, which stays in view. */
 function DesktopRow({ it }: { it: Extract<TimelineItem, { kind: 'desktop' }> }) {
-  const [watching, setWatching] = useState(false)
-  const canWatch = it.where !== 'phone' && !it.ended
   return (
     <div className="m-tool">
       <MonitorSmartphone size={17} />
@@ -243,13 +258,7 @@ function DesktopRow({ it }: { it: Extract<TimelineItem, { kind: 'desktop' }> }) 
         </div>
         <div className="d">{it.ended ? `${it.ended.actions} actions · ${it.ended.why}` : `${it.actions.length} actions so far`}</div>
       </div>
-      {canWatch && (
-        <button className="btn" aria-label="Watch the computer’s screen" onClick={() => setWatching(true)}>
-          <Eye size={15} /> Watch
-        </button>
-      )}
       {it.where === 'phone' && !it.ended && <ShareButton />}
-      {watching && canWatch && <WatchScreen onClose={() => setWatching(false)} />}
     </div>
   )
 }

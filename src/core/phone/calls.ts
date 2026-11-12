@@ -90,12 +90,14 @@ export async function recentProjects(a: Api): Promise<PhoneProject[]> {
 interface Upload {
   name: string
   mime: string
-  parts: Buffer[]
+  /** By part number: parts of one file may arrive together and again (a part sent a second time after its answer was lost). */
+  parts: Map<number, Buffer>
   bytes: number
-  next: number
   width?: number
   height?: number
 }
+
+const MAX_PARTS = 4096
 
 const UPLOAD_ID = /^[\w-]{8,64}$/
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/
@@ -111,9 +113,11 @@ export function phoneCalls(
 ): (method: PhoneMethod, params: unknown[], phone?: { id: string }) => Promise<unknown> {
   const kept = new Map<VendorId, ModelInfo[]>()
   const uploading = new Map<string, Upload>()
+  /** Files finished a moment ago, so a last part sent again (its answer was lost) gets the same answer. */
+  const finished = new Map<string, PhoneUploaded>()
   const saved = new Map<string, Map<string, AttachmentInfo>>()
 
-  /** A file arrives in parts, in order. The last part saves it on the computer as an attachment. */
+  /** A file arrives in parts. The first creates it; the last, once every part before it is there, saves it as an attachment. */
   const receive = (a: Api, phoneId: string, p: Partial<PhoneUploadPart> | undefined): PhoneUploaded | { part: number } => {
     if (!a['attachments.save']) throw new Error('Not available from a phone.')
     if (!p || typeof p.upload !== 'string' || !UPLOAD_ID.test(p.upload)) throw new Error('That file could not be sent. Try again.')
@@ -122,6 +126,8 @@ export function phoneCalls(
       uploading.delete(key)
       throw new Error(message)
     }
+    const again = finished.get(key)
+    if (again && p.last) return again
     let up = uploading.get(key)
     if (p.part === 0 && !up) {
       const mine = [...uploading.keys()].filter((k) => k.startsWith(`${phoneId}:`))
@@ -129,26 +135,33 @@ export function phoneCalls(
       up = {
         name: baseName(String(p.name ?? '')).slice(0, 200) || 'file',
         mime: String(p.mime ?? '').slice(0, 100) || 'application/octet-stream',
-        parts: [],
+        parts: new Map(),
         bytes: 0,
-        next: 0,
         width: pixels(p.width),
         height: pixels(p.height)
       }
       uploading.set(key, up)
     }
-    if (!up || p.part !== up.next) return fail('That file could not be sent. Try again.')
+    const n = p.part
+    if (!up || typeof n !== 'number' || !Number.isInteger(n) || n < 0 || n >= MAX_PARTS) return fail('That file could not be sent. Try again.')
     const data = typeof p.data === 'string' ? p.data : ''
     if (data.length > PART_CHARS || !BASE64.test(data)) return fail('That file could not be sent. Try again.')
-    const bytes = Buffer.from(data, 'base64')
-    up.bytes += bytes.length
-    if (up.bytes > PHONE_UPLOAD_MAX_BYTES) return fail('That file is over 25 MB.')
-    up.parts.push(bytes)
-    up.next += 1
-    if (!p.last) return { part: up.next }
+    if (!up.parts.has(n)) {
+      const bytes = Buffer.from(data, 'base64')
+      up.bytes += bytes.length
+      if (up.bytes > PHONE_UPLOAD_MAX_BYTES) return fail('That file is over 25 MB.')
+      up.parts.set(n, bytes)
+    }
+    if (!p.last) return { part: up.parts.size }
+    const ordered: Buffer[] = []
+    for (let i = 0; i <= n; i++) {
+      const part = up.parts.get(i)
+      if (!part) return fail('That file could not be sent. Try again.')
+      ordered.push(part)
+    }
     uploading.delete(key)
     if (!up.bytes) throw new Error('That file is empty.')
-    const whole = Buffer.concat(up.parts)
+    const whole = Buffer.concat(ordered)
     const info = a['attachments.save']({
       name: up.name,
       mime: up.mime,
@@ -163,7 +176,10 @@ export function phoneCalls(
       mine.delete(oldest as string)
       a['attachments.discard']?.(oldest as string)
     }
-    return { id: info.id, name: info.name, mime: info.mime, size: info.size }
+    const done: PhoneUploaded = { id: info.id, name: info.name, mime: info.mime, size: info.size }
+    finished.set(key, done)
+    while (finished.size > KEPT_UPLOADS) finished.delete(finished.keys().next().value as string)
+    return done
   }
 
   /** The files this phone sent, by the ids it gives. Nothing else on the computer can be named. */

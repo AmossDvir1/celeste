@@ -56,7 +56,34 @@ final class ScreenShare {
     private static Runnable gate;
     private static volatile boolean active;
 
+    static final String EXTRA_ASKED = "share_asked";
+
     private ScreenShare() {}
+
+    /**
+     * "Show phone screen" was pressed on the computer. With the app on screen the app's own stream has the same push and asks at
+     * once; otherwise this is a notification, and opening it brings the app up to ask. Android's dialog cannot be skipped by any
+     * app, so the person always says yes there.
+     */
+    static void asked(Context ctx) {
+        if (MainActivity.visible) return;
+        ConnectionService.channels(ctx);
+        Intent open = new Intent(ctx, MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK).putExtra(EXTRA_ASKED, true);
+        android.app.PendingIntent go = android.app.PendingIntent.getActivity(ctx, 7403, open, android.app.PendingIntent.FLAG_IMMUTABLE | android.app.PendingIntent.FLAG_UPDATE_CURRENT);
+        androidx.core.app.NotificationCompat.Builder b = new androidx.core.app.NotificationCompat.Builder(ctx, ConnectionService.CHANNEL_ASK)
+                .setSmallIcon(R.drawable.ic_stat_celeste)
+                .setColor(0xFFF5487F)
+                .setContentTitle("Show this screen on your computer?")
+                .setContentText("Tap to continue. Android will ask you to allow it.")
+                .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .setContentIntent(go);
+        try {
+            ctx.getSystemService(android.app.NotificationManager.class).notify(7403, b.build());
+        } catch (SecurityException ignored) {
+            // Notifications are off for Celeste.
+        }
+    }
 
     static boolean active() {
         return active;

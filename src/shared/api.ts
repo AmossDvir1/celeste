@@ -481,6 +481,8 @@ export interface CoreApi {
   'phone.viewAnswer': (requestId: string, sdp: string | null) => void
   /** The person pressed Stop on the panel showing a phone's screen: the phone is told to stop sharing. */
   'phone.viewStop': (phoneId: string) => void
+  /** "Show phone screen" on the computer: asks the paired phones to start sharing (Android asks the person on the phone). Returns how many were asked. */
+  'phone.viewRequest': () => number
   /** The person's answer to a phone asking to connect, after comparing the three pictures. */
   'phone.answer': (pairId: string, allow: boolean) => PhoneStatus
 }

@@ -171,6 +171,10 @@ export interface PhoneRequestPush {
   type: 'phoneRequest'
   request: PhoneRequest
 }
+/** Sent when the person presses "Show phone screen" on the computer: the phone asks Android's own permission and starts sharing. */
+export interface PhoneViewStartPush {
+  type: 'phoneViewStart'
+}
 /** Sent on a phone's stream when the person pressed Stop on the computer's panel showing the phone's screen: stop sharing it. */
 export interface PhoneViewStopPush {
   type: 'phoneViewStop'
@@ -238,8 +242,9 @@ export const PHONE_ATTACH_MAX_FILES = 10
 export const PHONE_ATTACH_MAX_BYTES = 40 * 1_048_576
 
 /**
- * Part of a file the person attaches to a message on the phone, with `phone.upload`. The parts of one file go in order under
- * the same `upload`; the last one saves it on the computer and answers with its `PhoneUploaded`.
+ * Part of a file the person attaches to a message on the phone, with `phone.upload`. The parts of one file go under the same
+ * `upload`: part 0 first, then the others in any order (and again, if an answer was lost), then the last, which saves it on
+ * the computer once every part before it is there, and answers with its `PhoneUploaded`.
  */
 export interface PhoneUploadPart {
   /** Chosen by the phone for this file: 8 to 64 letters, digits, `_` and `-`. */
@@ -505,6 +510,7 @@ export type PhoneWake =
   | { type: 'notify'; kind: 'approval' | 'ask'; id: string; sessionId: string; chat: string; text: string }
   | PhoneRequestPush
   | PhoneCancelPush
+  | PhoneViewStartPush
 
 /** What a phone sends through the relay: the same sealed boxes as `POST /rpc` and `GET /events`. */
 export type RelayPhoneFrame = { t: 'rpc'; id: number; phone: string; box: string } | { t: 'listen'; phone: string; auth: string }

@@ -50,6 +50,8 @@ interface CelesteNativePlugin {
   shareScreen(opts: { servers: IceServer[] }): Promise<{ sdp: string }>
   shareAnswer(opts: { sdp: string }): Promise<void>
   shareStop(): Promise<void>
+  /** The person opened the app from the "show this screen on your computer?" notification (once). */
+  takeShareAsked(): Promise<{ asked: boolean }>
   clipboardInfo(): Promise<{ files: number }>
   clipboardFiles(): Promise<{ files: { name: string; mime: string; data: string }[] }>
 }
@@ -103,6 +105,7 @@ const Native = registerPlugin<CelesteNativePlugin>('CelesteNative', {
     },
     shareAnswer: async () => undefined,
     shareStop: async () => undefined,
+    takeShareAsked: async () => ({ asked: false }),
     clipboardInfo: async () => ({ files: 0 }),
     clipboardFiles: async () => ({ files: [] })
   } as unknown as CelesteNativePlugin
@@ -198,6 +201,8 @@ export const screen = {
   start: (servers: IceServer[]): Promise<{ sdp: string }> => Native.shareScreen({ servers }),
   answer: (sdp: string): Promise<void> => Native.shareAnswer({ sdp }),
   stop: (): Promise<void> => Native.shareStop().catch(() => undefined),
+  /** True once if the app was opened from the notification that asks to show this screen on the computer. */
+  takeAsked: (): Promise<boolean> => Native.takeShareAsked().then((r) => r.asked, () => false),
   /** Calls `listener` when the capture ends on its own (the screen locked, Android's chip was used, the link was lost). */
   onEnded(listener: (why: string) => void): () => void {
     let off: (() => void) | null = null

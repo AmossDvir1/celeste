@@ -214,7 +214,8 @@ function EffortPopover({
   const byId = useModels((s) => s.byId)
   const model = lookupModel(byId, prefs.model)
   const efforts = model.efforts
-  const idx = Math.max(0, prefs.effort ? efforts.indexOf(prefs.effort) : 0)
+  const shown = effortFor(model, prefs.effort)
+  const idx = Math.max(0, shown ? efforts.indexOf(shown) : 0)
   const disabled = efforts.length === 0
 
   return (

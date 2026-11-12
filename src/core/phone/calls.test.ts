@@ -86,6 +86,28 @@ describe('phone calls', () => {
     await expect(call('sessions.send', ['s1', { text: '  ' }], phone)).rejects.toThrow('Write something first.')
   })
 
+  it('takes the middle parts of a file together and again, and the last one only when all are there', async () => {
+    const { api, saved } = fakeApi([])
+    const call = phoneCalls(() => api, () => 'PC')
+    const phone = { id: 'p1' }
+    const id = 'up-parallel1'
+    const part = (n: number, text: string, last = false) => ({ upload: id, name: 'a.txt', mime: 'text/plain', part: n, data: Buffer.from(text).toString('base64'), last })
+    await call('phone.upload', [part(0, 'aa')], phone)
+    await call('phone.upload', [part(2, 'cc')], phone)
+    await call('phone.upload', [part(1, 'bb')], phone)
+    // An answer was lost, so part 1 comes again: it is not counted twice.
+    expect(await call('phone.upload', [part(1, 'bb')], phone)).toEqual({ part: 3 })
+    const done = (await call('phone.upload', [part(3, 'dd', true)], phone)) as { id: string; size: number }
+    expect(done.size).toBe(8)
+    expect(Buffer.from(saved[0]?.data as ArrayBuffer).toString()).toBe('aabbccdd')
+    // The last part again, after its answer was lost: the same file, not a second one.
+    expect(await call('phone.upload', [part(3, 'dd', true)], phone)).toEqual(done)
+    expect(saved).toHaveLength(1)
+
+    await call('phone.upload', [{ ...part(0, 'x'), upload: 'up-missing01' }], phone)
+    await expect(call('phone.upload', [{ ...part(2, 'z', true), upload: 'up-missing01' }], phone)).rejects.toThrow('could not be sent')
+  })
+
   it('refuses a file that arrives out of order, is not base64, or is too big', async () => {
     const { api } = fakeApi([])
     const call = phoneCalls(() => api, () => 'PC')
