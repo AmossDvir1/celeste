@@ -1,4 +1,4 @@
-import type { DesktopAction, DesktopBarState, DesktopResult, DesktopShot, Inspection, WindowInfo } from '@shared/desktop'
+import type { DesktopAction, DesktopBarState, DesktopResult, DesktopShot, ElementsResult, Inspection, ResolveResult, WindowInfo } from '@shared/desktop'
 import type { DesktopHost } from './control'
 
 /**
@@ -56,6 +56,14 @@ export class MainDesktopHost implements DesktopHost {
 
   inspect(action: DesktopAction): Promise<Inspection> {
     return this.call<Inspection>('inspect', action)
+  }
+
+  elements(windowId?: number): Promise<ElementsResult> {
+    return this.call<ElementsResult>('elements', { window: windowId }, 30_000)
+  }
+
+  resolve(id: number): Promise<ResolveResult> {
+    return this.call<ResolveResult>('resolve', { id })
   }
 
   /** The computer's screen as video for a phone (src/main/desktop/watch.ts): answers the phone's offer. */

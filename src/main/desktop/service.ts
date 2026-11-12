@@ -15,9 +15,12 @@ import {
   type DesktopResult,
   type DesktopScope,
   type DesktopShot,
+  type ElementInfo,
+  type ElementsResult,
   type Inspection,
   type Point,
   type Rect,
+  type ResolveResult,
   type WindowInfo
 } from '@shared/desktop'
 import { ControlBar } from './bar'
@@ -64,12 +67,20 @@ const watchArg = z.object({
     .max(8)
 })
 const focusArg = z.object({ id: z.number().int() })
+const elementsArg = z.object({ window: z.number().int().optional() })
+const resolveArg = z.object({ id: z.number().int() })
+
+/** How long a list of elements stays good: after that the screen has likely changed and the assistant is asked to list again. */
+const ELEMENTS_FRESH_MS = 120_000
+const MAX_ELEMENTS = 200
 
 /** How far the mouse may be from where the assistant left it before the person is taken to have moved it. */
 const MOVED_PIXELS = 12
 
 export class DesktopService {
   private geometry: ShotGeometry | null = null
+  /** The elements last listed, where they were on the screen then and in which window, so an id can be turned into a point later. */
+  private listed: { at: number; windowId: number; frame: Rect; items: Map<number, Point> } | null = null
   private driver: InputDriver | null = null
   private api: WindowsApi | null = null
   private scope: DesktopScope = { kind: 'screen' }
@@ -79,10 +90,20 @@ export class DesktopService {
   private readonly bar: ControlBar
   /** The computer's screen as video, for a phone the person allowed (docs/PHONE_PLAN.md 7.3). Only while the assistant has the screen. */
   private readonly watch = new WatchService({
-    ready: () => {
-      if (!this.active) return 'The assistant is not using the computer now.'
-      if (this.scope.kind !== 'screen') return `Watching needs the assistant to have the whole screen; this time it has ${describeScope(this.scope)}.`
-      return null
+    ready: () => (this.active ? null : 'The assistant is not using the computer now.'),
+    mask: () => {
+      if (this.scope.kind === 'screen') return null
+      try {
+        const screenRect = screen.dipToScreenRect(null, screen.getPrimaryDisplay().bounds)
+        // The list is front to back and the mask is bottom to top, so a window in front of an allowed one paints over it.
+        const layers = [...this.windowsApi().list(true)]
+          .filter((w) => w.pid !== process.pid && !w.minimized)
+          .reverse()
+          .map((w) => ({ x: w.bounds.x, y: w.bounds.y, width: w.bounds.width, height: w.bounds.height, show: this.allowed(w) }))
+        return { screen: { x: screenRect.x, y: screenRect.y, width: screenRect.width, height: screenRect.height }, layers }
+      } catch {
+        return { screen: { x: 0, y: 0, width: 1, height: 1 }, layers: [] }
+      }
     },
     blocked: () => {
       if (!this.never.length) return false
@@ -133,6 +154,16 @@ export class DesktopService {
         const parsed = focusArg.safeParse(arg)
         if (!parsed.success) throw new Error('The request was not valid.')
         return this.focus(parsed.data.id)
+      }
+      case 'elements': {
+        const parsed = elementsArg.safeParse(arg)
+        if (!parsed.success) throw new Error('The request was not valid.')
+        return this.elements(parsed.data.window)
+      }
+      case 'resolve': {
+        const parsed = resolveArg.safeParse(arg)
+        if (!parsed.success) throw new Error('The request was not valid.')
+        return this.resolve(parsed.data.id)
       }
       case 'inspect': {
         const parsed = action.safeParse(arg)
@@ -212,6 +243,7 @@ export class DesktopService {
     if (!this.active && !this.bar.windows().length) return
     this.active = false
     this.geometry = null
+    this.listed = null
     this.lastCursor = null
     this.scope = { kind: 'screen' }
     this.never = []
@@ -287,6 +319,67 @@ export class DesktopService {
     if (!inScope(this.scope, w)) return { ok: false, reason: `That window is outside what you were given: ${describeScope(this.scope)}.` }
     if (!this.windowsApi().focus(id)) return { ok: false, reason: 'Windows did not bring that window to the front. Click on it instead, if it is on the screen.' }
     return { ok: true, title: w.title, app: w.app }
+  }
+
+  /**
+   * What can be pressed or typed into in a window, with a number each, in the screenshot's pixels. Windows says where each thing is, so
+   * this is exact where aiming at a picture is not. The window is the one given, or the one in front (or the top one the assistant may
+   * use). Anything outside the scope, on the never list, covered by another window or off the picture is left out.
+   */
+  private elements(windowId?: number): ElementsResult {
+    if (!this.active) return { ok: false, reason: 'Control is not on.' }
+    const g = this.geometry
+    if (!g) return { ok: false, reason: 'Take a screenshot first: positions are given in its pixels.' }
+    const api = this.windowsApi()
+    let win: WinRecord | null = null
+    if (windowId !== undefined) {
+      win = api.byId(windowId)
+      if (!win) return { ok: false, reason: 'There is no such window any more. Call desktop_list_windows.' }
+      if (win.pid === process.pid) return { ok: false, reason: 'That is a Celeste window. Celeste’s own windows are off limits.' }
+      if (neverMatches(this.never, win)) return { ok: false, reason: 'That window is on the list of programs that are never controlled (Settings, Desktop control).' }
+      if (!inScope(this.scope, win)) return { ok: false, reason: `That window is outside what you were given: ${describeScope(this.scope)}.` }
+      if (win.minimized) return { ok: false, reason: 'That window is minimized. Bring it to the front with desktop_focus_window.' }
+    } else {
+      const front = api.foreground()
+      win = front && !front.minimized && this.allowed(front) ? front : (api.list().find((w) => !w.minimized && this.allowed(w)) ?? null)
+      if (!win) return { ok: false, reason: `There is no window to read: ${describeScope(this.scope)} is minimized or not open. Bring it to the front with desktop_focus_window.` }
+    }
+    const found = api.elementsOf(win.id, MAX_ELEMENTS + 1)
+    const items = new Map<number, Point>()
+    const elements: ElementInfo[] = []
+    for (const e of found) {
+      const center = { x: Math.round(e.bounds.x + e.bounds.width / 2), y: Math.round(e.bounds.y + e.bounds.height / 2) }
+      const x = Math.round((center.x - g.origin.x) / g.scaleX)
+      const y = Math.round((center.y - g.origin.y) / g.scaleY)
+      if (x < 0 || y < 0 || x >= g.width || y >= g.height) continue
+      if (api.at(center)?.id !== win.id) continue
+      if (elements.length >= MAX_ELEMENTS) break
+      const id = elements.length + 1
+      items.set(id, center)
+      elements.push({ id, role: e.role, name: e.name, x, y })
+    }
+    this.listed = { at: Date.now(), windowId: win.id, frame: win.bounds, items }
+    return { ok: true, elements, window: `${win.title || win.app} (${win.app})`, width: g.width, height: g.height, truncated: found.length > MAX_ELEMENTS }
+  }
+
+  /** The point in the screenshot that an element from the last list is at now, or why it cannot be found. */
+  private resolve(id: number): ResolveResult {
+    const stale = { ok: false as const, reason: `Element ${id} is not on the last list, or the list is out of date. Call desktop_elements again.` }
+    if (!this.active) return { ok: false, reason: 'Control is not on.' }
+    const g = this.geometry
+    const list = this.listed
+    if (!g || !list || Date.now() - list.at > ELEMENTS_FRESH_MS) return stale
+    const center = list.items.get(id)
+    if (!center) return stale
+    const win = this.windowsApi().byId(list.windowId)
+    const f = win?.bounds
+    if (!win || !f || f.x !== list.frame.x || f.y !== list.frame.y || f.width !== list.frame.width || f.height !== list.frame.height) {
+      return { ok: false, reason: 'The window has moved, changed size or closed since the list was made. Call desktop_elements again.' }
+    }
+    const x = (center.x - g.origin.x) / g.scaleX
+    const y = (center.y - g.origin.y) / g.scaleY
+    if (x < 0 || y < 0 || x >= g.width || y >= g.height) return { ok: false, reason: 'That element is outside the screenshot now. Take a screenshot and call desktop_elements again.' }
+    return { ok: true, at: { x, y } }
   }
 
   /** What is under an action: for a click, the name of the button; for typing and for Enter and Space, the field that has the keyboard. */

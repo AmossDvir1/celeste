@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DESKTOP_LIMITS, PAUSED_APPROVAL, PAUSED_MOUSE, type DesktopAction, type DesktopBarState, type DesktopResult, type Inspection, type WindowInfo } from '@shared/desktop'
+import { DESKTOP_LIMITS, PAUSED_APPROVAL, PAUSED_MOUSE, type DesktopAction, type DesktopBarState, type DesktopResult, type ElementsResult, type Inspection, type ResolveResult, type WindowInfo } from '@shared/desktop'
 import { DesktopControl, type DesktopHost, type DesktopLogEvent } from './control'
 
 class FakeHost implements DesktopHost {
@@ -29,6 +29,18 @@ class FakeHost implements DesktopHost {
   async inspect(action: DesktopAction) {
     this.inspected.push(action)
     return this.inspection
+  }
+  elementsResult: ElementsResult = { ok: true, elements: [{ id: 1, role: 'button', name: 'Save', x: 640, y: 360 }], window: 'Notes (notepad)', width: 1500, height: 844, truncated: false }
+  elementCalls: (number | undefined)[] = []
+  resolveResult: ResolveResult | null = null
+  resolved: number[] = []
+  async elements(windowId?: number) {
+    this.elementCalls.push(windowId)
+    return this.elementsResult
+  }
+  async resolve(id: number): Promise<ResolveResult> {
+    this.resolved.push(id)
+    return this.resolveResult ?? { ok: true, at: { x: 640, y: 360 } }
   }
   async unsupported() {
     return this.unsupportedReason
@@ -119,6 +131,7 @@ describe('the tools', () => {
       'desktop_screenshot',
       'desktop_list_windows',
       'desktop_focus_window',
+      'desktop_elements',
       'desktop_move',
       'desktop_click',
       'desktop_double_click',
@@ -336,6 +349,47 @@ describe('seeing and doing', () => {
     expect(await run('desktop_click', { x: 'left', y: 1 })).toMatchObject({ isError: true, text: expect.stringContaining('Invalid arguments') })
     expect(await run('desktop_scroll', { x: 1, y: 1, direction: 'sideways' })).toMatchObject({ isError: true })
     expect(await run('desktop_scroll', { x: 1, y: 1, direction: 'down', amount: 99 })).toMatchObject({ isError: true })
+    expect(host.acted).toEqual([])
+  })
+
+  it('lists what can be clicked, with numbers and positions in the screenshot', async () => {
+    const r = await run('desktop_elements', { window: 7 })
+    expect(r.isError).toBe(false)
+    expect(r.text).toContain('1: button “Save” at 640,360')
+    expect(r.text).toContain('1500 by 844')
+    expect(host.elementCalls).toEqual([7])
+    host.elementsResult = { ok: false, reason: 'Take a screenshot first.' }
+    expect(await run('desktop_elements')).toMatchObject({ isError: true, text: 'Take a screenshot first.' })
+  })
+
+  it('clicks an element by its number, at the point the computer gives for it, through the same checks as any click', async () => {
+    host.resolveResult = { ok: true, at: { x: 321.5, y: 99 } }
+    host.inspection = { label: 'Delete' }
+    const r = await run('desktop_click', { id: 4 })
+    expect(host.resolved).toEqual([4])
+    expect(host.inspected[0]).toEqual({ type: 'click', at: { x: 321.5, y: 99 }, button: 'left', count: 1 })
+    // The name of the button decides whether it asks, whether it was aimed by number or by pixel.
+    expect(cards.at(-1)?.title).toContain('Delete')
+    expect(r.isError).toBe(false)
+  })
+
+  it('clicks and scrolls by number when the computer allows it, and says why when it does not', async () => {
+    expect((await run('desktop_double_click', { id: 2 })).isError).toBe(false)
+    expect((await run('desktop_scroll', { id: 2, direction: 'down' })).isError).toBe(false)
+    expect(host.acted.map((a) => a.action)).toEqual([
+      { type: 'click', at: { x: 640, y: 360 }, button: 'left', count: 2 },
+      { type: 'scroll', at: { x: 640, y: 360 }, dx: 0, dy: 3 }
+    ])
+    host.resolveResult = { ok: false, reason: 'The list is out of date. Call desktop_elements again.' }
+    expect(await run('desktop_click', { id: 2 })).toMatchObject({ isError: true, text: 'The list is out of date. Call desktop_elements again.' })
+    expect(host.acted).toHaveLength(2)
+  })
+
+  it('asks for an id or both x and y', async () => {
+    expect(await run('desktop_click', {})).toMatchObject({ isError: true, text: expect.stringContaining('element number') })
+    expect(await run('desktop_click', { x: 4 })).toMatchObject({ isError: true })
+    expect(await run('desktop_click', { id: 1.5 })).toMatchObject({ isError: true })
+    expect(host.resolved).toEqual([])
     expect(host.acted).toEqual([])
   })
 

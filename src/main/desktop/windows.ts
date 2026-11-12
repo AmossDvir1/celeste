@@ -37,6 +37,39 @@ export interface WindowsApi {
   focusedField(): Inspection
   /** The button or field under a point: what it is called. */
   elementAt(p: Point): Inspection
+  /**
+   * The things in a window a person could press or type into, in reading order (buttons, links, fields, menu items, tabs, list rows),
+   * in screen pixels. Elements that are off screen, disabled or have no size are left out, and a password field has no name here.
+   * At most `max`, and it stops reading after a little while on a window that has more than it can read in time.
+   */
+  elementsOf(windowId: number, max?: number): UiElement[]
+}
+
+/** One thing in a window that can be pressed or typed into. */
+export interface UiElement {
+  /** Plain words: "button", "text field", "link". */
+  role: string
+  name: string
+  /** In screen pixels. */
+  bounds: Rect
+  password?: boolean
+}
+
+/** The kinds of element worth listing, by their UI Automation control type. */
+export const UIA_ROLES: Record<number, string> = {
+  50000: 'button',
+  50002: 'checkbox',
+  50003: 'dropdown',
+  50004: 'text field',
+  50005: 'link',
+  50007: 'list item',
+  50011: 'menu item',
+  50013: 'radio button',
+  50015: 'slider',
+  50016: 'spinner',
+  50019: 'tab',
+  50024: 'tree item',
+  50031: 'split button'
 }
 
 const GA_ROOT = 2
@@ -49,8 +82,19 @@ const DWMWA_CLOAKED = 14
 // IUIAutomation and IUIAutomationElement are COM interfaces; these are the places of the calls we make in their tables of functions.
 const UIA_GET_FOCUSED_ELEMENT = 8
 const UIA_ELEMENT_FROM_POINT = 7
+const UIA_ELEMENT_FROM_HANDLE = 6
+const UIA_CONTROL_VIEW_CONDITION = 18
+const UIAELEMENT_FIND_ALL = 6
+const UIAELEMENT_CONTROL_TYPE = 21
 const UIAELEMENT_NAME = 23
+const UIAELEMENT_ISENABLED = 28
 const UIAELEMENT_ISPASSWORD = 35
+const UIAELEMENT_ISOFFSCREEN = 38
+const UIAELEMENT_BOUNDING_RECT = 43
+const UIAARRAY_LENGTH = 3
+const UIAARRAY_GET_ELEMENT = 4
+const TREE_SCOPE_DESCENDANTS = 4
+const ELEMENTS_BUDGET_MS = 3000
 const RELEASE = 2
 
 export function createWindowsApi(): WindowsApi {
@@ -158,6 +202,10 @@ export function createWindowsApi(): WindowsApi {
   const PGetBool = koffi.proto('int32 __stdcall GetBool(void *self, _Out_ int32 *out)')
   const PGetBstr = koffi.proto('int32 __stdcall GetBstr(void *self, _Out_ void **out)')
   const PRelease = koffi.proto('uint32 __stdcall Release(void *self)')
+  const PElementFromHandle = koffi.proto('int32 __stdcall ElementFromHandle(void *self, intptr hwnd, _Out_ void **out)')
+  const PFindAll = koffi.proto('int32 __stdcall FindAll(void *self, int32 scope, void *cond, _Out_ void **out)')
+  const PGetItem = koffi.proto('int32 __stdcall GetElement(void *self, int32 i, _Out_ void **out)')
+  const PGetRect = koffi.proto('int32 __stdcall GetRect(void *self, _Out_ CLWRECT *out)')
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const slot = (obj: unknown, i: number, proto: any): any => {
@@ -201,8 +249,60 @@ export function createWindowsApi(): WindowsApi {
     }
   }
 
+  const release = (o: unknown) => {
+    if (o) slot(o, RELEASE, PRelease)(o)
+  }
+  const elementsOf = (windowId: number, max = 200): UiElement[] => {
+    const a = uia()
+    const out: UiElement[] = []
+    const root: unknown[] = [null]
+    if ((slot(a, UIA_ELEMENT_FROM_HANDLE, PElementFromHandle)(a, windowId, root) as number) !== 0 || !root[0]) return out
+    const cond: unknown[] = [null]
+    const found: unknown[] = [null]
+    try {
+      if ((slot(a, UIA_CONTROL_VIEW_CONDITION, PGetFocused)(a, cond) as number) !== 0 || !cond[0]) return out
+      if ((slot(root[0], UIAELEMENT_FIND_ALL, PFindAll)(root[0], TREE_SCOPE_DESCENDANTS, cond[0], found) as number) !== 0 || !found[0]) return out
+      const n = [0]
+      if ((slot(found[0], UIAARRAY_LENGTH, PGetBool)(found[0], n) as number) !== 0) return out
+      const stop = Date.now() + ELEMENTS_BUDGET_MS
+      for (let i = 0; i < (n[0] as number) && out.length < max && Date.now() < stop; i++) {
+        const item: unknown[] = [null]
+        if ((slot(found[0], UIAARRAY_GET_ELEMENT, PGetItem)(found[0], i, item) as number) !== 0 || !item[0]) continue
+        const el = item[0]
+        try {
+          const type = [0]
+          if ((slot(el, UIAELEMENT_CONTROL_TYPE, PGetBool)(el, type) as number) !== 0) continue
+          const role = UIA_ROLES[type[0] as number]
+          if (!role) continue
+          const flag = [0]
+          if ((slot(el, UIAELEMENT_ISOFFSCREEN, PGetBool)(el, flag) as number) === 0 && flag[0]) continue
+          flag[0] = 1
+          if ((slot(el, UIAELEMENT_ISENABLED, PGetBool)(el, flag) as number) === 0 && !flag[0]) continue
+          const r = { left: 0, top: 0, right: 0, bottom: 0 }
+          if ((slot(el, UIAELEMENT_BOUNDING_RECT, PGetRect)(el, r) as number) !== 0) continue
+          if (r.right - r.left < 2 || r.bottom - r.top < 2) continue
+          const info = describe(el)
+          out.push({
+            role: info.password ? 'password field' : role,
+            name: info.password ? '' : (info.label ?? '').replace(/\s+/g, ' ').trim().slice(0, 120),
+            bounds: { x: r.left, y: r.top, width: r.right - r.left, height: r.bottom - r.top },
+            ...(info.password ? { password: true } : {})
+          })
+        } finally {
+          release(el)
+        }
+      }
+    } finally {
+      release(found[0])
+      release(cond[0])
+      release(root[0])
+    }
+    return out
+  }
+
   return {
     list,
+    elementsOf,
     foreground: () => {
       const h = topLevel(GetForegroundWindow() as number)
       return h ? record(h) : null

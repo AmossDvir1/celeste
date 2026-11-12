@@ -201,7 +201,7 @@ const TOOLS: (ExtraTool & { ability: PhoneAbility })[] = [
     name: 'phone_tap',
     ability: 'control_tap',
     title: 'Tap on the phone',
-    description: 'While you have control: taps an element from the latest phone_screen (by `id`), or a point (`x`, `y` in screen pixels). Buttons that send, pay, buy, delete, install or allow ask the user again first.',
+    description: 'While you have control: taps an element from the latest phone_screen (by `id`, the exact way: use it whenever the element is listed), or a point (`x`, `y` in the pixels of the size phone_screen gives, which is also the size of its screenshot). Buttons that send, pay, buy, delete, install or allow ask the user again first.',
     shape: {
       id: z.number().int().min(0).optional(),
       x: z.number().int().min(0).optional(),

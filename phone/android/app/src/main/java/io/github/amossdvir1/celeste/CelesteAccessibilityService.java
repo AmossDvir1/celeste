@@ -366,7 +366,7 @@ public class CelesteAccessibilityService extends AccessibilityService {
         }, minMs);
     }
 
-    /** A picture of the screen, scaled to 720 pixels wide, as base64 JPEG. Calls back with null when it cannot. */
+    /** A picture of the screen, shrunk by PhoneControl.pictureScale, as base64 JPEG. Calls back with null when it cannot. */
     void screenshot(java.util.function.Consumer<String> done) {
         if (Build.VERSION.SDK_INT < 30) {
             done.accept(null);
@@ -379,7 +379,8 @@ public class CelesteAccessibilityService extends AccessibilityService {
                 try {
                     Bitmap hw = Bitmap.wrapHardwareBuffer(r.getHardwareBuffer(), r.getColorSpace());
                     Bitmap sw = hw.copy(Bitmap.Config.ARGB_8888, false);
-                    int w = 720, h = Math.round(sw.getHeight() * (720f / sw.getWidth()));
+                    float k = PhoneControl.pictureScale(sw.getWidth(), sw.getHeight());
+                    int w = Math.round(sw.getWidth() * k), h = Math.round(sw.getHeight() * k);
                     Bitmap small = Bitmap.createScaledBitmap(sw, w, h, true);
                     ByteArrayOutputStream out = new ByteArrayOutputStream();
                     small.compress(Bitmap.CompressFormat.JPEG, 60, out);

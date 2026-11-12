@@ -1,6 +1,6 @@
 import { desktopCapturer, nativeImage, screen, type Display } from 'electron'
-import { DESKTOP_LIMITS, type DesktopShot, type Rect } from '@shared/desktop'
-import type { ShotGeometry } from './geometry'
+import { type DesktopShot, type Rect } from '@shared/desktop'
+import { fitShotSize, type ShotGeometry } from './geometry'
 
 /** What is in the picture: everything, or nothing but the windows that are shown. Windows are listed bottom to top, in screen pixels. */
 export interface Redaction {
@@ -23,13 +23,14 @@ export function displayOf(rect: Rect): Display {
 }
 
 /**
- * A display (or a part of it), scaled so the longer side of the picture is about 1,500 pixels, with the windows the assistant may not see
+ * A display (or a part of it), scaled to a size models read without shrinking it further (see `fitShotSize`), with the windows the assistant may not see
  * painted black. Celeste's own windows are not in it either way (the service hides them from capture).
  */
 export async function capture(display: Display, crop?: Rect, redaction?: Redaction): Promise<{ shot: DesktopShot; geometry: ShotGeometry }> {
   const physical = screen.dipToScreenRect(null, display.bounds)
   const area = (crop && intersect(crop, physical)) || physical
-  const factor = Math.min(1, DESKTOP_LIMITS.shotLongSide / Math.max(area.width, area.height))
+  const fit = fitShotSize(area.width, area.height)
+  const factor = fit.width / area.width
   const target = { width: Math.max(1, Math.round(physical.width * factor)), height: Math.max(1, Math.round(physical.height * factor)) }
   const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: target })
   const source = sources.find((s) => s.display_id === String(display.id)) ?? sources[0]

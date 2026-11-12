@@ -55,6 +55,24 @@ export interface Inspection {
   password?: boolean
 }
 
+/**
+ * One thing in a window that can be pressed or typed into, as the assistant is told about it. `id` is what the pointer tools take in
+ * place of x and y; `x` and `y` are the middle of it in the screenshot's pixels.
+ */
+export interface ElementInfo {
+  id: number
+  role: string
+  name: string
+  x: number
+  y: number
+}
+
+export type ElementsResult =
+  | { ok: true; elements: ElementInfo[]; window: string; width: number; height: number; truncated: boolean }
+  | { ok: false; reason: string }
+
+export type ResolveResult = { ok: true; at: Point } | { ok: false; reason: string }
+
 /** What the control bar shows while control is on. It is also how Core tells the main process the rules of the grant. */
 export interface DesktopBarState {
   sessionId: string
@@ -86,8 +104,9 @@ export const DESKTOP_LIMITS = {
   minGapMs: 250,
   maxTextLength: 2000,
   maxWaitSeconds: 10,
-  /** The longer side of a screenshot. Models aim poorly at very large pictures. */
-  shotLongSide: 1500,
+  /** The longest side of a screenshot, and the most 28 by 28 pixel patches in it. Past either, models shrink the picture and aim off. */
+  shotMaxSide: 1560,
+  shotMaxTokens: 1500,
   barLines: 3
 } as const
 

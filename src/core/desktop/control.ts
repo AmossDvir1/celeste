@@ -18,7 +18,9 @@ import {
   type DesktopResult,
   type DesktopScope,
   type DesktopShot,
+  type ElementsResult,
   type Inspection,
+  type ResolveResult,
   type WindowInfo
 } from '@shared/desktop'
 import type { ExtraTool, ExtraTools, ToolResult } from '../workflows/tools'
@@ -46,6 +48,10 @@ export interface DesktopHost {
   focus(id: number): Promise<{ ok: true; title: string; app: string } | { ok: false; reason: string }>
   /** What is under an action: the name of the button it would press, whether the field it would type in takes a password. */
   inspect(action: DesktopAction): Promise<Inspection>
+  /** What can be pressed or typed into in a window (the one given, or the one in front), numbered, in the screenshot's pixels. */
+  elements(windowId?: number): Promise<ElementsResult>
+  /** The point in the screenshot where an element from the last `elements` list is now, or why it cannot be found. */
+  resolve(id: number): Promise<ResolveResult>
 }
 
 export type DesktopLogEvent =
@@ -99,6 +105,11 @@ const SHAPES = {
     window: z.string().max(200).optional().describe('Part of the title of the one window to limit yourself to. Everything else is hidden from you and cannot be clicked.')
   },
   at: { x: z.number().describe('Pixels from the left edge of the screenshot'), y: z.number().describe('Pixels from the top edge of the screenshot') },
+  pointer: {
+    id: z.number().int().optional().describe('An element number from desktop_elements: exact, so use it whenever the thing is listed'),
+    x: z.number().optional().describe('Pixels from the left edge of the screenshot, when there is no id'),
+    y: z.number().optional().describe('Pixels from the top edge of the screenshot, when there is no id')
+  },
   button: z.enum(['left', 'right', 'middle']).optional().describe('Default left')
 }
 
@@ -121,7 +132,7 @@ const TOOLS: (ExtraTool & { shape: z.ZodRawShape })[] = [
   {
     name: 'desktop_screenshot',
     title: 'Take a screenshot of the screen',
-    description: 'A picture of what you may see: the main screen, or the window or program you were limited to (the rest is black). Every x and y you give to the other desktop tools is in this picture’s pixels, so take a new one after anything changes. Celeste’s own windows are not in it.',
+    description: 'A picture of what you may see: the main screen, or the window or program you were limited to (the rest is black). Positions you give by x and y are in this picture’s pixels, so take a new one after anything changes. Celeste’s own windows are not in it. Take it before desktop_elements.',
     shape: {},
     readOnly: false
   },
@@ -139,9 +150,17 @@ const TOOLS: (ExtraTool & { shape: z.ZodRawShape })[] = [
     shape: { id: z.number().int().describe('The number from desktop_list_windows') },
     readOnly: false
   },
-  { name: 'desktop_move', title: 'Move the mouse', description: 'Moves the mouse pointer.', shape: SHAPES.at, readOnly: false },
-  { name: 'desktop_click', title: 'Click', description: 'Moves the mouse and clicks.', shape: { ...SHAPES.at, button: SHAPES.button }, readOnly: false },
-  { name: 'desktop_double_click', title: 'Double-click', description: 'Moves the mouse and double-clicks with the left button.', shape: SHAPES.at, readOnly: false },
+  {
+    name: 'desktop_elements',
+    title: 'List what can be clicked in a window',
+    description:
+      'Lists the buttons, links, fields, menu items, tabs and list rows in a window (the one in front unless you give `window`), each with a number, its kind, its name and its position in the screenshot. Prefer it to guessing at pixels: give the number as `id` to desktop_click, desktop_double_click, desktop_move or desktop_scroll and it lands exactly. Take a screenshot first, and list again after the screen changes. Some things (a game, a drawing, an image) are not listed: use the screenshot and x, y for those.',
+    shape: { window: z.number().int().optional().describe('A window number from desktop_list_windows; default: the one in front') },
+    readOnly: false
+  },
+  { name: 'desktop_move', title: 'Move the mouse', description: 'Moves the mouse pointer to an element (`id`) or a point (`x`, `y`).', shape: SHAPES.pointer, readOnly: false },
+  { name: 'desktop_click', title: 'Click', description: 'Moves the mouse and clicks, on an element (`id`, from desktop_elements) or a point (`x`, `y`).', shape: { ...SHAPES.pointer, button: SHAPES.button }, readOnly: false },
+  { name: 'desktop_double_click', title: 'Double-click', description: 'Moves the mouse and double-clicks with the left button, on an element (`id`) or a point (`x`, `y`).', shape: SHAPES.pointer, readOnly: false },
   {
     name: 'desktop_drag',
     title: 'Drag',
@@ -157,8 +176,8 @@ const TOOLS: (ExtraTool & { shape: z.ZodRawShape })[] = [
   {
     name: 'desktop_scroll',
     title: 'Scroll',
-    description: 'Moves the mouse to the point and turns the wheel.',
-    shape: { ...SHAPES.at, direction: z.enum(['up', 'down', 'left', 'right']), amount: z.number().int().min(1).max(20).optional().describe('Wheel clicks, default 3') },
+    description: 'Moves the mouse to an element (`id`, from desktop_elements) or a point (`x`, `y`) and turns the wheel.',
+    shape: { ...SHAPES.pointer, direction: z.enum(['up', 'down', 'left', 'right']), amount: z.number().int().min(1).max(20).optional().describe('Wheel clicks, default 3') },
     readOnly: false
   },
   {
@@ -183,6 +202,8 @@ const TOOLS: (ExtraTool & { shape: z.ZodRawShape })[] = [
     readOnly: false
   }
 ]
+
+const POINTER_TOOLS = new Set(['desktop_move', 'desktop_click', 'desktop_double_click', 'desktop_scroll'])
 
 const fail = (text: string): ToolResult => ({ text, isError: true })
 const ok = (text: string): ToolResult => ({ text, isError: false })
@@ -333,7 +354,7 @@ export class DesktopControl implements ExtraTools {
           const shot = await this.deps.host.screenshot()
           g.lastAt = this.now()
           return {
-            text: `Screenshot, ${shot.width} by ${shot.height} pixels. Give x and y in this picture’s pixels. If anything on the screen changes, take another before you click.`,
+            text: `Screenshot, ${shot.width} by ${shot.height} pixels, shown at exactly this size. For anything desktop_elements lists, give its number as id: that is exact. Otherwise give x and y in this picture’s pixels. If anything on the screen changes, take another before you click.`,
             isError: false,
             image: { mime: shot.mime, data: shot.data }
           }
@@ -343,9 +364,60 @@ export class DesktopControl implements ExtraTools {
       })
     }
 
+    if (name === 'desktop_elements') {
+      const p = parse({ window: z.number().int().optional() }, args)
+      if (!p.ok) return p.error
+      return this.serial(g, async () => {
+        try {
+          const r = await this.deps.host.elements(p.data.window)
+          g.lastAt = this.now()
+          if (!r.ok) return fail(r.reason)
+          if (!r.elements.length) return ok(`Nothing in ${r.window} can be pressed or typed into as far as Windows can tell. Use the screenshot and x, y instead.`)
+          const lines = r.elements.map((e) => `${e.id}: ${e.role}${e.name ? ` “${e.name}”` : ''} at ${e.x},${e.y}`)
+          return ok(
+            [
+              `${r.window}, positions in the screenshot's ${r.width} by ${r.height} pixels. Give the number as id to desktop_click and the others.`,
+              ...lines,
+              ...(r.truncated ? [`(More than ${r.elements.length} things; scroll or ask for another window to see the rest.)`] : [])
+            ].join('\n')
+          )
+        } catch (err) {
+          return fail(`The window could not be read: ${err instanceof Error ? err.message : String(err)}`)
+        }
+      })
+    }
+
+    if (POINTER_TOOLS.has(name)) {
+      return this.serial(g, async () => {
+        const aimed = await this.aim(args)
+        if (!('args' in aimed)) return aimed
+        const action = this.toAction(name, aimed.args)
+        if (!('type' in action)) return action
+        return this.perform(g, action)
+      })
+    }
+
     const action = this.toAction(name, args)
     if (!('type' in action)) return action
     return this.serial(g, () => this.perform(g, action))
+  }
+
+  /** Turns an element number into the point it is at now, so everything after treats it like any other point and checks it the same way. */
+  private async aim(args: unknown): Promise<{ args: Record<string, unknown> } | ToolResult> {
+    const a = (args && typeof args === 'object' ? args : {}) as Record<string, unknown>
+    if (a['id'] === undefined || a['id'] === null) {
+      if (a['x'] === undefined || a['y'] === undefined) return fail('Give an element number as id (from desktop_elements), or both x and y.')
+      return { args: a }
+    }
+    if (typeof a['id'] !== 'number' || !Number.isInteger(a['id'])) return fail('Invalid arguments: id must be a whole number from desktop_elements.')
+    let r: ResolveResult
+    try {
+      r = await this.deps.host.resolve(a['id'])
+    } catch (err) {
+      return fail(`The element could not be found: ${err instanceof Error ? err.message : String(err)}`)
+    }
+    if (!r.ok) return fail(r.reason)
+    return { args: { ...a, x: r.at.x, y: r.at.y } }
   }
 
   private async request(sessionId: string, args: unknown): Promise<ToolResult> {
@@ -428,7 +500,7 @@ export class DesktopControl implements ExtraTools {
     return ok(
       [
         `The user said yes. You have control until ${this.clock(g.until)}, or until they stop it. You may use ${describeScope(scope)}.`,
-        'Start with desktop_screenshot. Every x and y you give is in the screenshot’s pixels. Take a new screenshot after anything changes; do not guess what happened.',
+        'Start with desktop_screenshot, then desktop_elements to get numbers for the buttons, links and fields; click by id when the thing is listed (exact), and by x and y in the screenshot’s pixels when it is not. Take a new screenshot after anything changes and list again; do not guess what happened.',
         'Rules: never type a password, a key or any secret; if something asks for one, stop and ask the user to type it. Celeste’s own windows cannot be clicked or typed into, and you cannot type into a password field. Before you press a button called Send, Buy, Delete, Allow or the like, the user is asked. If the user moves the mouse, you wait until they say to continue. If a call is refused, read why and do not try to get round it. If the user presses Stop, every call is refused: stop and say what you did.',
         'Do not repeat an action that did not work more than twice. Call desktop_release_control as soon as you are done.'
       ].join('\n')

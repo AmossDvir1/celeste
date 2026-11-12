@@ -37,7 +37,7 @@ const s = vi.hoisted(() => {
     driverFails: false,
     cursor: { x: 0, y: 0 },
     // What Windows says: the windows topmost first, who has the keyboard, and what is under a click or in the field with the keyboard.
-    win: { list: [] as Rec[], fg: null as Rec | null, fields: [{}] as { label?: string; password?: boolean }[], fieldCalls: 0, element: {} as { label?: string; password?: boolean }, focusOk: true, focused: 0 }
+    win: { list: [] as Rec[], fg: null as Rec | null, fields: [{}] as { label?: string; password?: boolean }[], fieldCalls: 0, element: {} as { label?: string; password?: boolean }, elements: [] as { role: string; name: string; bounds: Rect; password?: boolean }[], focusOk: true, focused: 0 }
   }
 })
 
@@ -95,7 +95,8 @@ vi.mock('./windows', () => ({
       return s.win.focusOk
     },
     focusedField: () => s.win.fields[Math.min(s.win.fieldCalls++, s.win.fields.length - 1)] ?? {},
-    elementAt: () => s.win.element
+    elementAt: () => s.win.element,
+    elementsOf: () => s.win.elements
   })
 }))
 
@@ -168,7 +169,7 @@ beforeEach(() => {
   extended = 0
   s.captures = []
   s.cursor = { x: 0, y: 0 }
-  s.win = { list: [], fg: null, fields: [{}], fieldCalls: 0, element: {}, focusOk: true, focused: 0 }
+  s.win = { list: [], fg: null, fields: [{}], fieldCalls: 0, element: {}, elements: [], focusOk: true, focused: 0 }
   resumed = 0
   service = new DesktopService({ stop: (why) => stops.push(why), extend: () => void extended++, resume: () => void resumed++ })
 })
@@ -570,6 +571,80 @@ describe('scope: one window, one program, or the whole screen', () => {
     it('does nothing while control is not on', async () => {
       expect(await call('focus', { id: 20 })).toMatchObject({ ok: false, reason: 'Control is not on.' })
     })
+  })
+})
+
+describe('elements: exact positions from Windows instead of aiming at a picture', () => {
+  const SAVE = { role: 'button', name: 'Save', bounds: { x: 1100, y: 300, width: 100, height: 40 } }
+  const OFFSCREEN = { role: 'button', name: 'Far', bounds: { x: 5000, y: 300, width: 100, height: 40 } }
+  const PASSWORD = { role: 'password field', name: '', bounds: { x: 1100, y: 400, width: 100, height: 40 }, password: true }
+  beforeEach(async () => {
+    await call('bar', state)
+    s.win.list = [NOTEPAD, BROWSER]
+    s.win.fg = NOTEPAD
+    s.win.elements = [SAVE, OFFSCREEN, PASSWORD]
+  })
+
+  it('needs a screenshot first, and control to be on', async () => {
+    expect(await call('elements', {})).toMatchObject({ ok: false, reason: expect.stringContaining('screenshot first') })
+    await call('bar', null)
+    expect(await call('elements', {})).toMatchObject({ ok: false, reason: 'Control is not on.' })
+  })
+
+  it('numbers the elements of the window in front, in the picture’s pixels, leaving out what is off the picture', async () => {
+    await call('screenshot')
+    const r = (await call('elements', {})) as { ok: true; elements: unknown[]; window: string; width: number }
+    expect(r.ok).toBe(true)
+    expect(r.elements).toEqual([
+      { id: 1, role: 'button', name: 'Save', x: 898, y: 250 },
+      { id: 2, role: 'password field', name: '', x: 898, y: 328 }
+    ])
+    expect(r.window).toContain('notepad')
+  })
+
+  it('turns a number into the point it is at, and the click lands on it', async () => {
+    await call('screenshot')
+    await call('elements', {})
+    const at = (await call('resolve', { id: 1 })) as { ok: true; at: { x: number; y: number } }
+    expect(at.ok).toBe(true)
+    expect(await call('act', { type: 'click', at: at.at, button: 'left', count: 1 })).toEqual({ ok: true })
+    expect(s.calls[0]).toBe('move 1150,320')
+  })
+
+  it('does not know a number that was not listed, or a list from before the window moved', async () => {
+    await call('screenshot')
+    expect(await call('resolve', { id: 1 })).toMatchObject({ ok: false, reason: expect.stringContaining('desktop_elements again') })
+    await call('elements', {})
+    expect(await call('resolve', { id: 9 })).toMatchObject({ ok: false })
+    s.win.list = [{ ...NOTEPAD, bounds: { ...NOTEPAD.bounds, x: 1010 } }, BROWSER]
+    expect(await call('resolve', { id: 1 })).toMatchObject({ ok: false, reason: expect.stringContaining('moved') })
+  })
+
+  it('leaves out what another window covers', async () => {
+    await call('screenshot')
+    s.win.list = [SAVE_AS, NOTEPAD]
+    const r = (await call('elements', {})) as { ok: true; elements: unknown[] }
+    expect(r.elements).toEqual([])
+  })
+
+  it('will not read Celeste’s windows, the never list, or a window outside the scope', async () => {
+    await call('screenshot')
+    const own = rec(1, 'Celeste', 'celeste', { x: 0, y: 0, width: 500, height: 500 }, { pid: process.pid })
+    s.win.list = [own, NOTEPAD, BROWSER, VAULT]
+    expect(await call('elements', { window: 1 })).toMatchObject({ ok: false, reason: expect.stringContaining('off limits') })
+    await call('bar', { ...state, never: ['keepass'] })
+    expect(await call('elements', { window: 30 })).toMatchObject({ ok: false, reason: expect.stringContaining('never controlled') })
+    await call('bar', scoped({ kind: 'app', app: 'notepad' }))
+    expect(await call('elements', { window: 20 })).toMatchObject({ ok: false, reason: expect.stringContaining('outside what you were given') })
+  })
+
+  it('forgets the list when control ends', async () => {
+    await call('screenshot')
+    await call('elements', {})
+    await call('bar', null)
+    await call('bar', state)
+    await call('screenshot')
+    expect(await call('resolve', { id: 1 })).toMatchObject({ ok: false })
   })
 })
 

@@ -1,6 +1,26 @@
 import { describe, expect, it } from 'vitest'
-import { toScreen, type ShotGeometry } from './geometry'
+import { fitShotSize, toScreen, type ShotGeometry } from './geometry'
 import { virtualKey } from './driver'
+
+describe('fitShotSize', () => {
+  const patches = (s: { width: number; height: number }) => Math.ceil(s.width / 28) * Math.ceil(s.height / 28)
+  it.each([
+    [1920, 1080],
+    [2560, 1440],
+    [3840, 2160],
+    [3440, 1440],
+    [1280, 720],
+    [800, 5000]
+  ])('fits %i by %i within the side and patch limits', (w, h) => {
+    const s = fitShotSize(w, h)
+    expect(Math.max(s.width, s.height)).toBeLessThanOrEqual(1568)
+    expect(patches(s)).toBeLessThanOrEqual(1568)
+    expect(Math.abs(s.width / s.height - w / h)).toBeLessThan(0.02 * (w / h) + 0.02)
+  })
+  it('keeps a small area as it is', () => {
+    expect(fitShotSize(1024, 600)).toEqual({ width: 1024, height: 600 })
+  })
+})
 
 describe('toScreen', () => {
   // A 3840 by 2160 display scaled to a 1500 pixel wide picture, and a second display to its left.
