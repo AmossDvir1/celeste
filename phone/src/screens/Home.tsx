@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
-import { AlarmClock, AppWindow, Bell, CalendarDays, ChevronRight, Hand, Code2, Images, Laptop, MapPin, MessageSquare, Monitor, Moon, Phone, Play, Plus, Search, ShieldOff, Smartphone, Sun, Unplug, Wifi, Workflow } from 'lucide-react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import { AlarmClock, AppWindow, Bell, CalendarDays, ChevronRight, Hand, Code2, Images, Laptop, MapPin, MessageSquare, Monitor, Moon, Pencil, Phone, Pin, PinOff, Play, Plus, Search, ShieldOff, Smartphone, Sun, Trash2, Unplug, Wifi, Workflow } from 'lucide-react'
 import type { Session } from '@/stores/types'
 import { abilities, appVersion, notificationsAllowed, type AbilityState } from '../native'
 import type { PhoneWorkflow } from '@shared/phone'
@@ -7,6 +8,7 @@ import { NeverAppsSheet } from '../NeverApps'
 import { RunSheet, StartSheet } from '../WorkflowSheets'
 import { askNotifications, useApp, type Tab } from '../store'
 import { Arc, Logo, Shimmer, buzz, greeting, rise, when } from '../ui'
+import { DeleteSheet } from './Chat'
 
 export function Home({ tab }: { tab: Tab }) {
   const linkState = useApp((s) => s.linkState)
@@ -103,32 +105,94 @@ function Offline({ computer, state }: { computer: string; state: string }) {
 }
 
 const DAY = 24 * 60 * 60 * 1000
+const HOLD_MS = 450
+const MOVE_PX = 10
+const reduceMotion = () => typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 function Chats() {
   const sessions = useApp((s) => s.sessions)
   const boot = useApp((s) => s.boot)
   const openChat = useApp((s) => s.openChat)
+  const pin = useApp((s) => s.pin)
+  const remove = useApp((s) => s.remove)
+  const menu = useApp((s) => s.listMenu)
+  const setListMenu = useApp((s) => s.setListMenu)
   const [query, setQuery] = useState('')
+  const [renaming, setRenaming] = useState<Session | null>(null)
+  const [deleting, setDeleting] = useState<Session | null>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  const glide = useRef<Map<string, number> | null>(null)
   const list = useMemo(() => {
     const q = query.trim().toLowerCase()
     return Object.values(sessions)
       .filter((s) => !q || s.title.toLowerCase().includes(q))
       .sort((a, b) => b.updatedAt - a.updatedAt)
   }, [sessions, query])
+  const pinned = useMemo(() => list.filter((s) => s.pinnedAt != null).sort((a, b) => (b.pinnedAt ?? 0) - (a.pinnedAt ?? 0)), [list])
+  const rest = list.filter((s) => s.pinnedAt == null)
   const waiting = list.filter((s) => s.status === 'waiting')
   const today = new Date().setHours(0, 0, 0, 0)
   const groups: [string, Session[]][] = [
-    ['Today', list.filter((s) => s.updatedAt >= today)],
-    ['This week', list.filter((s) => s.updatedAt < today && s.updatedAt >= today - 6 * DAY)],
-    ['Earlier', list.filter((s) => s.updatedAt < today - 6 * DAY)]
+    ['Today', rest.filter((s) => s.updatedAt >= today)],
+    ['This week', rest.filter((s) => s.updatedAt < today && s.updatedAt >= today - 6 * DAY)],
+    ['Earlier', rest.filter((s) => s.updatedAt < today - 6 * DAY)]
   ]
+  const menuSession = menu ? sessions[menu.id] : undefined
   let n = 5
 
-  const open = (e: MouseEvent<HTMLButtonElement>, id: string) => {
-    const t = e.currentTarget.querySelector<HTMLElement>('.title')
+  useEffect(() => {
+    if (menu && !menuSession) setListMenu(null)
+  }, [menu, menuSession, setListMenu])
+
+  // Rows glide to their new place: note where they are now, then animate from there after the list re-renders.
+  useLayoutEffect(() => {
+    const before = glide.current
+    if (!before || !listRef.current) return
+    glide.current = null
+    listRef.current.querySelectorAll<HTMLElement>('[data-session-id]').forEach((el) => {
+      const was = before.get(el.dataset.sessionId ?? '')
+      if (was == null) return
+      const dy = was - el.getBoundingClientRect().top
+      if (Math.abs(dy) >= 1) el.animate([{ transform: `translateY(${dy}px)` }, { transform: 'translateY(0)' }], { duration: 320, easing: 'cubic-bezier(.2,.8,.2,1)' })
+    })
+  })
+
+  const open = (el: HTMLElement, id: string) => {
+    const t = el.querySelector<HTMLElement>('.title')
     if (t) t.style.viewTransitionName = 'chat-title'
     void openChat(id)
   }
+
+  const togglePin = (s: Session) => {
+    if (!reduceMotion() && listRef.current) {
+      const at = new Map<string, number>()
+      listRef.current.querySelectorAll<HTMLElement>('[data-session-id]').forEach((el) => at.set(el.dataset.sessionId ?? '', el.getBoundingClientRect().top))
+      glide.current = at
+    }
+    // pin() applies its change synchronously; the menu closes after, so the glide is consumed by the pin's render.
+    void pin(s.id, s.pinnedAt == null)
+    setListMenu(null)
+  }
+
+  const row = (s: Session, isPinned: boolean) => <ChatRow key={s.id} s={s} pinned={isPinned} i={n++} onOpen={open} onHold={(x, y) => setListMenu({ id: s.id, x, y })} />
+  const items: ReactNode[] = []
+  if (pinned.length) {
+    items.push(
+      <div key="h-pinned" className="group pinned-h">
+        Pinned
+      </div>
+    )
+    pinned.forEach((s) => items.push(row(s, true)))
+  }
+  groups.forEach(([label, group]) => {
+    if (!group.length) return
+    items.push(
+      <div key={`h-${label}`} className="group">
+        {label}
+      </div>
+    )
+    group.forEach((s) => items.push(row(s, false)))
+  })
 
   return (
     <>
@@ -148,7 +212,7 @@ function Chats() {
         <input placeholder="Search chats" value={query} onChange={(e) => setQuery(e.target.value)} />
       </label>
       {waiting.length > 0 && !query && (
-        <button className="needs" {...rise(4)} onClick={(e) => open(e, (waiting[0] as Session).id)}>
+        <button className="needs" {...rise(4)} onClick={(e) => open(e.currentTarget, (waiting[0] as Session).id)}>
           <span className="dot pink live" />
           <div style={{ flex: 1, position: 'relative' }}>
             <div className="t">
@@ -160,29 +224,166 @@ function Chats() {
         </button>
       )}
       {list.length === 0 && <div className="empty">{query ? 'No chats match.' : boot ? 'No chats yet. Start one with New chat.' : <Shimmer>Loading your chats</Shimmer>}</div>}
-      {groups.map(([label, items]) =>
-        items.length ? (
-          <div key={label}>
-            <div className="group">{label}</div>
-            {items.map((s) => (
-              <button key={s.id} className="chatitem rise" style={{ ['--i' as string]: Math.min(n++, 14) }} onClick={(e) => open(e, s.id)}>
-                <span className={`avatar${s.status === 'waiting' ? ' needs-av' : ''}`}>{s.mode === 'develop' ? <Code2 size={18} /> : <MessageSquare size={18} />}</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="top">
-                    <span className="title">{s.title || 'New chat'}</span>
-                    <span className="time">{when(s.updatedAt)}</span>
-                  </div>
-                  <Preview s={s} />
-                </div>
-                {s.status === 'working' && <WorkingDot />}
-                {s.status === 'waiting' && <span className="wdot still" aria-hidden />}
-              </button>
-            ))}
-          </div>
-        ) : null
-      )}
+      <div ref={listRef}>{items}</div>
+      {menu && menuSession && createPortal(<ChatMenu at={menu} pinned={menuSession.pinnedAt != null} onClose={() => setListMenu(null)} onPin={() => togglePin(menuSession)} onRename={() => { setListMenu(null); setRenaming(menuSession) }} onDelete={() => { setListMenu(null); setDeleting(menuSession) }} />, document.querySelector('.app') ?? document.body)}
+      {renaming && <RenameSheet key={renaming.id} session={renaming} onClose={() => setRenaming(null)} />}
+      {deleting &&
+        createPortal(
+          <DeleteSheet
+            title={deleting.title || 'New chat'}
+            onCancel={() => setDeleting(null)}
+            onDelete={() => {
+              void remove(deleting.id)
+              setDeleting(null)
+            }}
+          />,
+          document.querySelector('.app') ?? document.body
+        )}
       <div style={{ height: 96 }} />
     </>
+  )
+}
+
+/** A chat row. A long press opens the menu at the finger; a short tap opens the chat. */
+function ChatRow({ s, pinned, i, onOpen, onHold }: { s: Session; pinned: boolean; i: number; onOpen: (el: HTMLElement, id: string) => void; onHold: (x: number, y: number) => void }) {
+  const [entered, setEntered] = useState(false)
+  const timer = useRef<number | undefined>(undefined)
+  const start = useRef<{ x: number; y: number } | null>(null)
+  const held = useRef(false)
+  const cancel = () => {
+    window.clearTimeout(timer.current)
+    timer.current = undefined
+    start.current = null
+  }
+  useEffect(() => () => window.clearTimeout(timer.current), [])
+
+  return (
+    <button
+      data-session-id={s.id}
+      className={`chatitem${entered ? '' : ' rise'}`}
+      style={{ ['--i' as string]: Math.min(i, 14) }}
+      onAnimationEnd={(e) => {
+        if (e.target === e.currentTarget) setEntered(true)
+      }}
+      onPointerDown={(e) => {
+        cancel()
+        held.current = false
+        start.current = { x: e.clientX, y: e.clientY }
+        const x = e.clientX
+        const y = e.clientY
+        timer.current = window.setTimeout(() => {
+          timer.current = undefined
+          start.current = null
+          held.current = true
+          onHold(x, y)
+        }, HOLD_MS)
+      }}
+      onPointerMove={(e) => {
+        const p = start.current
+        if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > MOVE_PX) cancel()
+      }}
+      onPointerUp={cancel}
+      onPointerCancel={cancel}
+      onContextMenu={(e) => e.preventDefault()}
+      onClick={(e) => {
+        if (held.current) {
+          held.current = false
+          return
+        }
+        onOpen(e.currentTarget, s.id)
+      }}
+    >
+      <span className={`avatar${s.status === 'waiting' ? ' needs-av' : ''}`}>{s.mode === 'develop' ? <Code2 size={18} /> : <MessageSquare size={18} />}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="top">
+          {pinned && <Pin size={12} className="pin-ic" role="img" aria-label="Pinned" />}
+          <span className="title">{s.title || 'New chat'}</span>
+          <span className="time">{when(s.updatedAt)}</span>
+        </div>
+        <Preview s={s} />
+      </div>
+      {s.status === 'working' && <WorkingDot />}
+      {s.status === 'waiting' && <span className="wdot still" aria-hidden />}
+    </button>
+  )
+}
+
+/** The menu a long press opens, anchored under or over the finger and kept on screen. */
+function ChatMenu({ at, pinned, onClose, onPin, onRename, onDelete }: { at: { x: number; y: number }; pinned: boolean; onClose: () => void; onPin: () => void; onRename: () => void; onDelete: () => void }) {
+  const app = document.querySelector('.app')?.getBoundingClientRect() ?? { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight }
+  const W = 224
+  const M = 12
+  const left = Math.min(Math.max(at.x - app.left - W / 2, M), app.width - W - M)
+  const below = at.y - app.top < app.height / 2
+  const place = below ? { top: at.y - app.top + 8 } : { bottom: app.height - (at.y - app.top) + 8 }
+  const drag = useRef<{ x: number; y: number } | null>(null)
+  return (
+    <div
+      className="lpmenu-layer"
+      onClick={onClose}
+      onContextMenu={(e) => e.preventDefault()}
+      onPointerDown={(e) => {
+        if ((e.target as HTMLElement).closest('.lpmenu')) return
+        drag.current = { x: e.clientX, y: e.clientY }
+      }}
+      onPointerMove={(e) => {
+        const p = drag.current
+        if (!p) return
+        if (Math.hypot(e.clientX - p.x, e.clientY - p.y) > MOVE_PX) {
+          drag.current = null
+          onClose()
+        }
+      }}
+      onPointerUp={() => (drag.current = null)}
+      onPointerCancel={() => (drag.current = null)}
+    >
+      <div className={`lpmenu ${below ? 'below' : 'above'}`} role="menu" style={{ left, width: W, ...place }} onClick={(e) => e.stopPropagation()}>
+        <button role="menuitem" onClick={onPin}>
+          {pinned ? <PinOff size={18} /> : <Pin size={18} />}
+          <span>{pinned ? 'Unpin' : 'Pin'}</span>
+        </button>
+        <button role="menuitem" onClick={onRename}>
+          <Pencil size={18} />
+          <span>Rename</span>
+        </button>
+        <button role="menuitem" className="danger" onClick={onDelete}>
+          <Trash2 size={18} />
+          <span>Delete</span>
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/** Renames a chat in a sheet; Save is off until the name has text. */
+function RenameSheet({ session, onClose }: { session: Session; onClose: () => void }) {
+  const rename = useApp((s) => s.rename)
+  const [value, setValue] = useState(session.title)
+  const clean = value.trim()
+  const save = () => {
+    if (clean && clean !== session.title.trim()) void rename(session.id, clean)
+    onClose()
+  }
+  return createPortal(
+    <div className="card-layer">
+      <div className="scrim" onClick={onClose} />
+      <div className="sheet" role="dialog" aria-label="Rename chat">
+        <div className="handle" />
+        <h1 className="h-l" style={{ fontSize: 20 }}>
+          Rename chat
+        </h1>
+        <input className="field" style={{ marginTop: 16 }} autoFocus maxLength={200} value={value} aria-label="Chat name" onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && clean) save() }} />
+        <div className="btnrow" style={{ marginTop: 16 }}>
+          <button className="btn tonal" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="btn primary" disabled={!clean} onClick={save}>
+            Save
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.querySelector('.app') ?? document.body
   )
 }
 

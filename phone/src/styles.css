@@ -263,11 +263,12 @@ html[data-nav=tab]::view-transition-new(screen) { animation:.3s var(--ease) .06s
 .as-body::-webkit-scrollbar { display:none; }
 .as-bar { position:absolute; right:3px; top:0; width:4px; border-radius:4px; background:var(--c-ink-faint); opacity:0; transform:scaleX(.4); transform-origin:right center; transition:opacity .25s var(--ease), transform .25s var(--ease); pointer-events:none; }
 .as-bar.on { opacity:.7; transform:none; }
-.tool-box { margin:-4px 0 0; background:var(--c-canvas); border:1px solid var(--c-edge); border-top:0; border-radius:0 0 14px 14px; overflow:hidden; }
-.tool-box .as-body { padding:10px 12px; }
+/* The frame sits on the scrolling box itself, not on a wrapper that clips it: a clip over a scroller leaves stale, ghosted tiles on Android WebView. */
+.tool-box { margin:-4px 0 0; }
+.tool-box .as-body { padding:10px 12px; background:var(--c-canvas); border:1px solid var(--c-edge); border-top:0; border-radius:0 0 14px 14px; }
 .tool-txt { margin:0; font-size:12px; white-space:pre-wrap; word-break:break-all; color:var(--c-ink-muted); }
-.tool-diff { margin:-4px 0 0; background:var(--c-canvas); border:1px solid var(--c-edge); border-top:0; border-radius:0 0 14px 14px; overflow:hidden; }
-.tool-diff .as-body { padding:4px 0 8px; }
+.tool-diff { margin:-4px 0 0; }
+.tool-diff .as-body { padding:4px 0 8px; background:var(--c-canvas); border:1px solid var(--c-edge); border-top:0; border-radius:0 0 14px 14px; }
 .df-file { padding-bottom:6px; }
 .df-h { display:flex; align-items:center; gap:8px; padding:6px 12px; font-size:12px; background:var(--c-raised); }
 .df-p { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--c-ink); }
@@ -293,6 +294,8 @@ html[data-nav=tab]::view-transition-new(screen) { animation:.3s var(--ease) .06s
 .think { padding:0 4px; }
 .think-h { padding:0; color:var(--c-ink-faint); }
 .think-t { margin-top:4px; padding-left:10px; border-left:2px solid var(--c-edge); font-size:13px; font-style:italic; color:var(--c-ink-muted); white-space:pre-wrap; overflow-wrap:anywhere; }
+/* While a thought streams, exactly three lines show at a fixed height, the newest at the bottom: the session below does not move. */
+.think-t.live { height:57px; line-height:19px; overflow:hidden; display:flex; flex-direction:column; justify-content:flex-end; }
 .notice { font-size:13px; color:var(--c-ink-faint); text-align:center; padding:4px 8px; }
 .errcard { border:1px solid rgb(255 100 124 / .4); background:rgb(255 100 124 / .08); color:var(--c-danger); border-radius:14px; padding:10px 12px; font-size:13.5px; }
 .approval { border-radius:20px; background:var(--c-raised); position:relative; isolation:isolate; }
@@ -331,6 +334,9 @@ input.opt.other:focus { border-color:var(--c-accent-edge); box-shadow:0 0 0 3px 
 .attachbtn { width:42px; height:42px; border-radius:50%; display:grid; place-items:center; flex:none; color:var(--c-ink-muted); transition:background-color .2s, transform .2s var(--spring); }
 .attachbtn:active { background:var(--c-raised-2); transform:scale(.92); }
 .attachbtn:disabled { opacity:.4; }
+.camerabtn { width:42px; height:42px; margin-left:-10px; border-radius:50%; display:grid; place-items:center; flex:none; color:var(--c-ink-muted); transition:background-color .2s, transform .2s var(--spring); }
+.camerabtn:active { background:var(--c-raised-2); transform:scale(.92); }
+.camerabtn:disabled { opacity:.4; }
 .achips { display:flex; gap:8px; overflow-x:auto; padding:0 2px 8px; scrollbar-width:none; }
 .achips::-webkit-scrollbar { display:none; }
 .achip { display:inline-flex; align-items:center; gap:7px; height:36px; padding:0 6px 0 8px; border-radius:18px; background:var(--c-pill); border:1px solid var(--c-edge); font-size:13px; color:var(--c-ink-soft); flex:none; max-width:220px; animation:pop-in .3s var(--spring); }
@@ -394,6 +400,46 @@ input.opt.other:focus { border-color:var(--c-accent-edge); box-shadow:0 0 0 3px 
 .card-layer.out .sheet { animation:sheet-down .2s ease-in both; }
 .btnrow { display:flex; gap:10px; }
 .btnrow .btn { flex:1; }
+
+/* Long-press menu: a pop-over at the finger, over a transparent backdrop. */
+.lpmenu-layer { position:absolute; inset:0; z-index:55; touch-action:none; }
+.lpmenu { position:absolute; background:var(--c-raised); border:1px solid var(--c-edge-strong); border-radius:18px; box-shadow:var(--shadow-pop); padding:6px; display:flex; flex-direction:column; animation:lpmenu-in .16s var(--ease) both; }
+.lpmenu.below { transform-origin:top center; }
+.lpmenu.above { transform-origin:bottom center; }
+.lpmenu button { display:flex; align-items:center; gap:12px; width:100%; background:none; border:0; border-radius:12px; padding:12px 12px; font:inherit; font-size:15px; font-weight:500; color:var(--c-ink); text-align:left; cursor:pointer; }
+.lpmenu button:active { background:var(--c-raised-2); }
+.lpmenu button svg { color:var(--c-ink-soft); flex:none; }
+.lpmenu button.danger, .lpmenu button.danger svg { color:var(--c-danger); }
+@keyframes lpmenu-in { from { opacity:0; transform:scale(.92); } to { opacity:1; transform:scale(1); } }
+
+/* Long-pressing a chat must not select text or raise the system callout. */
+.chatitem { -webkit-touch-callout:none; user-select:none; -webkit-user-select:none; }
+.chatitem .pin-ic { color:var(--c-ink-muted); flex:none; align-self:center; margin-right:4px; }
+
+/* The Pinned header fades in the first time something is pinned. */
+.group.pinned-h { animation:vt-fade-up .35s var(--ease) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .lpmenu { animation:none; }
+}
+
+/* Files and pictures the assistant made (Files.tsx). */
+.spin { animation:rotate 1s linear infinite; }
+.filecards { display:flex; flex-direction:column; gap:6px; }
+.viewer { position:fixed; inset:0; z-index:70; background:#05070d; display:flex; align-items:center; justify-content:center; animation:viewer-in .2s var(--ease) both; }
+@keyframes viewer-in { from { opacity:0; } }
+.viewer-bar { position:absolute; top:0; left:0; right:0; display:flex; align-items:center; gap:8px; padding:calc(env(safe-area-inset-top, 0px) + 10px) 8px 24px 20px; color:#fff; background:linear-gradient(to bottom, rgb(0 0 0 / .7), transparent); transition:opacity .2s; }
+.viewer-bar.hide { opacity:0; pointer-events:none; }
+.viewer-bar .grow { flex:1; min-width:0; }
+.viewer-bar .l { font-weight:600; font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.viewer-bar .d { font-size:12.5px; opacity:.7; }
+.viewer-bar .iconbtn { color:#fff; }
+.viewer-msg { display:flex; flex-direction:column; align-items:center; gap:14px; padding:0 32px; color:#e6e9f2; text-align:center; font-size:14.5px; }
+.viewer-track { width:200px; height:4px; border-radius:2px; background:rgb(255 255 255 / .15); overflow:hidden; }
+.viewer-fill { height:100%; border-radius:2px; background:var(--c-accent-fill); transition:width .2s var(--ease); }
+.zoombox { position:absolute; inset:0; touch-action:none; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+.zoombox img { max-width:100%; max-height:100%; object-fit:contain; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; will-change:transform; }
+
 @keyframes sheet-up { from { transform:translateY(100%) } }
 @keyframes sheet-down { to { transform:translateY(100%) } }
 

@@ -6,6 +6,7 @@ import { Home } from './screens/Home'
 import { Chat, NewChat } from './screens/Chat'
 import { GlowDefs } from './ui'
 import { CardSheet } from './CardSheet'
+import { PictureViewer } from './Files'
 
 function useTheme() {
   const pref = useApp((s) => s.prefs.theme)
@@ -36,6 +37,7 @@ export function App() {
         {screen.name === 'new' && <NewChat />}
       </div>
       <CardSheet />
+      <PictureViewer />
       {toast && (
         <div className="toast" key={toast.at}>
           <Info size={18} />

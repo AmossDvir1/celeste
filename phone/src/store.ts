@@ -5,6 +5,7 @@ import { flushSync } from 'react-dom'
 import { create } from 'zustand'
 import type { AskAnswers, ContextRef } from '@shared/agent'
 import { UNDO_WINDOW_MS, type CorePush, type SessionSummary, type StoredEvent } from '@shared/api'
+import type { ProducedFile } from '@shared/produced'
 import { EMPTY_QUEUE, type QueueAction, type SendMode } from '@shared/queue'
 import type { PhoneBootstrap, PhoneCancelPush, PhoneModelChoice, PhoneModels, PhoneNewSession, PhoneRequestPush } from '@shared/phone'
 import { PhoneLink, type LinkState, type PhonePairing } from '@shared/phone-client'
@@ -104,8 +105,14 @@ interface AppState {
   toast: { text: string; at: number; action?: { label: string; run: () => void } } | null
   /** Set when the computer removed this phone. */
   removed: boolean
+  /** The chat menu opened by a long press on Chats, at a point of the screen. Back closes it first. */
+  listMenu: { id: string; x: number; y: number } | null
+  /** A picture the assistant made, open full screen. Back closes it first. */
+  viewing: { sessionId: string; file: ProducedFile } | null
 
   go: (screen: Screen, nav?: Nav) => void
+  setListMenu: (menu: AppState['listMenu']) => void
+  setViewing: (viewing: AppState['viewing']) => void
   back: () => boolean
   /** Shows a short note; `action` adds a button (Undo) that stays for the computer's undo window. */
   say: (text: string, action?: { label: string; run: () => void }) => void
@@ -128,6 +135,10 @@ interface AppState {
   undoRemove: (id: string, gone?: Session) => Promise<void>
   loadModels: () => Promise<void>
   setModel: (id: string, choice: PhoneModelChoice) => Promise<void>
+  /** Pins a chat to the top of the list, or lets it go. Shown at once; the computer confirms. */
+  pin: (id: string, pinned: boolean) => Promise<void>
+  /** Renames a chat, on the computer too. */
+  rename: (id: string, title: string) => Promise<void>
   approve: (id: string, requestId: string, allow: boolean, minutes?: number) => Promise<void>
   answer: (id: string, requestId: string, answers: AskAnswers) => Promise<void>
   loadRuns: () => Promise<void>
@@ -152,6 +163,11 @@ export const useApp = create<AppState>((set, get) => ({
   prefs: load<Prefs>(PREFS_KEY, { theme: 'system', stay: false, notify: true }),
   toast: null,
   removed: false,
+  listMenu: null,
+  viewing: null,
+
+  setListMenu: (listMenu) => set({ listMenu }),
+  setViewing: (viewing) => set({ viewing }),
 
   go: (screen, nav = 'forward') => {
     // Pages slide and the chat title glides into the header, with the View Transitions API the WebView has.
@@ -163,6 +179,14 @@ export const useApp = create<AppState>((set, get) => ({
   },
 
   back: () => {
+    if (get().viewing) {
+      set({ viewing: null })
+      return true
+    }
+    if (get().listMenu) {
+      set({ listMenu: null })
+      return true
+    }
     const s = get().screen
     if (s.name === 'chat' || s.name === 'new') {
       get().go({ name: 'home', tab: 'chats' }, 'back')
@@ -367,6 +391,35 @@ export const useApp = create<AppState>((set, get) => ({
       const now = get().sessions[id]
       if (now) set({ sessions: { ...get().sessions, [id]: { ...now, ...before } } })
       get().say(err instanceof Error ? err.message : 'The model did not change.')
+    }
+  },
+
+  pin: async (id, pinned) => {
+    const s = get().sessions[id]
+    if (!s) return
+    const before = s.pinnedAt
+    set({ sessions: { ...get().sessions, [id]: { ...s, pinnedAt: pinned ? (s.pinnedAt ?? Date.now()) : null } } })
+    try {
+      await get().link?.call('sessions.pin', id, pinned)
+    } catch (err) {
+      const now = get().sessions[id]
+      if (now) set({ sessions: { ...get().sessions, [id]: { ...now, pinnedAt: before } } })
+      get().say(err instanceof Error ? err.message : 'Could not pin it.')
+    }
+  },
+
+  rename: async (id, title) => {
+    const s = get().sessions[id]
+    const clean = title.trim().slice(0, 200)
+    if (!s || !clean || clean === s.title) return
+    const before = s.title
+    set({ sessions: { ...get().sessions, [id]: { ...s, title: clean } } })
+    try {
+      await get().link?.call('sessions.rename', id, clean)
+    } catch (err) {
+      const now = get().sessions[id]
+      if (now) set({ sessions: { ...get().sessions, [id]: { ...now, title: before } } })
+      get().say(err instanceof Error ? err.message : 'Could not rename it.')
     }
   },
 

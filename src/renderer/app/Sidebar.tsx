@@ -1,10 +1,12 @@
-import { memo, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
+import { memo, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import {
   ChevronDown,
   Code,
   Folder,
   MessageSquare,
   MoreHorizontal,
+  Pin,
+  PinOff,
   PanelLeft,
   Pencil,
   Plus,
@@ -50,6 +52,22 @@ function WorkingDot() {
   )
 }
 
+const GLIDE = { duration: 320, easing: 'cubic-bezier(0.2, 0.7, 0.2, 1)' }
+const reduceMotion = () => typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+/** Where each session row sat before a pin changed, so the list can glide rows to their new places. */
+let rowSnapshot: Map<string, DOMRect> | null = null
+
+function togglePin(id: string, pinned: boolean) {
+  if (!useSessions.getState().sessions[id]) return
+  const rows = new Map<string, DOMRect>()
+  document.querySelectorAll<HTMLElement>('[data-session-row]').forEach((el) => {
+    if (el.dataset.sessionRow) rows.set(el.dataset.sessionRow, el.getBoundingClientRect())
+  })
+  rowSnapshot = rows
+  useSessions.getState().pin(id, pinned)
+}
+
 const SessionRow = memo(function SessionRow({ session, active }: { session: Session; active: boolean }) {
   const open = useSessions((s) => s.open)
   const setMode = useUi((s) => s.setMode)
@@ -58,13 +76,14 @@ const SessionRow = memo(function SessionRow({ session, active }: { session: Sess
   const [editing, setEditing] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [draft, setDraft] = useState(session.title)
+  const pinned = session.pinnedAt != null
   const Icon = session.mode === 'develop' ? Code : MessageSquare
   const waiting = needsYou(session)
   const working = session.status === 'working'
   const stamp = sameDay(session.updatedAt, Date.now()) ? formatTime(session.updatedAt) : formatDay(session.updatedAt)
 
   return (
-    <div className="group relative">
+    <div data-session-row={session.id} className="group relative">
       {editing ? (
         <form
           className="px-1 py-0.5"
@@ -108,7 +127,10 @@ const SessionRow = memo(function SessionRow({ session, active }: { session: Sess
             <Icon className="h-3.5 w-3.5" />
           </span>
           <span className="min-w-0 flex-1 leading-tight">
-            <span className={cn('block truncate text-[13px]', active ? 'text-ink' : 'text-ink')}>{session.title}</span>
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="min-w-0 truncate text-[13px] text-ink">{session.title}</span>
+              {pinned && <Pin role="img" aria-label="Pinned" className="h-3 w-3 shrink-0 text-ink-faint" />}
+            </span>
             <span className="block text-[11px] text-ink-faint">
               {waiting ? <span className="text-accent-text">Needs you</span> : working ? <span className="text-accent-text">Working…</span> : stamp}
             </span>
@@ -130,6 +152,10 @@ const SessionRow = memo(function SessionRow({ session, active }: { session: Sess
             </button>
           </Menu.Trigger>
           <Menu.Content align="start" className="w-[170px]">
+            <Menu.Item onSelect={() => togglePin(session.id, !pinned)}>
+              {pinned ? <PinOff className="h-4 w-4 text-ink-muted" /> : <Pin className="h-4 w-4 text-ink-muted" />}
+              {pinned ? 'Unpin' : 'Pin'}
+            </Menu.Item>
             <Menu.Item
               onSelect={() => {
                 setDraft(session.title)
@@ -179,6 +205,8 @@ function ChatList({ mode, query, limit }: { mode: SessionMode; query: string; li
   const sessions = useSessions((s) => s.sessions)
   const activeId = useSessions((s) => s.active[mode])
   const [expanded, setExpanded] = useState(false)
+  const pinnedLabel = useRef<HTMLDivElement>(null)
+  const hadPinned = useRef<boolean | null>(null)
 
   const list = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -187,11 +215,51 @@ function ChatList({ mode, query, limit }: { mode: SessionMode; query: string; li
       .sort((a, b) => b.updatedAt - a.updatedAt)
   }, [sessions, mode, query])
 
+  // Pinned sessions float above the rest, newest pin first. They are never cut off by the show-more limit.
+  const pinned = useMemo(
+    () => list.filter((s) => s.pinnedAt != null).sort((a, b) => (b.pinnedAt ?? 0) - (a.pinnedAt ?? 0)),
+    [list]
+  )
+  const rest = useMemo(() => list.filter((s) => s.pinnedAt == null), [list])
+
+  useLayoutEffect(() => {
+    const has = pinned.length > 0
+    // The first render only records the starting state, so a list that opens with pins does not animate.
+    const firstPin = hadPinned.current === false && has
+    hadPinned.current = has
+    const moving = rowSnapshot
+    rowSnapshot = null
+    if (reduceMotion()) return
+    if (firstPin && pinnedLabel.current) {
+      pinnedLabel.current.animate([{ opacity: 0, transform: 'translateY(-6px)' }, { opacity: 1, transform: 'none' }], GLIDE)
+    }
+    if (!moving) return
+    document.querySelectorAll<HTMLElement>('[data-session-row]').forEach((el) => {
+      const from = el.dataset.sessionRow ? moving.get(el.dataset.sessionRow) : undefined
+      if (!from) return
+      const dy = from.top - el.getBoundingClientRect().top
+      if (Math.abs(dy) < 1) return
+      el.animate([{ transform: `translateY(${dy}px)` }, { transform: 'translateY(0)' }], GLIDE)
+    })
+  })
+
   if (list.length === 0) {
     return <div className="px-3 py-6 text-center text-[13px] text-ink-faint">{query ? 'No matches' : 'Nothing here yet'}</div>
   }
 
-  const visible = expanded || query ? list : list.slice(0, limit)
+  const visible = expanded || query ? rest : rest.slice(0, limit)
+  const showMore = rest.length > limit && !query && <ShowMore open={expanded} onToggle={() => setExpanded((v) => !v)} />
+
+  const pinnedSection = pinned.length > 0 && (
+    <section className="mb-2">
+      <div ref={pinnedLabel}>
+        <SectionLabel className="pt-2 pb-1">Pinned</SectionLabel>
+      </div>
+      {pinned.map((s) => (
+        <SessionRow key={s.id} session={s} active={s.id === activeId} />
+      ))}
+    </section>
+  )
 
   if (mode === 'develop') {
     // Develop groups sessions by project folder.
@@ -202,6 +270,7 @@ function ChatList({ mode, query, limit }: { mode: SessionMode; query: string; li
     }
     return (
       <>
+        {pinnedSection}
         {[...byProject.entries()].map(([cwd, items]) => (
           <section key={cwd} className="mb-2">
             <div className="flex items-center gap-2 px-2 pt-2 pb-1 text-[13px] font-medium text-ink-muted" title={cwd}>
@@ -213,13 +282,14 @@ function ChatList({ mode, query, limit }: { mode: SessionMode; query: string; li
             ))}
           </section>
         ))}
-        {list.length > limit && !query && <ShowMore open={expanded} onToggle={() => setExpanded((v) => !v)} />}
+        {showMore}
       </>
     )
   }
 
   return (
     <>
+      {pinnedSection}
       {groupByDay(visible).map((g) => (
         <section key={g.label} className="mb-2">
           <SectionLabel className="pt-2 pb-1">{g.label}</SectionLabel>
@@ -228,7 +298,7 @@ function ChatList({ mode, query, limit }: { mode: SessionMode; query: string; li
           ))}
         </section>
       ))}
-      {list.length > limit && !query && <ShowMore open={expanded} onToggle={() => setExpanded((v) => !v)} />}
+      {showMore}
     </>
   )
 }

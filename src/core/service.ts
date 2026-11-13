@@ -415,7 +415,7 @@ export class SessionService {
   }
 
   private update(id: string, patch: SessionPatch): SessionSummary {
-    this.requireSession(id)
+    const row = this.requireSession(id)
     const next: Partial<Omit<SessionRow, 'id' | 'lastSeq'>> = {}
     if (patch.title !== undefined) {
       const title = text(patch.title, 'title', 200).trim()
@@ -424,6 +424,8 @@ export class SessionService {
     if (patch.model !== undefined) next.model = text(patch.model, 'model', 100)
     if (patch.effort !== undefined) next.effort = patch.effort === null ? null : (oneOf(patch.effort, EFFORTS, 'effort') as SessionRow['effort'])
     if (patch.approval !== undefined) next.approval = oneOf(patch.approval, APPROVALS, 'approval mode')
+    // Pinning again keeps the first pin time, so the pinned list does not reshuffle.
+    if (patch.pinned !== undefined) next.pinnedAt = patch.pinned ? (row.pinnedAt ?? this.now()) : null
     this.store.patchSession(id, next)
     if (next.title) this.store.index(id, 'title', next.title)
     return this.emitSummary(id) as SessionSummary

@@ -32,6 +32,27 @@ function fakeApi(sessions: SessionSummary[]) {
 }
 
 describe('phone calls', () => {
+  it('sends a chat log with each tool output cut to its end, so the reply fits the relay', async () => {
+    const big = 'x'.repeat(2_000_000) + 'THE END'
+    const { api } = fakeApi([summary({ id: 'a' })])
+    const withLog = {
+      ...api,
+      'sessions.get': () => ({
+        summary: summary({ id: 'a' }),
+        events: [
+          { seq: 1, at: 1, event: { type: 'tool.output', id: 't', text: big } },
+          { seq: 2, at: 2, event: { type: 'tool.completed', id: 't', ok: true, result: big } },
+          { seq: 3, at: 3, event: { type: 'message.delta', text: 'hello' } }
+        ]
+      })
+    }
+    const r = (await phoneCalls(() => withLog as never, () => 'PC')('sessions.get', ['a'])) as { events: { event: { text?: string; result?: string } }[] }
+    expect(JSON.stringify(r).length).toBeLessThan(100_000)
+    expect(r.events[0]?.event.text?.endsWith('THE END')).toBe(true)
+    expect(r.events[1]?.event.result?.endsWith('THE END')).toBe(true)
+    expect(r.events[2]?.event.text).toBe('hello')
+  })
+
   it('hello gives the chat list and the person’s name', async () => {
     const { api } = fakeApi([summary({ id: 'a' })])
     const r = (await phoneCalls(() => api, () => 'DANA-PC')('phone.hello', [])) as { computer: string; userName: string; sessions: SessionSummary[] }
@@ -148,6 +169,27 @@ describe('phone calls', () => {
     await call('sessions.remove', ['s7'])
     expect(removed).toEqual(['s7'])
     expect(await call('sessions.restore', ['s7'])).toMatchObject({ id: 's7' })
+  })
+
+  it('renames and pins a chat for the phone, through the one narrow update and nothing else', async () => {
+    const patches: { id: string; patch: SessionPatch }[] = []
+    const api = {
+      ...fakeApi([]).api,
+      'sessions.update': (id: string, patch: SessionPatch) => {
+        patches.push({ id, patch })
+        return summary({ id })
+      }
+    }
+    const call = phoneCalls(() => api, () => 'PC')
+    await call('sessions.rename', ['s1', '  Plan the trip  '])
+    await call('sessions.pin', ['s1', true])
+    await call('sessions.pin', ['s1', false])
+    await expect(call('sessions.rename', ['s1', '   '])).rejects.toThrow('Give it a name first.')
+    expect(patches).toEqual([
+      { id: 's1', patch: { title: 'Plan the trip' } },
+      { id: 's1', patch: { pinned: true } },
+      { id: 's1', patch: { pinned: false } }
+    ])
   })
 
   it('lists the projects used for Develop, a separate copy counting for its project, newest first', async () => {

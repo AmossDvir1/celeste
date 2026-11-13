@@ -34,6 +34,8 @@ export const PHONE_METHODS = [
   /** A file the person attaches to a message, in parts: `[PhoneUploadPart]`. `phone.discard` drops one that is not sent. */
   'phone.upload',
   'phone.discard',
+  /** One part of a file the assistant made in a chat: `[sessionId, path, part]` → `PhoneFilePart`. */
+  'phone.file',
   'phone.control',
   /** The phone's push token (Firebase), so the computer can wake it when the app is closed: `[token]`, or `[null]` to forget it. */
   'phone.push',
@@ -53,6 +55,9 @@ export const PHONE_METHODS = [
   /** Delete a chat for good (the computer's own undo is not offered on the phone). */
   'sessions.remove',
   'sessions.restore',
+  /** Give a chat another name, and pin it to the top of the list or let it go. */
+  'sessions.rename',
+  'sessions.pin',
   'sessions.respondApproval',
   'sessions.respondAsk',
   /** The project folder of a Develop session, folder by folder, to choose files to add to a message. */
@@ -260,6 +265,24 @@ export interface PhoneUploaded {
   mime: string
   size: number
 }
+/**
+ * One part of a file the assistant made in a chat, sent by the computer for `phone.file` (`[sessionId, path, part]`). A file goes in
+ * parts of `PHONE_ATTACH_PART` bytes, never as one message: the relay, the direct link and a Wi-Fi call each refuse one that is large.
+ */
+export interface PhoneFilePart {
+  name: string
+  mime: string
+  /** Bytes in the whole file, the same in every part; if it changes between parts the file was written meanwhile. */
+  size: number
+  /** Which part this is, from 0, and how many there are. */
+  part: number
+  parts: number
+  /** The part's bytes, base64. */
+  data: string
+}
+/** The largest file the phone fetches from the computer. */
+export const PHONE_FILE_MAX_BYTES = 100 * 1_048_576
+
 /** The most a phone may attach to one message, as on the computer. */
 export const PHONE_UPLOAD_MAX_FILES = 10
 export const PHONE_UPLOAD_MAX_BYTES = 25 * 1_048_576

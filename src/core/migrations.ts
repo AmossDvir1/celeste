@@ -170,5 +170,10 @@ export const MIGRATIONS: string[] = [
     created_at    INTEGER NOT NULL,
     PRIMARY KEY (run_id, seq)
   ) WITHOUT ROWID;
+  `,
+
+  // 5: pinned sessions, with when each was pinned so the newest pin is listed first
+  `
+  ALTER TABLE sessions ADD COLUMN pinned_at INTEGER;
   `
 ]

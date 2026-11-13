@@ -39,6 +39,8 @@ interface SessionsState {
   respondAsk: (id: string, requestId: string, answers: AskAnswers) => void
   setPrefs: (id: string, patch: { model?: string; effort?: Effort | null; approval?: ApprovalMode }) => void
   rename: (id: string, title: string) => void
+  /** Pins a session to the top of its list, or lets it go. The first pin time is kept on a re-pin. */
+  pin: (id: string, pinned: boolean) => void
   remove: (id: string) => void
   removeAll: () => Promise<void>
 }
@@ -253,6 +255,12 @@ export const useSessions = create<SessionsState>((set, get) => {
       if (!clean) return
       update(id, (s) => ({ ...s, title: clean }))
       fire(core.call('sessions.update', id, { title: clean }))
+    },
+
+    pin: (id, pinned) => {
+      if (!get().sessions[id]) return
+      update(id, (s) => ({ ...s, pinnedAt: pinned ? (s.pinnedAt ?? Date.now()) : null }))
+      fire(core.call('sessions.update', id, { pinned }))
     },
 
     remove: (id) => {

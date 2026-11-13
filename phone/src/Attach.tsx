@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowLeft, Check, ChevronRight, FileText, Folder, LoaderCircle, Paperclip, X } from 'lucide-react'
+import { ArrowLeft, Camera, Check, ChevronRight, FileText, Folder, LoaderCircle, Paperclip, X } from 'lucide-react'
 import type { ContextRef } from '@shared/agent'
 import type { FileListing } from '@shared/api'
 import { PHONE_CONTEXT_MAX, PHONE_UPLOAD_MAX_BYTES, PHONE_UPLOAD_MAX_FILES, type PhoneUploaded, type PhoneUploadPart } from '@shared/phone'
@@ -289,6 +289,30 @@ export function AttachButton({ onPick, disabled }: { onPick: (files: File[]) => 
           const list = Array.from(e.target.files ?? [])
           e.target.value = ''
           setOpening(false)
+          if (list.length) onPick(list)
+        }}
+      />
+    </>
+  )
+}
+
+// Opens the camera straight away (capture) and hands over the photo as a file, like a picked one.
+export function CameraButton({ onPick, disabled }: { onPick: (files: File[]) => void; disabled?: boolean }) {
+  const input = useRef<HTMLInputElement>(null)
+  return (
+    <>
+      <button type="button" className="camerabtn" aria-label="Take a photo" disabled={disabled} onClick={() => input.current?.click()}>
+        <Camera size={20} />
+      </button>
+      <input
+        ref={input}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        hidden
+        onChange={(e) => {
+          const list = Array.from(e.target.files ?? [])
+          e.target.value = ''
           if (list.length) onPick(list)
         }}
       />

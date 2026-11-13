@@ -42,8 +42,9 @@ import { Arc, Shimmer, buzz, greeting, rise } from '../ui'
 import { ModelChip } from '../ModelPicker'
 import { AutoScroll } from '../AutoScroll'
 import { continueNumbering } from '@shared/numbering'
-import { AttachButton, Chips, ProjectFiles, pastedFiles, useAttachments } from '../Attach'
+import { AttachButton, CameraButton, Chips, ProjectFiles, pastedFiles, useAttachments } from '../Attach'
 import { WatchScreen } from '../Watch'
+import { FileCards } from '../Files'
 
 const TOOL_ICON: Record<ToolKind, LucideIcon> = {
   read: FileText,
@@ -204,7 +205,7 @@ function Head({ title, sub, onBack, onDelete, live }: { title: string; sub: stri
 }
 
 /** Asks once before a chat is deleted for good, on the computer too. */
-function DeleteSheet({ title, onCancel, onDelete }: { title: string; onCancel: () => void; onDelete: () => void }) {
+export function DeleteSheet({ title, onCancel, onDelete }: { title: string; onCancel: () => void; onDelete: () => void }) {
   return (
     <div className="card-layer">
       <div className="scrim" onClick={onCancel} />
@@ -240,7 +241,7 @@ const ThinkingRow = memo(function ThinkingRow({ it }: { it: ThinkingItem }) {
       <button type="button" className="think-h" aria-expanded={open} disabled={!text} onClick={() => setOpen(!open)}>
         {streaming ? <Shimmer>Thinking</Shimmer> : `Thought for ${formatDuration((it.endedAt ?? it.startedAt) - it.startedAt)}`}
       </button>
-      {text && (open || streaming) && <div className="think-t">{shown}</div>}
+      {text && (open || streaming) && <div className={streaming && !open ? 'think-t live' : 'think-t'}>{shown}</div>}
     </div>
   )
 })
@@ -391,17 +392,7 @@ const Item = memo(function Item({ it, sessionId, detailed }: { it: TimelineItem;
         </div>
       )
     case 'files':
-      return (
-        <div className="m-tool">
-          <FileText size={17} />
-          <div className="grow">
-            <div className="l">
-              Made {it.files.length + it.more} {it.files.length + it.more === 1 ? 'file' : 'files'}
-            </div>
-            <div className="d">{it.files.map((f) => f.path.split(/[\\/]/).pop()).join(', ')}</div>
-          </div>
-        </div>
-      )
+      return <FileCards sessionId={sessionId} files={it.files} more={it.more} />
     case 'desktop':
       return <DesktopRow it={it} />
     case 'reverted':
@@ -654,6 +645,7 @@ function Composer({
       <Chips files={att.files} context={context} onRemoveFile={att.remove} onRemoveContext={(p) => setContext((c) => c.filter((x) => x.path !== p))} />
       <div className="composer">
         {canAttach && <AttachButton onPick={att.add} />}
+        {canAttach && <CameraButton onPick={att.add} />}
         <textarea ref={ta} rows={1} placeholder={placeholder} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onListEnter} onPaste={canAttach ? (e) => pastedFiles(e, att.add) : undefined} />
         {working && ready ? (
           <>
@@ -894,6 +886,7 @@ function SeededComposer({ seed, disabled, how, extra }: { seed: string; disabled
       <Chips files={att.files} context={[]} onRemoveFile={att.remove} onRemoveContext={() => undefined} />
       <div className="composer">
         <AttachButton onPick={att.add} />
+        <CameraButton onPick={att.add} />
         <textarea rows={1} autoFocus={!!seed} placeholder="Message Celeste" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onListEnter} onPaste={(e) => pastedFiles(e, att.add)} />
         <button
           className={`sendbtn${ready ? ' ready' : ''}`}

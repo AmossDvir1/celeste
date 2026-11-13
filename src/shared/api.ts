@@ -76,6 +76,8 @@ export interface SessionSummary {
   branch?: string
   /** The folder is a separate copy of a project that Celeste made for this session (a git worktree). */
   worktree?: boolean
+  /** When the session was pinned to the top of the list. Null or absent when it is not pinned. */
+  pinnedAt?: number | null
   status: SessionStatus
   createdAt: number
   updatedAt: number
@@ -149,6 +151,7 @@ export interface SessionPatch {
   model?: string
   effort?: Effort | null
   approval?: ApprovalMode
+  pinned?: boolean
 }
 
 /**

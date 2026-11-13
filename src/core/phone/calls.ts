@@ -21,6 +21,7 @@ import {
   type PhoneWorkflow
 } from '@shared/phone'
 import { checkInputs, type InputDef, type WorkflowFull } from '@shared/workflow'
+import { readFilePart } from './file'
 
 /** What a workflow's Start step asks for. */
 const startInputs = (w: WorkflowFull): InputDef[] => {
@@ -106,6 +107,27 @@ const PART_CHARS = Math.ceil(PHONE_ATTACH_PART / 3) * 4
 const KEPT_UPLOADS = 2 * PHONE_UPLOAD_MAX_FILES
 
 const pixels = (n: unknown) => (typeof n === 'number' && Number.isInteger(n) && n > 0 && n < 100_000 ? n : undefined)
+
+/** The phone shows the end of a tool's output (the last 6,000 characters), so this much of each is sent. */
+export const PHONE_OUTPUT_KEEP = 8000
+
+/**
+ * A chat's log for the phone. One command can print tens of megabytes, and the whole log goes in one reply: past the
+ * relay's frame limit (6 MB) it closes the computer's line, and the phone drops and asks again, over and over. The end of
+ * each tool's output is all the phone ever shows, so only that is sent.
+ */
+export function phoneLog(log: Awaited<ReturnType<CoreApi['sessions.get']>>): Awaited<ReturnType<CoreApi['sessions.get']>> {
+  if (!log) return log
+  return {
+    ...log,
+    events: log.events.map((s) => {
+      const e = s.event
+      if (e.type === 'tool.output' && e.text.length > PHONE_OUTPUT_KEEP) return { ...s, event: { ...e, text: e.text.slice(-PHONE_OUTPUT_KEEP) } }
+      if (e.type === 'tool.completed' && e.result && e.result.length > PHONE_OUTPUT_KEEP) return { ...s, event: { ...e, result: e.result.slice(-PHONE_OUTPUT_KEEP) } }
+      return s
+    })
+  }
+}
 
 export function phoneCalls(
   api: () => Api,
@@ -206,6 +228,11 @@ export function phoneCalls(
     switch (method) {
       case 'phone.upload':
         return receive(a, phoneId, params[0] as Partial<PhoneUploadPart> | undefined)
+      case 'phone.file': {
+        // Only files of a chat's own folder, one part at a time (see file.ts).
+        const [id, path, part] = params as [unknown, unknown, unknown]
+        return readFilePart(a['app.bootstrap']().dataDir, id, path, part)
+      }
       case 'phone.discard': {
         const id = String(params[0] ?? '')
         if (saved.get(phoneId)?.delete(id)) a['attachments.discard']?.(id)
@@ -288,6 +315,20 @@ export function phoneCalls(
         used(phoneId, sent)
         return created
       }
+      case 'sessions.rename': {
+        // Only the name: the phone cannot change anything else about a chat through this.
+        const [id, title] = params as [unknown, unknown]
+        if (!a['sessions.update']) throw new Error('Not available from a phone.')
+        const name = String(title ?? '').trim().slice(0, 200)
+        if (!name) throw new Error('Give it a name first.')
+        return a['sessions.update'](String(id), { title: name })
+      }
+      case 'sessions.pin': {
+        // Only the pin: the phone cannot change anything else about a chat through this.
+        const [id, pinned] = params as [unknown, unknown]
+        if (!a['sessions.update']) throw new Error('Not available from a phone.')
+        return a['sessions.update'](String(id), { pinned: pinned === true })
+      }
       case 'sessions.send': {
         // Words, files the phone sent itself, and files of the project (the computer checks those stay inside it).
         const [id, input, mode] = params as [unknown, Partial<PhoneMessage> | undefined, unknown]
@@ -301,6 +342,9 @@ export function phoneCalls(
         used(phoneId, sent)
         return done
       }
+      case 'sessions.get':
+        if (!a['sessions.get']) throw new Error('Not available from a phone.')
+        return phoneLog(await a['sessions.get'](String(params[0])))
       default: {
         const fn = a[method as keyof CoreApi] as ((...x: unknown[]) => unknown) | undefined
         if (!fn) throw new Error('Not available from a phone.')

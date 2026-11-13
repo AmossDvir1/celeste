@@ -22,7 +22,8 @@ const SESSION_COLUMNS: Record<string, string> = {
   status: 'status',
   createdAt: 'created_at',
   updatedAt: 'updated_at',
-  deletedAt: 'deleted_at'
+  deletedAt: 'deleted_at',
+  pinnedAt: 'pinned_at'
 }
 
 function sessionFrom(r: Row): SessionRow {
@@ -41,7 +42,8 @@ function sessionFrom(r: Row): SessionRow {
     createdAt: r.created_at as number,
     updatedAt: r.updated_at as number,
     lastSeq: r.last_seq as number,
-    deletedAt: (r.deleted_at ?? null) as number | null
+    deletedAt: (r.deleted_at ?? null) as number | null,
+    pinnedAt: (r.pinned_at ?? null) as number | null
   }
 }
 

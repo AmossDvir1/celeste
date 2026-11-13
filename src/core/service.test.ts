@@ -247,6 +247,17 @@ describe('sessions and their log', () => {
     expect(() => api['sessions.update']('missing', { title: 'x' })).toThrow(/no longer exists/)
   })
 
+  it('pins a session with the time it was first pinned, keeps that time on a re-pin, and clears it on unpin', () => {
+    const { api, pushes } = setup()
+    const { id } = api['sessions.create'](input)
+    expect(api['sessions.get'](id)?.summary.pinnedAt ?? null).toBeNull()
+    const pinned = api['sessions.update'](id, { pinned: true })
+    expect(typeof pinned.pinnedAt).toBe('number')
+    expect(pushes.at(-1)).toEqual({ type: 'summary', session: pinned })
+    expect(api['sessions.update'](id, { pinned: true, title: 'Still first' }).pinnedAt).toBe(pinned.pinnedAt)
+    expect(api['sessions.update'](id, { pinned: false }).pinnedAt).toBeNull()
+  })
+
   it('rejects malformed requests', () => {
     const { api } = setup()
     expect(() => api['sessions.create']({ ...input, mode: 'both' as never })).toThrow()

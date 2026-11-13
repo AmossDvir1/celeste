@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainEvent, type Ipc
 import { copyFile, readFile, stat, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { canOpenFile } from '@shared/produced'
-import { resolveChatFile } from './chat-files'
+import { resolveChatFile } from '../core/chat-files'
 import { registerAttachmentScheme, serveAttachments } from './attachments-protocol'
 import { BrowserService } from './browser/service'
 import { CoreProcess } from './core-process'
