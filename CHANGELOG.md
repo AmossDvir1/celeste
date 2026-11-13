@@ -6,6 +6,9 @@ All notable changes to Celeste. The format follows [Keep a Changelog](https://ke
 
 ### Added
 
+- **Phone app: see the files and pictures the assistant made.** The files an answer produced in a Chat now appear as cards under it on the phone (name, size, new or changed). A picture opens full screen, fetched from the computer in 1 MB parts with a progress bar (a 15 MB photo took about 30 seconds on mobile data), and zooms with a pinch, a drag and a double tap. Other kinds of file show as "on the computer" for now; opening them and saving a copy are not built yet. Only files inside that chat's own folder can be fetched, up to 100 MB.
+- **Pin chats to the top, on the computer and the phone.** "Pin" and "Unpin" are in a chat's menu in the sidebar, and a long press on a chat in the phone's list opens a menu with Pin, Rename and Delete. Pinned chats sit under a Pinned heading, the newest pin first, and the order does not shuffle when you pin one again. Needs a database change (migration 5), made automatically.
+- **Phone app: take a photo straight into a message.** A camera button beside the paperclip opens the camera and attaches the photo like any picked file.
 - **Phone app: paste pictures and files into a message, as in a messaging app.** Open the keyboard's clipboard (Gboard and others) and tap any copied picture or file, not only the latest, or use the keyboard's Paste: it joins the message like the paperclip does (the same limits). Pasting text works as before.
 - **Live video of the computer's screen on the phone.** While the assistant uses the computer, a phone you allowed (Settings, Phone, "Show my screen on it", off by default) can **Watch** the computer's screen as smooth video. It works away from home through the direct link, stops with Stop, and goes black while an app on the never list is on the screen.
 - **The phone app away from home: a direct link, and a backup.** Away from home the phone now opens a direct WebRTC connection to the computer (the relay only helps the two find each other) and uses it for calls, notifications and files, which go in 1 MB parts instead of 192 KB; if it closes, the relay carries on and the app catches up. The relay hands out Cloudflare's STUN and, once the project adds a key, TURN. If the relay itself cannot be reached, the phone and the computer open the same link through public MQTT brokers, with every message sealed with the pairing key (no wake-ups this way, so only while the app is open). `node-datachannel` is the computer's end.
@@ -84,6 +87,11 @@ All notable changes to Celeste. The format follows [Keep a Changelog](https://ke
   - **This phone** says when the computer has a newer Celeste, with a link to get the new app.
   - **Settings → Phone** says when Windows treats your Wi-Fi as Public, which can keep phones out.
   - A released Celeste fetches the matching Android app from its GitHub release the first time phones are switched on, and checks it before handing it out.
+
+### Fixed
+
+- **Phone app: a long chat made the connection drop and reconnect every few seconds on mobile data.** Opening a chat sent its whole log in one message, and one tool had printed 18 MB; the relay refuses any message over 6 MB and closed the computer's line, so the phone showed "Can't reach" and tried again, forever. On Wi-Fi nothing limits it, so it only showed away from home. The phone now gets the last 8,000 characters of each tool's output (all it ever shows); the full log stays on the computer.
+- **Phone app: file changes opened as stacked, overlapping layers.** A style for the new long-press menu was also applied to the unchanged lines of a diff. The menu has its own style name now.
 
 ## [1.1.0] - 2026-11-09
 

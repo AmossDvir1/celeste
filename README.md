@@ -107,10 +107,12 @@ your data is in `~/Library/Application Support/Celeste`.
 
 ## Celeste for Android (experimental)
 
-An Android app that works as a remote for the Celeste on your computer, on the same Wi-Fi:
+An Android app that works as a remote for the Celeste on your computer, on the same Wi-Fi or away from home:
 
-- follow your chats live, send messages, start a Chat or Develop session, choose the model, stop a reply, and answer
-  approvals and questions (also as notifications, with the app closed);
+- follow your chats live, send messages (with a photo from the camera or files), start a Chat or Develop session, choose
+  the model, stop a reply, pin, rename or delete a chat with a long press, and answer approvals and questions (also as
+  notifications, with the app closed);
+- see the files and pictures an assistant made in a Chat, and open a picture full screen with pinch zoom;
 - start your workflows and approve what a run is about to do;
 - share text or a link from any app to start a chat with it;
 - let the assistant use your phone, **each thing off until you switch it on, and each request asking you on the phone
@@ -128,7 +130,7 @@ An Android app that works as a remote for the Celeste on your computer, on the s
 
 The app is not on Google Play, which does not allow apps that act on the screen for an assistant. It is **new in the next
 release**: until then, the computer has no app to hand out unless you build it (see [phone/README.md](phone/README.md)).
-Away from home is not supported yet. Everything between the phone and the computer is encrypted, with no server in between.
+Away from home, the phone reaches the computer through the project's relay (see [relay/README.md](relay/README.md)) and, when the two can reach each other, a direct encrypted link; if the relay cannot be reached, public MQTT brokers are the backup. Everything between the phone and the computer is encrypted; the relay passes only sealed messages it cannot read.
 
 ## Keyboard shortcuts
 
@@ -153,25 +155,26 @@ is not built yet says so.
 | GitHub Copilot | **Working.** Streaming, tools, approvals, questions, image attachments, model and effort switching, resuming a conversation after a restart |
 | Claude | **Built.** The same features. Checked against the real Claude Code program with a stand-in for Anthropic's API, not yet against a real account |
 | OpenAI, Gemini | Not available yet: their cards say "Coming soon" |
-| Chat, Develop, sessions | **Working.** Saved locally, and they survive a crash. Review, revert, worktrees and a terminal in Develop |
+| Chat, Develop, sessions | **Working.** Saved locally, and they survive a crash. Review, revert, worktrees and a terminal in Develop. Keep typing while the assistant works: messages wait in a queue, and Ctrl/Cmd+Enter sends one at once (**next release**) |
 | Workflows | **Working.** Canvas, drafts by an assistant, import and share, every run shows what it will do first |
 | Tools (MCP) | **Working.** Add a tool once and every assistant can use it |
 | Devices (SSH, Hyper-V, Android) | **Working against test fixtures**, not yet tried on a wide range of real hardware. Read-only by default, with approvals |
 | Browser | **Built, next release.** Real pages, tabs for each chat, popups for sign-ins, and the assistant's use of it through Playwright (21 tools, asking before a new site). Checked in the real app with a stand-in for the assistant, and with the real Playwright MCP; not yet tried with Copilot, and sign-in to Google, Microsoft and GitHub, downloads and video not yet tried by hand |
 | File viewer | **Built, next release.** Word, Excel, PowerPoint, OpenDocument, RTF, PDF, images, video, Markdown, notebooks, CSV, code, zip. Checked in the real app with files made for the purpose; layout is close, not exact, for Office files, and the old `.doc` and `.ppt` are not shown. Video and your own real documents not yet tried by hand |
-| Desktop control | **Windows only, off by default.** Tried with a stand-in for the assistant on one screen, not yet with a real assistant or other screen setups |
-| Celeste for Android | **Experimental, next release.** Tried on a Galaxy S24 and an Android emulator. Same Wi-Fi only |
+| Desktop control | **Windows only, off by default.** Tried with a stand-in for the assistant on one screen, not yet with a real assistant or other screen setups. A phone you allow can watch the computer's screen live (**next release**) |
+| Celeste for Android | **Experimental, next release.** Tried on a Galaxy S24 and an Android emulator on the same Wi-Fi. Away from home goes through the project's relay and a direct link, but that is not yet tried on a real phone, and waking a closed app through Firebase is not yet tried with a real Firebase key |
 | Installers | Windows (`.exe`, `.msi`) and macOS (`.dmg`). Not signed with a paid certificate yet; no automatic updates (there is a manual check) |
 
 Tried on Windows by hand and on macOS by automatic checks only (no one working on Celeste has a Mac); please report what you find.
 
 ## Roadmap
 
-1. **Done:** design, storage and sessions, devices, Copilot, Claude, tools, Develop, workflows, Windows and macOS installers (1.0); using this computer's screen (1.1); the Android app and a browser inside Celeste (next release)
-2. The Android app away from home, through a relay run by the project (nothing to set up)
-3. OpenAI and Gemini
-4. Signed installers (Windows first), automatic updates, Linux
-5. Branches, schedules and templates for workflows
+1. **Done:** design, storage and sessions, devices, Copilot, Claude, tools, Develop, workflows, Windows and macOS installers (1.0); using this computer's screen (1.1)
+2. **Next release, built and partly tried:** the Android app, including away from home through the project's relay; a browser inside Celeste; the file viewer; the prompt queue
+3. Trying the Android app away from home on real phones and with a real Firebase key
+4. OpenAI and Gemini
+5. Signed installers (Windows first), automatic updates, Linux
+6. Branches, schedules and templates for workflows
 
 The full plan, with the reasoning behind each decision, is in [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md), and the
 phone's in [docs/PHONE_PLAN.md](docs/PHONE_PLAN.md), the browser's in [docs/BROWSER_PLAN.md](docs/BROWSER_PLAN.md).
