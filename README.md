@@ -147,7 +147,7 @@ On a Mac, use Cmd instead of Ctrl.
 
 ## What works today
 
-Celeste 1.2 is the current release. Nothing in the app is pretended: a vendor is there only if it is connected, and what
+Celeste 1.3 is the current release. Nothing in the app is pretended: a vendor is there only if it is connected, and what
 is not built yet says so.
 
 | Area | State |
@@ -170,7 +170,7 @@ Tried on Windows by hand and on macOS by automatic checks only (no one working o
 
 ## Roadmap
 
-1. **Done:** design, storage and sessions, devices, Copilot, Claude, OpenAI, Gemini, tools, Develop, workflows, Windows and macOS installers (1.0); using this computer's screen (1.1); the Android app, the browser, the file viewer and the prompt queue (1.2)
+1. **Done:** design, storage and sessions, devices, Copilot, Claude, OpenAI, Gemini, tools, Develop, workflows, Windows and macOS installers (1.0); using this computer's screen (1.1); the Android app, the browser, the file viewer and the prompt queue (1.2); OpenAI and Gemini (1.3)
 2. Trying the Android app away from home on real phones and with a real Firebase key, and the browser with Copilot and with sign-in to Google, Microsoft and GitHub
 3. Trying OpenAI with a real ChatGPT account and Gemini with a real key, and Gemini through Google's Antigravity if Google confirms that other apps may start its sign-in
 4. Signed installers (Windows first), automatic updates, Linux

@@ -4,6 +4,8 @@ All notable changes to Celeste. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-14
+
 ### Added
 
 - **OpenAI is a vendor.** Celeste runs OpenAI's Codex program (`codex app-server`, downloaded from npm the first time you connect, pinned to 0.169.0 and checked against its published checksum) with a settings folder of its own, so it never touches the `codex` you use in a terminal. Two ways in, both billed by OpenAI:
