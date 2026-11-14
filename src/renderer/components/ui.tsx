@@ -7,14 +7,14 @@ import { initials } from '@/lib/format'
 type Variant = 'primary' | 'secondary' | 'ghost' | 'soft' | 'danger'
 type Size = 'sm' | 'md' | 'lg'
 
-const VARIANT: Record<Variant, string> = {
+export const VARIANT: Record<Variant, string> = {
   primary: 'bg-accent-fill text-accent-ink hover:brightness-110 active:brightness-95',
   secondary: 'border border-edge-strong bg-raised/60 text-ink hover:bg-raised-2',
   ghost: 'text-ink-muted hover:bg-hover hover:text-ink',
   soft: 'bg-accent-soft text-accent-text hover:bg-accent/20',
   danger: 'border border-danger/40 text-danger hover:bg-danger/10'
 }
-const SIZE: Record<Size, string> = {
+export const SIZE: Record<Size, string> = {
   sm: 'h-8 gap-1.5 px-3 text-[13px]',
   md: 'h-9 gap-2 px-4 text-sm',
   lg: 'h-11 gap-2 px-5 text-[15px]'

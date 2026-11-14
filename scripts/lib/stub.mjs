@@ -19,10 +19,16 @@ export async function startStub(script = echo) {
   return Object.assign(api, { env: { ANTHROPIC_BASE_URL: api.url } })
 }
 
+/** Opens a card's key field: the key is a choice in the menu on the right of the Connect button. */
+export async function openKeyField(card) {
+  await card.getByRole('button', { name: 'More ways to connect' }).click()
+  await card.page().getByRole('menuitem', { name: /Paste an API key/ }).click()
+}
+
 /** Pastes the key into the Claude card of whatever screen shows it (Settings, or the wizard's Connect step). */
 export async function pasteClaudeKey(page) {
   const card = page.getByRole('heading', { name: 'Claude Agent', exact: true }).locator('xpath=ancestor::div[contains(@class,"rounded-xl")][1]')
-  await card.getByRole('button', { name: 'Paste an API key instead' }).click()
+  await openKeyField(card)
   await card.getByLabel(/API key/).fill(KEY)
   await card.getByRole('button', { name: 'Save key' }).click()
   await card.getByText(/Connected · API key ending 1234/).waitFor({ timeout: 60_000 })

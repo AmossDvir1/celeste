@@ -44,6 +44,7 @@ quota. `npm run verify:claude` is safe: it talks to a stand-in for Anthropic's A
 | Command | What it does |
 |---|---|
 | `npm run dev` | Start the app with hot reload |
+| `npm run dev:clean` | Same, with a brand-new profile so the setup wizard opens like a first run. It ignores sign-ins on this computer and deletes the profile on exit (`-- --keep` keeps it, `-- --profile <folder>` reuses one) |
 | `npm run typecheck` | Type-check the interface, the main process and Core |
 | `npm test` | Unit tests: storage, sessions, adapters, devices, workflows, the phone bridge |
 | `npm run build` | Production build into `out/` |

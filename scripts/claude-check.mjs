@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { FakeAnthropic } from '../src/core/adapters/claude/fake-anthropic.ts'
 import { launch, saveSettings } from './lib/app.mjs'
+import { openKeyField } from './lib/stub.mjs'
 
 const profile = mkdtempSync(join(tmpdir(), 'celeste-claude-'))
 const failures = []
@@ -45,7 +46,7 @@ try {
   check(`Core starts Claude Code and finds nobody signed in (${status.state})`, status.state === 'signed-out', JSON.stringify(status))
 
   const card = page.getByRole('heading', { name: 'Claude Agent', exact: true }).locator('xpath=ancestor::div[contains(@class,"rounded-xl")][1]')
-  await card.getByRole('button', { name: 'Paste an API key instead' }).click()
+  await openKeyField(card)
   await card.getByLabel(/API key/).fill('sk-ant-api03-a-key-for-the-test-1234')
   await card.getByRole('button', { name: 'Save key' }).click()
   await card.getByText(/Connected · API key ending 1234/).waitFor({ timeout: 60_000 })

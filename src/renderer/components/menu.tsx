@@ -19,7 +19,8 @@ const Content = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<typeof Dropd
         align="start"
         collisionPadding={12}
         className={cn(
-          'pop-in z-[60] max-h-[min(420px,var(--radix-dropdown-menu-content-available-height))] min-w-[200px] overflow-y-auto',
+          // Above the dialogs (z-70): a menu opened from a button inside Settings or the wizard must not open behind its backdrop.
+          'pop-in z-[80] max-h-[min(420px,var(--radix-dropdown-menu-content-available-height))] min-w-[200px] overflow-y-auto',
           'rounded-xl border border-edge-strong bg-raised-2 p-1 shadow-pop',
           className
         )}

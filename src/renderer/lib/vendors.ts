@@ -16,6 +16,8 @@ export interface VendorMeta {
   billedTo: string
   /** The link under Connect that offers a pasted API key instead. Absent when the vendor takes none (Copilot signs in with GitHub only). */
   keyHint?: string
+  /** What a pasted key is billed to, shown under that choice in the Connect menu. */
+  keyBilledTo?: string
   /** False while Celeste has no adapter for the vendor: its card says "Coming soon" and offers nothing. */
   available: boolean
 }
@@ -37,7 +39,8 @@ export const VENDORS: Record<VendorId, VendorMeta> = {
     blurb: 'Anthropic’s agent, billed as API usage on your Claude Console account.',
     connectHint: 'Opens the Claude Console in your browser to authorize.',
     billedTo: 'Your Claude Console account',
-    keyHint: 'Paste an API key instead',
+    keyHint: 'Paste an API key',
+    keyBilledTo: 'Your Claude Console account',
     available: true
   },
   openai: {
@@ -47,7 +50,8 @@ export const VENDORS: Record<VendorId, VendorMeta> = {
     blurb: 'Use your ChatGPT plan, or an OpenAI API key.',
     connectHint: 'Continue with ChatGPT in your browser.',
     billedTo: 'Your ChatGPT plan',
-    keyHint: 'Paste an API key instead',
+    keyHint: 'Paste an API key',
+    keyBilledTo: 'Your OpenAI API account',
     available: false
   },
   gemini: {

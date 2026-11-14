@@ -8,7 +8,7 @@ import { createPackage } from '@electron/asar'
 import { launch, root } from './lib/app.mjs'
 import { startRegistry } from './lib/registry.mjs'
 import { runtimePackages } from './lib/runtime-packages.mjs'
-import { claudeReady, pasteClaudeKey, say, startStub } from './lib/stub.mjs'
+import { claudeReady, openKeyField, pasteClaudeKey, say, startStub } from './lib/stub.mjs'
 
 const work = mkdtempSync(join(tmpdir(), 'celeste-pack-'))
 const stage = join(work, 'stage')
@@ -115,7 +115,7 @@ try {
   await page2.getByRole('button', { name: 'Continue' }).click()
   await page2.getByRole('button', { name: 'Continue' }).click()
   const card = page2.getByRole('heading', { name: 'Claude Agent', exact: true }).locator('xpath=ancestor::div[contains(@class,"rounded-xl")][1]')
-  await card.getByRole('button', { name: 'Paste an API key instead' }).click()
+  await openKeyField(card)
   await card.getByLabel(/API key/).fill('sk-ant-api03-a-key-for-the-checks-1234')
   await card.getByRole('button', { name: 'Save key' }).click()
   await card.getByRole('alert').waitFor({ timeout: 60_000 })

@@ -5,6 +5,7 @@ import type { VendorProgram } from '@shared/api'
 import { core } from '@/api'
 import { cn } from '@/lib/cn'
 import { Badge, Button, Spinner, TextInput } from '@/components/ui'
+import { SplitButton } from '@/components/SplitButton'
 import { VendorTile } from '@/components/VendorLogo'
 import { VENDORS } from '@/lib/vendors'
 import { openExternal, useVendors } from '@/stores/vendors'
@@ -125,9 +126,30 @@ export function VendorCard({ id, compact }: { id: VendorId; compact?: boolean })
 
         <div className="flex shrink-0 items-center gap-2">
           {meta.available && (v.status === 'ready' || v.status === 'not-installed') && (
-            <Button variant="soft" size="md" onClick={() => connect(id)}>
+            <SplitButton
+              variant="soft"
+              size="md"
+              onClick={() => connect(id)}
+              options={
+                meta.keyHint
+                  ? [
+                      {
+                        key: 'key',
+                        label: meta.keyHint,
+                        description: meta.keyBilledTo ? `Billed to ${meta.keyBilledTo.replace(/^Your/, 'your')}` : undefined,
+                        icon: <KeyRound className="h-3.5 w-3.5" />,
+                        onSelect: () => {
+                          setKeyOpen(true)
+                          // Someone who pastes a key has chosen this vendor, so its program starts coming while they find the key.
+                          void prepare(id)
+                        }
+                      }
+                    ]
+                  : []
+              }
+            >
               Connect
-            </Button>
+            </SplitButton>
           )}
           {(v.status === 'waiting' || v.status === 'downloading') && (
             <>
@@ -145,52 +167,39 @@ export function VendorCard({ id, compact }: { id: VendorId; compact?: boolean })
         </div>
       </div>
 
-      {meta.available && meta.keyHint && (v.status === 'ready' || v.status === 'not-installed') && (
+      {meta.available && meta.keyHint && keyOpen && (v.status === 'ready' || v.status === 'not-installed') && (
         <div className="mt-3 pl-[58px]">
-          {!keyOpen ? (
-            <button
-              type="button"
-              onClick={() => {
-                setKeyOpen(true)
-                // Someone who pastes a key has chosen this vendor, so its program starts coming while they find the key.
-                void prepare(id)
-              }}
-              className="inline-flex items-center gap-1.5 text-[13px] text-ink-muted underline decoration-edge-strong underline-offset-2 hover:text-ink">
-              <KeyRound className="h-3.5 w-3.5" /> {meta.keyHint}
-            </button>
-          ) : (
-            <form
-              className="flex gap-2"
-              onSubmit={(e) => {
-                e.preventDefault()
-                if (!key.trim() || saving) return
-                setSaving(true)
-                void saveKey(id, key).then((stored) => {
-                  setSaving(false)
-                  if (!stored) return
-                  setKey('')
-                  setKeyOpen(false)
-                })
-              }}
-            >
-              <TextInput
-                type="password"
-                autoFocus
-                autoComplete="off"
-                value={key}
-                onChange={(e) => setKey(e.target.value)}
-                placeholder="Paste key"
-                aria-label={`${meta.name} API key`}
-                className="h-9"
-              />
-              <Button type="submit" variant="secondary" size="md" disabled={!key.trim() || saving}>
-                {saving ? 'Saving…' : 'Save key'}
-              </Button>
-              <Button type="button" variant="ghost" size="md" onClick={() => setKeyOpen(false)}>
-                Cancel
-              </Button>
-            </form>
-          )}
+          <form
+            className="flex gap-2"
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (!key.trim() || saving) return
+              setSaving(true)
+              void saveKey(id, key).then((stored) => {
+                setSaving(false)
+                if (!stored) return
+                setKey('')
+                setKeyOpen(false)
+              })
+            }}
+          >
+            <TextInput
+              type="password"
+              autoFocus
+              autoComplete="off"
+              value={key}
+              onChange={(e) => setKey(e.target.value)}
+              placeholder="Paste key"
+              aria-label={`${meta.name} API key`}
+              className="h-9"
+            />
+            <Button type="submit" variant="secondary" size="md" disabled={!key.trim() || saving}>
+              {saving ? 'Saving…' : 'Save key'}
+            </Button>
+            <Button type="button" variant="ghost" size="md" onClick={() => setKeyOpen(false)}>
+              Cancel
+            </Button>
+          </form>
         </div>
       )}
     </div>

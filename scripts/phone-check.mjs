@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os'
 import { extname, join, resolve } from 'node:path'
 import { FakeAnthropic } from '../src/core/adapters/claude/fake-anthropic.ts'
 import { launch, root, saveSettings } from './lib/app.mjs'
+import { openKeyField } from './lib/stub.mjs'
 
 const failures = []
 const check = (label, ok, detail = '') => {
@@ -59,7 +60,7 @@ try {
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await settingsNav('AI vendors').click()
   const card = page.getByRole('heading', { name: 'Claude Agent', exact: true }).locator('xpath=ancestor::div[contains(@class,"rounded-xl")][1]')
-  await card.getByRole('button', { name: 'Paste an API key instead' }).click()
+  await openKeyField(card)
   await card.getByLabel(/API key/).fill('sk-ant-api03-a-key-for-the-test-1234')
   await card.getByRole('button', { name: 'Save key' }).click()
   await card.getByText(/Connected · API key ending 1234/).waitFor({ timeout: 60_000 })
