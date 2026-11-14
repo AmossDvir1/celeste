@@ -22,7 +22,7 @@ export async function startStub(script = echo) {
 /** Opens a card's key field: the key is a choice in the menu on the right of the Connect button. */
 export async function openKeyField(card) {
   await card.getByRole('button', { name: 'More ways to connect' }).click()
-  await card.page().getByRole('menuitem', { name: /Paste an API key/ }).click()
+  await card.page().getByRole('menuitem', { name: /Paste an API key|I already have a key/ }).click()
 }
 
 /** Pastes the key into the Claude card of whatever screen shows it (Settings, or the wizard's Connect step). */

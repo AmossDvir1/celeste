@@ -16,6 +16,11 @@ export interface VendorMeta {
   billedTo: string
   /** The words on the main part of the Connect button. OpenAI asks for "Continue with ChatGPT" in its own wording. */
   connectLabel?: string
+  /**
+   * For a vendor that connects only with a key: where the person gets one. The main button then opens that page and the key field
+   * together, and the menu keeps a choice for someone who already has a key.
+   */
+  keyUrl?: string
   /** The link under Connect that offers a pasted API key instead. Absent when the vendor takes none (Copilot signs in with GitHub only). */
   keyHint?: string
   /** What a pasted key is billed to, shown under that choice in the Connect menu. */
@@ -61,11 +66,14 @@ export const VENDORS: Record<VendorId, VendorMeta> = {
     id: 'gemini',
     name: 'Google Gemini',
     menuLabel: 'Google Gemini',
-    blurb: 'Gemini through an API key, or Vertex AI for teams.',
-    connectHint: 'Opens Google AI Studio so you can create a key.',
+    blurb: 'Gemini through an API key from Google AI Studio, which has a free tier.',
+    connectHint: 'Opens Google AI Studio, where you create a key and paste it here.',
     billedTo: 'Your Gemini API account',
-    keyHint: 'Use Vertex AI instead',
-    available: false
+    connectLabel: 'Get a free key',
+    keyUrl: 'https://aistudio.google.com/apikey',
+    keyHint: 'I already have a key',
+    keyBilledTo: 'Your Gemini API account',
+    available: true
   }
 }
 

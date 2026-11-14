@@ -5,7 +5,7 @@ import { ChatgptAuth } from './auth'
 import { OpenAiHost, TOKEN_VAR, toModels, toml, type Launch } from './host'
 import { DEVICE_SERVER, decide, mcpConfig, policyFor, questionsFrom } from './permissions'
 import { CODEX_VERSION, codexPlatform, registryVersion } from './program'
-import { RpcClient, type Transport } from './rpc'
+import { RpcClient, type Transport } from '../rpc'
 import { OpenAiAgentSession } from './session'
 import { Translator, diffOf, errorFrom } from './translate'
 

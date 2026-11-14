@@ -10,8 +10,9 @@ Your chats and their history, your workflows and their runs, your settings, the 
 
 Celeste sends things only when you ask it to, and only to these:
 
-- **The AI vendor you connect** (Anthropic for Claude, GitHub for Copilot). When you talk to an assistant, your messages, the files you attach and what the assistant reads while it works go to that vendor, from your computer, under your own account with them and their terms and privacy policy. Celeste does not see or keep a copy anywhere else.
-- **npm (registry.npmjs.org)**, the first time you connect Claude or Copilot, to download that vendor's program (and a checksum to verify it). Nothing about you is sent.
+- **The AI vendor you connect** (Anthropic for Claude, GitHub for Copilot, OpenAI, Google for Gemini). When you talk to an assistant, your messages, the files you attach and what the assistant reads while it works go to that vendor, from your computer, under your own account with them and their terms and privacy policy. Celeste does not see or keep a copy anywhere else.
+- **npm (registry.npmjs.org)**, the first time you connect Claude, Copilot, OpenAI or Gemini, to download that vendor's program (and a checksum to verify it). Nothing about you is sent.
+- **OpenAI's sign-in service (auth.openai.com)**, when you choose "Continue with ChatGPT", to sign you in, to renew the sign-in and to cancel it when you disconnect. OpenAI sees your sign-in and a random identifier of this computer that Celeste makes once and that holds nothing about you; the sign-in itself is kept encrypted on this computer. Gemini's program is told not to send usage statistics to Google.
 - **GitHub (api.github.com)**, only if you choose "Check for updates" in Settings, to ask which version is newest. Nothing about you is sent beyond what any web request carries (your address).
 - **GitHub (github.com releases)**, the first time you switch on Settings → Phone, to download the Android app of your version of Celeste (and its checksum), so your computer can hand it to your phone. Nothing about you is sent.
 - **Whatever a workflow or a tool you add contacts.** A workflow can call web addresses, run commands and use tools that you or someone who shared it with you wrote; you are shown all of it before a run, and you decide.

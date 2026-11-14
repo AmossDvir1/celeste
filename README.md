@@ -154,7 +154,8 @@ is not built yet says so.
 |---|---|
 | GitHub Copilot | **Working.** Streaming, tools, approvals, questions, image attachments, model and effort switching, resuming a conversation after a restart |
 | Claude | **Built.** The same features. Checked against the real Claude Code program with a stand-in for Anthropic's API, not yet against a real account |
-| OpenAI, Gemini | Not available yet: their cards say "Coming soon" |
+| OpenAI | **Built.** "Continue with ChatGPT" uses your own plan, through OpenAI's route for open-source apps (a paid plan: the Free plan cannot be used this way), or you paste an API key. The same features, through Codex. Checked against the real Codex program with stand-ins for OpenAI's API and sign-in service, not yet against a real ChatGPT account |
+| Gemini | **Built.** "Get a free key" opens Google AI Studio, and you paste the key (it has a free tier). The same features, through the Gemini CLI. Checked against the real Gemini CLI with a stand-in for Google's API, not yet with a real key. No Google sign-in: Google ended it in the Gemini CLI for personal accounts in June 2026 |
 | Chat, Develop, sessions | **Working.** Saved locally, and they survive a crash. Review, revert, worktrees and a terminal in Develop. Keep typing while the assistant works: messages wait in a queue, and Ctrl/Cmd+Enter sends one at once |
 | Workflows | **Working.** Canvas, drafts by an assistant, import and share, every run shows what it will do first |
 | Tools (MCP) | **Working.** Add a tool once and every assistant can use it |
@@ -169,9 +170,9 @@ Tried on Windows by hand and on macOS by automatic checks only (no one working o
 
 ## Roadmap
 
-1. **Done:** design, storage and sessions, devices, Copilot, Claude, tools, Develop, workflows, Windows and macOS installers (1.0); using this computer's screen (1.1); the Android app, the browser, the file viewer and the prompt queue (1.2)
+1. **Done:** design, storage and sessions, devices, Copilot, Claude, OpenAI, Gemini, tools, Develop, workflows, Windows and macOS installers (1.0); using this computer's screen (1.1); the Android app, the browser, the file viewer and the prompt queue (1.2)
 2. Trying the Android app away from home on real phones and with a real Firebase key, and the browser with Copilot and with sign-in to Google, Microsoft and GitHub
-3. OpenAI and Gemini
+3. Trying OpenAI with a real ChatGPT account and Gemini with a real key, and Gemini through Google's Antigravity if Google confirms that other apps may start its sign-in
 4. Signed installers (Windows first), automatic updates, Linux
 5. Branches, schedules and templates for workflows
 
@@ -188,7 +189,7 @@ phone's in [docs/PHONE_PLAN.md](docs/PHONE_PLAN.md), the browser's in [docs/BROW
 ## License
 
 Celeste's code is licensed under the [Apache License 2.0](LICENSE). The name "Celeste" and the logo are not covered by it.
-The vendors' programs that Celeste downloads (Claude Code, the GitHub Copilot runtime) stay under their own terms and are not part of this
+The vendors' programs that Celeste downloads (Claude Code, the GitHub Copilot runtime, OpenAI's Codex, the Gemini CLI) stay under their own terms and are not part of this
 repository. The open-source software inside Celeste is listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Trademarks

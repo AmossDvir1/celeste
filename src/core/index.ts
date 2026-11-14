@@ -18,6 +18,7 @@ import { DeviceTools } from './devices/tools'
 import { GitSnapshots } from './snapshots'
 import { createClaudeHost, createClaudeSession, createClaudeTitler, type ClaudeHost } from './adapters/claude'
 import { createOpenAiHost, createOpenAiSession, type OpenAiHost } from './adapters/openai'
+import { createGeminiHost, createGeminiSession, type GeminiHost } from './adapters/gemini'
 import { copilotRuntime, createCopilotHost, createCopilotSession, createCopilotTitler, type CopilotHost } from './adapters/copilot'
 import { OwnPrograms } from './adapters/own-copy'
 import { checkForUpdate } from './update'
@@ -98,6 +99,7 @@ let toolServer: DeviceToolServer | undefined
 let copilot: CopilotHost | undefined
 let claude: ClaudeHost | undefined
 let openai: OpenAiHost | undefined
+let gemini: GeminiHost | undefined
 let api: CoreApi | undefined
 let store: SqliteStore | undefined
 let terminalsRef: TerminalService | undefined
@@ -222,6 +224,13 @@ async function start(): Promise<void> {
     ...(process.env['CELESTE_NPM_REGISTRY'] ? { registry: process.env['CELESTE_NPM_REGISTRY'] } : {})
   })
   openai = openaiHost
+  // Gemini's CLI runs with a settings folder of Celeste's own, and is handed the pasted key in an environment variable.
+  const geminiHost = createGeminiHost({
+    dataDir,
+    getKey: () => getSecret('vendor.gemini.key'),
+    ...(process.env['CELESTE_NPM_REGISTRY'] ? { registry: process.env['CELESTE_NPM_REGISTRY'] } : {})
+  })
+  gemini = geminiHost
 
   const worktrees = new Worktrees(join(dataDir, 'worktrees'))
   const mcp = new McpService(db, getSecret, undefined, () => push({ type: 'mcp' }))
@@ -233,7 +242,9 @@ async function start(): Promise<void> {
         ? createClaudeSession(claudeHost, ctx, (id) => servers.info(id), () => mcp.resolved())
         : ctx.vendor === 'openai'
           ? createOpenAiSession(openaiHost, ctx, (id) => servers.info(id), () => mcp.resolved(), process.env['CELESTE_VERSION'])
-          : createUnavailableSession(ctx.vendor)
+          : ctx.vendor === 'gemini'
+            ? createGeminiSession(geminiHost, ctx, (id) => servers.info(id), () => mcp.resolved(), process.env['CELESTE_VERSION'])
+            : createUnavailableSession(ctx.vendor)
   const claudeTitle = createClaudeTitler(claudeHost)
   const copilotTitle = createCopilotTitler(host)
 
@@ -469,7 +480,7 @@ async function start(): Promise<void> {
       return (service as SessionService).api['sessions.removeAll']()
     },
     ...devices.api,
-    ...new VendorService({ copilot: host, claude: claudeHost, openai: openaiHost }, push, ownPrograms).api,
+    ...new VendorService({ copilot: host, claude: claudeHost, openai: openaiHost, gemini: geminiHost }, push, ownPrograms).api,
     ...mcp.api,
     ...workflows.api,
     ...terminals.api,
@@ -544,6 +555,7 @@ parent.on('message', (event) => {
       await copilot?.stop().catch(() => undefined)
       await claude?.stop().catch(() => undefined)
       await openai?.stop().catch(() => undefined)
+      await gemini?.stop().catch(() => undefined)
       store?.close()
       parent.postMessage({ type: 'closed' })
     })()

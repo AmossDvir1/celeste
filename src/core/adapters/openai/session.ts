@@ -5,7 +5,7 @@ import { EventQueue } from '../event-queue'
 import type { ResolvedMcpServer } from '../../mcp'
 import { TOKEN_VAR, type Launch } from './host'
 import { DEVICE_SERVER, decide, mcpConfig, policyFor, questionsFrom } from './permissions'
-import type { RpcClient, RpcHandlers } from './rpc'
+import type { RpcClient, RpcHandlers } from '../rpc'
 import { Translator, errorFrom } from './translate'
 
 export interface OpenAiDeps {

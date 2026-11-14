@@ -4,18 +4,19 @@ import type { OwnPrograms } from './adapters/own-copy'
 import type { ClaudeHost } from './adapters/claude'
 import type { CopilotHost } from './adapters/copilot'
 import type { OpenAiHost } from './adapters/openai'
+import type { GeminiHost } from './adapters/gemini'
 
 const VENDORS: VendorId[] = ['copilot', 'claude', 'openai', 'gemini']
 
-type Real = 'copilot' | 'claude' | 'openai'
+type Real = 'copilot' | 'claude' | 'openai' | 'gemini'
 
 /**
- * Connecting vendors and listing their models. Copilot, Claude and OpenAI are real so far; the others answer "unsupported"
- * and the window offers them as coming soon until their adapters arrive.
+ * Connecting vendors and listing their models. All four vendors are real. A vendor Celeste has no adapter for answers "unsupported"
+ * and the window offers it as coming soon.
  */
 export class VendorService {
   constructor(
-    private readonly hosts: { copilot: CopilotHost; claude: ClaudeHost; openai: OpenAiHost },
+    private readonly hosts: { copilot: CopilotHost; claude: ClaudeHost; openai: OpenAiHost; gemini: GeminiHost },
     private readonly push: (p: CorePush) => void,
     /** The programs the person already has. Looked at again before a connection starts, since one may have been installed since. */
     private readonly own?: OwnPrograms
@@ -27,13 +28,13 @@ export class VendorService {
   }
 
   private real(id: VendorId): Real | undefined {
-    return id === 'copilot' || id === 'claude' || id === 'openai' ? id : undefined
+    return id === 'copilot' || id === 'claude' || id === 'openai' || id === 'gemini' ? id : undefined
   }
 
   readonly api: VendorLinkApi = {
     'vendor.status': async (id): Promise<VendorConnection> => {
       const real = this.real(this.id(id))
-      if (real && real !== 'openai') await this.own?.refresh()
+      if (real === 'copilot' || real === 'claude') await this.own?.refresh()
       return real ? this.hosts[real].status() : { state: 'unsupported' }
     },
 
@@ -41,7 +42,7 @@ export class VendorService {
       const real = this.real(this.id(id))
       if (!real) throw new Error('Celeste cannot connect that vendor yet.')
       if (method !== 'web' && method !== 'code') throw new Error('Invalid sign-in method')
-      if (real !== 'openai') await this.own?.refresh()
+      if (real === 'copilot' || real === 'claude') await this.own?.refresh()
       const report = (progress: Parameters<Parameters<CopilotHost['signIn']>[1]>[0]) => this.push({ type: 'vendor', vendor: real, progress })
       // It runs on its own and reports through pushes: signing in takes as long as the person does.
       if (real === 'copilot') void this.hosts.copilot.signIn(method, report)
@@ -49,6 +50,9 @@ export class VendorService {
         if (method !== 'web') throw new Error('Claude signs in through the browser.')
         // Claude's program may have to be downloaded first, which takes a while, so this too reports through pushes.
         void this.hosts.claude.signIn(report).catch((err: unknown) => report({ state: 'failed', message: err instanceof Error ? err.message : String(err) }))
+      } else if (real === 'gemini') {
+        // Gemini has no sign-in in a browser: the person pastes a key, which the window stores and then asks Core to check.
+        throw new Error('Gemini connects with an API key.')
       } else {
         if (method !== 'web') throw new Error('ChatGPT signs in through the browser.')
         void this.hosts.openai.signIn(report).catch((err: unknown) => report({ state: 'failed', message: err instanceof Error ? err.message : String(err) }))
@@ -58,7 +62,7 @@ export class VendorService {
     'vendor.prepare': async (id) => {
       const real = this.real(this.id(id))
       if (!real) throw new Error('Celeste cannot connect that vendor yet.')
-      if (real !== 'openai') await this.own?.refresh()
+      if (real === 'copilot' || real === 'claude') await this.own?.refresh()
       // Copilot's program is fetched as part of its sign-in, and nothing else of it is needed first.
       if (real === 'copilot') return true
       return this.hosts[real].prepare((progress) => this.push({ type: 'vendor', vendor: real, progress }))
@@ -67,8 +71,8 @@ export class VendorService {
     'vendor.program': async (id): Promise<VendorProgram> => {
       const real = this.real(this.id(id))
       if (!real) return { using: 'none', allowed: true }
-      // OpenAI's program is always Celeste's own copy: there is no check for one the person already has.
-      if (real === 'openai') return { using: this.hosts.openai.hasProgram() ? 'celeste' : 'none', allowed: true }
+      // OpenAI's and Gemini's programs are always Celeste's own copy: there is no check for one the person already has.
+      if (real === 'openai' || real === 'gemini') return { using: this.hosts[real].hasProgram() ? 'celeste' : 'none', allowed: true }
       if (!this.own) return { using: 'none', allowed: true }
       await this.own.refresh()
       const info = this.own.info(real)

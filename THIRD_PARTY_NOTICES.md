@@ -4,7 +4,7 @@ Celeste is licensed under the Apache License 2.0 (see `LICENSE`). It includes th
 
 **Electron** (MIT) and **Chromium** (BSD-style and other licences) are part of every installer: their licence files are in the application folder as `LICENSE.electron.txt` and `LICENSES.chromium.html`.
 
-**Vendors’ programs** (Claude Code, GitHub Copilot) are not part of Celeste. Celeste downloads them from npm when you connect that vendor, and they stay under the vendor’s own terms.
+**Vendors’ programs** (Claude Code, GitHub Copilot, OpenAI Codex, the Gemini CLI) are not part of Celeste. Celeste downloads them from npm when you connect that vendor, and they stay under the vendor’s own terms.
 
 **Fonts:** Outfit and JetBrains Mono, SIL Open Font License 1.1.
 

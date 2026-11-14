@@ -98,7 +98,7 @@ export const useVendors = create<VendorsState>((set, get) => {
         }, () => undefined)
       }
       // A key connection has no sign-in to check, but its program must be there: if it was lost, it comes back by itself.
-      for (const id of ['claude', 'openai'] as const) if (next[id].status === 'connected' && next[id].method === 'key') void get().prepare(id)
+      for (const id of ['claude', 'openai', 'gemini'] as const) if (next[id].status === 'connected' && next[id].method === 'key') void get().prepare(id)
     },
 
     prepare: (id) => {
@@ -163,7 +163,7 @@ export const useVendors = create<VendorsState>((set, get) => {
       const value = key.trim()
       if (!value) return false
       // The key is checked through the vendor's own program, so it has to be here first (it may already be coming).
-      const checked = id === 'claude' || id === 'openai'
+      const checked = id === 'claude' || id === 'openai' || id === 'gemini'
       if (checked && !(await get().prepare(id))) return false
       try {
         await secrets.set(secretName(id), value)

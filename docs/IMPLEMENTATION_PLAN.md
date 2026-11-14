@@ -956,7 +956,7 @@ A short test against each real CLI to settle the **Verify** items, starting with
 
 **Done when:** all four vendors pass the same contract suite, and any gaps appear clearly in the UI.
 
-**Status: Claude is built; OpenAI and Gemini are not started.**
+**Status: Claude, OpenAI and Gemini are built (OpenAI and Gemini on 14 November 2026, see "OpenAI and Gemini, as built" below).**
 
 *Mocks removed from the app (8 November 2026).* Nothing in the app is pretended any more:
 
@@ -984,7 +984,13 @@ A short test against each real CLI to settle the **Verify** items, starting with
 
 **Known gap: Claude subscription login (Pro, Max, Team, Enterprise).** Not available in any release build, on purpose. It would work technically, since Claude Code cannot tell a person from a script, but Anthropic's Agent SDK documentation says third-party products, agents built on the SDK included, may not offer claude.ai login or claude.ai rate limits without Anthropic's prior approval. Celeste is such a product, however thin its interface. What exists instead: Console sign-in and a pasted API key (both billed to the user's own Console account), Bedrock, Vertex or Foundry credentials for teams, and Claude models through a Copilot plan. For development only, `CELESTE_CLAUDE_USER_LOGIN=1` uses the developer's own login on their own copy. **To close the gap:** the publisher asks Anthropic (confirmation 1 in section 6.2) whether Celeste, which runs the unmodified Claude Code program through the SDK, never sees a token and does not hide its name from it, may offer subscription login. If they agree, it becomes a normal Connect choice with no code change beyond turning it on; if not, the gap stays and the card says why. Until then, users with only a subscription are told to use an API key or Copilot. This is my reading of the public docs, not legal advice.
 
-**Vendors on hold (decided 8 November 2026).** OpenAI (Codex) and Gemini (ACP) are paused. Copilot is the vendor used for testing, and Claude is built but has not met a real account (the sign-in on the development PC expired). Their cards say "Coming soon". Resuming them starts with downloading each program (Codex about 480 MB, Gemini about 95 MB) to learn the real protocol.
+**OpenAI and Gemini, as built (14 November 2026).** What was learned from the real programs, which changes the plan above:
+
+- **OpenAI** follows section 6.2: `codex app-server` over JSON-RPC on stdio, `@openai/codex@0.169.0-<platform>` downloaded from npm (about 180 MB, pinned), "Continue with ChatGPT" as OpenAI's open-source route describes it (registration on the first sign-in, PKCE on a 127.0.0.1 listener, ID token and scope checks, renewal, revocation) and a pasted key. The credential reaches Codex only as an environment variable named by the provider's `env_key`; Codex runs with `CODEX_HOME` set to a folder of Celeste's own. Approval modes are Codex's policies (`never` or `untrusted`, with a full-access or read-only sandbox) and Celeste answers the questions Codex raises. For a model name Codex does not know it falls back to plain tools (`exec_command`); its real models use a "code mode" with an `exec` tool, which has not been seen against a real account. Not yet tried against a real ChatGPT account, and OpenAI's open-source eligibility (confirmation 2) is still to be asked. The Free plan cannot use plan sign-in.
+- **Gemini changed under the plan.** Google ended the free "sign in with Google" of the Gemini CLI for personal accounts on 18 June 2026 and replaced it with Antigravity CLI (`agy`, not on npm; `agy acp` reuses its own cached Google sign-in; its terms for other apps are not settled). The Gemini CLI itself is still released (0.68.0 on 10 November 2026) and `gemini --acp` works with an API key, so Gemini is built on that: `@google/gemini-cli@0.68.0` downloaded from npm (19 MB, one program for every platform, run with Electron's Node through `ELECTRON_RUN_AS_NODE`), an API key from Google AI Studio (free tier), no Google sign-in. Celeste's four approval modes are Gemini's own `plan`, `default`, `autoEdit` and `yolo`; its folder trust is switched off in the settings Celeste writes (it refuses the automatic modes in an untrusted folder); usage statistics and self-update are off. Notes: `session/load` replays the whole conversation as updates, which are ignored; Auto makes the CLI ask the model about the task first; a 429 makes the CLI retry for minutes, so Stop is the way out. Not yet tried with a real key. Antigravity stays an option for later if Google confirms that other apps may start its sign-in.
+- The tests run each real program against a stand-in for its API (`npm run verify:openai`, `verify:openai-app`, `verify:gemini`, `verify:gemini-app`), and OpenAI's sign-in against a stand-in that signs real ID tokens.
+
+**Vendors on hold (decided 8 November 2026; resumed and built on 14 November 2026).** OpenAI (Codex) and Gemini (ACP) were paused. Copilot is the vendor used for testing, and Claude is built but has not met a real account (the sign-in on the development PC expired). Their cards say "Coming soon". Resuming them starts with downloading each program (Codex about 480 MB, Gemini about 95 MB) to learn the real protocol.
 
 *Claude's program downloads on first Connect (8 November 2026), under the default of decision 12.* Nothing in the installer: the program (about 330 MB unpacked, 153 MB to download) comes from npm the first time Claude is connected.
 
@@ -995,7 +1001,7 @@ A short test against each real CLI to settle the **Verify** items, starting with
 - **Checks.** Unit tests for the downloader and the host (`program.test.ts`, the host tests in `claude.test.ts`). `verify:package` now runs the packed app through the whole journey against a stand-in for npm on this computer that serves the real program: the program is absent, a key is pasted, it is downloaded, unpacked and marked complete, Claude lists its own models and runs a conversation from it; and a download with a wrong checksum is refused, the card says so, and nothing is kept. `CELESTE_NPM_REGISTRY` points the download at another registry (a company mirror, or that stand-in); `CELESTE_CLAUDE_NO_INSTALLED=1` ignores the program beside the SDK.
 - **Not done:** the download on macOS and Linux (only Windows was run); a real download from npmjs.org (the stand-in served the real file, but not over the internet); embedding the expected checksums in Celeste instead of trusting the ones npm publishes at the time (a hardening step for Phase 8); a proxy setting for company networks.
 
-*OpenAI (Codex) and Gemini (ACP)* are not started and are on hold (see above). Both need their program downloaded to learn the real protocol (Codex about 480 MB, Gemini about 95 MB), and neither is installed on this PC.
+*OpenAI (Codex) and Gemini (ACP)* were not started and on hold (see above); they are built now (next section). Both need their program downloaded to learn the real protocol (Codex about 480 MB, Gemini about 95 MB), and neither is installed on this PC.
 
 ### Phase 6: Modes and tools complete (L)
 
@@ -1161,7 +1167,7 @@ Bring the Workflows tab back, empty and real: schema, runner, Tool and Agent ste
 **Features still to build, roughly in the order proposed**
 
 1. **Desktop mouse and keyboard control** (decision 15, [DESKTOP_CONTROL_PLAN.md](DESKTOP_CONTROL_PLAN.md)): chosen by the owner as the next thing (9 November 2026). **Step 0 (spike), step 1 (the safe core) and most of step 2 (scope by window or program, a never list, password fields, a second yes before Send/Delete/Buy and the like, a pause when the person moves the mouse) are built for Windows, off by default**; a setting for the stop key, macOS, Linux and the accessibility-tree tool are the later steps.
-2. **OpenAI and Gemini adapters** (their cards say "Coming soon"); Gemini first.
+2. ~~OpenAI and Gemini adapters~~ (built 14 November 2026).
 3. **Mobile companion** (decisions 9 to 11, Phase 9). With no Apple account, **Android first**; iPhone and iPad wait for an Apple Developer account. Phone screen designs are still to be decided (decision 10). No push notifications in v1 (decision 11).
 4. Workflows later: branches, schedules, templates, "don't ask again" for approvals.
 5. Vendor commands in the `/` menu.

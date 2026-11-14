@@ -8,7 +8,7 @@ import { core } from '@/api'
  */
 
 /** The vendors Celeste can really talk to. Asking about one that is not connected gives an empty list. */
-const REAL: VendorId[] = ['copilot', 'claude', 'openai']
+const REAL: VendorId[] = ['copilot', 'claude', 'openai', 'gemini']
 
 const index = (list: ModelInfo[]): Record<string, ModelInfo> => Object.fromEntries(list.map((m) => [m.id, m]))
 
@@ -40,7 +40,7 @@ export const useModels = create<ModelsState>((set) => ({
 
 /** A name to show for a model that is not in the list: the vendor is not connected, or has not answered yet. */
 function labelOf(id: string): string {
-  const bare = id.replace(/^claude:/, '').replace(/^openai:/, '').replace(/^copilot-/, '')
+  const bare = id.replace(/^claude:/, '').replace(/^openai:/, '').replace(/^gemini:/, '').replace(/^copilot-/, '')
   return bare ? bare.charAt(0).toUpperCase() + bare.slice(1) : 'Model'
 }
 

@@ -5,7 +5,7 @@ import type { ResolvedMcpServer } from '../../mcp'
 import { ChatgptAuth, newHostId } from './auth'
 import { OpenAiHost, type CodexModel, type Env, type Launch } from './host'
 import { CODEX_VERSION, downloadCodex, findCodex } from './program'
-import { RpcClient, spawnTransport, type RpcHandlers } from './rpc'
+import { RpcClient, spawnTransport, type RpcHandlers } from '../rpc'
 import { OpenAiAgentSession } from './session'
 
 export { OpenAiHost } from './host'

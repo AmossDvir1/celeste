@@ -4,6 +4,21 @@ All notable changes to Celeste. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added
+
+- **OpenAI is a vendor.** Celeste runs OpenAI's Codex program (`codex app-server`, downloaded from npm the first time you connect, pinned to 0.169.0 and checked against its published checksum) with a settings folder of its own, so it never touches the `codex` you use in a terminal. Two ways in, both billed by OpenAI:
+  - **Continue with ChatGPT** uses your own plan, through OpenAI's route for open-source local apps: the sign-in happens in your browser, Celeste registers itself with OpenAI the first time (no secret and no partner key in the repository), checks OpenAI's answer (signature, issuer, audience, nonce, and that plan use was allowed), renews the sign-in before it ends, and asks OpenAI to cancel it when you disconnect. The sign-in is kept in the system's secret store and Codex is only handed the access token, as an environment variable. It needs a paid ChatGPT plan: OpenAI does not let the Free plan be used by other apps.
+  - **An OpenAI API key**, checked with OpenAI as soon as you paste it.
+  - Streaming, tools, approvals, questions, file changes with diffs, images, stopping, resuming after a restart, your tools (MCP) and the device tools all work. The four approval modes become Codex's own policies; plan mode is a read-only sandbox. Not yet tried against a real ChatGPT account.
+- **Gemini is a vendor.** Celeste runs Google's Gemini CLI in its Agent Client Protocol mode (`gemini --acp`, downloaded from npm the first time you connect, pinned to 0.68.0 and checked against its checksum, run with Electron's own Node) with a settings folder of its own: no usage statistics sent to Google, no updating itself, few retries. You connect with an API key from Google AI Studio, which has a free tier: "Get a free key" opens the page and the field for the key together, and the menu keeps "I already have a key". The same features as the others; Gemini's own approval modes (Default, Auto Edit, YOLO, Plan) are the four modes. Not yet tried with a real key. Google ended the free "sign in with Google" of the Gemini CLI for personal accounts on 18 June 2026, and its replacement, Antigravity, is a separate program whose terms for other apps are not settled, so there is no Google sign-in.
+- **The Connect button is a split button.** The main part does the usual thing for that vendor ("Continue with ChatGPT", "Get a free key", "Connect") and the chevron, which turns when it opens, offers the other way in (a pasted key).
+- `npm run dev:clean` starts the app from source with a brand-new profile (the setup wizard opens as on a first run) that ignores the sign-ins on this computer.
+- `npm run verify:openai`, `verify:openai-app`, `verify:gemini` and `verify:gemini-app` run each vendor against its real program and a stand-in for its API (the programs are downloaded once into `scripts/.output`; no account, no cost).
+
+### Changed
+
+- Menus open above dialogs (one opened from Settings used to open behind it).
+
 ## [1.2.0] - 2026-11-14
 
 ### Added

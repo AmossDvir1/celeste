@@ -27,7 +27,7 @@ npm test
 Both must pass. If you changed something the running app depends on, also run the matching check against the built app
 (`npm run verify:persistence`, `verify:package`, `verify:devices`, `verify:checkpoints`, and so on, below). Please do not run
 `npm run verify:copilot` or the Copilot and Claude live tests unless you mean to: they use your own accounts and spend your
-quota. `npm run verify:claude` is safe: it talks to a stand-in for Anthropic's API on your own computer.
+quota. `npm run verify:claude`, `verify:openai`, `verify:openai-app`, `verify:gemini` and `verify:gemini-app` are safe: they talk to stand-ins for the vendors' APIs on your own computer.
 
 ## Guidelines
 
@@ -52,6 +52,10 @@ quota. `npm run verify:claude` is safe: it talks to a stand-in for Anthropic's A
 | `npm run verify:package` | Run the built app from an `app.asar`, as an installer lays it out |
 | `npm run verify:devices` | Run the built app against an in-process SSH server that stands in for a VM |
 | `npm run verify:claude` | Drive the real app with the real Claude Code program against a stand-in for Anthropic's API on this computer (no account, no cost) |
+| `npm run verify:openai` | OpenAI's adapter against the real Codex program (downloaded once into `scripts/.output/codex`, 180 MB) and stand-ins for OpenAI's API and sign-in service: a conversation, commands in each approval mode, questions, stopping, resuming, and Continue with ChatGPT (no account, no cost) |
+| `npm run verify:openai-app` | The same in the real app: connect with a key and with the stand-in ChatGPT sign-in, a conversation, restart, disconnect, force-quit |
+| `npm run verify:gemini` | Gemini's adapter against the real Gemini CLI (downloaded once into `scripts/.output/gemini`, 19 MB) and a stand-in for Google's API (no account, no key, no cost) |
+| `npm run verify:gemini-app` | The same in the real app: Get a free key, connect, a conversation, restart, disconnect, force-quit |
 | `npm run verify:checkpoints` | Drive a Develop session in the real app: checkpoints before each message, revert, undo, and your project's own git left alone (no account, no cost) |
 | `npm run verify:worktrees` | Separate copies of a project (git worktrees) in the real app |
 | `npm run verify:terminal` | Drive the real integrated terminal in the real app |

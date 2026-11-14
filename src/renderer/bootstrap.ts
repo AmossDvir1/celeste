@@ -52,7 +52,7 @@ export async function bootstrap(): Promise<void> {
   // The composer's model must be one that exists, whenever the list changes.
   useModels.subscribe(() => useUi.getState().fitDraftToModels())
   // A vendor's own model list, only for someone who connected it: asking starts its program.
-  const connected = (['copilot', 'claude', 'openai'] as const).filter((v) => useVendors.getState().vendors[v].status === 'connected')
+  const connected = (['copilot', 'claude', 'openai', 'gemini'] as const).filter((v) => useVendors.getState().vendors[v].status === 'connected')
   if (connected.length) void useModels.getState().refresh([...connected])
   useSessions.getState().init(data.sessions)
   useDrafts.getState().init(data.drafts)

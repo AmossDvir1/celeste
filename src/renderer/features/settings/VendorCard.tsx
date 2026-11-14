@@ -131,7 +131,13 @@ export function VendorCard({ id, compact }: { id: VendorId; compact?: boolean })
             <SplitButton
               variant="soft"
               size="md"
-              onClick={() => connect(id)}
+              onClick={() => {
+                if (!meta.keyUrl) return connect(id)
+                // A vendor that connects only with a key: the page where one is made opens, and the field for it with it.
+                openExternal(meta.keyUrl)
+                setKeyOpen(true)
+                void prepare(id)
+              }}
               options={
                 meta.keyHint
                   ? [

@@ -73,11 +73,15 @@ export class RpcClient {
   private nextId = 1
   private readonly waiting = new Map<number | string, { resolve: (v: unknown) => void; reject: (e: Error) => void }>()
   private closed = false
+  private readonly tag: Record<string, string>
 
+  /** `jsonrpc: true` adds the "jsonrpc" field that standard JSON-RPC carries and Codex leaves out (the Agent Client Protocol has it). */
   constructor(
     private readonly transport: Transport,
-    private readonly handlers: RpcHandlers
+    private readonly handlers: RpcHandlers,
+    options: { jsonrpc?: boolean } = {}
   ) {
+    this.tag = options.jsonrpc ? { jsonrpc: '2.0' } : {}
     transport.onLine((line) => this.receive(line))
     transport.onExit((code) => {
       this.closed = true
@@ -107,12 +111,12 @@ export class RpcClient {
           reject(e)
         }
       })
-      this.transport.write(JSON.stringify({ method, id, ...(params !== undefined ? { params } : {}) }))
+      this.transport.write(JSON.stringify({ ...this.tag, method, id, ...(params !== undefined ? { params } : {}) }))
     })
   }
 
   notify(method: string, params?: unknown): void {
-    if (!this.closed) this.transport.write(JSON.stringify({ method, ...(params !== undefined ? { params } : {}) }))
+    if (!this.closed) this.transport.write(JSON.stringify({ ...this.tag, method, ...(params !== undefined ? { params } : {}) }))
   }
 
   close(): void {
@@ -121,7 +125,7 @@ export class RpcClient {
   }
 
   private receive(line: string): void {
-    let m: { id?: number | string; method?: string; params?: unknown; result?: unknown; error?: { message?: string; code?: number } }
+    let m: { id?: number | string; method?: string; params?: unknown; result?: unknown; error?: { message?: string; code?: number; data?: { details?: unknown } } }
     try {
       m = JSON.parse(line) as typeof m
     } catch {
@@ -132,7 +136,9 @@ export class RpcClient {
       const w = this.waiting.get(m.id)
       if (!w) return
       this.waiting.delete(m.id)
-      if (m.error) w.reject(new RpcError(m.error.message ?? 'The OpenAI program reported an error.', m.error.code))
+      // The Agent Client Protocol says only "Internal error" in `message` and puts the reason in `data.details`.
+      const details = typeof m.error?.data?.details === 'string' ? m.error.data.details : ''
+      if (m.error) w.reject(new RpcError(`${m.error.message ?? 'The program reported an error.'}${details ? `: ${details}` : ''}`, m.error.code))
       else w.resolve(m.result)
       return
     }
@@ -144,11 +150,11 @@ export class RpcClient {
     const id = m.id
     this.handlers.request(m.method, params).then(
       (result) => this.reply({ id, result: result ?? {} }),
-      (err: unknown) => this.reply({ id, error: { code: -32601, message: err instanceof Error ? err.message : String(err) } })
+      (err: unknown) => this.reply({ id, error: { code: -32603, message: err instanceof Error ? err.message : String(err) } })
     )
   }
 
   private reply(message: unknown): void {
-    if (!this.closed) this.transport.write(JSON.stringify(message))
+    if (!this.closed) this.transport.write(JSON.stringify({ ...this.tag, ...(message as Record<string, unknown>) }))
   }
 }
