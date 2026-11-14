@@ -802,7 +802,9 @@ describe('browser_open_file', () => {
     expect(host.opened[0]!.path).toBe(path)
     const win = await call('browser_open_file', { path: 'file://C:/Users/Dana/a.pdf' })
     expect(win.isError).toBe(false)
-    expect(host.opened[1]!.path).toBe(resolve('C:/Users/Dana/a.pdf'))
+    // A Windows path is only an absolute path on Windows. Elsewhere it is taken as relative to the chat's own folder.
+    if (process.platform === 'win32') expect(host.opened[1]!.path).toBe(resolve('C:/Users/Dana/a.pdf'))
+    else expect(host.opened[1]!.path.replace(/\\/g, '/')).toMatch(/\/C:\/Users\/Dana\/a\.pdf$/)
   })
 
   it('asks before a file elsewhere in Ask, shows it on a yes, and does not on a no', async () => {
