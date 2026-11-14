@@ -353,6 +353,11 @@ export interface CoreApi {
   /** Starts connecting: downloads the program if needed, then signs in. Answers at once; progress arrives as `vendor` pushes. */
   'vendor.signIn': (id: VendorId, method: 'web' | 'code') => Promise<void>
   'vendor.cancelSignIn': (id: VendorId) => Promise<void>
+  /**
+   * Signs out of a ChatGPT plan: OpenAI is asked to cancel the sign-in, and Celeste forgets it either way. `revoked` is false when
+   * OpenAI could not be reached, so the person can be told to disconnect Celeste in ChatGPT's settings. Other vendors have nothing to give back.
+   */
+  'vendor.signOut': (id: VendorId) => Promise<{ revoked: boolean }>
   /** Which copy of the vendor's program Celeste uses, and why not the person's own when it does not. Looks again at what is installed. */
   'vendor.program': (id: VendorId) => Promise<VendorProgram>
   /**

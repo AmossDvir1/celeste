@@ -36,7 +36,7 @@ export function VendorCard({ id, compact }: { id: VendorId; compact?: boolean })
   const [saving, setSaving] = useState(false)
   const [program, setProgram] = useState<VendorProgram>()
   useEffect(() => {
-    if (!meta.available || id === 'openai' || id === 'gemini') return
+    if (!meta.available || id === 'gemini') return
     let alive = true
     core.call('vendor.program', id).then((p) => alive && setProgram(p), () => undefined)
     return () => {
@@ -97,9 +97,11 @@ export function VendorCard({ id, compact }: { id: VendorId; compact?: boolean })
               <button type="button" onClick={() => v.step && openExternal(v.step.url)} className="underline decoration-edge-strong underline-offset-2 hover:text-ink">
                 Open the sign-in page again
               </button>
-              <button type="button" onClick={() => connectWithCode(id)} className="underline decoration-edge-strong underline-offset-2 hover:text-ink">
-                Use a code instead
-              </button>
+              {id === 'copilot' && (
+                <button type="button" onClick={() => connectWithCode(id)} className="underline decoration-edge-strong underline-offset-2 hover:text-ink">
+                  Use a code instead
+                </button>
+              )}
             </p>
           )}
           {!compact && meta.available && v.status !== 'connected' && v.status !== 'waiting' && v.status !== 'downloading' && !v.error && (
@@ -148,7 +150,7 @@ export function VendorCard({ id, compact }: { id: VendorId; compact?: boolean })
                   : []
               }
             >
-              Connect
+              {meta.connectLabel ?? 'Connect'}
             </SplitButton>
           )}
           {(v.status === 'waiting' || v.status === 'downloading') && (

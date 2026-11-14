@@ -36,7 +36,7 @@ export const secrets = {
 
   set(name: unknown, value: unknown): void {
     assertName(name)
-    if (typeof value !== 'string' || value.length === 0 || value.length > 8192) throw new Error('Invalid secret')
+    if (typeof value !== 'string' || value.length === 0 || value.length > 32768) throw new Error('Invalid secret')
     if (!safeStorage.isEncryptionAvailable()) throw new Error('This computer cannot store secrets securely.')
     save({ ...load(), [name]: safeStorage.encryptString(value).toString('base64') })
   },

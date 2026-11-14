@@ -290,7 +290,7 @@ function PhoneStepSettings({ node, patch }: { node: AgentNode; patch: (change: P
 function AgentForm({ node, def, patch }: { node: AgentNode; def: WorkflowDefinition; patch: (change: Partial<AgentNode>) => void }) {
   const vendors = useVendors((s) => s.vendors)
   const models = useModels((s) => s.list)
-  const connected = (['copilot', 'claude'] as VendorId[]).filter((v) => vendors[v].status === 'connected')
+  const connected = (['copilot', 'claude', 'openai'] as VendorId[]).filter((v) => vendors[v].status === 'connected')
   const value = node.model ?? ''
   return (
     <>

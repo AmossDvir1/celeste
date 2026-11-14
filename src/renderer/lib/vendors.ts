@@ -14,6 +14,8 @@ export interface VendorMeta {
   /** What Connect does, in plain words, for the card. */
   connectHint: string
   billedTo: string
+  /** The words on the main part of the Connect button. OpenAI asks for "Continue with ChatGPT" in its own wording. */
+  connectLabel?: string
   /** The link under Connect that offers a pasted API key instead. Absent when the vendor takes none (Copilot signs in with GitHub only). */
   keyHint?: string
   /** What a pasted key is billed to, shown under that choice in the Connect menu. */
@@ -50,9 +52,10 @@ export const VENDORS: Record<VendorId, VendorMeta> = {
     blurb: 'Use your ChatGPT plan, or an OpenAI API key.',
     connectHint: 'Continue with ChatGPT in your browser.',
     billedTo: 'Your ChatGPT plan',
+    connectLabel: 'Continue with ChatGPT',
     keyHint: 'Paste an API key',
     keyBilledTo: 'Your OpenAI API account',
-    available: false
+    available: true
   },
   gemini: {
     id: 'gemini',

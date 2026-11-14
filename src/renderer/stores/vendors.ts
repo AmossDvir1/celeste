@@ -87,7 +87,7 @@ export const useVendors = create<VendorsState>((set, get) => {
       }
       set({ vendors: next })
       // A saved connection of a real vendor is checked against its own sign-in, which can have ended since.
-      for (const id of ['copilot', 'claude'] as const) {
+      for (const id of ['copilot', 'claude', 'openai'] as const) {
         if (next[id].status !== 'connected' || next[id].method !== 'browser') continue
         void core.call('vendor.status', id).then((c) => {
           if (c.state === 'signed-in') patch(id, { account: c.account })
@@ -98,7 +98,7 @@ export const useVendors = create<VendorsState>((set, get) => {
         }, () => undefined)
       }
       // A key connection has no sign-in to check, but its program must be there: if it was lost, it comes back by itself.
-      if (next.claude.status === 'connected' && next.claude.method === 'key') void get().prepare('claude')
+      for (const id of ['claude', 'openai'] as const) if (next[id].status === 'connected' && next[id].method === 'key') void get().prepare(id)
     },
 
     prepare: (id) => {
@@ -162,16 +162,17 @@ export const useVendors = create<VendorsState>((set, get) => {
     saveKey: async (id, key) => {
       const value = key.trim()
       if (!value) return false
-      // The key is checked by Claude Code itself, so its program has to be here first (it may already be coming).
-      if (id === 'claude' && !(await get().prepare(id))) return false
+      // The key is checked through the vendor's own program, so it has to be here first (it may already be coming).
+      const checked = id === 'claude' || id === 'openai'
+      if (checked && !(await get().prepare(id))) return false
       try {
         await secrets.set(secretName(id), value)
       } catch {
         useUi.getState().pushToast({ text: 'This computer cannot store the key securely, so Celeste did not keep it.' })
         return false
       }
-      // A vendor that can check a key says so at once. Anthropic's answer, when it refuses the key, is shown and the key is dropped.
-      if (id === 'claude') {
+      // A vendor that can check a key says so at once. The vendor's answer, when it refuses the key, is shown and the key is dropped.
+      if (checked) {
         const c = await core.call('vendor.status', id).catch(() => undefined)
         if (c?.state === 'unavailable') {
           await secrets.remove(secretName(id)).catch(() => undefined)
@@ -182,16 +183,23 @@ export const useVendors = create<VendorsState>((set, get) => {
       const account = `API key ending ${value.slice(-4)}`
       patch(id, { status: 'connected', account, method: 'key', progress: undefined, error: undefined })
       await store(id, { account, method: 'key' })
-      // Claude reads the key itself, so its own model list and account can now be asked for.
-      if (id === 'claude') void useModels.getState().refresh(['claude'])
+      // The vendor's program reads the key itself, so its own model list and account can now be asked for.
+      if (checked) void useModels.getState().refresh([id])
       return true
     },
 
     disconnect: async (id) => {
       const wasKey = get().vendors[id].method === 'key'
+      const wasPlan = id === 'openai' && !wasKey
       patch(id, { status: 'ready', account: undefined, method: undefined })
       await store(id, null)
       if (wasKey) await secrets.remove(secretName(id)).catch(() => undefined)
+      // A ChatGPT sign-in is cancelled with OpenAI, so the app stops being listed in the person's ChatGPT settings.
+      if (wasPlan) {
+        const done = await core.call('vendor.signOut', id).catch(() => ({ revoked: false }))
+        if (!done.revoked) useUi.getState().pushToast({ text: 'Signed out here, but Celeste could not reach OpenAI to cancel the sign-in. You can disconnect Celeste in ChatGPT’s settings, under Usage.' })
+      }
+      if (id === 'openai') void useModels.getState().refresh([id])
     }
   }
 })

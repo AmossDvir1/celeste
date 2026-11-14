@@ -272,13 +272,13 @@ describe('the vendor service', () => {
   const make = () => {
     const w = world({ begin: webStep, advances: [completed] })
     const pushes: unknown[] = []
-    return { w, pushes, service: new VendorService({ copilot: w.host, claude: {} as never }, (p) => pushes.push(p)) }
+    return { w, pushes, service: new VendorService({ copilot: w.host, claude: {} as never, openai: {} as never }, (p) => pushes.push(p)) }
   }
 
-  it('answers for Copilot and Claude, and says the others are not built yet', async () => {
+  it('answers for Copilot, Claude and OpenAI, and says the others are not built yet', async () => {
     const { service } = make()
     expect(await service.api['vendor.status']('copilot')).toEqual({ state: 'signed-out' })
-    for (const id of ['openai', 'gemini'] as const) {
+    for (const id of ['gemini'] as const) {
       expect(await service.api['vendor.status'](id)).toEqual({ state: 'unsupported' })
       expect(await service.api['vendor.models'](id)).toEqual([])
       await expect(service.api['vendor.signIn'](id, 'web')).rejects.toThrow(/cannot connect/)
@@ -294,7 +294,7 @@ describe('the vendor service', () => {
       signIn: async (on: (p: unknown) => void) => on({ state: 'done', account: 'Console · Acme' }),
       cancelSignIn: async () => undefined
     }
-    const service = new VendorService({ copilot: w.host, claude: claude as never }, (p) => pushes.push(p))
+    const service = new VendorService({ copilot: w.host, claude: claude as never, openai: {} as never }, (p) => pushes.push(p))
     expect(await service.api['vendor.status']('claude')).toEqual({ state: 'signed-in', account: 'Console · Acme' })
     await service.api['vendor.signIn']('claude', 'web')
     expect(pushes).toEqual([{ type: 'vendor', vendor: 'claude', progress: { state: 'done', account: 'Console · Acme' } }])

@@ -17,6 +17,7 @@ import { nodeFileOps } from './devices/node-fs'
 import { DeviceTools } from './devices/tools'
 import { GitSnapshots } from './snapshots'
 import { createClaudeHost, createClaudeSession, createClaudeTitler, type ClaudeHost } from './adapters/claude'
+import { createOpenAiHost, createOpenAiSession, type OpenAiHost } from './adapters/openai'
 import { copilotRuntime, createCopilotHost, createCopilotSession, createCopilotTitler, type CopilotHost } from './adapters/copilot'
 import { OwnPrograms } from './adapters/own-copy'
 import { checkForUpdate } from './update'
@@ -96,6 +97,7 @@ let devices: DeviceService | undefined
 let toolServer: DeviceToolServer | undefined
 let copilot: CopilotHost | undefined
 let claude: ClaudeHost | undefined
+let openai: OpenAiHost | undefined
 let api: CoreApi | undefined
 let store: SqliteStore | undefined
 let terminalsRef: TerminalService | undefined
@@ -122,7 +124,23 @@ function getSecret(name: string): Promise<string | null> {
   })
 }
 
-/** Stores a secret Core made itself (only the phone bridge's key may be). True when the system's secret store took it. */
+/** Removes a secret Core made itself (the ChatGPT sign-in, when the person signs out). True when it is gone. */
+function removeSecret(name: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const id = ++nextSecretId
+    const timer = setTimeout(() => {
+      waitingForSecret.delete(id)
+      resolve(false)
+    }, 10_000)
+    waitingForSecret.set(id, (value) => {
+      clearTimeout(timer)
+      resolve(value === 'ok')
+    })
+    parent.postMessage({ type: 'secret-remove', id, name })
+  })
+}
+
+/** Stores a secret Core made itself (the phone bridge's key, and the ChatGPT sign-in). True when the system's secret store took it. */
 function storeSecret(name: string, value: string): Promise<boolean> {
   return new Promise((resolve) => {
     const id = ++nextSecretId
@@ -191,6 +209,19 @@ async function start(): Promise<void> {
     ...(ownLogin ? { allowSubscription: true } : { configDir: join(dataDir, 'claude-config') })
   })
   claude = claudeHost
+  // OpenAI's Codex runs with a settings folder of Celeste's own too. The ChatGPT sign-in is kept in the main process's secret store,
+  // as is a pasted key; Codex is only ever handed the credential, as an environment variable.
+  const openaiHost = createOpenAiHost({
+    dataDir,
+    tokens: {
+      get: () => getSecret('vendor.openai.tokens'),
+      set: (value) => storeSecret('vendor.openai.tokens', value),
+      remove: async () => void (await removeSecret('vendor.openai.tokens'))
+    },
+    getKey: () => getSecret('vendor.openai.key'),
+    ...(process.env['CELESTE_NPM_REGISTRY'] ? { registry: process.env['CELESTE_NPM_REGISTRY'] } : {})
+  })
+  openai = openaiHost
 
   const worktrees = new Worktrees(join(dataDir, 'worktrees'))
   const mcp = new McpService(db, getSecret, undefined, () => push({ type: 'mcp' }))
@@ -200,7 +231,9 @@ async function start(): Promise<void> {
       ? createCopilotSession(host, ctx, (id) => servers.info(id), () => mcp.resolved())
       : ctx.vendor === 'claude'
         ? createClaudeSession(claudeHost, ctx, (id) => servers.info(id), () => mcp.resolved())
-        : createUnavailableSession(ctx.vendor)
+        : ctx.vendor === 'openai'
+          ? createOpenAiSession(openaiHost, ctx, (id) => servers.info(id), () => mcp.resolved(), process.env['CELESTE_VERSION'])
+          : createUnavailableSession(ctx.vendor)
   const claudeTitle = createClaudeTitler(claudeHost)
   const copilotTitle = createCopilotTitler(host)
 
@@ -436,7 +469,7 @@ async function start(): Promise<void> {
       return (service as SessionService).api['sessions.removeAll']()
     },
     ...devices.api,
-    ...new VendorService({ copilot: host, claude: claudeHost }, push, ownPrograms).api,
+    ...new VendorService({ copilot: host, claude: claudeHost, openai: openaiHost }, push, ownPrograms).api,
     ...mcp.api,
     ...workflows.api,
     ...terminals.api,
@@ -510,6 +543,7 @@ parent.on('message', (event) => {
       await toolServer?.stop().catch(() => undefined)
       await copilot?.stop().catch(() => undefined)
       await claude?.stop().catch(() => undefined)
+      await openai?.stop().catch(() => undefined)
       store?.close()
       parent.postMessage({ type: 'closed' })
     })()

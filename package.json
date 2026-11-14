@@ -54,6 +54,8 @@
     "verify:perf": "electron-vite build && node scripts/perf-check.mjs",
     "verify:ui": "electron-vite build && node scripts/ui-check.mjs",
     "verify:claude": "electron-vite build && node scripts/claude-check.mjs",
+    "verify:openai": "node scripts/openai-check.mjs",
+    "verify:openai-app": "electron-vite build && node scripts/openai-app-check.mjs",
     "verify:copilot": "electron-vite build && node scripts/copilot-check.mjs && node scripts/copilot-signin-check.mjs",
     "shots": "electron-vite build && node scripts/screenshots.mjs",
     "glow:compare": "electron-vite build && node scripts/glow-compare.mjs",

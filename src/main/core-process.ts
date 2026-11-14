@@ -6,9 +6,9 @@ import { secrets } from './secrets'
 
 // Core may ask for a device's password or key passphrase, the API key of a vendor that takes one, the secret values of a tool (MCP server) the person added,
 // and the phone bridge's own key pair.
-const DEVICE_SECRET = /^(device\.dev-[0-9a-f-]{36}\.(password|passphrase)|vendor\.(claude|openai|gemini)\.key|mcp\.mcp-[0-9a-f]{8}\.(env|header)\.[A-Za-z0-9_-]{1,40}|phone\.key)$/
-/** The only secret Core makes and stores itself: the key pair phones are paired with. */
-const CORE_STORES = 'phone.key'
+const DEVICE_SECRET = /^(device\.dev-[0-9a-f-]{36}\.(password|passphrase)|vendor\.(claude|openai|gemini)\.key|vendor\.openai\.tokens|mcp\.mcp-[0-9a-f]{8}\.(env|header)\.[A-Za-z0-9_-]{1,40}|phone\.key)$/
+/** The only secrets Core makes and stores itself: the key pair phones are paired with, and the ChatGPT sign-in. */
+const CORE_STORES = /^(phone\.key|vendor\.openai\.tokens)$/
 
 /**
  * The Core process: database, sessions and the assistant, in a utility process of its own. Windows talk to it
@@ -78,12 +78,27 @@ export class CoreProcess {
       if (message?.type === 'secret-store' && typeof message.id === 'number') {
         const m = message as { id: number; name?: unknown; value?: unknown }
         let ok = false
-        if (m.name === CORE_STORES && typeof m.value === 'string') {
+        if (typeof m.name === 'string' && CORE_STORES.test(m.name) && typeof m.value === 'string') {
           try {
             secrets.set(m.name, m.value)
             ok = true
           } catch {
             // No secure store on this computer: Core keeps the key where it was.
+          }
+        }
+        child.postMessage({ type: 'secret-stored', id: m.id, value: ok })
+        return
+      }
+      if (message?.type === 'secret-remove' && typeof message.id === 'number') {
+        const m = message as { id: number; name?: unknown }
+        let ok = false
+        // Only the secrets Core stores itself can be removed by it. A key the person pasted is theirs to remove, in Settings.
+        if (typeof m.name === 'string' && CORE_STORES.test(m.name) && m.name !== 'phone.key') {
+          try {
+            secrets.remove(m.name)
+            ok = true
+          } catch {
+            // Nothing to remove, or the file could not be written.
           }
         }
         child.postMessage({ type: 'secret-stored', id: m.id, value: ok })

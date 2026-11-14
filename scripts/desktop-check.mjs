@@ -416,7 +416,7 @@ try {
   // The assistant is waiting for four seconds. Now the person takes the mouse.
   SetCursorPos(200, 750)
   const pausedBar = await barWindow()
-  const goButton = pausedBar?.getByRole('button', { name: 'Continue' })
+  const goButton = pausedBar?.getByRole('button', { name: 'Continue', exact: true })
   await goButton?.waitFor({ timeout: 20_000 })
   check('the bar says the mouse was moved and offers Continue', /You moved the mouse/.test((await pausedBar?.locator('body').innerText()) ?? ''))
   await pausedBar?.screenshot({ path: join(out, 'desktop-bar-paused.png') }).catch(() => undefined)
