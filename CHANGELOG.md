@@ -4,6 +4,8 @@ All notable changes to Celeste. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-14
+
 ### Added
 
 - **Phone app: see the files and pictures the assistant made.** The files an answer produced in a Chat now appear as cards under it on the phone (name, size, new or changed). A picture opens full screen, fetched from the computer in 1 MB parts with a progress bar (a 15 MB photo took about 30 seconds on mobile data), and zooms with a pinch, a drag and a double tap. Other kinds of file show as "on the computer" for now; opening them and saving a copy are not built yet. Only files inside that chat's own folder can be fetched, up to 100 MB.
@@ -19,20 +21,6 @@ All notable changes to Celeste. The format follows [Keep a Changelog](https://ke
 - **Phone app: which chats are working.** A working chat has an accent dot with a halo beside it and "Working…" in the accent colour, a chat waiting for you a still dot, and the Chats tab gets a pulsing dot while something works and you are on another tab.
 - **The phone app away from home: the relay (first part).** A small relay in `relay/` (a Cloudflare Worker, deployed to the project's account) lets the phone reach the computer when they are not on the same Wi-Fi. The computer and the phone each connect outward to it, and it passes sealed messages it can't read. The phone tries the Wi-Fi first and goes back to it by itself. Pairing still happens only on the Wi-Fi. `CELESTE_RELAY_URL` points Celeste at another relay, or (empty) switches it off. Not tried on a real phone yet. 
 - **Waking a phone with the app closed (not yet tried with real Firebase).** When Celeste needs your answer (an approval or a question), or the assistant wants the phone to do something, your computer asks the relay to send one message through Firebase Cloud Messaging; the phone wakes, opens it and shows the notification, even away from home. The message holds one sealed block, so Google and the relay see only that something was sent. The app's background parts now reach the computer through the relay when the Wi-Fi does not. Abilities can start a closed app. Needs the project's Firebase key on the relay (`relay/README.md`). Large files away from home come next (`docs/PHONE_PLAN.md`, 7.1).
-
-### Changed
-
-- **Settings are much smaller.** Eleven sections became nine and about 30 controls became 14, because most were questions with one sensible answer. This follows what Grok Bot, Claude and Copilot do: few settings, and the question asked on a card when it matters.
-  - **Gone, always on:** naming new chats automatically, and using the Claude and Copilot programs already on your computer when they pass Celeste's check.
-  - **Gone, moved to the browser pane's menu or fixed:** where links from chats open and clearing browsing data (both were already in the pane's menu), and the search engine (Google).
-  - **Gone, nothing used them:** the projects folder, and the Export button that did nothing yet. Also gone: Run the setup again, the sidebar switch (Ctrl B and the sidebar button remain), and the shortcut list.
-  - **General** now holds your name, the theme, the default model and the default approval (Appearance and Agent defaults are folded into it).
-  - **The assistant no longer asks before using a site** unless the chat is set to Ask. You sent it there; Claude's browser works the same way. "Ask before it uses a new site" is gone.
-  - **Desktop control: how long is asked on the card.** A slider on the card, 20 minutes to start, up to 2 hours, replaces the setting, and a tick box on the card keeps **Until I stop it** (it still ends after 5 minutes with nothing done, and after 12 hours at most). +15 min on the bar still adds time and never shortens a grant. "Let it ask for the whole screen" is gone: the card for the whole screen already warns and offers No. The long text in Settings is two lines and a "More" fold, and the list of recent times appears only when there are some.
-- **A dot shows which sessions are working.** A small dot beside a session in the list breathes while an assistant is writing in it (with Working… instead of the time), and a dot on the Chat or Develop tab says something is going on in the one you are not looking at.
-- **The list holds still.** Sessions are ordered by your last message and by when an answer ended, not by every word being written. Before, two sessions answering at once kept trading places.
-- **Long conversations are fast.** A reply that streamed in about 2 seconds took almost two minutes to draw in a conversation of 150 turns, because every few characters redrew everything in it. Now it draws as fast as in an empty chat, the window does not freeze, and a long conversation opens in a fraction of a second (the newest messages first, older ones as you scroll up). Under the hood: tokens are logged in runs, not one by one; only what changed is drawn again; a long reply is drawn in pieces; the browser skips what is far off screen.
-- **Chat keeps the working out out of the way.** Thinking and tool calls are folded into one line (Thought for 4 s, Read 3 files · 2 s) that you can open, also while they are still going. Develop shows thinking while it streams, but only the last few lines, and folds runs of reading and searching.
 
 ### Added
 - **A browser inside Celeste.** The Browser button (or Ctrl+Shift+B) opens a real browser beside the chat, in Chat and in Develop.
@@ -87,6 +75,20 @@ All notable changes to Celeste. The format follows [Keep a Changelog](https://ke
   - **This phone** says when the computer has a newer Celeste, with a link to get the new app.
   - **Settings → Phone** says when Windows treats your Wi-Fi as Public, which can keep phones out.
   - A released Celeste fetches the matching Android app from its GitHub release the first time phones are switched on, and checks it before handing it out.
+
+### Changed
+
+- **Settings are much smaller.** Eleven sections became nine and about 30 controls became 14, because most were questions with one sensible answer. This follows what Grok Bot, Claude and Copilot do: few settings, and the question asked on a card when it matters.
+  - **Gone, always on:** naming new chats automatically, and using the Claude and Copilot programs already on your computer when they pass Celeste's check.
+  - **Gone, moved to the browser pane's menu or fixed:** where links from chats open and clearing browsing data (both were already in the pane's menu), and the search engine (Google).
+  - **Gone, nothing used them:** the projects folder, and the Export button that did nothing yet. Also gone: Run the setup again, the sidebar switch (Ctrl B and the sidebar button remain), and the shortcut list.
+  - **General** now holds your name, the theme, the default model and the default approval (Appearance and Agent defaults are folded into it).
+  - **The assistant no longer asks before using a site** unless the chat is set to Ask. You sent it there; Claude's browser works the same way. "Ask before it uses a new site" is gone.
+  - **Desktop control: how long is asked on the card.** A slider on the card, 20 minutes to start, up to 2 hours, replaces the setting, and a tick box on the card keeps **Until I stop it** (it still ends after 5 minutes with nothing done, and after 12 hours at most). +15 min on the bar still adds time and never shortens a grant. "Let it ask for the whole screen" is gone: the card for the whole screen already warns and offers No. The long text in Settings is two lines and a "More" fold, and the list of recent times appears only when there are some.
+- **A dot shows which sessions are working.** A small dot beside a session in the list breathes while an assistant is writing in it (with Working… instead of the time), and a dot on the Chat or Develop tab says something is going on in the one you are not looking at.
+- **The list holds still.** Sessions are ordered by your last message and by when an answer ended, not by every word being written. Before, two sessions answering at once kept trading places.
+- **Long conversations are fast.** A reply that streamed in about 2 seconds took almost two minutes to draw in a conversation of 150 turns, because every few characters redrew everything in it. Now it draws as fast as in an empty chat, the window does not freeze, and a long conversation opens in a fraction of a second (the newest messages first, older ones as you scroll up). Under the hood: tokens are logged in runs, not one by one; only what changed is drawn again; a long reply is drawn in pieces; the browser skips what is far off screen.
+- **Chat keeps the working out out of the way.** Thinking and tool calls are folded into one line (Thought for 4 s, Read 3 files · 2 s) that you can open, also while they are still going. Develop shows thinking while it streams, but only the last few lines, and folds runs of reading and searching.
 
 ### Fixed
 

@@ -31,9 +31,8 @@ The phone app talks only to **your own computer**, directly over your Wi-Fi. The
 
 Celeste has a browser of its own. It works like any browser: the sites you open there see you as a visitor from this computer, and Celeste does not watch where you go or send it anywhere. It starts signed out and keeps no cookies after you quit unless you choose "Keep cookies".
 
-- **When an assistant uses it** (you can switch that off in Settings; the first time it acts on a site that is not on your computer, it asks you), what it reads from a page, the pictures it takes of a page, and what it types go to your AI vendor as part of the chat, and stay in the chat's history on your computer. Close or avoid pages you do not want an assistant to read while it is working.
+- **When an assistant uses it** (you can switch that off in Settings; in a chat set to Ask, it asks you before it first goes to a site that is not on your computer), what it reads from a page, the pictures it takes of a page, and what it types go to your AI vendor as part of the chat, and stay in the chat's history on your computer. Close or avoid pages you do not want an assistant to read while it is working.
 - **Other programs** (such as Playwright MCP) can use the browser only if you switch that on in Settings. It is off by default, listens on this computer only, and needs a secret address that changes each time Celeste starts.
-
 - **Files you open in Celeste** (Word, Excel, PowerPoint, PDF, images, Markdown and the rest) are read on your computer and drawn by a page that cannot reach the internet or your other files. Nothing in them is sent anywhere by Celeste. If an assistant is told about a file, that is part of your conversation like anything else.
 
 ## Workflows you share
