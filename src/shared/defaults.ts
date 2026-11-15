@@ -10,6 +10,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   wizardDone: false,
   sidebarCollapsed: false,
   sidebarWidth: SIDEBAR_WIDTH.default,
+  closeToTray: true,
   desktopControl: false,
   desktopNeverApps: [],
   browserTools: true,

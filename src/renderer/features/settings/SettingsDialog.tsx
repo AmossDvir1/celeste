@@ -331,6 +331,12 @@ function Content({ section }: { section: SettingsSection }) {
         <Section title="General" description="Celeste uses your name in the greeting. A new chat starts with the model and the approval you pick here, and you can change them in any chat.">
           <Field label="Your name">{(id) => <TextInput id={id} value={settings.userName} onChange={(e) => settings.set({ userName: e.target.value })} className="max-w-sm" />}</Field>
           <ThemeTiles value={settings.theme} onChange={(theme) => settings.set({ theme })} />
+          {window.celeste?.platform === 'win32' && (
+            <div>
+              <Switch label="Keep Celeste running in the tray when I close the window" checked={settings.closeToTray} onCheckedChange={(closeToTray) => settings.set({ closeToTray })} />
+              <p className="mt-1 text-xs text-ink-faint">Chats and workflows carry on, and Celeste tells you when one needs you. Quit from the tray icon.</p>
+            </div>
+          )}
           <Field label="Default model">
             {(id) => (
               <ModelSelect

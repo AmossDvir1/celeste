@@ -43,6 +43,8 @@ export interface AppSettings {
   sidebarCollapsed: boolean
   /** How wide the session list is, in pixels. */
   sidebarWidth: number
+  /** Closing the window leaves Celeste running in the tray (Windows), so chats, workflows and phones carry on. Off: closing quits. */
+  closeToTray: boolean
   /** The assistant may ask to use this computer's mouse and keyboard. Off until the person switches it on. */
   desktopControl: boolean
   /** Programs, or words in a window's title, that desktop control never sees or touches (a password manager, a bank). */

@@ -98,6 +98,15 @@ const bridge: CelesteBridge = {
   chatFile: (sessionId, path, action) => ipcRenderer.invoke('celeste:chat-file', sessionId, path, action),
   saveText: (suggestedName, text) => ipcRenderer.invoke('celeste:save-text', suggestedName, text),
   openText: (extensions) => ipcRenderer.invoke('celeste:open-text', extensions),
+  onOpen: (listener) => {
+    const on = (_event: unknown, payload: { kind?: unknown; target?: unknown }) => {
+      if ((payload?.kind === 'chat' || payload?.kind === 'run') && typeof payload.target === 'string') listener({ kind: payload.kind, target: payload.target })
+    }
+    ipcRenderer.on('celeste:open', on)
+    return () => {
+      ipcRenderer.removeListener('celeste:open', on)
+    }
+  },
   revealDataFolder: () => ipcRenderer.invoke('celeste:reveal-data'),
   chooseFolder: () => ipcRenderer.invoke('celeste:choose-folder'),
   onBeforeQuit: (handler) => {

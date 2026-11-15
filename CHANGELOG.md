@@ -4,6 +4,10 @@ All notable changes to Celeste. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added
+
+- **Celeste stays in the tray** (Windows). Closing the window hides it and Celeste keeps running, so chats, workflow runs and the phone connection carry on. Click the tray icon to open it, right-click to quit (it asks first if something is still going). While the window is hidden, a notification tells you when a chat or a workflow needs you, and clicking it opens that chat. Hiding the window ends any desktop control. One choice, in Settings, General, turns it off.
+
 ## [1.3.0] - 2026-11-14
 
 ### Added

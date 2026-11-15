@@ -1,13 +1,16 @@
-import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainEvent, type IpcMainInvokeEvent, type WebContents } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Notification, shell, type IpcMainEvent, type IpcMainInvokeEvent, type WebContents } from 'electron'
+import { existsSync, writeFileSync } from 'node:fs'
 import { copyFile, readFile, stat, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { canOpenFile } from '@shared/produced'
 import { resolveChatFile } from '../core/chat-files'
 import { registerAttachmentScheme, serveAttachments } from './attachments-protocol'
 import { BrowserService } from './browser/service'
-import { CoreProcess } from './core-process'
+import { CoreProcess, type AppMessage } from './core-process'
 import { DesktopService } from './desktop/service'
 import { secrets } from './secrets'
+import { TrayService } from './tray'
+import { hidesOnClose, quitQuestion, shouldNotify } from './tray-rules'
 
 const DEV_URL = process.env['ELECTRON_RENDERER_URL']
 // Test scripts open a specific view, for example CELESTE_QUERY="bare=chat".
@@ -34,6 +37,91 @@ const ownContents = new WeakSet<WebContents>()
 core.setBrowser(browser)
 const flushed = new WeakSet<BrowserWindow>()
 
+// The tray (docs/TRAY_AND_COMPACT_PLAN.md, Part 1): closing the window hides it, and Celeste goes on in the tray.
+let quitting = false
+/** Settings, General: closing the window leaves Celeste running. Core tells us at start-up and whenever it changes. */
+let closeToTray = true
+let working = 0
+let waiting = 0
+const tray = new TrayService({ icon: join(__dirname, '../../resources/icon.png'), open: () => showMain(), quit: () => void quitFromTray() })
+/** The first time the window is hidden, one notice says where Celeste went. Remembered in a file of its own, so it is said once. */
+const trayNote = join(app.getPath('userData'), 'tray-told')
+const notices = new Set<Notification>()
+
+/** The window of the app itself (not the bar or a border of desktop control). */
+function mainWindow(): BrowserWindow | undefined {
+  return BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && ownContents.has(w.webContents))
+}
+
+/** Brings the window back from the tray, the taskbar or nothing at all. */
+function showMain(): BrowserWindow {
+  const win = mainWindow() ?? createWindow()
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+  return win
+}
+
+/** Hides the window, once what it holds is saved. The assistant stops using the computer with it: control needs a chat in view. */
+function hideMain(win: BrowserWindow): void {
+  if (win.isDestroyed()) return
+  win.hide()
+  desktop.stopAll('Celeste was hidden.')
+  if (!existsSync(trayNote)) {
+    try {
+      writeFileSync(trayNote, 'told')
+    } catch {
+      /* the notice may be said again next time */
+    }
+    say('Celeste is still running in the tray', 'Right-click its icon to quit. You can change this in Settings, General.')
+  }
+}
+
+function say(title: string, body: string, onClick?: () => void): void {
+  if (!Notification.isSupported()) return
+  const n = new Notification({ title, body })
+  notices.add(n)
+  n.on('click', () => onClick?.())
+  n.on('close', () => notices.delete(n))
+  n.show()
+}
+
+/** A chat or a workflow needs the person while they may not be looking: say so, and let a click take them to it. */
+function needsYou(m: { kind: 'chat' | 'run'; target: string; title: string; text: string }): void {
+  const win = mainWindow()
+  if (!shouldNotify(win ? { visible: win.isVisible(), minimized: win.isMinimized(), focused: win.isFocused() } : null)) return
+  say(`${m.title} needs you`, m.text, () => showMain().webContents.send('celeste:open', { kind: m.kind, target: m.target }))
+  if (win?.isVisible()) win.flashFrame(true)
+}
+
+/** Quit from the tray: asks first when something would be stopped. */
+async function quitFromTray(): Promise<void> {
+  const question = quitQuestion(working, waiting)
+  if (question) {
+    const answer = await dialog.showMessageBox({ type: 'question', buttons: ['Quit', 'Keep running'], defaultId: 1, cancelId: 1, title: 'Quit Celeste?', message: 'Quit Celeste?', detail: question })
+    if (answer.response !== 0) return
+  }
+  app.quit()
+}
+
+function hearCore(message: AppMessage): void {
+  if (message.type === 'app-settings') {
+    if (typeof message.closeToTray === 'boolean') closeToTray = message.closeToTray
+    // The icon is only there while closing hides the window; with the setting off it is taken away.
+    if (!closeToTray) tray.destroy()
+    else if (process.platform === 'win32') tray.ensure()
+  } else if (message.type === 'attention') {
+    if (typeof message.working === 'number' && typeof message.waiting === 'number') {
+      working = message.working
+      waiting = message.waiting
+      tray.update(working, waiting)
+    }
+  } else if (message.type === 'needs-you') {
+    const { kind, target, title, text } = message
+    if ((kind === 'chat' || kind === 'run') && typeof target === 'string' && typeof title === 'string' && typeof text === 'string') needsYou({ kind, target, title, text })
+  }
+}
+
 /** Asks the window to save whatever it is holding (unsent text) and waits briefly for its answer. */
 function flushWindow(win: BrowserWindow): Promise<void> {
   if (win.isDestroyed()) return Promise.resolve()
@@ -51,7 +139,7 @@ function flushWindow(win: BrowserWindow): Promise<void> {
   })
 }
 
-function createWindow(): void {
+function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1440,
     height: 920,
@@ -82,8 +170,24 @@ function createWindow(): void {
     if (!BrowserWindow.getAllWindows().some((w) => !desktop.owns(w))) desktop.stopAll('You closed Celeste.')
   })
 
-  // Closing the window first saves what it holds, so the last keystrokes are not lost.
+  // The computer is shutting down or the person is signing out: nothing may hold that up by hiding.
+  win.on('session-end', () => {
+    quitting = true
+  })
+  win.on('focus', () => win.flashFrame(false))
+
+  // Closing the window first saves what it holds, so the last keystrokes are not lost. Then it is hidden (Celeste stays in the tray)
+  // or really closed, depending on the setting and on whether Celeste is quitting.
   win.on('close', (event) => {
+    if (hidesOnClose({ platform: process.platform, closeToTray, quitting, trayReady: tray.ready || (closeToTray && !quitting && tray.ensure()) })) {
+      event.preventDefault()
+      void flushWindow(win).then(() => {
+        // `flushWindow` marks the window as saved for good; it is only hidden, so it is not.
+        flushed.delete(win)
+        hideMain(win)
+      })
+      return
+    }
     if (flushed.has(win)) return
     event.preventDefault()
     void flushWindow(win).then(() => win.close())
@@ -104,6 +208,7 @@ function createWindow(): void {
   } else {
     void win.loadFile(join(__dirname, '../renderer/index.html'), { search: START_QUERY })
   }
+  return win
 }
 
 /** Only the app's own windows may use the bridge. */
@@ -235,16 +340,14 @@ ipcMain.handle('celeste:choose-folder', async (event) => {
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
+  // Starting Celeste again, from the Start menu or a shortcut, brings the window back, also from the tray.
   app.on('second-instance', () => {
-    const [win] = BrowserWindow.getAllWindows()
-    if (win) {
-      if (win.isMinimized()) win.restore()
-      win.focus()
-    }
+    if (app.isReady()) showMain()
   })
 
   void app.whenReady().then(() => {
     app.setAppUserModelId('app.celeste')
+    core.setApp(hearCore)
     core.start()
     serveAttachments()
     void browser.init()
@@ -259,11 +362,11 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   // Quit in order: windows save their drafts, then Core closes the database, then the app exits.
-  let quitting = false
   app.on('before-quit', (event) => {
     if (quitting) return
     event.preventDefault()
     quitting = true
+    tray.destroy()
     desktop.stopAll('Celeste closed.')
     void Promise.all(BrowserWindow.getAllWindows().map(flushWindow))
       .then(() => browser.shutdown())

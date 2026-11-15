@@ -34,6 +34,8 @@ export interface CelesteBridge {
     /** The assistant started using the browser in this chat: show it, if that chat is open. */
     onReveal(listener: (chatId: string) => void): () => void
   }
+  /** A notification was clicked while Celeste was in the tray: open the chat or the workflow run it was about. */
+  onOpen(listener: (target: { kind: 'chat' | 'run'; target: string }) => void): () => void
   revealDataFolder(): Promise<void>
   /** Asks the person to choose a folder. Null when they cancel. */
   chooseFolder(): Promise<string | null>

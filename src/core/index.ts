@@ -28,6 +28,7 @@ import { createUnavailableSession } from './adapters/unavailable'
 import { createProjectApi } from './project'
 import { callTool, McpService } from './mcp'
 import { serverKey } from '@shared/mcp'
+import { Attention } from './attention'
 import { createAgentStepRunner } from './workflows/agent-step'
 import { draftWorkflow } from './workflows/draft'
 import { WorkflowRunner } from './workflows/runner'
@@ -88,9 +89,11 @@ function friendlyName(): string {
 const ports = new Set<MessagePortMain>()
 const send = (port: MessagePortMain, message: CoreMessage) => port.postMessage(message)
 let phoneRef: PhoneBridge | undefined
+let attention: Attention | undefined
 const push = (p: CorePush) => {
   ports.forEach((port) => send(port, { kind: 'push', push: p }))
   phoneRef?.broadcast(p)
+  attention?.observe(p)
 }
 
 let service: SessionService | undefined
@@ -469,6 +472,12 @@ async function start(): Promise<void> {
     'phone.setWatch': (id, on) => phone.setWatch(id, on === true),
     'phone.answer': (pairId, allow) => phone.answer(pairId, allow),
     ...service.api,
+    // The main process decides what closing the window does, so it is told when that setting changes.
+    'settings.patch': (patch) => {
+      const next = (service as SessionService).api['settings.patch'](patch)
+      parent.postMessage({ type: 'app-settings', closeToTray: next.closeToTray })
+      return next
+    },
     'app.checkUpdate': () => checkForUpdate(process.env['CELESTE_VERSION'] ?? '0.0.0'),
     // A removed session takes its shell with it.
     'sessions.remove': (id) => {
@@ -491,6 +500,9 @@ async function start(): Promise<void> {
     'devices.toolServer': async (sessionId) => servers.info(sessionId)
   }
   void phone.start().then(() => push({ type: 'phone' }))
+  // The main process shows the tray, and notifications while no window is open, from these two kinds of message.
+  attention = new Attention((message) => parent.postMessage(message), (sessionId) => db.listSessions().find((x) => x.id === sessionId)?.title)
+  parent.postMessage({ type: 'app-settings', closeToTray: (service as SessionService).api['settings.get']().closeToTray })
   parent.postMessage({ type: 'ready' })
 }
 

@@ -121,7 +121,7 @@ const APPROVALS: ApprovalMode[] = ['auto', 'edits', 'ask', 'plan']
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const THEMES = ['dark', 'light', 'system']
 const VENDOR_IDS: VendorId[] = ['copilot', 'claude', 'openai', 'gemini']
-const SETTINGS_KEYS = ['theme', 'userName', 'wizardDone', 'sidebarCollapsed', 'sidebarWidth', 'desktopControl', 'desktopNeverApps', 'browserTools', 'browserAllowedSites', 'pinnedModels', 'defaults'] as const
+const SETTINGS_KEYS = ['theme', 'userName', 'wizardDone', 'sidebarCollapsed', 'sidebarWidth', 'closeToTray', 'desktopControl', 'desktopNeverApps', 'browserTools', 'browserAllowedSites', 'pinnedModels', 'defaults'] as const
 const MAX_PINNED = 100
 const TRANSCRIPT_LIMIT = 24_000
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
@@ -286,6 +286,7 @@ export class SessionService {
       wizardDone: (stored.wizardDone as boolean) ?? d.wizardDone,
       sidebarCollapsed: (stored.sidebarCollapsed as boolean) ?? d.sidebarCollapsed,
       sidebarWidth: (stored.sidebarWidth as number | undefined) ?? d.sidebarWidth,
+      closeToTray: (stored.closeToTray as boolean | undefined) ?? d.closeToTray,
       desktopControl: (stored.desktopControl as boolean | undefined) ?? d.desktopControl,
       desktopNeverApps: (stored.desktopNeverApps as string[] | undefined) ?? d.desktopNeverApps,
       browserTools: (stored.browserTools as boolean | undefined) ?? d.browserTools,
@@ -318,6 +319,7 @@ export class SessionService {
     if (patch.userName !== undefined) next.userName = text(patch.userName, 'name', 100)
     if (patch.wizardDone !== undefined) next.wizardDone = patch.wizardDone === true
     if (patch.sidebarCollapsed !== undefined) next.sidebarCollapsed = patch.sidebarCollapsed === true
+    if (patch.closeToTray !== undefined) next.closeToTray = patch.closeToTray === true
     if (patch.desktopControl !== undefined) next.desktopControl = patch.desktopControl === true
     if (patch.browserTools !== undefined) next.browserTools = patch.browserTools === true
     if (patch.browserAllowedSites !== undefined) {

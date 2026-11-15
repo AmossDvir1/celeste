@@ -10,6 +10,9 @@ const DEVICE_SECRET = /^(device\.dev-[0-9a-f-]{36}\.(password|passphrase)|vendor
 /** The only secrets Core makes and stores itself: the key pair phones are paired with, and the ChatGPT sign-in. */
 const CORE_STORES = /^(phone\.key|vendor\.openai\.tokens)$/
 
+/** What Core tells the main process on its own (see src/core/attention.ts). Checked where it is used. */
+export type AppMessage = { type: 'app-settings'; closeToTray?: unknown } | { type: 'attention'; working?: unknown; waiting?: unknown } | { type: 'needs-you'; id?: unknown; kind?: unknown; target?: unknown; title?: unknown; text?: unknown }
+
 /**
  * The Core process: database, sessions and the assistant, in a utility process of its own. Windows talk to it
  * directly over a message port, so conversations stream without passing through the main process.
@@ -20,6 +23,12 @@ export class CoreProcess {
   private exits: number[] = []
   private desktop: DesktopService | null = null
   private browser: BrowserService | null = null
+  private app: ((message: AppMessage) => void) | null = null
+
+  /** Hears the messages Core sends for the tray and the notifications. */
+  setApp(handler: (message: AppMessage) => void): void {
+    this.app = handler
+  }
 
   /** The real computer, for Core's desktop tools. Core asks it by message; it asks Core to stop by message. */
   setDesktop(desktop: DesktopService): void {
@@ -102,6 +111,11 @@ export class CoreProcess {
           }
         }
         child.postMessage({ type: 'secret-stored', id: m.id, value: ok })
+        return
+      }
+      // What the main process needs to run the tray: the setting, how much is going on, and when something needs the person.
+      if (message?.type === 'app-settings' || message?.type === 'attention' || message?.type === 'needs-you') {
+        this.app?.(message as unknown as AppMessage)
         return
       }
       if (message?.type !== 'fatal') return

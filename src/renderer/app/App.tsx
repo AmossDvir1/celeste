@@ -19,6 +19,7 @@ import { Wizard } from '@/features/wizard/Wizard'
 import { WorkflowsScreen } from '@/features/workflows/WorkflowsScreen'
 import { Toasts } from '@/components/Toasts'
 import { IconButton, TooltipProvider } from '@/components/ui'
+import { useRuns } from '@/stores/runs'
 import { useSessions } from '@/stores/sessions'
 import { useSettings } from '@/stores/settings'
 import { useUi } from '@/stores/ui'
@@ -68,6 +69,23 @@ function RightPanel() {
       {panel === 'terminal' && <TerminalPanel />}
     </div>
   )
+}
+
+/** A notification was clicked while Celeste was in the tray: show the chat or the workflow run that needs the person. */
+function useOpenFromNotification() {
+  useEffect(() => {
+    return window.celeste?.onOpen(({ kind, target }) => {
+      if (kind === 'chat') {
+        const session = useSessions.getState().sessions[target]
+        if (!session) return
+        useUi.getState().setMode(session.mode)
+        useSessions.getState().open(target)
+      } else {
+        useUi.getState().setMode('workflows')
+        void useRuns.getState().load(target).then(() => useRuns.getState().watch(target))
+      }
+    })
+  }, [])
 }
 
 /** Keyboard shortcuts for the whole window. */
@@ -121,6 +139,7 @@ export function App() {
   const set = useSettings((s) => s.set)
   const wizardOpen = useUi((s) => s.wizardOpen)
   useShortcuts()
+  useOpenFromNotification()
   // What the browser's pages are doing (tabs, questions, downloads) is told by the main process.
   useEffect(() => startBrowser(), [])
 
