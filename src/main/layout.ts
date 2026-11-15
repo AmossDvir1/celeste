@@ -13,7 +13,7 @@ interface Saved {
 /**
  * The window's two shapes: the full window, and the small side window (docs/TRAY_AND_COMPACT_PLAN.md, Part 2). It is one window that
  * changes size, place and minimum size, so the open chat, the drafts and everything else stay as they are. The shape is remembered
- * in a small file, and so is the place the compact window was left.
+ * in a small file: the place the compact window was left, and its pin. Celeste always starts as the full window.
  *
  * The change is a short animation: the page fades out, the window moves and resizes, and the page (now in its new layout) fades in.
  * The page is told when the change starts (`celeste:layout-start`) and when it is done (`celeste:layout`, with the new shape), so it
@@ -37,7 +37,8 @@ export class LayoutService {
       const raw = JSON.parse(readFileSync(file, 'utf8')) as Partial<Saved>
       const b = raw.bounds
       this.saved = {
-        compact: raw.compact === true,
+        // Celeste always starts as the full window, whatever shape it was closed in; only the pin and the place of the small one are kept.
+        compact: false,
         pinned: raw.pinned !== false,
         ...(b && [b.x, b.y, b.width, b.height].every((n) => Number.isFinite(n)) ? { bounds: b } : {})
       }
@@ -55,9 +56,8 @@ export class LayoutService {
     return this.saved.compact ? COMPACT.barHeight : FULL.barHeight
   }
 
-  /** A window has just been made: if it was left compact, make it compact again. */
+  /** A window has just been made: it starts as the full window, and from now on is watched for where it is left. */
   restore(win: BrowserWindow): void {
-    if (this.saved.compact) this.enter(win)
     this.watch(win)
   }
 

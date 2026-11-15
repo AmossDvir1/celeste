@@ -20,7 +20,10 @@ export function CompactHeader() {
     <header
       className="app-drag relative flex h-11 shrink-0 items-center gap-2 pl-3"
       // Leave room for the native window buttons that Electron draws over the right edge.
-      style={{ paddingRight: 'calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 8px)' }}
+      style={{
+        paddingRight: 'calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 8px)',
+        paddingLeft: window.celeste?.platform === 'darwin' ? 84 : undefined
+      }}
     >
       <Logo size={24} />
       <nav aria-label="Modes" className="app-no-drag flex gap-0.5 rounded-xl border border-edge bg-panel/70 p-0.5">

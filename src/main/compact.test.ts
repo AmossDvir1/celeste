@@ -90,6 +90,12 @@ describe('fitOnScreen', () => {
     expect(b.x).toBeGreaterThanOrEqual(1920)
   })
 
+  it('makes a window that was saved smaller than the smallest allowed the smallest allowed', () => {
+    const b = fitOnScreen({ x: 100, y: 100, width: 360, height: 300 }, [area])
+    expect(b.width).toBe(COMPACT.minWidth)
+    expect(b.height).toBe(COMPACT.minHeight)
+  })
+
   it('makes a window larger than its screen fit it', () => {
     const b = fitOnScreen({ x: 0, y: 0, width: 5000, height: 5000 }, [area])
     expect(b.width).toBe(1920)

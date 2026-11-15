@@ -42,17 +42,17 @@ const pill = `${control} gap-1.5 rounded-lg border border-edge-strong bg-pill px
 const chevron = 'h-3.5 w-3.5 text-ink-faint'
 
 /** Model and thinking effort, side by side: effort belongs to the model, so they share one outline. */
-export function ModelControls({ prefs, onPrefs }: { prefs: Prefs; onPrefs: (p: Partial<Prefs>) => void }) {
+export function ModelControls({ prefs, onPrefs, compact = false }: { prefs: Prefs; onPrefs: (p: Partial<Prefs>) => void; compact?: boolean }) {
   return (
     <div className="inline-flex rounded-lg border border-edge-strong bg-pill">
-      <ModelPicker prefs={prefs} onPrefs={onPrefs} />
+      <ModelPicker prefs={prefs} onPrefs={onPrefs} compact={compact} />
       <span className="my-1.5 w-px bg-edge-strong" aria-hidden />
       <EffortPopover prefs={prefs} onPrefs={onPrefs} />
     </div>
   )
 }
 
-function ModelPicker({ prefs, onPrefs }: { prefs: Prefs; onPrefs: (p: Partial<Prefs>) => void }) {
+function ModelPicker({ prefs, onPrefs, compact = false }: { prefs: Prefs; onPrefs: (p: Partial<Prefs>) => void; compact?: boolean }) {
   const vendors = useVendors((s) => s.vendors)
   const openSettings = useUi((s) => s.openSettings)
   const models = useModels((s) => s.list)
@@ -79,7 +79,8 @@ function ModelPicker({ prefs, onPrefs }: { prefs: Prefs; onPrefs: (p: Partial<Pr
           aria-label={connected.length === 0 ? 'No model: no vendor is connected' : `Model: ${VENDORS[current.vendor].menuLabel} ${current.label}`}
         >
           {connected.length === 0 ? null : <VendorLogo id={current.vendor} className="h-4 w-4" />}
-          <span>{connected.length === 0 ? 'No model' : current.label}</span>
+          {/* One line in the small window, cut with an ellipsis; the full name is in the button's label. */}
+          <span className={cn(compact && 'max-w-[88px] truncate whitespace-nowrap')}>{connected.length === 0 ? 'No model' : current.label}</span>
           <ChevronDown className={chevron} />
         </button>
       </Menu.Trigger>

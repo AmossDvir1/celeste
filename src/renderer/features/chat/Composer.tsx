@@ -372,7 +372,7 @@ export function Composer({
         <IconButton label="Attach files" onClick={() => fileRef.current?.click()} className="-ml-1.5 text-ink-soft">
           <Paperclip className="h-[18px] w-[18px]" />
         </IconButton>
-        <ModelControls prefs={prefs} onPrefs={onPrefs} />
+        <ModelControls prefs={prefs} onPrefs={onPrefs} compact={compact} />
         <ApprovalPicker value={prefs.approval} onChange={(approval) => onPrefs({ approval })} mode={mode} compact={compact} />
         {!home && sendButton}
       </div>

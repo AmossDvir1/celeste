@@ -101,20 +101,30 @@ try {
   check('the Workflows tab lists the workflows and says editing is in the full view', (await page.getByText('Editing, building with AI and importing are in the').count()) === 1)
   await page.getByRole('navigation', { name: 'Modes' }).getByRole('button', { name: 'Chat' }).click()
 
-  console.log('\n# Remembered across a restart')
+  console.log('\n# The smallest the window can be')
+  await page.getByRole('navigation', { name: 'Modes' }).getByRole('button', { name: 'Chat' }).click()
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(100, 300))
+  await sleep(400)
+  const least = await geometry(app)
+  check('it cannot be made narrower than the top bar needs', least.width >= 400, `${least.width}`)
+  // The native window buttons are drawn over the right edge: the pin and the way back must end before them.
+  const room = await page.evaluate(() => {
+    const area = navigator.windowControlsOverlay?.getTitlebarAreaRect()
+    const full = [...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label')?.startsWith('Full view'))
+    if (!area || !full) return null
+    return { buttons: full.getBoundingClientRect().right, free: area.x + area.width }
+  })
+  check('the pin and the way back are clear of the window buttons', room !== null && room.buttons <= room.free, JSON.stringify(room))
+
+  console.log('\n# Always opens as the full window')
   await started.app.close()
   started = await launch({ width: 1440, height: 900, theme: null, profile, env: stub.env })
   ;({ app, page } = started)
-  await page.getByRole('button', { name: 'Full view (Ctrl+Shift+M)' }).waitFor({ timeout: 20_000 })
-  check('Celeste opens as the small window again', true)
-
-  console.log('\n# Back to the full window')
-  await page.getByRole('button', { name: 'Full view (Ctrl+Shift+M)' }).click()
-  await page.getByRole('button', { name: 'Compact view (Ctrl+Shift+M)' }).waitFor({ timeout: 8000 })
+  await page.getByRole('button', { name: 'Compact view (Ctrl+Shift+M)' }).waitFor({ timeout: 20_000 })
   await sleep(500)
   const after = await geometry(app)
-  check('the full window is back, wide again and not on top', after.width >= 1000 && after.onTop === false, JSON.stringify(after))
-  check('the sidebar is back', (await page.getByRole('complementary').count()) >= 1)
+  check('after being closed as the small window, Celeste opens as the full one', after.width >= 1000 && after.onTop === false, JSON.stringify(after))
+  check('the sidebar is there', (await page.getByRole('complementary').count()) >= 1)
 } catch (err) {
   console.error(err)
   failures.push('the script failed')

@@ -16,7 +16,8 @@ export const COMPACT = {
   maxHeight: 700,
   /** A share of the work area's height. */
   heightShare: 0.7,
-  minWidth: 360,
+  /** Wide enough for the whole top bar: the mark, the three modes, the pin and the way back, and the native window buttons beside them. */
+  minWidth: 400,
   minHeight: 480,
   margin: 12,
   /** The height of the top bar in compact view, which the native window buttons are drawn to match. */
@@ -83,7 +84,8 @@ export function fitOnScreen(saved: Rect, areas: Rect[]): Rect {
     }
   }
   if (most <= 0) return compactBounds(first)
-  const width = Math.min(saved.width, best.width)
-  const height = Math.min(saved.height, best.height)
+  // Never smaller than the smallest the window may be (it was 360 wide once), and never bigger than the screen.
+  const width = clamp(saved.width, Math.min(COMPACT.minWidth, best.width), best.width)
+  const height = clamp(saved.height, Math.min(COMPACT.minHeight, best.height), best.height)
   return { width, height, x: clamp(saved.x, best.x, best.x + best.width - width), y: clamp(saved.y, best.y, best.y + best.height - height) }
 }
