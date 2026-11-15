@@ -170,11 +170,14 @@ const APPROVAL_ICON: Record<ApprovalMode, typeof Zap> = {
 export function ApprovalPicker({
   value,
   onChange,
-  mode
+  mode,
+  compact = false
 }: {
   value: ApprovalMode
   onChange: (v: ApprovalMode) => void
   mode: SessionMode
+  /** Only the icon shows, for the small side window. The name is still said to a screen reader and in the menu. */
+  compact?: boolean
 }) {
   const options = APPROVAL_OPTIONS.filter((o) => !o.developOnly || mode === 'develop')
   const current = options.find((o) => o.value === value) ?? options[0]
@@ -184,7 +187,7 @@ export function ApprovalPicker({
       <Menu.Trigger asChild>
         <button type="button" className={cn(pill, 'pr-2')} aria-label={`Approval: ${current.label}`}>
           <Icon className={cn('h-3.5 w-3.5', current.value === 'auto' ? 'text-accent-text' : 'text-ink-muted')} />
-          <span>{current.short}</span>
+          {!compact && <span>{current.short}</span>}
           <ChevronDown className={chevron} />
         </button>
       </Menu.Trigger>

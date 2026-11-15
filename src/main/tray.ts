@@ -20,6 +20,9 @@ export class TrayService {
       icon: string
       open: () => void
       quit: () => void
+      /** Whether the window is the small side window now, and a way to switch (the menu item's words and action). */
+      compact: () => boolean
+      toggleCompact: () => void
     }
   ) {}
 
@@ -57,7 +60,8 @@ export class TrayService {
     this.tray = null
   }
 
-  private refresh(): void {
+  /** Draws the tooltip, the icon and the menu again. */
+  refresh(): void {
     const tray = this.tray
     if (!tray || tray.isDestroyed()) return
     tray.setToolTip(tooltip(this.working, this.waiting))
@@ -66,6 +70,7 @@ export class TrayService {
     tray.setContextMenu(
       Menu.buildFromTemplate([
         { label: 'Open Celeste', click: () => this.deps.open() },
+        { label: this.deps.compact() ? 'Full view' : 'Compact view', click: () => this.deps.toggleCompact() },
         { type: 'separator' },
         { label: 'Quit Celeste', click: () => this.deps.quit() }
       ])

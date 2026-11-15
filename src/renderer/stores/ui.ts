@@ -43,6 +43,10 @@ export interface Toast {
 interface UiState {
   mode: AppMode
   rightPanel: RightPanel
+  /** The window is the small side window, which shows a compacted view (docs/TRAY_AND_COMPACT_PLAN.md, Part 2). The main process owns the window; this follows it. */
+  compact: boolean
+  /** The small window stays above other windows. */
+  compactPinned: boolean
   browserWidth: number
   /** Whether the browser's address bar takes the keyboard when the panel opens on an empty browser: yes when the person opened it, no when the assistant did. */
   browserFocus: boolean
@@ -60,6 +64,11 @@ interface UiState {
   version: string
 
   setMode: (mode: AppMode) => void
+  /** Asks the main process to make the window the small side window, or the full one again. */
+  setCompact: (on: boolean) => void
+  setCompactPinned: (pinned: boolean) => void
+  /** The shortcut: the other shape, from where the window is going, so a quick second press goes back. */
+  toggleCompact: () => void
   toggleRight: (panel: Exclude<RightPanel, null>) => void
   setRight: (panel: RightPanel) => void
   /** The assistant started using the browser: the panel opens, and leaves the keyboard where it is. */
@@ -95,9 +104,45 @@ function freshDraft(): Draft {
 
 let toastId = 1
 
+/** The window's shape, as the main process says it is. The side window has no panels beside the chat, so none is left open. */
+function applyLayout(state: { compact: boolean; pinned: boolean }): void {
+  useUi.setState({ compact: state.compact, compactPinned: state.pinned, ...(state.compact ? { rightPanel: null } : {}) })
+}
+
+/**
+ * While the window changes shape the page is faded out (the `data-layout-switch` attribute, styled in index.css), so the layouts are
+ * never seen at the sizes between the two. It comes back when the new shape arrives, or after a moment if that never happens.
+ */
+const clearSwitch = () => document.documentElement.removeAttribute('data-layout-switch')
+let failsafe: ReturnType<typeof setTimeout> | undefined
+
+/** Follows the window's shape from the start and whenever it changes (the button, the shortcut, the tray menu, maximising). */
+export function startLayout(): () => void {
+  const layout = window.celeste?.layout
+  if (!layout) return () => undefined
+  void layout.get().then(applyLayout, () => undefined)
+  const stopStart = layout.onStart(() => {
+    document.documentElement.setAttribute('data-layout-switch', 'out')
+    clearTimeout(failsafe)
+    failsafe = setTimeout(clearSwitch, 1500)
+  })
+  const stopChange = layout.onChange((state) => {
+    applyLayout(state)
+    clearTimeout(failsafe)
+    // After the new layout has been drawn once, so it fades in rather than appearing.
+    requestAnimationFrame(() => requestAnimationFrame(clearSwitch))
+  })
+  return () => {
+    stopStart()
+    stopChange()
+  }
+}
+
 export const useUi = create<UiState>((set, get) => ({
   mode: 'chat',
   rightPanel: null,
+  compact: false,
+  compactPinned: true,
   browserWidth: savedBrowserWidth(),
   browserFocus: true,
   pendingLink: null,
@@ -111,6 +156,15 @@ export const useUi = create<UiState>((set, get) => ({
   version: '',
 
   setMode: (mode) => set({ mode, rightPanel: null }),
+  setCompact: (compact) => {
+    // The window changes shape (animated), then tells every listener; the page follows what it hears (startLayout), so it never disagrees.
+    void window.celeste?.layout.set({ compact })
+  },
+  toggleCompact: () => void window.celeste?.layout.toggle(),
+  setCompactPinned: (compactPinned) => {
+    set({ compactPinned })
+    void window.celeste?.layout.set({ pinned: compactPinned })
+  },
   toggleRight: (panel) => set({ rightPanel: get().rightPanel === panel ? null : panel, ...(panel === 'browser' ? { browserFocus: true } : {}) }),
   setRight: (rightPanel) => set({ rightPanel, ...(rightPanel === 'browser' ? { browserFocus: true } : {}) }),
   revealBrowser: () => set({ rightPanel: 'browser', browserFocus: false }),

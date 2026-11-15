@@ -1,4 +1,4 @@
-import { Code, Laptop, MessageSquare, Moon, Search, Settings, Sparkles, Sun, Workflow } from 'lucide-react'
+import { Code, Laptop, MessageSquare, Moon, PictureInPicture2, Search, Settings, Sparkles, Sun, Workflow } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Logo } from '@/components/Logo'
 import { Menu } from '@/components/menu'
@@ -7,20 +7,20 @@ import { useSessions } from '@/stores/sessions'
 import { useSettings, type ThemePref } from '@/stores/settings'
 import { useUi, type AppMode } from '@/stores/ui'
 
-const TABS: { id: AppMode; label: string; icon: typeof Code }[] = [
+export const TABS: { id: AppMode; label: string; icon: typeof Code }[] = [
   { id: 'chat', label: 'Chat', icon: MessageSquare },
   { id: 'develop', label: 'Develop', icon: Code },
   { id: 'workflows', label: 'Workflows', icon: Workflow }
 ]
 
 /** A small dot on a tab whose sessions are busy (or waiting for you) while you are looking at another tab. */
-function BusyDot({ mode }: { mode: AppMode }) {
+export function BusyDot({ mode, className = 'top-2 right-3' }: { mode: AppMode; className?: string }) {
   const busy = useSessions((s) => mode !== 'workflows' && Object.values(s.sessions).some((x) => x.mode === mode && x.status !== 'idle'))
   const needs = useSessions((s) => mode !== 'workflows' && Object.values(s.sessions).some((x) => x.mode === mode && x.status === 'waiting'))
   if (!busy) return null
   return (
     <span
-      className={cn('absolute top-2 right-3 h-2 w-2 rounded-full bg-accent', !needs && 'animate-pulse motion-reduce:animate-none')}
+      className={cn('absolute h-2 w-2 rounded-full bg-accent', className, !needs && 'animate-pulse motion-reduce:animate-none')}
       title={needs ? 'Waiting for you' : 'Working'}
       aria-hidden
     />
@@ -33,6 +33,7 @@ export function TopBar() {
   const setSearchOpen = useUi((s) => s.setSearchOpen)
   const openSettings = useUi((s) => s.openSettings)
   const setWizardOpen = useUi((s) => s.setWizardOpen)
+  const setCompact = useUi((s) => s.setCompact)
   const userName = useSettings((s) => s.userName)
   const theme = useSettings((s) => s.theme)
   const set = useSettings((s) => s.set)
@@ -129,6 +130,11 @@ export function TopBar() {
             </Menu.Item>
           </Menu.Content>
         </Menu.Root>
+
+        {/* Right of the account, next to the window buttons: the same place in compact view holds the way back (CompactHeader). */}
+        <IconButton label="Compact view (Ctrl+Shift+M)" onClick={() => setCompact(true)}>
+          <PictureInPicture2 className="h-[19px] w-[19px]" />
+        </IconButton>
       </div>
     </header>
   )

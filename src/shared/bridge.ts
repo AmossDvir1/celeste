@@ -1,6 +1,12 @@
 import type { CoreMethod, CoreParams, CorePush, CoreResult } from './api'
 import type { BrowserCalls, BrowserOp, BrowserState, KeyInput } from './browser'
 
+/** The window's shape: the full window, or the small side window. `pinned` keeps the small one above other windows. */
+export interface LayoutState {
+  compact: boolean
+  pinned: boolean
+}
+
 /** What the preload script gives the window as `window.celeste`. Absent in a plain browser. */
 export interface CelesteBridge {
   platform: string
@@ -33,6 +39,17 @@ export interface CelesteBridge {
     onKey(listener: (key: KeyInput) => void): () => void
     /** The assistant started using the browser in this chat: show it, if that chat is open. */
     onReveal(listener: (chatId: string) => void): () => void
+  }
+  /** The window's shape (docs/TRAY_AND_COMPACT_PLAN.md, Part 2). Changing it resizes and moves the window itself. */
+  layout: {
+    get(): Promise<LayoutState>
+    set(patch: Partial<LayoutState>): Promise<LayoutState>
+    /** Switches to the other shape, from the shape the window is going to have (not the one the page still shows while it moves). */
+    toggle(): Promise<LayoutState>
+    /** The shape changed: from the button, the shortcut, the tray menu, or because the window was maximised. */
+    onChange(listener: (state: LayoutState) => void): () => void
+    /** The window starts to change shape (it is animated): the page fades out until the new shape arrives through `onChange`. */
+    onStart(listener: () => void): () => void
   }
   /** A notification was clicked while Celeste was in the tray: open the chat or the workflow run it was about. */
   onOpen(listener: (target: { kind: 'chat' | 'run'; target: string }) => void): () => void

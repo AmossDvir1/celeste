@@ -9,6 +9,8 @@ import { BrowserService } from './browser/service'
 import { CoreProcess, type AppMessage } from './core-process'
 import { DesktopService } from './desktop/service'
 import { secrets } from './secrets'
+import { APP_ID, registerDevIdentity } from './identity'
+import { LayoutService } from './layout'
 import { TrayService } from './tray'
 import { hidesOnClose, quitQuestion, shouldNotify } from './tray-rules'
 
@@ -43,7 +45,16 @@ let quitting = false
 let closeToTray = true
 let working = 0
 let waiting = 0
-const tray = new TrayService({ icon: join(__dirname, '../../resources/icon.png'), open: () => showMain(), quit: () => void quitFromTray() })
+const APP_ICON = join(__dirname, '../../resources/icon.png')
+const tray = new TrayService({
+  icon: APP_ICON,
+  open: () => showMain(),
+  quit: () => void quitFromTray(),
+  compact: () => layout.state().compact,
+  toggleCompact: () => layout.set(showMain(), { compact: !layout.state().compact })
+})
+/** The window's two shapes, the full window and the small side window (docs/TRAY_AND_COMPACT_PLAN.md, Part 2). */
+const layout = new LayoutService(join(app.getPath('userData'), 'layout.json'), () => tray.refresh())
 /** The first time the window is hidden, one notice says where Celeste went. Remembered in a file of its own, so it is said once. */
 const trayNote = join(app.getPath('userData'), 'tray-told')
 const notices = new Set<Notification>()
@@ -79,7 +90,7 @@ function hideMain(win: BrowserWindow): void {
 
 function say(title: string, body: string, onClick?: () => void): void {
   if (!Notification.isSupported()) return
-  const n = new Notification({ title, body })
+  const n = new Notification({ title, body, icon: APP_ICON })
   notices.add(n)
   n.on('click', () => onClick?.())
   n.on('close', () => notices.delete(n))
@@ -163,6 +174,8 @@ function createWindow(): BrowserWindow {
   })
 
   ownContents.add(win.webContents)
+  // Left as the small side window last time: it opens as that again.
+  layout.restore(win)
   win.once('ready-to-show', () => win.show())
 
   // Control ends with the last of Celeste's own windows: nothing may be left controlling the computer with no chat in view.
@@ -235,7 +248,19 @@ ipcMain.on('celeste:theme', (event, payload: { color?: unknown; symbolColor?: un
   const win = BrowserWindow.fromWebContents(event.sender)
   if (!win || isMac) return
   win.setBackgroundColor(color)
-  win.setTitleBarOverlay({ color, symbolColor, height: 56 })
+  win.setTitleBarOverlay({ color, symbolColor, height: layout.barHeight() })
+})
+
+// The window's shape: the full window or the small side window. The window asks; the main process moves and resizes it.
+ipcMain.handle('celeste:layout', (event, op: unknown, patch: unknown) => {
+  if (!fromOurWindow(event)) throw new Error('Not allowed')
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (!win) throw new Error('No window')
+  if (op === 'get') return layout.state()
+  if (op === 'toggle') return layout.set(win, { compact: !layout.state().compact })
+  if (op !== 'set' || typeof patch !== 'object' || patch === null) throw new Error('Invalid request')
+  const { compact, pinned } = patch as { compact?: unknown; pinned?: unknown }
+  return layout.set(win, { ...(typeof compact === 'boolean' ? { compact } : {}), ...(typeof pinned === 'boolean' ? { pinned } : {}) })
 })
 
 // Each window asks for its own line to Core as soon as its preload script runs.
@@ -346,7 +371,10 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   void app.whenReady().then(() => {
-    app.setAppUserModelId('app.celeste')
+    // The id notifications and taskbar buttons are filed under: the installer's shortcuts have it, which gives them Celeste's name and icon.
+    app.setAppUserModelId(APP_ID)
+    // A run from the project has no shortcut, so it would be "Electron" with its atom: give the id a name and a picture.
+    if (!app.isPackaged) registerDevIdentity('Celeste', APP_ICON)
     core.setApp(hearCore)
     core.start()
     serveAttachments()

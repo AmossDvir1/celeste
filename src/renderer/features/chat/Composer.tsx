@@ -67,6 +67,8 @@ export interface ComposerProps {
   history?: string[]
   autoFocus?: boolean
   placeholder?: string
+  /** The small side window: the controls under the box are shortened to fit. */
+  compact?: boolean
 }
 
 export function Composer({
@@ -86,7 +88,8 @@ export function Composer({
   onEditLast,
   history = NO_HISTORY,
   autoFocus,
-  placeholder =  'Message Celeste...'
+  placeholder =  'Message Celeste...',
+  compact = false
 }: ComposerProps) {
   const areaRef = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -370,7 +373,7 @@ export function Composer({
           <Paperclip className="h-[18px] w-[18px]" />
         </IconButton>
         <ModelControls prefs={prefs} onPrefs={onPrefs} />
-        <ApprovalPicker value={prefs.approval} onChange={(approval) => onPrefs({ approval })} mode={mode} />
+        <ApprovalPicker value={prefs.approval} onChange={(approval) => onPrefs({ approval })} mode={mode} compact={compact} />
         {!home && sendButton}
       </div>
       {home && sendButton}

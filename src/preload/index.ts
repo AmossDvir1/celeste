@@ -98,6 +98,27 @@ const bridge: CelesteBridge = {
   chatFile: (sessionId, path, action) => ipcRenderer.invoke('celeste:chat-file', sessionId, path, action),
   saveText: (suggestedName, text) => ipcRenderer.invoke('celeste:save-text', suggestedName, text),
   openText: (extensions) => ipcRenderer.invoke('celeste:open-text', extensions),
+  layout: {
+    get: () => ipcRenderer.invoke('celeste:layout', 'get'),
+    set: (patch) => ipcRenderer.invoke('celeste:layout', 'set', patch),
+    toggle: () => ipcRenderer.invoke('celeste:layout', 'toggle'),
+    onStart: (listener) => {
+      const on = () => listener()
+      ipcRenderer.on('celeste:layout-start', on)
+      return () => {
+        ipcRenderer.removeListener('celeste:layout-start', on)
+      }
+    },
+    onChange: (listener) => {
+      const on = (_event: unknown, state: { compact?: unknown; pinned?: unknown }) => {
+        if (typeof state?.compact === 'boolean' && typeof state.pinned === 'boolean') listener({ compact: state.compact, pinned: state.pinned })
+      }
+      ipcRenderer.on('celeste:layout', on)
+      return () => {
+        ipcRenderer.removeListener('celeste:layout', on)
+      }
+    }
+  },
   onOpen: (listener) => {
     const on = (_event: unknown, payload: { kind?: unknown; target?: unknown }) => {
       if ((payload?.kind === 'chat' || payload?.kind === 'run') && typeof payload.target === 'string') listener({ kind: payload.kind, target: payload.target })

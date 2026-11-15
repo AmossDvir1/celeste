@@ -243,6 +243,16 @@
   }
 }
 
+/* The window changes between the full and the small side window (src/main/layout.ts): the page fades out while the window moves, and back in
+   with the new layout. The attribute is set by the window's layout push (stores/ui.ts). */
+#root {
+  transition: opacity 150ms ease-out;
+}
+:root[data-layout-switch='out'] #root {
+  opacity: 0;
+  transition-duration: 90ms;
+}
+
 /* The system asks for less motion: the decoration stops. The shimmer does not: it is information, not decoration. */
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-up,

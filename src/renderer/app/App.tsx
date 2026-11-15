@@ -4,6 +4,7 @@ import { BrowserPanel } from '@/features/browser/BrowserPanel'
 import { LinkChoiceDialog } from '@/features/browser/LinkChoiceDialog'
 import { startBrowser } from '@/stores/browser'
 import { ChatHome } from '@/features/chat/ChatHome'
+import { CompactApp } from '@/features/compact/CompactApp'
 import { AddDeviceDialog } from '@/features/devices/AddDeviceDialog'
 import { McpDialog, McpImportDialog } from '@/features/tools/McpDialog'
 import { FolderPicker } from '@/features/devices/FolderPicker'
@@ -22,7 +23,7 @@ import { IconButton, TooltipProvider } from '@/components/ui'
 import { useRuns } from '@/stores/runs'
 import { useSessions } from '@/stores/sessions'
 import { useSettings } from '@/stores/settings'
-import { useUi } from '@/stores/ui'
+import { startLayout, useUi } from '@/stores/ui'
 import { Sidebar } from './Sidebar'
 import { TopBar } from './TopBar'
 
@@ -103,6 +104,9 @@ function useShortcuts() {
       } else if (key === ',') {
         e.preventDefault()
         ui.openSettings()
+      } else if (key === 'm' && e.shiftKey) {
+        e.preventDefault()
+        ui.toggleCompact()
       } else if (key === 'b' && e.shiftKey) {
         e.preventDefault()
         ui.toggleRight('browser')
@@ -138,8 +142,16 @@ export function App() {
   const collapsed = useSettings((s) => s.sidebarCollapsed)
   const set = useSettings((s) => s.set)
   const wizardOpen = useUi((s) => s.wizardOpen)
+  const compact = useUi((s) => s.compact)
+  const settingsOpen = useUi((s) => s.settingsOpen)
   useShortcuts()
   useOpenFromNotification()
+  // The window's shape (the full window or the small side window) is the main process's; this follows it.
+  useEffect(() => startLayout(), [])
+  // Settings and the setup wizard need room: they open in the full window.
+  useEffect(() => {
+    if (compact && (settingsOpen || wizardOpen)) useUi.getState().setCompact(false)
+  }, [compact, settingsOpen, wizardOpen])
   // What the browser's pages are doing (tabs, questions, downloads) is told by the main process.
   useEffect(() => startBrowser(), [])
 
@@ -164,23 +176,29 @@ export function App() {
       <div className="flex h-screen w-screen flex-col bg-canvas text-ink">
         {/* While the setup wizard is open it is all there is: nothing behind it can be reached with the keyboard or a screen reader. */}
         <div inert={wizardOpen} className="flex min-h-0 flex-1 flex-col">
-          <TopBar />
-          <div className="flex min-h-0 flex-1 gap-3 px-3 pb-3">
-            {!collapsed && <Sidebar />}
-            <main className="relative flex min-w-0 flex-1 gap-3">
-              {collapsed && (
-                <div className="absolute top-3 left-3 z-30">
-                  <IconButton label="Show sidebar (Ctrl+B)" onClick={() => set({ sidebarCollapsed: false })}>
-                    <PanelLeft className="h-[18px] w-[18px]" />
-                  </IconButton>
-                </div>
-              )}
-              <div className="relative min-w-0 flex-1 overflow-hidden rounded-2xl border border-edge bg-panel">
-                <MainPanel />
+          {compact ? (
+            <CompactApp />
+          ) : (
+            <>
+              <TopBar />
+              <div className="flex min-h-0 flex-1 gap-3 px-3 pb-3">
+                {!collapsed && <Sidebar />}
+                <main className="relative flex min-w-0 flex-1 gap-3">
+                  {collapsed && (
+                    <div className="absolute top-3 left-3 z-30">
+                      <IconButton label="Show sidebar (Ctrl+B)" onClick={() => set({ sidebarCollapsed: false })}>
+                        <PanelLeft className="h-[18px] w-[18px]" />
+                      </IconButton>
+                    </div>
+                  )}
+                  <div className="relative min-w-0 flex-1 overflow-hidden rounded-2xl border border-edge bg-panel">
+                    <MainPanel />
+                  </div>
+                  <RightPanel />
+                </main>
               </div>
-              <RightPanel />
-            </main>
-          </div>
+            </>
+          )}
         </div>
         {wizardOpen && <Wizard />}
         <SettingsDialog />

@@ -439,7 +439,8 @@ export function Timeline({
   scroller,
   onApproval,
   onAsk,
-  onRetry
+  onRetry,
+  compact = false
 }: {
   session: Session
   /** The element that scrolls, to keep what is being read in place when earlier messages are added above it. */
@@ -447,8 +448,11 @@ export function Timeline({
   onApproval: (requestId: string, allow: boolean, always?: boolean, minutes?: number) => void
   onAsk: (requestId: string, answers: AskAnswers) => void
   onRetry: () => void
+  /** The small side window: everything the assistant did is folded to one line, in Develop too, as in Chat. */
+  compact?: boolean
 }) {
-  const blocks = useMemo(() => toBlocks(session.items, session.mode), [session.items, session.mode])
+  const blocks = useMemo(() => toBlocks(session.items, compact ? 'chat' : session.mode), [session.items, session.mode, compact])
+  const detailed = session.mode === 'develop' && !compact
   const revert = useSessions((s) => s.revert)
   const [target, setTarget] = useState<string | null>(null)
   const [reviewing, setReviewing] = useState<string | null>(null)
@@ -515,7 +519,7 @@ export function Timeline({
   )
 
   function renderBlock(b: Block) {
-    if (b.kind === 'group') return <ActivityGroup items={b.items} detailed={session.mode === 'develop'} />
+    if (b.kind === 'group') return <ActivityGroup items={b.items} detailed={detailed} />
     const it = b.item
     switch (it.kind) {
       case 'user':
@@ -533,7 +537,7 @@ export function Timeline({
       case 'thinking':
         return <ThinkingRow item={it} />
       case 'tool':
-        return <ToolCard item={it} detailed={session.mode === 'develop'} />
+        return <ToolCard item={it} detailed={detailed} />
       case 'approval':
         return <ApprovalCard item={it} onAnswer={approve} />
       case 'ask':

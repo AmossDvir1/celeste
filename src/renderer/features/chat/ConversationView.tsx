@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDown, FileDiff, Folder, FolderTree, GitBranch, Globe, Plug, SquareTerminal, Workflow } from 'lucide-react'
+import { ArrowDown, ChevronLeft, FileDiff, Folder, FolderTree, GitBranch, Globe, Plug, SquareTerminal, Workflow } from 'lucide-react'
 import type { ContextRef, UserInput } from '@shared/agent'
 import { cn } from '@/lib/cn'
 import { basename } from '@/lib/format'
@@ -58,10 +58,12 @@ function PanelToggle({ panel, label, icon: Icon, badge }: { panel: Exclude<Right
   )
 }
 
-export function ConversationView({ sessionId }: { sessionId: string }) {
+/** `compact`: the small side window. A slim title, no panels beside the chat, everything the assistant did folded, and a narrower message box. */
+export function ConversationView({ sessionId, compact = false }: { sessionId: string; compact?: boolean }) {
   const session = useSessions((s) => s.sessions[sessionId])
   const send = useSessions((s) => s.send)
   const stop = useSessions((s) => s.stop)
+  const home = useSessions((s) => s.home)
   const queueAction = useSessions((s) => s.queueAction)
   const setPrefs = useSessions((s) => s.setPrefs)
   const respondApproval = useSessions((s) => s.respondApproval)
@@ -147,9 +149,19 @@ export function ConversationView({ sessionId }: { sessionId: string }) {
       className="h-full"
     >
       <div className="relative flex h-full min-h-0 flex-col overflow-hidden">
-        <GlowArc className="opacity-35" />
+        {!compact && <GlowArc className="opacity-35" />}
 
-        <header className="relative z-10 flex h-14 shrink-0 items-center gap-3 border-b border-edge/70 px-5">
+        {compact && (
+          <header className="relative z-10 flex h-10 shrink-0 items-center gap-1 border-b border-edge/70 pr-3 pl-1.5">
+            {/* There is no sidebar here: this goes back to the list of chats. */}
+            <IconButton label="All chats" onClick={() => home(session.mode)}>
+              <ChevronLeft className="h-[18px] w-[18px]" />
+            </IconButton>
+            <h1 className="min-w-0 truncate text-[14px] font-medium text-ink">{session.title}</h1>
+            {session.status !== 'idle' && <span className="shrink-0 text-xs text-accent-text">{session.status === 'waiting' ? 'Needs you' : 'Working…'}</span>}
+          </header>
+        )}
+        <header className={cn('relative z-10 flex h-14 shrink-0 items-center gap-3 border-b border-edge/70 px-5', compact && 'hidden')}>
           <h1 className="min-w-0 truncate text-[15px] font-medium text-ink">{session.title}</h1>
           {model && <Badge className="shrink-0">{model.label}</Badge>}
           {session.worktree && (
@@ -195,9 +207,10 @@ export function ConversationView({ sessionId }: { sessionId: string }) {
         </header>
 
         <div ref={scroller} onScroll={onScroll} className="relative z-10 min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-[820px] px-6 py-6">
+          <div className={cn('mx-auto w-full max-w-[820px]', compact ? 'px-3 py-3 text-[14px]' : 'px-6 py-6')}>
             <Timeline
               key={sessionId}
+              compact={compact}
               scroller={scroller}
               session={session}
               onApproval={(requestId, allow, always, minutes) => respondApproval(sessionId, requestId, allow, always, minutes)}
@@ -221,7 +234,7 @@ export function ConversationView({ sessionId }: { sessionId: string }) {
           </button>
         )}
 
-        <div className="relative z-10 shrink-0 px-6 pb-4">
+        <div className={cn('relative z-10 shrink-0', compact ? 'px-3 pb-3' : 'px-6 pb-4')}>
           <div ref={dockRef} className="mx-auto w-full max-w-[820px]">
             <QueueList
               queue={session.queue}
@@ -258,9 +271,10 @@ export function ConversationView({ sessionId }: { sessionId: string }) {
                 return true
               }}
               history={prompts}
+              compact={compact}
               placeholder={session.status === 'waiting' ? 'Answer above, or type a message to send after…' : busy ? 'Type a message to send after this answer…' : 'Message Celeste...'}
             />
-            <div className={cn('mt-2 flex h-4 items-center justify-center gap-2 text-[11px] text-ink-faint')}>
+            <div className={cn('mt-2 flex h-4 items-center justify-center gap-2 text-[11px] text-ink-faint', compact && 'hidden')}>
               {onChatGptPlan ? (
                 <>
                   Using ChatGPT plan ·
