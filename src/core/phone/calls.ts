@@ -342,6 +342,17 @@ export function phoneCalls(
         used(phoneId, sent)
         return done
       }
+      case 'schedules.setEnabled': {
+        // Off is always allowed. On only for a schedule that was switched off by hand: one paused because the workflow changed, or because
+        // it kept failing, needs the person at the computer to look at it and approve it again.
+        const [id, on] = params as [unknown, unknown]
+        if (!a['schedules.setEnabled'] || !a['schedules.list']) throw new Error('Not available from a phone.')
+        if (on === true) {
+          const row = a['schedules.list']().find((s) => s.id === id)
+          if (row?.pausedReason === 'edited' || row?.pausedReason === 'failures') throw new Error('Open Celeste on the computer to look at this schedule and approve it again.')
+        }
+        return a['schedules.setEnabled'](String(id), on === true)
+      }
       case 'sessions.get':
         if (!a['sessions.get']) throw new Error('Not available from a phone.')
         return phoneLog(await a['sessions.get'](String(params[0])))

@@ -6,6 +6,7 @@ import type { AccessLevel, AuthMethod, DeviceActivity, DeviceFolder, DeviceKind,
 import { movesSession } from '@shared/status'
 import { MIGRATIONS } from './migrations'
 import type { RunEvent, RunSummary, StoredRunEvent, WorkflowDefinition } from '@shared/workflow'
+import type { ScheduleLogEntry, ScheduleLogKind, ScheduleRow } from '@shared/schedule'
 import { toMatchQuery, type AttachmentRow, type IndexKind, type SessionRow, type StoredFolder, type Store, type WorkflowRow } from './store'
 
 type Row = Record<string, unknown>
@@ -121,6 +122,30 @@ function workflowFrom(r: Row): WorkflowRow {
   }
 }
 
+function scheduleFrom(r: Row): ScheduleRow {
+  return {
+    id: r.id as string,
+    workflowId: r.workflow_id as string,
+    enabled: r.enabled === 1,
+    spec: JSON.parse(r.spec_json as string) as ScheduleRow['spec'],
+    timezone: r.timezone as string,
+    inputs: JSON.parse(r.inputs_json as string) as ScheduleRow['inputs'],
+    folder: r.folder as string,
+    approvedVersion: r.approved_version as number,
+    approvedHash: r.approved_hash as string,
+    approvedAt: r.approved_at as number,
+    graceSec: r.grace_sec as number,
+    waitLimitSec: r.wait_limit_sec as number,
+    notify: r.notify as ScheduleRow['notify'],
+    nextRunAt: (r.next_run_at ?? null) as number | null,
+    lastFireAt: (r.last_fire_at ?? null) as number | null,
+    failStreak: r.fail_streak as number,
+    ...(r.paused_reason ? { pausedReason: r.paused_reason as NonNullable<ScheduleRow['pausedReason']> } : {}),
+    createdAt: r.created_at as number,
+    updatedAt: r.updated_at as number
+  }
+}
+
 function runFrom(r: Row): RunSummary {
   return {
     id: r.id as string,
@@ -131,6 +156,7 @@ function runFrom(r: Row): RunSummary {
     startedBy: r.started_by as RunSummary['startedBy'],
     inputs: JSON.parse(r.inputs_json as string) as RunSummary['inputs'],
     ...(r.session_id ? { sessionId: r.session_id as string } : {}),
+    ...(r.schedule_id ? { scheduleId: r.schedule_id as string } : {}),
     folder: r.folder as string,
     startedAt: r.started_at as number,
     ...(r.finished_at !== null ? { finishedAt: r.finished_at as number } : {}),
@@ -407,10 +433,55 @@ export class SqliteStore implements Store {
 
   insertRun(r: RunSummary): void {
     this.run(
-      `INSERT INTO workflow_runs (id, workflow_id, workflow_name, version, status, started_by, inputs_json, session_id, folder, started_at, finished_at, output, error)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      r.id, r.workflowId, r.workflowName, r.version, r.status, r.startedBy, JSON.stringify(r.inputs), r.sessionId ?? null, r.folder, r.startedAt, r.finishedAt ?? null, r.output ?? null, r.error ?? null
+      `INSERT INTO workflow_runs (id, workflow_id, workflow_name, version, status, started_by, inputs_json, session_id, schedule_id, folder, started_at, finished_at, output, error)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      r.id, r.workflowId, r.workflowName, r.version, r.status, r.startedBy, JSON.stringify(r.inputs), r.sessionId ?? null, r.scheduleId ?? null, r.folder, r.startedAt, r.finishedAt ?? null, r.output ?? null, r.error ?? null
     )
+  }
+
+  listScheduleRuns(scheduleId: string, limit: number): RunSummary[] {
+    return this.all('SELECT * FROM workflow_runs WHERE schedule_id = ? ORDER BY started_at DESC, rowid DESC LIMIT ?', scheduleId, limit).map(runFrom)
+  }
+
+  listSchedules(workflowId?: string): ScheduleRow[] {
+    const rows = workflowId ? this.all('SELECT * FROM workflow_schedules WHERE workflow_id = ? ORDER BY created_at, rowid', workflowId) : this.all('SELECT * FROM workflow_schedules ORDER BY created_at, rowid')
+    return rows.map(scheduleFrom)
+  }
+
+  getSchedule(id: string): ScheduleRow | undefined {
+    const r = this.get('SELECT * FROM workflow_schedules WHERE id = ?', id)
+    return r && scheduleFrom(r)
+  }
+
+  saveSchedule(s: ScheduleRow): void {
+    this.run(
+      `INSERT INTO workflow_schedules (id, workflow_id, enabled, spec_json, timezone, inputs_json, folder, approved_version, approved_hash, approved_at, grace_sec, wait_limit_sec, notify, next_run_at, last_fire_at, fail_streak, paused_reason, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (id) DO UPDATE SET workflow_id = excluded.workflow_id, enabled = excluded.enabled, spec_json = excluded.spec_json, timezone = excluded.timezone,
+         inputs_json = excluded.inputs_json, folder = excluded.folder, approved_version = excluded.approved_version, approved_hash = excluded.approved_hash,
+         approved_at = excluded.approved_at, grace_sec = excluded.grace_sec, wait_limit_sec = excluded.wait_limit_sec, notify = excluded.notify,
+         next_run_at = excluded.next_run_at, last_fire_at = excluded.last_fire_at, fail_streak = excluded.fail_streak, paused_reason = excluded.paused_reason,
+         updated_at = excluded.updated_at`,
+      s.id, s.workflowId, s.enabled ? 1 : 0, JSON.stringify(s.spec), s.timezone, JSON.stringify(s.inputs), s.folder, s.approvedVersion, s.approvedHash, s.approvedAt, s.graceSec, s.waitLimitSec, s.notify, s.nextRunAt, s.lastFireAt, s.failStreak, s.pausedReason ?? null, s.createdAt, s.updatedAt
+    )
+  }
+
+  deleteSchedule(id: string): void {
+    this.run('DELETE FROM workflow_schedules WHERE id = ?', id)
+  }
+
+  dueSchedules(now: number): ScheduleRow[] {
+    return this.all('SELECT * FROM workflow_schedules WHERE enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= ? ORDER BY next_run_at, rowid', now).map(scheduleFrom)
+  }
+
+  appendScheduleLog(scheduleId: string, at: number, kind: ScheduleLogKind, text: string): void {
+    this.run('INSERT INTO workflow_schedule_log (schedule_id, at, kind, text) VALUES (?, ?, ?, ?)', scheduleId, at, kind, text)
+    // The newest 200 are kept.
+    this.run('DELETE FROM workflow_schedule_log WHERE schedule_id = ? AND id NOT IN (SELECT id FROM workflow_schedule_log WHERE schedule_id = ? ORDER BY id DESC LIMIT 200)', scheduleId, scheduleId)
+  }
+
+  scheduleLog(scheduleId: string, limit: number): ScheduleLogEntry[] {
+    return this.all('SELECT id, at, kind, text FROM workflow_schedule_log WHERE schedule_id = ? ORDER BY id DESC LIMIT ?', scheduleId, limit).map((r) => ({ id: r.id as number, at: r.at as number, kind: r.kind as ScheduleLogKind, text: r.text as string }))
   }
 
   patchRun(id: string, patch: Partial<Pick<RunSummary, 'status' | 'finishedAt' | 'output' | 'error'>>): void {

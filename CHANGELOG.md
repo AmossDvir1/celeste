@@ -14,6 +14,8 @@ All notable changes to Celeste. The format follows [Keep a Changelog](https://ke
 - **Steer.** While an assistant works there is a third way to send: **Steer** (or Alt+Enter), for Claude and Copilot. The message joins what the assistant is doing, at its next step, and the work so far is kept, where Send now stops it and Add to queue waits. If the answer ends first, it becomes the next turn. The phone has the same button.
 - **Usage.** A strip above Settings shows how much of each connected assistant's allowance is used and when it comes back: for GitHub Copilot, the premium requests of the month. Click a row for every meter, its amounts and reset time. It updates when the window gains focus and every 5 minutes. (Claude shows nothing there: Anthropic reports plan limits only for a claude.ai subscription login, which Celeste does not offer.)
 
+- **Scheduled workflows, the engine** (the window for making one comes next). A schedule is approved once, when it is made, on the card that lists everything the run will do; its runs then start by themselves at their time with no card. It runs once, every N minutes, daily, on chosen weekdays or on a day of the month, in the time zone it was made in (a time the clock skips runs just after the gap, one it repeats runs once). If you change the workflow, the schedule pauses at once and needs your OK again. A run that is late by more than two hours is skipped, not run late; one that overlaps the last is skipped; three failures in a row pause it; a run that waits for you for 30 minutes is stopped. A workflow can use `{{run.date}}` and `{{run.time}}`.
+
 ### Fixed
 
 - **A card nobody answered stops asking when you press Stop.** Its buttons used to stay on screen and do nothing.

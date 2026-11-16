@@ -70,7 +70,10 @@ export const PHONE_METHODS = [
   'runs.list',
   'runs.get',
   'runs.respondApproval',
-  'runs.respondAsk'
+  'runs.respondAsk',
+  /** The schedules, and switching one off or on. Not making, changing or removing one: approving unattended work stays on the computer. */
+  'schedules.list',
+  'schedules.setEnabled'
 ] as const
 export type PhoneMethod = (typeof PHONE_METHODS)[number]
 export const isPhoneMethod = (m: string): m is PhoneMethod => (PHONE_METHODS as readonly string[]).includes(m)

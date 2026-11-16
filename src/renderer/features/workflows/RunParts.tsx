@@ -16,7 +16,7 @@ const KIND_LABEL: Record<PlannedAction['kind'], string> = { shell: 'Command', ht
 
 export const STATUS_TEXT: Record<RunSummary['status'], string> = { running: 'Running', waiting: 'Waiting for you', completed: 'Finished', failed: 'Failed', cancelled: 'Stopped' }
 export const STATUS_TONE: Record<RunSummary['status'], 'info' | 'warning' | 'success' | 'accent' | 'neutral'> = { running: 'info', waiting: 'warning', completed: 'success', failed: 'accent', cancelled: 'neutral' }
-export const WHO = { you: 'you', menu: 'the / menu', assistant: 'the assistant' } as const
+export const WHO = { you: 'you', menu: 'the / menu', assistant: 'the assistant', schedule: 'a schedule' } as const
 const WORD: Record<NodeView['state'], string> = { pending: 'Not reached', running: 'Running', done: 'Done', failed: 'Failed', skipped: 'Skipped' }
 
 function StateIcon({ n }: { n: NodeView | undefined }) {

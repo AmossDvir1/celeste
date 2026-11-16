@@ -122,12 +122,21 @@ export interface StartRequest {
   version?: number
   /** Show the card that asks first even when there is nothing to list on it, as for a run the assistant started. */
   forceApproval?: boolean
+  /**
+   * A schedule the person approved when they made it started this run. The card is not shown (and `forceApproval` is ignored), and
+   * the run's log says who allowed it. Everything else is as for any run: the inputs, `checkReady`, and every step.
+   */
+  preApproved?: { scheduleId: string }
 }
 
 class Stopped extends Error {}
 
 interface Active {
   forceApproval: boolean
+  /** The schedule that allowed this run in advance. */
+  preApproved?: string
+  /** Why the run was cancelled, when Celeste did it. */
+  cancelReason?: string
   run: RunSummary
   abort: AbortController
   /** Cards the run is waiting on, so that cancelling can answer them. */
@@ -135,6 +144,13 @@ interface Active {
   finished: Promise<void>
   /** The steps that have run so far, which the next assistant step is told about. */
   history: StepRecord[]
+}
+
+const two = (n: number) => String(n).padStart(2, '0')
+/** The date and time on this computer's clock, as `{{run.date}}` and `{{run.time}}` show them. */
+export function localDateTime(at: number): { date: string; time: string } {
+  const d = new Date(at)
+  return { date: `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`, time: `${two(d.getHours())}:${two(d.getMinutes())}` }
 }
 
 const clip = (text: string) => (text.length > OUTPUT_LIMIT ? `${text.slice(0, OUTPUT_LIMIT)}\n[cut: only the first ${OUTPUT_LIMIT} characters are kept]` : text)
@@ -198,16 +214,83 @@ export class WorkflowRunner {
       startedBy: req.startedBy,
       inputs,
       ...(req.sessionId ? { sessionId: req.sessionId } : {}),
+      ...(req.preApproved ? { scheduleId: req.preApproved.scheduleId } : {}),
       folder: req.folder,
       startedAt: this.now()
     }
     store.insertRun(run)
-    const active: Active = { run, forceApproval: req.forceApproval === true, abort: new AbortController(), waiting: new Map(), finished: Promise.resolve(), history: [] }
+    const active: Active = { run, forceApproval: req.forceApproval === true, ...(req.preApproved ? { preApproved: req.preApproved.scheduleId } : {}), abort: new AbortController(), waiting: new Map(), finished: Promise.resolve(), history: [] }
     this.active.set(id, active)
     this.deps.push({ type: 'run', run })
     this.record(id, { type: 'run.started', inputs })
     active.finished = this.execute(active, def, order, inputs).finally(() => this.active.delete(id))
     return run
+  }
+
+  /**
+   * A run that could not start (the phone is not connected, a tool server is off): kept as a failed run carrying the sentence, so it shows in
+   * the history and is counted and told about like any other failure. Used for scheduled runs, which have nobody to show the error to.
+   */
+  recordFailedStart(req: StartRequest, error: string): RunSummary {
+    const wf = this.deps.store.getWorkflow(req.workflowId)
+    const id = (this.deps.newId ?? (() => `run-${crypto.randomUUID()}`))()
+    const at = this.now()
+    const run: RunSummary = {
+      id,
+      workflowId: req.workflowId,
+      workflowName: wf?.name ?? 'Workflow',
+      version: req.version ?? wf?.version ?? 1,
+      status: 'failed',
+      startedBy: req.startedBy,
+      inputs: Object.fromEntries(Object.entries(req.inputs ?? {}).filter((e): e is [string, string | number | boolean] => ['string', 'number', 'boolean'].includes(typeof e[1]))),
+      ...(req.preApproved ? { scheduleId: req.preApproved.scheduleId } : {}),
+      folder: req.folder,
+      startedAt: at,
+      finishedAt: at,
+      error
+    }
+    this.deps.store.insertRun(run)
+    this.deps.push({ type: 'run', run })
+    this.record(id, { type: 'run.started', inputs: run.inputs })
+    this.record(id, { type: 'run.failed', error })
+    return run
+  }
+
+  /**
+   * What starting this run would do, without starting it: everything it will do with the inputs filled in, how many steps use an assistant,
+   * which use the computer, and what is wrong with it (the sentences `start` would throw). For the schedule dialog's card.
+   */
+  async preview(workflowId: string, rawInputs: Record<string, unknown>, version?: number): Promise<{ actions: PlannedAction[]; agentSteps: number; computerSteps: string[]; problems: string[] }> {
+    const { store } = this.deps
+    const wf = store.getWorkflow(workflowId)
+    if (!wf) return { actions: [], agentSteps: 0, computerSteps: [], problems: ['That workflow no longer exists.'] }
+    const v = version ?? wf.version
+    const def = v === wf.version ? wf.definition : store.workflowVersion(wf.id, v)
+    if (!def) return { actions: [], agentSteps: 0, computerSteps: [], problems: [`Version ${v} of “${wf.name}” is not saved.`] }
+    const found = validateWorkflow(def)
+    if (found.length) return { actions: [], agentSteps: 0, computerSteps: [], problems: found.slice(0, 3) }
+    const order = (runOrder(def) as { order: WorkflowNode[] }).order
+    const problems: string[] = []
+    let inputs: RunSummary['inputs'] = {}
+    try {
+      inputs = checkInputs((order[0] as StartNode).inputs, rawInputs ?? {})
+    } catch (err) {
+      problems.push(sentence(err))
+    }
+    try {
+      await this.checkReady(order)
+    } catch (err) {
+      problems.push(sentence(err))
+    }
+    const at = localDateTime(this.now())
+    let actions: PlannedAction[] = []
+    try {
+      actions = this.plan(order, { inputs, nodes: {}, run: { folder: '', ...at } })
+    } catch {
+      // An answer that is missing or wrong is already in `problems`; there is nothing to list yet.
+    }
+    const agents = order.filter((n): n is AgentNode => n.type === 'agent')
+    return { actions, agentSteps: agents.length, computerSteps: agents.filter((n) => n.computer).map((n) => n.name), problems }
   }
 
   /** What would make a run fail before it began, found now so nothing is half done: missing tools, devices that are read only. */
@@ -247,9 +330,11 @@ export class WorkflowRunner {
     return run && run.status !== 'running' && run.status !== 'waiting' ? run : undefined
   }
 
-  async cancel(runId: string): Promise<void> {
+  /** Stops a run. A `reason` is kept as the run's error and shown with it ("Nobody answered in 30 minutes."). */
+  async cancel(runId: string, reason?: string): Promise<void> {
     const a = this.active.get(runId)
     if (!a) return
+    if (reason) a.cancelReason = reason
     a.abort.abort()
     for (const answer of a.waiting.values()) answer(undefined)
     await a.finished
@@ -285,10 +370,13 @@ export class WorkflowRunner {
   // --- the run --------------------------------------------------------------------------------------
 
   private async execute(a: Active, def: WorkflowDefinition, order: WorkflowNode[], inputs: RunSummary['inputs']): Promise<void> {
-    const ctx: TemplateContext = { inputs, nodes: {}, run: { folder: a.run.folder } }
+    const ctx: TemplateContext = { inputs, nodes: {}, run: { folder: a.run.folder, ...localDateTime(a.run.startedAt) } }
     try {
       const actions = this.plan(order, ctx)
-      if (actions.length || a.forceApproval) {
+      if (a.preApproved) {
+        // The person allowed this when they made the schedule; the log says so.
+        this.record(a.run.id, { type: 'approval.preapproved', scheduleId: a.preApproved })
+      } else if (actions.length || a.forceApproval) {
         const requestId = `approve-${crypto.randomUUID()}`
         this.record(a.run.id, { type: 'approval.requested', requestId, actions })
         const allow = await this.waitFor<boolean>(a, requestId)
@@ -321,8 +409,8 @@ export class WorkflowRunner {
       throw new Error('The workflow has no End step.')
     } catch (err) {
       if (err instanceof Stopped || a.abort.signal.aborted) {
-        this.record(a.run.id, { type: 'run.cancelled' })
-        this.setStatus(a, 'cancelled')
+        this.record(a.run.id, { type: 'run.cancelled', ...(a.cancelReason ? { reason: a.cancelReason } : {}) })
+        this.setStatus(a, 'cancelled', a.cancelReason ? { error: a.cancelReason } : {})
       } else {
         const error = sentence(err)
         this.record(a.run.id, { type: 'run.failed', error })

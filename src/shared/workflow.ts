@@ -301,7 +301,9 @@ export function validateWorkflow(input: unknown): string[] {
           if (!name || !inputNames.has(name)) problems.push(`“${node.name}” uses {{${ref}}}, but there is no input called “${name ?? ''}”.`)
         } else if (root === 'nodes') {
           if (!name || !before.has(name)) problems.push(`“${node.name}” uses {{${ref}}}, but that step does not run before it.`)
-        } else if (root !== 'run') problems.push(`“${node.name}” uses {{${ref}}}, which is not something a step can use.`)
+        } else if (root === 'run') {
+          if (!(name === 'folder' || name === 'date' || name === 'time') || ref.split('.').length > 2) problems.push(`“${node.name}” uses {{${ref}}}, which is not something a step can use. Use {{run.folder}}, {{run.date}} or {{run.time}}.`)
+        } else problems.push(`“${node.name}” uses {{${ref}}}, which is not something a step can use.`)
       }
     }
     before.add(node.id)
@@ -314,7 +316,8 @@ export function validateWorkflow(input: unknown): string[] {
 export interface TemplateContext {
   inputs: Record<string, string | number | boolean>
   nodes: Record<string, { output: unknown }>
-  run: { folder: string }
+  /** Where the run works, and the local date (2026-11-16) and time (09:00) it started, fixed for the whole run. */
+  run: { folder: string; date: string; time: string }
 }
 
 const show = (v: unknown): string => (typeof v === 'string' ? v : v === undefined || v === null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v))
@@ -328,7 +331,7 @@ export function renderTemplate(text: string, ctx: TemplateContext, options: { pa
     const path = raw.split('.')
     const [root, name, ...rest] = path
     if (options.partial && root === 'nodes') return whole
-    if (root === 'run' && name === 'folder' && rest.length === 0) return ctx.run.folder
+    if (root === 'run' && (name === 'folder' || name === 'date' || name === 'time') && rest.length === 0) return ctx.run[name]
     if (root === 'inputs' && name && rest.length === 0) {
       if (!(name in ctx.inputs)) throw new Error(`There is no input called “${name}”.`)
       return show(ctx.inputs[name])
@@ -408,7 +411,7 @@ export interface WorkflowFull extends WorkflowSummary {
 }
 
 export type RunStatus = 'running' | 'waiting' | 'completed' | 'failed' | 'cancelled'
-export type StartedBy = 'you' | 'menu' | 'assistant'
+export type StartedBy = 'you' | 'menu' | 'assistant' | 'schedule'
 
 export interface RunSummary {
   id: string
@@ -420,6 +423,8 @@ export interface RunSummary {
   inputs: Record<string, string | number | boolean>
   /** The chat the run belongs to, when it was started from one. */
   sessionId?: string
+  /** The schedule that started it, when `startedBy` is 'schedule'. */
+  scheduleId?: string
   folder: string
   startedAt: number
   finishedAt?: number
@@ -443,6 +448,8 @@ export type RunEvent =
   /** Everything the run will do, before it does any of it. The run waits for an answer. */
   | { type: 'approval.requested'; requestId: string; actions: PlannedAction[] }
   | { type: 'approval.resolved'; requestId: string; allow: boolean }
+  /** The card was not shown: a schedule the person approved when they made it started this run. */
+  | { type: 'approval.preapproved'; scheduleId: string }
   | { type: 'node.started'; nodeId: string; attempt: number }
   | { type: 'node.output'; nodeId: string; text: string }
   | { type: 'node.retrying'; nodeId: string; attempt: number; error: string }
@@ -457,7 +464,8 @@ export type RunEvent =
   | { type: 'agent.ask.answered'; nodeId: string; requestId: string }
   | { type: 'run.completed'; output: string }
   | { type: 'run.failed'; error: string }
-  | { type: 'run.cancelled' }
+  /** `reason` is set when Celeste cancelled it (nobody answered in time), as opposed to the person pressing Cancel. */
+  | { type: 'run.cancelled'; reason?: string }
 
 export interface StoredRunEvent {
   seq: number

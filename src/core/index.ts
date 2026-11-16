@@ -36,6 +36,8 @@ import { AppTools } from './app/tools'
 import { createAgentStepRunner } from './workflows/agent-step'
 import { draftWorkflow } from './workflows/draft'
 import { WorkflowRunner } from './workflows/runner'
+import { ScheduleService } from './workflows/schedule-service'
+import { Scheduler } from './workflows/scheduler'
 import { WorkflowService } from './workflows/service'
 import { CombinedTools, WorkflowTools } from './workflows/tools'
 import { DesktopControl } from './desktop/control'
@@ -95,6 +97,7 @@ const send = (port: MessagePortMain, message: CoreMessage) => port.postMessage(m
 let phoneRef: PhoneBridge | undefined
 let attention: Attention | undefined
 let usageRef: UsageService | undefined
+let schedulerRef: Scheduler | undefined
 const push = (p: CorePush) => {
   ports.forEach((port) => send(port, { kind: 'push', push: p }))
   phoneRef?.broadcast(p)
@@ -291,11 +294,15 @@ async function start(): Promise<void> {
   const noted = new Set<string>()
   const runPush = (p: CorePush) => {
     push(p)
+    // Every run, so a schedule hears how its runs end and which of them wait for a person.
+    if (p.type === 'run') schedulerRef?.onRun(p.run)
     if (p.type !== 'run' || !p.run.sessionId) return
     const { run } = p
+    // A run a schedule started has no conversation, so it never gets here; the log's words for who started one do not have 'schedule'.
+    const startedBy = run.startedBy === 'schedule' ? 'you' : run.startedBy
     if (!noted.has(run.id)) {
       noted.add(run.id)
-      ;(service as SessionService).recordWorkflow(run.sessionId as string, { type: 'workflow.started', runId: run.id, workflowId: run.workflowId, name: run.workflowName, startedBy: run.startedBy })
+      ;(service as SessionService).recordWorkflow(run.sessionId as string, { type: 'workflow.started', runId: run.id, workflowId: run.workflowId, name: run.workflowName, startedBy })
     }
     if (run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled') {
       if (noted.has(`done:${run.id}`)) return
@@ -304,7 +311,7 @@ async function start(): Promise<void> {
         type: 'workflow.finished',
         runId: run.id,
         name: run.workflowName,
-        startedBy: run.startedBy,
+        startedBy,
         status: run.status,
         ...(run.output !== undefined ? { output: run.output } : {}),
         ...(run.error ? { error: run.error } : {})
@@ -371,6 +378,19 @@ async function start(): Promise<void> {
     }
   })
   runner.markAbandoned()
+  // The schedules (docs/plans/SCHEDULING_PLAN.md): the person approved each when they made it, so its runs start with no card. Looked at every
+  // half minute, when Celeste starts, and when the computer wakes. CELESTE_SCHEDULER_TICK_MS is for the app checks.
+  const schedulesPaused = () => db.settings()['schedulesPaused'] === true
+  const scheduler = new Scheduler({
+    store: db,
+    runner,
+    paused: schedulesPaused,
+    changed: () => push({ type: 'schedules' }),
+    ...(Number(process.env['CELESTE_SCHEDULER_TICK_MS']) > 0 ? { tickMs: Number(process.env['CELESTE_SCHEDULER_TICK_MS']) } : {})
+  })
+  schedulerRef = scheduler
+  const schedules = new ScheduleService(db, runner, { dataDir, changed: () => push({ type: 'schedules' }), paused: schedulesPaused })
+  scheduler.start()
   // The workflows the person allowed the assistant to run are tools of Celeste's own tool server.
   // The assistant's use of the mouse and keyboard is off until switched on in Settings, and always asks first on a card of Celeste's own.
   const desktopControl = new DesktopControl({
@@ -550,6 +570,13 @@ async function start(): Promise<void> {
     ...new VendorService({ copilot: host, claude: claudeHost, openai: openaiHost, gemini: geminiHost }, push, ownPrograms).api,
     ...mcp.api,
     ...workflows.api,
+    // A change to a workflow's steps pauses the schedules that were approved for the old ones, at once and not at their next time.
+    'workflows.save': (input) => {
+      const saved = workflows.api['workflows.save'](input)
+      scheduler.onWorkflowSaved(saved.id)
+      return saved
+    },
+    ...schedules.api,
     ...terminals.api,
     ...createProjectApi(worktrees, (path) => {
       const s = db.listSessions().find((x) => x.cwd === path)
@@ -600,6 +627,13 @@ parent.on('message', (event) => {
     desktopRef?.extend()
   } else if (message?.type === 'desktop-resume') {
     desktopRef?.resume()
+  } else if (message?.type === 'power-resume') {
+    // The computer woke up: what came due while it slept is looked at now, not at the next half minute.
+    void schedulerRef?.tick()
+  } else if (message?.type === 'schedules-pause') {
+    // The tray's "Pause all schedules". Nothing new starts while it is on; runs that are going carry on.
+    store?.setSetting('schedulesPaused', (message as { on?: unknown }).on === true)
+    push({ type: 'schedules' })
   } else if (message?.type === 'secret-reply' && typeof message.id === 'number') {
     waitingForSecret.get(message.id)?.(message.value ?? null)
     waitingForSecret.delete(message.id)
@@ -615,6 +649,7 @@ parent.on('message', (event) => {
     port.start()
   } else if (message?.type === 'shutdown') {
     desktopRef?.stop('Celeste closed.')
+    schedulerRef?.stop()
     service?.close()
     void (async () => {
       await browserToolsRef?.close().catch(() => undefined)

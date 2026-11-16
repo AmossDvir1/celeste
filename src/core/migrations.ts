@@ -175,5 +175,44 @@ export const MIGRATIONS: string[] = [
   // 5: pinned sessions, with when each was pinned so the newest pin is listed first
   `
   ALTER TABLE sessions ADD COLUMN pinned_at INTEGER;
+  `,
+
+  // 6: scheduled workflows (docs/plans/SCHEDULING_PLAN.md): what the person approved and when to run it, what a schedule skipped or missed,
+  // and which schedule started a run
+  `
+  CREATE TABLE workflow_schedules (
+    id               TEXT PRIMARY KEY,
+    workflow_id      TEXT NOT NULL REFERENCES workflows (id) ON DELETE CASCADE,
+    enabled          INTEGER NOT NULL,
+    spec_json        TEXT NOT NULL,
+    timezone         TEXT NOT NULL,
+    inputs_json      TEXT NOT NULL,
+    folder           TEXT NOT NULL,
+    approved_version INTEGER NOT NULL,
+    approved_hash    TEXT NOT NULL,
+    approved_at      INTEGER NOT NULL,
+    grace_sec        INTEGER NOT NULL,
+    wait_limit_sec   INTEGER NOT NULL,
+    notify           TEXT NOT NULL,
+    next_run_at      INTEGER,
+    last_fire_at     INTEGER,
+    fail_streak      INTEGER NOT NULL DEFAULT 0,
+    paused_reason    TEXT,
+    created_at       INTEGER NOT NULL,
+    updated_at       INTEGER NOT NULL
+  );
+  CREATE INDEX workflow_schedules_due ON workflow_schedules (enabled, next_run_at);
+
+  CREATE TABLE workflow_schedule_log (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    schedule_id  TEXT NOT NULL REFERENCES workflow_schedules (id) ON DELETE CASCADE,
+    at           INTEGER NOT NULL,
+    kind         TEXT NOT NULL,
+    text         TEXT NOT NULL
+  );
+  CREATE INDEX workflow_schedule_log_by_schedule ON workflow_schedule_log (schedule_id, id DESC);
+
+  ALTER TABLE workflow_runs ADD COLUMN schedule_id TEXT;
+  CREATE INDEX workflow_runs_by_schedule ON workflow_runs (schedule_id, started_at DESC);
   `
 ]

@@ -1,6 +1,7 @@
 import type { DraftState, LogEvent, SearchHit, SessionSummary, StoredEvent } from '@shared/api'
 import type { DeviceActivity, DeviceFolder, DeviceRecord } from '@shared/devices'
 import type { RunSummary, StoredRunEvent, RunEvent, WorkflowDefinition } from '@shared/workflow'
+import type { ScheduleLogEntry, ScheduleLogKind, ScheduleRow } from '@shared/schedule'
 
 /** A session as stored. `deletedAt` is set between Delete and the end of the undo window. */
 export interface SessionRow extends SessionSummary {
@@ -92,6 +93,21 @@ export interface Store {
   listRuns(workflowId: string | undefined, limit: number): RunSummary[]
   appendRunEvent(runId: string, at: number, event: RunEvent): StoredRunEvent
   runEvents(runId: string, afterSeq?: number): StoredRunEvent[]
+  /** The runs one schedule started, newest first. */
+  listScheduleRuns(scheduleId: string, limit: number): RunSummary[]
+
+  /** Schedules, newest made last. Removed with their workflow. */
+  listSchedules(workflowId?: string): ScheduleRow[]
+  getSchedule(id: string): ScheduleRow | undefined
+  /** Inserts or replaces the schedule. */
+  saveSchedule(row: ScheduleRow): void
+  deleteSchedule(id: string): void
+  /** The schedules that are on and whose time has come. */
+  dueSchedules(now: number): ScheduleRow[]
+  /** Notes that a schedule skipped, missed or was paused, keeping the newest 200 for it. */
+  appendScheduleLog(scheduleId: string, at: number, kind: ScheduleLogKind, text: string): void
+  /** Newest first. */
+  scheduleLog(scheduleId: string, limit: number): ScheduleLogEntry[]
 
   close(): void
 }

@@ -63,10 +63,28 @@ describe('the order steps run in', () => {
 })
 
 describe('templates', () => {
-  const ctx = { inputs: { days: 30, who: 'Dana' }, nodes: { find: { output: '{"count":3,"names":["a","b"]}' }, plain: { output: 'text' } }, run: { folder: 'D:\\Work' } }
+  const ctx = { inputs: { days: 30, who: 'Dana' }, nodes: { find: { output: '{"count":3,"names":["a","b"]}' }, plain: { output: 'text' } }, run: { folder: 'D:\\Work', date: '2026-11-16', time: '09:05' } }
 
   it('fills in inputs, results and the folder', () => {
     expect(renderTemplate('{{inputs.who}} {{ inputs.days }} {{nodes.plain.output}} {{run.folder}}', ctx)).toBe('Dana 30 text D:\\Work')
+  })
+  it('fills in the date and the time the run started', () => {
+    expect(renderTemplate('report-{{run.date}}-{{ run.time }}.md', ctx)).toBe('report-2026-11-16-09:05.md')
+    expect(() => renderTemplate('{{run.nope}}', ctx)).toThrow('not something a step can use')
+    expect(() => renderTemplate('{{run.date.x}}', ctx)).toThrow('not something a step can use')
+  })
+  it('lets a workflow use them and nothing else of the run', () => {
+    const def = (text: string): WorkflowDefinition => ({
+      nodes: [
+        { id: 'start', type: 'start', name: 'Start', inputs: [] },
+        { id: 'a', type: 'tool', name: 'A', tool: { kind: 'file', op: 'write', path: text, content: 'x' } },
+        { id: 'end', type: 'end', name: 'End' }
+      ],
+      edges: [{ from: 'start', to: 'a' }, { from: 'a', to: 'end' }]
+    })
+    expect(validateWorkflow(def('r-{{run.date}}-{{run.time}}-{{run.folder}}.md'))).toEqual([])
+    expect(validateWorkflow(def('{{run.nope}}'))[0]).toMatch(/run\.folder\}\}, \{\{run\.date\}\} or \{\{run\.time/)
+    expect(validateWorkflow(def('{{run.date.x}}'))).toHaveLength(1)
   })
   it('reads fields of a result that is JSON', () => {
     expect(renderTemplate('{{nodes.find.output.count}} {{nodes.find.output.names}}', ctx)).toBe('3 ["a","b"]')

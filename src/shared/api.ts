@@ -17,6 +17,7 @@ import type {
 import type { ProducedFile } from './produced'
 import type { QueueAction, SendMode } from './queue'
 import type { VendorUsage } from './usage'
+import type { ScheduleLogEntry, SchedulePreview, ScheduleSaveInput, ScheduleSpec, ScheduleSummary } from './schedule'
 import type { PhonePairRequest, PhoneStatus } from './phone'
 import type { RunSummary, StoredRunEvent, WorkflowDefinition, WorkflowFull, WorkflowSummary } from './workflow'
 import type {
@@ -423,6 +424,17 @@ export interface CoreApi {
   'usage.get': () => VendorUsage[]
   /** Reads it again (one vendor, or every connected one) and answers with what is known. A vendor that cannot be read keeps its last answer. */
   'usage.refresh': (vendor?: VendorId) => Promise<VendorUsage[]>
+  /** The schedules, all or one workflow's. */
+  'schedules.list': (workflowId?: string) => ScheduleSummary[]
+  /** What a schedule would do, without making it: the card the person is asked about, the next five times, and what is wrong. */
+  'schedules.preview': (input: { workflowId: string; inputs: Record<string, unknown>; spec: ScheduleSpec; timezone?: string }) => Promise<SchedulePreview>
+  /** Makes a schedule, or changes one (it then needs approving again). Refused unless `approved` is true. */
+  'schedules.save': (input: ScheduleSaveInput) => Promise<ScheduleSummary>
+  /** Off, or on again. On is refused while the workflow has changed since the person approved it. */
+  'schedules.setEnabled': (id: string, on: boolean) => ScheduleSummary
+  'schedules.remove': (id: string) => void
+  /** What a schedule skipped, missed or was paused for, newest first. */
+  'schedules.log': (id: string) => ScheduleLogEntry[]
   /** The tools (MCP servers) the person has added, shared by every vendor. */
   'mcp.list': () => McpServerView[]
   /** Adds a server, or changes the one with `id`. It is looked at straight after. */
@@ -503,6 +515,7 @@ export interface CoreApi {
 
 export type DeviceApi = { [K in keyof CoreApi as K extends `devices.${string}` ? K : never]: CoreApi[K] }
 export type WorkflowApi = { [K in keyof CoreApi as K extends `workflows.${string}` | `runs.${string}` ? K : never]: CoreApi[K] }
+export type ScheduleApi = { [K in keyof CoreApi as K extends `schedules.${string}` ? K : never]: CoreApi[K] }
 export type TerminalApi = { [K in keyof CoreApi as K extends `terminal.${string}` ? K : never]: CoreApi[K] }
 export type McpApi = { [K in keyof CoreApi as K extends `mcp.${string}` ? K : never]: CoreApi[K] }
 export type VendorLinkApi = { [K in keyof CoreApi as K extends `vendor.${string}` ? K : never]: CoreApi[K] }
@@ -510,7 +523,7 @@ export type ProjectApi = { [K in keyof CoreApi as K extends `project.${string}` 
 export type PhoneApi = { [K in keyof CoreApi as K extends `phone.${string}` ? K : never]: CoreApi[K] }
 export type UsageApi = { [K in keyof CoreApi as K extends `usage.${string}` ? K : never]: CoreApi[K] }
 /** The methods the session service answers. The device service and the vendor service answer the rest. */
-export type SessionApi = Omit<CoreApi, keyof DeviceApi | keyof VendorLinkApi | keyof ProjectApi | keyof McpApi | keyof TerminalApi | keyof WorkflowApi | keyof PhoneApi | keyof UsageApi | 'app.checkUpdate'>
+export type SessionApi = Omit<CoreApi, keyof DeviceApi | keyof VendorLinkApi | keyof ProjectApi | keyof McpApi | keyof TerminalApi | keyof WorkflowApi | keyof PhoneApi | keyof UsageApi | keyof ScheduleApi | 'app.checkUpdate'>
 
 export type CoreMethod = keyof CoreApi
 export type CoreParams<M extends CoreMethod> = Parameters<CoreApi[M]>
@@ -523,6 +536,8 @@ export type CorePush =
   | { type: 'usage' }
   /** The list of workflows changed. */
   | { type: 'workflows' }
+  /** A schedule was made, changed, switched on or off, paused, or fired. */
+  | { type: 'schedules' }
   /** A workflow run was created or changed. */
   | { type: 'run'; run: RunSummary }
   /** Something happened in a run; `stored` is its place in the run's log. */

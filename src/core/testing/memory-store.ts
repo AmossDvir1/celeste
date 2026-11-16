@@ -2,6 +2,7 @@ import type { DraftState, LogEvent, SearchHit, StoredEvent } from '@shared/api'
 import { movesSession } from '@shared/status'
 import type { DeviceActivity, DeviceFolder, DeviceRecord } from '@shared/devices'
 import type { RunEvent, RunSummary, StoredRunEvent, WorkflowDefinition } from '@shared/workflow'
+import type { ScheduleLogEntry, ScheduleLogKind, ScheduleRow } from '@shared/schedule'
 import type { AttachmentRow, FileStore, IndexKind, SessionRow, StoredFolder, Store, WorkflowRow } from '../store'
 
 const fold = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
@@ -28,6 +29,9 @@ export class MemoryStore implements Store {
   private runRows = new Map<string, RunSummary>()
   private runLogs = new Map<string, StoredRunEvent[]>()
   private runOrder: string[] = []
+  private schedules = new Map<string, ScheduleRow>()
+  private scheduleLogs = new Map<string, ScheduleLogEntry[]>()
+  private scheduleLogId = 0
 
   listWorkflows(): WorkflowRow[] {
     return [...this.wfs.values()].sort((a, b) => b.updatedAt - a.updatedAt).map((w) => structuredClone(w))
@@ -45,6 +49,11 @@ export class MemoryStore implements Store {
   deleteWorkflow(id: string): void {
     this.wfs.delete(id)
     this.wfVersions.delete(id)
+    for (const [scheduleId, s] of this.schedules) {
+      if (s.workflowId !== id) continue
+      this.schedules.delete(scheduleId)
+      this.scheduleLogs.delete(scheduleId)
+    }
     for (const [runId, run] of this.runRows) {
       if (run.workflowId !== id) continue
       this.runRows.delete(runId)
@@ -91,6 +100,40 @@ export class MemoryStore implements Store {
   }
   runEvents(runId: string, afterSeq = 0): StoredRunEvent[] {
     return (this.runLogs.get(runId) ?? []).filter((e) => e.seq > afterSeq).map((e) => structuredClone(e))
+  }
+  listScheduleRuns(scheduleId: string, limit: number): RunSummary[] {
+    return [...this.runOrder]
+      .reverse()
+      .map((id) => this.runRows.get(id) as RunSummary)
+      .filter((r) => r.scheduleId === scheduleId)
+      .sort((a, b) => b.startedAt - a.startedAt)
+      .slice(0, limit)
+      .map((r) => structuredClone(r))
+  }
+  listSchedules(workflowId?: string): ScheduleRow[] {
+    return [...this.schedules.values()].filter((s) => !workflowId || s.workflowId === workflowId).map((s) => structuredClone(s))
+  }
+  getSchedule(id: string): ScheduleRow | undefined {
+    const s = this.schedules.get(id)
+    return s && structuredClone(s)
+  }
+  saveSchedule(row: ScheduleRow): void {
+    this.schedules.set(row.id, structuredClone(row))
+  }
+  deleteSchedule(id: string): void {
+    this.schedules.delete(id)
+    this.scheduleLogs.delete(id)
+  }
+  dueSchedules(now: number): ScheduleRow[] {
+    return [...this.schedules.values()].filter((s) => s.enabled && s.nextRunAt !== null && s.nextRunAt <= now).sort((a, b) => (a.nextRunAt as number) - (b.nextRunAt as number)).map((s) => structuredClone(s))
+  }
+  appendScheduleLog(scheduleId: string, at: number, kind: ScheduleLogKind, text: string): void {
+    const log = this.scheduleLogs.get(scheduleId) ?? []
+    log.push({ id: ++this.scheduleLogId, at, kind, text })
+    this.scheduleLogs.set(scheduleId, log.slice(-200))
+  }
+  scheduleLog(scheduleId: string, limit: number): ScheduleLogEntry[] {
+    return [...(this.scheduleLogs.get(scheduleId) ?? [])].reverse().slice(0, limit)
   }
 
   insertSession(row: SessionRow): void {

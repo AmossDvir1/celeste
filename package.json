@@ -48,6 +48,7 @@
     "verify:inner-tools": "electron-vite build && node scripts/inner-tools-check.mjs",
     "verify:queue": "electron-vite build && node scripts/queue-check.mjs",
     "verify:usage": "electron-vite build && node scripts/usage-check.mjs",
+    "verify:schedules": "electron-vite build && node scripts/schedules-check.mjs",
     "verify:workflows-ai": "electron-vite build && node scripts/workflows-ai-check.mjs",
     "verify:desktop": "electron-vite build && node scripts/desktop-check.mjs",
     "verify:phone": "electron-vite build && npm --prefix phone run build && node scripts/phone-check.mjs",

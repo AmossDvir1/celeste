@@ -28,6 +28,8 @@ export interface RunView {
   error?: string
   /** The person said no to the approval card, so nothing was done. */
   declined: boolean
+  /** The schedule that allowed this run in advance, so there was no card. */
+  allowedBySchedule?: string
 }
 
 /** Plays a run's events from the start. Pure, so the live view and the history of a finished run are the same picture. */
@@ -43,6 +45,9 @@ export function foldRun(events: StoredRunEvent[] | RunEvent[]): RunView {
       case 'approval.resolved':
         view.waiting = undefined
         if (!e.allow) view.declined = true
+        break
+      case 'approval.preapproved':
+        view.allowedBySchedule = e.scheduleId
         break
       case 'node.started': {
         const n = node(e.nodeId)
@@ -99,6 +104,7 @@ export function foldRun(events: StoredRunEvent[] | RunEvent[]): RunView {
       case 'run.cancelled':
         view.finished = 'cancelled'
         view.waiting = undefined
+        if (e.reason) view.error = e.reason
         break
     }
   }

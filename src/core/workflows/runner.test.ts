@@ -608,3 +608,105 @@ describe('what the window is told', () => {
     expect(statuses).toEqual(['running', 'waiting', 'running', 'completed'])
   })
 })
+
+describe('a run a schedule allowed in advance', () => {
+  const agentStep = (): WorkflowNode => ({ id: 'ask', type: 'agent', name: 'Ask', prompt: 'summarize', approval: 'ask' })
+  const shell = (command: string) => tool('say', { kind: 'shell', command })
+
+  it('starts with no card, says in its log who allowed it, and carries the schedule', async () => {
+    const { runner, store, until, types, events } = setup(chain(start([{ name: 'who', default: 'world' }]), tool('write', { kind: 'file', op: 'write', path: 'a.txt', content: 'Hello {{inputs.who}}' }), end('{{nodes.write.output}}')))
+    const run = await runner.start({ workflowId: 'w1', inputs: { who: 'Dana' }, startedBy: 'schedule', folder, preApproved: { scheduleId: 'sch-1' } })
+    expect(run).toMatchObject({ startedBy: 'schedule', scheduleId: 'sch-1' })
+    await until(run.id, 'completed')
+    expect(types(run.id)).not.toContain('approval.requested')
+    expect(events(run.id)[1]).toEqual({ type: 'approval.preapproved', scheduleId: 'sch-1' })
+    expect(readFileSync(join(folder, 'a.txt'), 'utf8')).toBe('Hello Dana')
+    expect(store.getRun(run.id)).toMatchObject({ scheduleId: 'sch-1', startedBy: 'schedule' })
+    expect(store.listScheduleRuns('sch-1', 5).map((r) => r.id)).toEqual([run.id])
+  })
+
+  it('ignores a request to show the card anyway: it was allowed when the schedule was made', async () => {
+    const { runner, until, types } = setup(chain(start(), tool('write', { kind: 'file', op: 'write', path: 'a.txt', content: 'x' }), end()))
+    const run = await runner.start({ workflowId: 'w1', inputs: {}, startedBy: 'schedule', folder, forceApproval: true, preApproved: { scheduleId: 'sch-1' } })
+    await until(run.id, 'completed')
+    expect(types(run.id)).not.toContain('approval.requested')
+  })
+
+  it('still waits for the person at a step that asks, as any run does', async () => {
+    let said: boolean | undefined
+    const { runner, until, events, waitForCard } = setup(chain(start(), agentStep(), end()), {
+      agent: async (r) => {
+        said = await r.askApproval('Run a command', 'ls')
+        return said ? 'ran it' : 'did not'
+      }
+    })
+    const run = await runner.start({ workflowId: 'w1', inputs: {}, startedBy: 'schedule', folder, preApproved: { scheduleId: 'sch-1' } })
+    await waitForCard(run.id, 'agent.approval')
+    await until(run.id, 'waiting')
+    const card = events(run.id).find((e) => e.type === 'agent.approval') as { requestId: string }
+    runner.respondApproval(run.id, card.requestId, true)
+    expect((await until(run.id, 'completed')).output).toBe('ran it')
+    expect(said).toBe(true)
+  })
+
+  it('still refuses to start when a step cannot work, so a schedule cannot dodge the checks', async () => {
+    const { runner } = setup(chain(start(), { id: 'p', type: 'agent', name: 'Phone', prompt: 'x', phone: {} }, end()), { deps: { phone: { problem: () => 'no phone is paired with Celeste.' } } })
+    await expect(runner.start({ workflowId: 'w1', inputs: {}, startedBy: 'schedule', folder, preApproved: { scheduleId: 'sch-1' } })).rejects.toThrow('no phone is paired')
+  })
+
+  it('fills in {{run.date}} and {{run.time}} from the computer’s clock when the run starts, and keeps them for the whole run', async () => {
+    const base = new Date(2026, 10, 16, 9, 5, 30).getTime()
+    let n = 0
+    const { runner, until } = setup(chain(start(), tool('write', { kind: 'file', op: 'write', path: 'report-{{run.date}}.md', content: 'at {{run.time}}' }), end('{{run.date}} {{run.time}}')), { deps: { now: () => base + 1000 * ++n } })
+    const run = await runner.start({ workflowId: 'w1', inputs: {}, startedBy: 'schedule', folder, preApproved: { scheduleId: 'sch-1' } })
+    const done = await until(run.id, 'completed')
+    expect(done.output).toBe('2026-11-16 09:05')
+    expect(readFileSync(join(folder, 'report-2026-11-16.md'), 'utf8')).toBe('at 09:05')
+  })
+
+  it('cancels with a reason that is kept as the run’s error and in its log', async () => {
+    const { runner, until, events, store, waitForCard } = setup(chain(start(), shell('echo hi'), end()))
+    const run = await runner.start({ workflowId: 'w1', inputs: {}, startedBy: 'you', folder })
+    await waitForCard(run.id, 'approval.requested')
+    await until(run.id, 'waiting')
+    await runner.cancel(run.id, 'Nobody answered in 30 minutes.')
+    const done = await until(run.id, 'cancelled')
+    expect(done.error).toBe('Nobody answered in 30 minutes.')
+    expect(events(run.id).at(-1)).toEqual({ type: 'run.cancelled', reason: 'Nobody answered in 30 minutes.' })
+    expect(store.getRun(run.id)?.error).toBe('Nobody answered in 30 minutes.')
+  })
+
+  it('keeps a run that could not start as a failed run with the sentence, so it shows in the history', () => {
+    const { runner, store, pushed, events } = setup(chain(start([{ name: 'who', default: 'x' }]), shell('echo hi'), end()))
+    const run = runner.recordFailedStart({ workflowId: 'w1', inputs: { who: 'Dana', nested: { no: 1 } }, startedBy: 'schedule', folder, preApproved: { scheduleId: 'sch-1' } }, 'the phone is not connected.')
+    expect(run).toMatchObject({ status: 'failed', startedBy: 'schedule', scheduleId: 'sch-1', error: 'the phone is not connected.', workflowName: 'Update KBs', inputs: { who: 'Dana' } })
+    expect(run.finishedAt).toBe(run.startedAt)
+    expect(store.getRun(run.id)).toMatchObject({ status: 'failed' })
+    expect(events(run.id).map((e) => e.type)).toEqual(['run.started', 'run.failed'])
+    expect(pushed.some((p) => p.type === 'run' && p.run.id === run.id)).toBe(true)
+  })
+
+  describe('what it would do, shown before anything is made', () => {
+    it('lists everything with the answers filled in, and counts the assistant steps', async () => {
+      const { runner, store } = setup(chain(start([{ name: 'who', default: 'world' }]), shell('echo {{inputs.who}}'), agentStep(), end()))
+      const p = await runner.preview('w1', { who: 'Dana' })
+      expect(p.problems).toEqual([])
+      expect(p.agentSteps).toBe(1)
+      expect(p.computerSteps).toEqual([])
+      expect(p.actions.map((a) => [a.kind, a.text.slice(0, 20)])).toEqual([['shell', 'echo Dana'], ['agent', 'Ask the assistant (t']])
+      expect(store.listRuns(undefined, 10)).toEqual([])
+    })
+
+    it('names the steps that use the computer, which a schedule cannot do', async () => {
+      const { runner } = setup(chain(start(), { id: 'use', type: 'agent', name: 'Use the computer', prompt: 'x', computer: {} }, end()))
+      expect((await runner.preview('w1', {})).computerSteps).toEqual(['Use the computer'])
+    })
+
+    it('says what is wrong instead of throwing: a missing answer, a step that cannot work, a workflow that is gone', async () => {
+      const { runner } = setup(chain(start([{ name: 'env', required: true }]), { id: 'p', type: 'agent', name: 'Phone', prompt: 'x', phone: {} }, end()), { deps: { phone: { problem: () => 'no phone is paired.' } } })
+      const p = await runner.preview('w1', {})
+      expect(p.problems).toEqual(['“env” is needed.', '“Phone” uses the phone, but no phone is paired.'])
+      expect((await runner.preview('nope', {})).problems).toEqual(['That workflow no longer exists.'])
+    })
+  })
+})

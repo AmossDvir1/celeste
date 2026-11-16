@@ -360,3 +360,38 @@ describe('phone queue calls', () => {
     expect(seen).toEqual([['s1', { type: 'resume' }]])
   })
 })
+
+describe('schedules from a phone', () => {
+  const row = (id: string, pausedReason?: 'edited' | 'failures' | 'all') => ({ id, enabled: !pausedReason, ...(pausedReason ? { pausedReason } : {}) })
+  const fake = (rows: ReturnType<typeof row>[]) => {
+    const calls: unknown[][] = []
+    const { api } = fakeApi([])
+    return { calls, api: { ...api, 'schedules.list': () => rows, 'schedules.setEnabled': (...a: unknown[]) => (calls.push(a), { id: a[0] }) } as never }
+  }
+
+  it('switches one off, and on when it was only switched off by hand or paused for all', async () => {
+    const { api, calls } = fake([row('a'), row('b', 'all')])
+    const call = phoneCalls(() => api, () => 'PC')
+    await call('schedules.setEnabled', ['a', false], { id: 'p1' })
+    await call('schedules.setEnabled', ['a', true], { id: 'p1' })
+    await call('schedules.setEnabled', ['b', true], { id: 'p1' })
+    expect(calls).toEqual([['a', false], ['a', true], ['b', true]])
+  })
+
+  it('does not switch on one that changed or kept failing: that needs the person at the computer', async () => {
+    const { api, calls } = fake([row('edited', 'edited'), row('failed', 'failures')])
+    const call = phoneCalls(() => api, () => 'PC')
+    await expect(call('schedules.setEnabled', ['edited', true], { id: 'p1' })).rejects.toThrow('Open Celeste on the computer')
+    await expect(call('schedules.setEnabled', ['failed', true], { id: 'p1' })).rejects.toThrow('Open Celeste on the computer')
+    // It can still be switched off.
+    await call('schedules.setEnabled', ['failed', false], { id: 'p1' })
+    expect(calls).toEqual([['failed', false]])
+  })
+
+  it('may list them, and may not make, change or remove one', async () => {
+    const { isPhoneMethod } = await import('@shared/phone')
+    expect(isPhoneMethod('schedules.list')).toBe(true)
+    expect(isPhoneMethod('schedules.setEnabled')).toBe(true)
+    for (const m of ['schedules.save', 'schedules.remove', 'schedules.preview', 'schedules.log']) expect(isPhoneMethod(m)).toBe(false)
+  })
+})
