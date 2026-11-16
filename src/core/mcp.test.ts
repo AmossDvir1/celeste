@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createServer } from 'node:http'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import type { AddressInfo } from 'node:net'
+import { connect, type AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
@@ -213,7 +213,16 @@ describe('a tool that is a web address', () => {
     })
     port = free
     child = spawn(process.execPath, [FIXTURE, '--http', String(port), '--require', 'Bearer open-sesame'], { stdio: 'ignore', windowsHide: true })
-    await new Promise((r) => setTimeout(r, 1500))
+    // Until it is listening (a fixed wait was too short when the computer was busy with the other test files).
+    for (let i = 0; i < 100; i++) {
+      const up = await new Promise<boolean>((ok) => {
+        const s = connect(port, '127.0.0.1')
+        s.once('connect', () => (s.destroy(), ok(true)))
+        s.once('error', () => ok(false))
+      })
+      if (up) break
+      await new Promise((r) => setTimeout(r, 150))
+    }
   })
   afterAll(() => {
     child?.kill()

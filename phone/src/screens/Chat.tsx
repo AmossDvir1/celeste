@@ -350,6 +350,48 @@ function DesktopRow({ it }: { it: Extract<TimelineItem, { kind: 'desktop' }> }) 
   )
 }
 
+/** A command the assistant started and did not wait for: where it is, a Stop while it runs, and its output when asked. */
+function BackgroundRow({ it, sessionId }: { it: Extract<TimelineItem, { kind: 'background' }>; sessionId: string }) {
+  const running = it.status === 'running'
+  const [open, setOpen] = useState(false)
+  const [out, setOut] = useState<{ text: string; truncated: boolean } | { error: string } | null>(null)
+  // Looked at again every few seconds while it runs and the output is open, and once more when it ends.
+  useEffect(() => {
+    if (!open || !it.outputFile) return
+    let alive = true
+    const look = () => void useApp.getState().backgroundOutput(sessionId, it.taskId).then((r) => alive && setOut(r))
+    look()
+    const timer = running ? setInterval(look, 3000) : undefined
+    return () => {
+      alive = false
+      if (timer) clearInterval(timer)
+    }
+  }, [open, running, it.outputFile, it.taskId, sessionId])
+  const words = running ? `Running in the background: ${it.title}` : it.status === 'stopped' ? `Stopped: ${it.title}` : it.summary || `${it.title}: ${it.status}`
+  return (
+    <>
+      <div className="notice">
+        {words}
+        {it.outputFile && (
+          <button className="btn text sm" aria-expanded={open} onClick={() => setOpen(!open)}>
+            {open ? 'Hide output' : 'Show output'}
+          </button>
+        )}
+        {running && (
+          <button className="btn text sm" aria-label="Stop this command" onClick={() => void useApp.getState().stopBackground(sessionId, it.taskId)}>
+            Stop
+          </button>
+        )}
+      </div>
+      {open && (
+        <pre className="tool-out" aria-label="Output">
+          {out === null ? 'Reading…' : 'error' in out ? out.error : `${out.truncated ? '[only the end is shown]\n' : ''}${out.text.trimEnd() || '(nothing written yet)'}`}
+        </pre>
+      )}
+    </>
+  )
+}
+
 const Item = memo(function Item({ it, sessionId, detailed }: { it: TimelineItem; sessionId: string; detailed: boolean }) {
   switch (it.kind) {
     case 'user':
@@ -398,16 +440,7 @@ const Item = memo(function Item({ it, sessionId, detailed }: { it: TimelineItem;
     case 'reverted':
       return <div className="notice">The folder was put back ({it.restored} restored, {it.removed} removed).</div>
     case 'background':
-      return (
-        <div className="notice">
-          {it.status === 'running' ? `Running in the background: ${it.title}` : it.status === 'stopped' ? `Stopped: ${it.title}` : it.summary || `${it.title}: ${it.status}`}
-          {it.status === 'running' && (
-            <button className="btn text sm" aria-label="Stop this command" onClick={() => void useApp.getState().stopBackground(sessionId, it.taskId)}>
-              Stop
-            </button>
-          )}
-        </div>
-      )
+      return <BackgroundRow it={it} sessionId={sessionId} />
   }
 })
 

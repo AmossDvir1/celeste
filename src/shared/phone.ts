@@ -54,6 +54,8 @@ export const PHONE_METHODS = [
   'sessions.interrupt',
   /** Stop one command the assistant started in the background. */
   'sessions.stopBackground',
+  /** Read the end of what a background command has written. */
+  'sessions.backgroundOutput',
   /** Delete a chat for good (the computer's own undo is not offered on the phone). */
   'sessions.remove',
   'sessions.restore',

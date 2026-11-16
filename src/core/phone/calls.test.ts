@@ -27,6 +27,7 @@ function fakeApi(sessions: SessionSummary[]) {
     },
     'attachments.discard': (id: string) => void discarded.push(id),
     'sessions.interrupt': (id: string) => void sent.push({ id, input: { text: 'STOP', attachments: [] } }),
+    'sessions.backgroundOutput': (id: string, taskId: string) => Promise.resolve({ text: `output of ${id}/${taskId}`, truncated: false }),
     'sessions.stopBackground': (id: string, taskId: string) => Promise.resolve(void sent.push({ id, input: { text: `STOP ${taskId}`, attachments: [] } }))
   }
   return { api, created, sent, saved, discarded }
@@ -157,6 +158,11 @@ describe('phone calls', () => {
     await phoneCalls(() => api, () => 'PC')('sessions.interrupt', ['s9'])
     expect(sent[0]?.id).toBe('s9')
     await expect(phoneCalls(() => api, () => 'PC')('runs.list', [])).rejects.toThrow('Not available from a phone.')
+  })
+
+  it('lets a phone read the output of a background command', async () => {
+    const { api } = fakeApi([])
+    expect(await phoneCalls(() => api, () => 'PC')('sessions.backgroundOutput', ['s9', 'b1'])).toEqual({ text: 'output of s9/b1', truncated: false })
   })
 
   it('lets a phone stop one background command, and nothing else about it', async () => {

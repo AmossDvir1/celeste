@@ -131,6 +131,8 @@ interface AppState {
   stop: (id: string) => Promise<void>
   /** Stops one command the assistant started in the background. */
   stopBackground: (id: string, taskId: string) => Promise<void>
+  /** The end of what a background command has written, or the reason it cannot be shown. */
+  backgroundOutput: (id: string, taskId: string) => Promise<{ text: string; truncated: boolean } | { error: string }>
   /** Delete a chat, on the computer too. Drops it here at once and offers Undo for the computer's undo window. */
   remove: (id: string) => Promise<void>
   /** Brings back a chat removed with `remove`, if the computer has not purged it yet. */
@@ -349,6 +351,15 @@ export const useApp = create<AppState>((set, get) => ({
       await get().link?.call('sessions.stopBackground', id, taskId)
     } catch (err) {
       get().say(err instanceof Error ? err.message : 'Could not stop it.')
+    }
+  },
+
+  backgroundOutput: async (id, taskId) => {
+    try {
+      const r = (await get().link?.call('sessions.backgroundOutput', id, taskId)) as { text: string; truncated: boolean } | undefined
+      return r ?? { error: 'Not connected.' }
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : 'The output could not be read.' }
     }
   },
 

@@ -38,6 +38,8 @@ const api = new FakeAnthropic((r) => {
   // A command that changes something, so Claude Code asks first (it runs read-only ones like echo without asking).
   if (r.last.text.includes('ASK ME'))
     return [{ type: 'tool_use', name: 'AskUserQuestion', input: { questions: [{ question: 'Which colour should the button be?', header: 'Colour', multiSelect: false, options: [{ label: 'Pink', description: 'The accent' }, { label: 'Blue', description: 'Calmer' }] }] } }]
+  if (r.last.text.includes('BG SHORT')) return [{ type: 'tool_use', name: 'Bash', input: { command: 'node -e "setTimeout(()=>console.log(\'bg-output-line\'),4000)"', run_in_background: true, description: 'Wait four seconds' } }]
+  if (r.last.text.includes('BG LONG')) return [{ type: 'tool_use', name: 'Bash', input: { command: 'node -e "setTimeout(()=>{},60000)"', run_in_background: true, description: 'Wait a minute' } }]
   if (r.last.text.includes('RUN IT')) return [{ type: 'tool_use', name: 'Bash', input: { command: 'mkdir made-on-approval && echo approved-from-the-phone', description: 'Make a folder' } }]
   return [{ type: 'text', text: `Echo: ${r.last.text}` }]
 })
@@ -170,6 +172,31 @@ try {
   const dev = (await page.evaluate(() => window.celeste.core.call('app.bootstrap', []))).sessions.find((s) => s.title.startsWith('Tidy the readme'))
   check('a Develop session started on the phone works in that project on the computer', dev?.mode === 'develop' && dev?.cwd === project, JSON.stringify(dev))
   leftovers.push(project)
+
+  console.log('\n# A command that goes on in the background')
+  await phone.getByPlaceholder('Message Celeste').fill('BG SHORT please')
+  await phone.getByRole('button', { name: 'Send', exact: true }).click()
+  await phone.getByRole('button', { name: 'Approve' }).waitFor({ timeout: 90_000 })
+  await phone.getByRole('button', { name: 'Approve' }).click()
+  await phone.getByText('Running in the background: Wait four seconds').waitFor({ timeout: 90_000 })
+  check('the phone shows a command that goes on after the turn, with a Stop and a way to see its output', (await phone.getByRole('button', { name: 'Stop this command' }).count()) === 1 && (await phone.getByRole('button', { name: 'Show output' }).count()) === 1)
+  await phone.getByRole('button', { name: 'Show output' }).click()
+  await phone.getByLabel('Output').waitFor({ timeout: 10_000 })
+  await phone.waitForFunction(() => /bg-output-line/.test(document.querySelector('[aria-label="Output"]')?.textContent ?? ''), undefined, { timeout: 30_000 })
+  check('Show output reads what the command wrote, on the computer, through the phone link', true)
+  await phone.getByRole('button', { name: 'Stop this command' }).waitFor({ state: 'detached', timeout: 30_000 })
+  check('when the command ends the phone says how, and the Stop goes', true)
+  await phone.getByText(/Echo:/).last().waitFor({ timeout: 60_000 })
+  check('and what Claude says on its own about it comes to the phone too', true)
+
+  await phone.getByPlaceholder('Message Celeste').fill('BG LONG please')
+  await phone.getByRole('button', { name: 'Send', exact: true }).click()
+  await phone.getByRole('button', { name: 'Approve' }).waitFor({ timeout: 90_000 })
+  await phone.getByRole('button', { name: 'Approve' }).click()
+  await phone.getByText('Running in the background: Wait a minute').waitFor({ timeout: 90_000 })
+  await phone.getByRole('button', { name: 'Stop this command' }).click()
+  await phone.getByText('Stopped: Wait a minute').waitFor({ timeout: 30_000 })
+  check('Stop on the phone ends that one command', true)
 
   console.log('\n# What a phone may not do')
   const refused = await phone.evaluate(async (port) => {
