@@ -50,6 +50,7 @@
     "verify:usage": "electron-vite build && node scripts/usage-check.mjs",
     "verify:schedules": "electron-vite build && node scripts/schedules-check.mjs",
     "verify:visuals": "electron-vite build && node scripts/visuals-check.mjs",
+    "verify:canvas": "electron-vite build && node scripts/canvas-check.mjs",
     "verify:workflows-ai": "electron-vite build && node scripts/workflows-ai-check.mjs",
     "verify:desktop": "electron-vite build && node scripts/desktop-check.mjs",
     "verify:phone": "electron-vite build && npm --prefix phone run build && node scripts/phone-check.mjs",
@@ -79,6 +80,7 @@
   },
   "devDependencies": {
     "@electron/asar": "^3.4.1",
+    "@excalidraw/excalidraw": "0.18.1",
     "@fontsource-variable/jetbrains-mono": "^5.3.0",
     "@fontsource-variable/outfit": "^5.3.0",
     "@resvg/resvg-js": "^2.6.2",

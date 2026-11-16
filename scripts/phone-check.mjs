@@ -44,7 +44,7 @@ const api = new FakeAnthropic((r) => {
   // A diagram, a chart and steps: the computer draws them, the phone shows what they say in words and never their source.
   if (r.last.text.includes('DRAW FOR PHONE')) {
     const fence = (lang, body) => '```' + lang + '\n' + body + '\n```'
-    return [{ type: 'text', text: ['Here you go.', fence('mermaid', '%% summary: Sign-in goes from the form to the server.\nflowchart TD\n  FORMSRC[Form] --> SERVERSRC[Server]'), fence('chart', JSON.stringify({ type: 'bar', labels: ['a'], series: [{ name: 'x', data: [1] }], summary: 'Sales grew.' })), fence('steps', JSON.stringify({ title: 'T', steps: [{ title: 'STEPSRC' }] })), fence('ts', 'const plain = 1'), 'Done drawing.'].join('\n\n') }]
+    return [{ type: 'text', text: ['Here you go.', fence('mermaid', '%% summary: Sign-in goes from the form to the server.\nflowchart TD\n  FORMSRC[Form] --> SERVERSRC[Server]'), fence('chart', JSON.stringify({ type: 'bar', labels: ['a'], series: [{ name: 'x', data: [1] }], summary: 'Sales grew.' })), fence('steps', JSON.stringify({ title: 'T', steps: [{ title: 'STEPSRC' }] })), fence('excalidraw', JSON.stringify({ summary: 'A sketch of the page.', shapes: [{ id: 'SKETCHSRC', text: 'Header' }] })), fence('ts', 'const plain = 1'), 'Done drawing.'].join('\n\n') }]
   }
   return [{ type: 'text', text: `Echo: ${r.last.text}` }]
 })
@@ -210,7 +210,8 @@ try {
   const shown = await phone.locator('.m-ai').last().innerText()
   check('the phone says what a diagram shows, and where to see it', /Sign-in goes from the form to the server\. \(open on the computer to see the picture\)/.test(shown), shown)
   check('and the same for a chart, and for steps that have no summary', /Sales grew\./.test(shown) && /Steps \(open on the computer\)/.test(shown), shown)
-  check('never the source of any of them', !/FORMSRC|SERVERSRC|STEPSRC|flowchart|mermaid/.test(shown), shown)
+  check('and for a drawing, its summary and not its shapes', /A sketch of the page\. \(open on the computer to see the picture\)/.test(shown) && !/SKETCHSRC/.test(shown), shown)
+  check('never the source of any of them', !/FORMSRC|SERVERSRC|STEPSRC|SKETCHSRC|flowchart|mermaid|excalidraw/.test(shown), shown)
   check('while an ordinary code block is still code', /const plain = 1/.test(shown))
 
   console.log('\n# Schedules on the phone')

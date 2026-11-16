@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react'
 import { ShimmerText } from '@/components/ShimmerText'
 import { ChartBlock } from './ChartBlock'
+import { DrawingBlock } from './DrawingBlock'
 import { MermaidBlock } from './MermaidBlock'
 import { StepsBlock } from './StepsBlock'
 import { useChatWorking } from './chat'
@@ -12,7 +13,7 @@ import type { VisualKind } from './spec'
  */
 export const OpenFence = createContext<string | null>(null)
 
-const NAME: Record<VisualKind, string> = { mermaid: 'diagram', chart: 'chart', steps: 'steps' }
+const NAME: Record<VisualKind, string> = { mermaid: 'diagram', chart: 'chart', steps: 'steps', excalidraw: 'drawing' }
 
 /** A fenced block that is a picture: drawn when it is whole, and while the reply is still arriving a quiet "Drawing…" in its place. */
 export function Visual({ kind, source }: { kind: VisualKind; source: string }) {
@@ -25,5 +26,5 @@ export function Visual({ kind, source }: { kind: VisualKind; source: string }) {
       </div>
     )
   }
-  return kind === 'mermaid' ? <MermaidBlock source={source} /> : kind === 'chart' ? <ChartBlock source={source} /> : <StepsBlock source={source} />
+  return kind === 'mermaid' ? <MermaidBlock source={source} /> : kind === 'chart' ? <ChartBlock source={source} /> : kind === 'excalidraw' ? <DrawingBlock source={source} /> : <StepsBlock source={source} />
 }

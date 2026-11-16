@@ -4,12 +4,14 @@
  * Unknown fields are dropped, and no colour or script comes from the model's text.
  */
 
-export type VisualKind = 'mermaid' | 'chart' | 'steps'
+import { parseDrawing } from './drawing'
+
+export type VisualKind = 'mermaid' | 'chart' | 'steps' | 'excalidraw'
 
 /** The fenced languages that are drawn as a picture, or null for an ordinary code block. */
 export function visualKind(lang: string | undefined): VisualKind | null {
   const l = lang?.toLowerCase()
-  return l === 'mermaid' || l === 'chart' || l === 'steps' ? l : null
+  return l === 'mermaid' || l === 'chart' || l === 'steps' || l === 'excalidraw' ? l : null
 }
 
 /** A short stable hash of a block's text, to tell blocks apart (a retry count, a step's ticks). Not a secret. */
@@ -174,7 +176,7 @@ export const MAX_RETRIES = 2
 
 /** The message that sends a block's error back: visible in the chat, and marked as automatic. */
 export function retryMessage(kind: VisualKind, error: string): string {
-  const what = kind === 'mermaid' ? 'diagram' : kind === 'chart' ? 'chart' : 'list of steps'
+  const what = kind === 'mermaid' ? 'diagram' : kind === 'chart' ? 'chart' : kind === 'excalidraw' ? 'drawing' : 'list of steps'
   const reason = error.replace(/\s+/g, ' ').trim().slice(0, 300)
   return `(automatic) That ${what} could not be drawn: ${reason} Please fix it and send it again.`
 }
@@ -191,13 +193,13 @@ export function summaryOf(kind: VisualKind, source: string): string {
     const r = prepareMermaid(source)
     return r.ok ? (r.value.summary ?? '') : ''
   }
-  const r = kind === 'chart' ? parseChart(source) : parseSteps(source)
+  const r = kind === 'chart' ? parseChart(source) : kind === 'excalidraw' ? parseDrawing(source) : parseSteps(source)
   return r.ok ? (r.value.summary ?? '') : ''
 }
 
 /** The line the phone shows in place of a picture: its summary, and where to see it. Never the source. */
 export function phoneLine(kind: VisualKind, source: string): string {
   const summary = summaryOf(kind, source)
-  const name = kind === 'mermaid' ? 'A diagram' : kind === 'chart' ? 'A chart' : 'Steps'
+  const name = kind === 'mermaid' ? 'A diagram' : kind === 'chart' ? 'A chart' : kind === 'excalidraw' ? 'A drawing' : 'Steps'
   return summary ? `${summary} (open on the computer to see the picture)` : `${name} (open on the computer)`
 }

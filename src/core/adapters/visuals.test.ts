@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { parseDrawing } from '../../renderer/features/visuals/drawing'
 import { parseChart, parseSteps, prepareMermaid } from '../../renderer/features/visuals/spec'
-import { CHART_EXAMPLE, MERMAID_EXAMPLE, STEPS_EXAMPLE, VISUALS_INSTRUCTION, visualsFor } from './visuals'
+import { CHART_EXAMPLE, DRAWING_EXAMPLE, MERMAID_EXAMPLE, STEPS_EXAMPLE, VISUALS_INSTRUCTION, visualsFor } from './visuals'
 
 /** The text of each fenced block in the instruction, by language. */
 function blocks(text: string): Record<string, string> {
@@ -10,9 +11,9 @@ function blocks(text: string): Record<string, string> {
 }
 
 describe('what the assistants are told about pictures', () => {
-  it('teaches three formats, and the window draws every example it gives', () => {
+  it('teaches four formats, and the window draws every example it gives', () => {
     const b = blocks(VISUALS_INSTRUCTION)
-    expect(Object.keys(b).sort()).toEqual(['chart', 'mermaid', 'steps'])
+    expect(Object.keys(b).sort()).toEqual(['chart', 'excalidraw', 'mermaid', 'steps'])
     const mermaid = prepareMermaid(b['mermaid'] as string)
     expect(mermaid).toMatchObject({ ok: true })
     expect(mermaid.ok && mermaid.value.summary).toMatch(/browser to the server/)
@@ -20,6 +21,10 @@ describe('what the assistants are told about pictures', () => {
     expect(chart.ok && chart.value).toMatchObject({ type: 'bar', labels: ['Q1', 'Q2', 'Q3'], summary: expect.stringContaining('Sales grew') })
     const steps = parseSteps(b['steps'] as string)
     expect(steps.ok && steps.value.steps).toHaveLength(3)
+    const drawing = parseDrawing(b['excalidraw'] as string)
+    expect(drawing.ok && drawing.value.shapes).toHaveLength(3)
+    expect(drawing.ok && drawing.value.arrows).toHaveLength(2)
+    expect(drawing.ok && drawing.value.summary).toMatch(/browser asks the server/)
     // The example link survives the window's own check, so it teaches one that works.
     expect(steps.ok && steps.value.steps[0]?.link?.url).toBe('https://example.com/settings')
   })
@@ -27,17 +32,18 @@ describe('what the assistants are told about pictures', () => {
   it('has the examples as the exported objects, so a change to one is a change to the text', () => {
     expect(JSON.parse(blocks(VISUALS_INSTRUCTION)['chart'] as string)).toEqual(CHART_EXAMPLE)
     expect(JSON.parse(blocks(VISUALS_INSTRUCTION)['steps'] as string)).toEqual(STEPS_EXAMPLE)
+    expect(JSON.parse(blocks(VISUALS_INSTRUCTION)['excalidraw'] as string)).toEqual(DRAWING_EXAMPLE)
     expect(blocks(VISUALS_INSTRUCTION)['mermaid']).toBe(MERMAID_EXAMPLE)
   })
 
   it('says when to draw and when not to, the limits the window enforces, and to write the answer in words as well', () => {
-    for (const phrase of ['only when it clearly makes the answer easier', 'never needs one', 'at most 50 labels and 6 series', 'a pie has one series', 'at most 20 steps', 'https link', 'in words as well', 'could not be drawn']) {
+    for (const phrase of ['only when it clearly makes the answer easier', 'never needs one', 'at most 50 labels and 6 series', 'a pie has one series', 'at most 20 steps', 'https link', 'in words as well', 'could not be drawn', 'at most 40 shapes', 'do not give coordinates', 'prefer a mermaid diagram']) {
       expect(VISUALS_INSTRUCTION.toLowerCase()).toContain(phrase.toLowerCase())
     }
   })
 
   it('is short enough to send with every new conversation', () => {
-    expect(VISUALS_INSTRUCTION.length).toBeLessThan(3500)
+    expect(VISUALS_INSTRUCTION.length).toBeLessThan(4600)
   })
 
   it('is given to a chat and a Develop session, and to no step of a workflow', () => {

@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { PanelLeft } from 'lucide-react'
 import { BrowserPanel } from '@/features/browser/BrowserPanel'
+import { CanvasPanel } from '@/features/canvas/CanvasPanel'
 import { LinkChoiceDialog } from '@/features/browser/LinkChoiceDialog'
 import { startBrowser } from '@/stores/browser'
 import { ChatHome } from '@/features/chat/ChatHome'
@@ -53,7 +54,15 @@ function RightPanel() {
   if (!panel) return null
   // Develop panels only make sense in Develop.
   if (mode === 'workflows') return null
-  if (panel !== 'tools' && panel !== 'browser' && mode !== 'develop') return null
+  if (panel !== 'tools' && panel !== 'browser' && panel !== 'canvas' && mode !== 'develop') return null
+  // The drawing board: for a chat in either mode, and for the page where one starts.
+  if (panel === 'canvas') {
+    return (
+      <div className="animate-slide-in-right h-full shrink-0" style={{ width: 560, maxWidth: '70%' }}>
+        <CanvasPanel />
+      </div>
+    )
+  }
   // The browser belongs to a chat, in Chat as well as in Develop, and is wider than the others (and can be dragged wider).
   if (panel === 'browser') {
     if (!activeId) return null

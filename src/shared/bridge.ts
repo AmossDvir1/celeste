@@ -29,6 +29,8 @@ export interface CelesteBridge {
   chatFile(sessionId: string, path: string, action: 'open' | 'reveal' | 'save' | 'preview'): Promise<{ ok: boolean; message?: string }>
   /** Asks where to save a text file and writes it there. `saved` is the file's name, or null when the person cancels. */
   saveText(suggestedName: string, text: string): Promise<{ saved: string | null }>
+  /** Asks where to save a binary file (a picture) and writes it there. `saved` is the file's name, or null when the person cancels. */
+  saveBinary(suggestedName: string, data: ArrayBuffer): Promise<{ saved: string | null }>
   /** Asks for a file to open and reads it as text (at most 1 MB). Null when the person cancels. */
   openText(extensions: string[]): Promise<{ name: string; text: string } | null>
   /** The browser pane: the pages live in the main process, and this tells it what to show and hears what they are doing. */

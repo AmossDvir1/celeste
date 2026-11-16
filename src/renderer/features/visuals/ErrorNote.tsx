@@ -5,7 +5,7 @@ import { useSessions } from '@/stores/sessions'
 import { chatNow } from './chat'
 import { MAX_RETRIES, hashOf, noteRetry, retriesOf, retryMessage, type VisualKind } from './spec'
 
-const NAME: Record<VisualKind, string> = { mermaid: 'diagram', chart: 'chart', steps: 'steps' }
+const NAME: Record<VisualKind, string> = { mermaid: 'diagram', chart: 'chart', steps: 'steps', excalidraw: 'drawing' }
 
 /**
  * What a block shows when it cannot be drawn: a sentence, Try again (which sends the error back to the assistant as an ordinary message,

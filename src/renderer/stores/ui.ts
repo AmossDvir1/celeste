@@ -5,7 +5,7 @@ import { lookupModel, modelOf, useModels } from './models'
 import { useSettings } from '@/stores/settings'
 
 export type AppMode = 'chat' | 'develop' | 'workflows'
-export type RightPanel = null | 'tools' | 'changes' | 'terminal' | 'files' | 'browser'
+export type RightPanel = null | 'tools' | 'changes' | 'terminal' | 'files' | 'browser' | 'canvas'
 
 /** How wide the browser panel is, in pixels. It is dragged by its edge and remembered. */
 export const BROWSER_WIDTH = { min: 360, max: 1100, normal: 520 }

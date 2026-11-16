@@ -1,11 +1,13 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
-import { ListPlus, Navigation, Paperclip, Send, Square, TriangleAlert, X, Zap } from 'lucide-react'
+import { ListPlus, Navigation, Paperclip, PencilRuler, Plus, Send, Square, TriangleAlert, X, Zap } from 'lucide-react'
 import type { ContextRef, SessionMode, UserInput } from '@shared/agent'
 import type { SendMode } from '@shared/queue'
 import { cn } from '@/lib/cn'
+import { Menu } from '@/components/menu'
 import { IconButton } from '@/components/ui'
 import { slugify } from '@shared/workflow'
 import { lookupModel, useModels } from '@/stores/models'
+import { canvasTarget, useCanvas } from '@/stores/canvas'
 import { useWorkflows } from '@/stores/workflows'
 import { useUi } from '@/stores/ui'
 import { connectedVendors, useVendors } from '@/stores/vendors'
@@ -383,9 +385,30 @@ export function Composer({
             e.target.value = ''
           }}
         />
-        <IconButton label="Attach files" onClick={() => fileRef.current?.click()} className="-ml-1.5 text-ink-soft">
-          <Paperclip className="h-[18px] w-[18px]" />
-        </IconButton>
+        {compact ? (
+          <IconButton label="Attach files" onClick={() => fileRef.current?.click()} className="-ml-1.5 text-ink-soft">
+            <Paperclip className="h-[18px] w-[18px]" />
+          </IconButton>
+        ) : (
+          // The "+" menu: what can be put on the message. The drawing board is a panel beside the chat, which the small window does not have.
+          <Menu.Root>
+            <Menu.Trigger asChild>
+              <IconButton label="Add to the message" className="-ml-1.5 text-ink-soft">
+                <Plus className="h-[18px] w-[18px]" />
+              </IconButton>
+            </Menu.Trigger>
+            <Menu.Content align="start" side="top" className="w-[200px]">
+              <Menu.Item onSelect={() => fileRef.current?.click()}>
+                <Paperclip className="h-4 w-4 text-ink-muted" /> Attach files
+              </Menu.Item>
+              {canvasTarget() && (
+                <Menu.Item onSelect={() => useCanvas.getState().open()}>
+                  <PencilRuler className="h-4 w-4 text-ink-muted" /> Draw
+                </Menu.Item>
+              )}
+            </Menu.Content>
+          </Menu.Root>
+        )}
         <ModelControls prefs={prefs} onPrefs={onPrefs} compact={compact} />
         <ApprovalPicker value={prefs.approval} onChange={(approval) => onPrefs({ approval })} mode={mode} compact={compact} />
         {!home && sendButton}

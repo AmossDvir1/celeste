@@ -395,6 +395,18 @@ ipcMain.handle('celeste:save-text', async (event, suggestedName: unknown, text: 
   return { saved: basename(chosen.filePath) }
 })
 
+// A picture from the canvas: the same dialog as a workflow file, for bytes.
+ipcMain.handle('celeste:save-binary', async (event, suggestedName: unknown, data: unknown) => {
+  if (!fromOurWindow(event)) throw new Error('Not allowed')
+  if (typeof suggestedName !== 'string' || !(data instanceof ArrayBuffer) || data.byteLength > 50_000_000) throw new Error('Invalid file')
+  const win = BrowserWindow.fromWebContents(event.sender)
+  const options = { defaultPath: join(app.getPath('pictures'), basename(suggestedName)) }
+  const chosen = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options)
+  if (chosen.canceled || !chosen.filePath) return { saved: null }
+  await writeFile(chosen.filePath, Buffer.from(data))
+  return { saved: basename(chosen.filePath) }
+})
+
 ipcMain.handle('celeste:open-text', async (event, extensions: unknown) => {
   if (!fromOurWindow(event)) throw new Error('Not allowed')
   const exts = Array.isArray(extensions) ? extensions.filter((e): e is string => typeof e === 'string' && /^[a-z0-9]{1,12}$/i.test(e)) : []

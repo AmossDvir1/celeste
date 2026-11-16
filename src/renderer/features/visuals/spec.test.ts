@@ -23,11 +23,12 @@ import {
 } from './spec'
 
 describe('which fenced blocks are pictures', () => {
-  it('knows mermaid, chart and steps, in any case, and leaves every other block as code', () => {
+  it('knows mermaid, chart, steps and excalidraw, in any case, and leaves every other block as code', () => {
     expect(visualKind('mermaid')).toBe('mermaid')
     expect(visualKind('Chart')).toBe('chart')
     expect(visualKind('STEPS')).toBe('steps')
-    for (const l of ['ts', 'json', 'excalidraw', 'mermaidx', '', undefined]) expect(visualKind(l)).toBeNull()
+    expect(visualKind('Excalidraw')).toBe('excalidraw')
+    for (const l of ['ts', 'json', 'mermaidx', '', undefined]) expect(visualKind(l)).toBeNull()
   })
 
   it('tells blocks apart by their text', () => {

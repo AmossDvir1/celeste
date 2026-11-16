@@ -97,6 +97,7 @@ const bridge: CelesteBridge = {
   },
   chatFile: (sessionId, path, action) => ipcRenderer.invoke('celeste:chat-file', sessionId, path, action),
   saveText: (suggestedName, text) => ipcRenderer.invoke('celeste:save-text', suggestedName, text),
+  saveBinary: (suggestedName, data) => ipcRenderer.invoke('celeste:save-binary', suggestedName, data),
   openText: (extensions) => ipcRenderer.invoke('celeste:open-text', extensions),
   layout: {
     get: () => ipcRenderer.invoke('celeste:layout', 'get'),
