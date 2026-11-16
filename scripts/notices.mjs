@@ -8,7 +8,7 @@ const root = resolve(import.meta.dirname, '..')
 const own = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 
 // Libraries that the interface bundles (so they are devDependencies) but that are in every installer all the same.
-const BUNDLED = ['react', 'react-dom', 'radix-ui', 'lucide-react', 'zustand', 'react-markdown', 'remark-gfm', '@fontsource-variable/outfit', '@fontsource-variable/jetbrains-mono', '@xterm/xterm', '@xterm/addon-fit', '@xyflow/react', 'docx-preview', 'pptx-preview', 'jszip', 'xlsx']
+const BUNDLED = ['react', 'react-dom', 'radix-ui', 'mermaid', 'chart.js', 'lucide-react', 'zustand', 'react-markdown', 'remark-gfm', '@fontsource-variable/outfit', '@fontsource-variable/jetbrains-mono', '@xterm/xterm', '@xterm/addon-fit', '@xyflow/react', 'docx-preview', 'pptx-preview', 'jszip', 'xlsx']
 // The vendors' own programs are downloaded by the person's computer from the vendors' registry; they are not part of what is shipped.
 const NOT_SHIPPED = /^@github\/copilot-sdk-(darwin|linux|linuxmusl|win32)-|^@anthropic-ai\/claude-agent-sdk-(darwin|linux|win32)-/
 
@@ -38,7 +38,10 @@ if (phone && !existsSync(join(phoneDir, 'node_modules'))) {
 }
 for (const name of Object.keys(phone?.dependencies ?? {})) visit(name, phoneDir)
 
+// Packages that state their licence only in a file, not in package.json (the file is the text shown).
+const STATED_IN_FILE = { khroma: 'MIT' }
 const licenseOf = (pkg) => {
+  if (pkg.license === undefined && STATED_IN_FILE[pkg.name]) return STATED_IN_FILE[pkg.name]
   const l = pkg.license ?? (Array.isArray(pkg.licenses) ? pkg.licenses.map((x) => x.type).join(' OR ') : undefined)
   return typeof l === 'object' && l ? l.type : (l ?? 'UNKNOWN')
 }
@@ -64,7 +67,7 @@ const out = []
 out.push('# Third-party notices', '')
 out.push('Celeste is licensed under the Apache License 2.0 (see `LICENSE`). It includes the open-source software below, each under its own licence. This file is made by `npm run notices` from the packages that are in the installer or in the interface bundle.', '')
 out.push('**Electron** (MIT) and **Chromium** (BSD-style and other licences) are part of every installer: their licence files are in the application folder as `LICENSE.electron.txt` and `LICENSES.chromium.html`.', '')
-out.push('**Vendors’ programs** (Claude Code, GitHub Copilot) are not part of Celeste. Celeste downloads them from npm when you connect that vendor, and they stay under the vendor’s own terms.', '')
+out.push('**Vendors’ programs** (Claude Code, GitHub Copilot, OpenAI Codex, the Gemini CLI) are not part of Celeste. Celeste downloads them from npm when you connect that vendor, and they stay under the vendor’s own terms.', '')
 out.push('**Fonts:** Outfit and JetBrains Mono, SIL Open Font License 1.1.', '')
 out.push('**Celeste for Android** (the app in `phone/`) bundles the packages of `phone/package.json` that are listed below as well, and these Android libraries, all under the Apache License 2.0: AndroidX (AppCompat, Core, CoordinatorLayout, Activity, WebKit, ExifInterface), Capacitor’s Android runtime and its App and Local Notifications plugins.', '')
 out.push(`## Packages (${entries.length})`, '')

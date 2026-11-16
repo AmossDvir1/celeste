@@ -32,6 +32,7 @@ import {
   type LucideIcon
 } from 'lucide-react'
 import type { AskAnswers, ContextRef, FileDiff, Question, ToolKind } from '@shared/agent'
+import { phoneLine, visualKind } from '@/features/visuals/spec'
 import { canSteer, type QueueAction, type QueueState, type SendMode } from '@shared/queue'
 import { describeDuration } from '@shared/desktop'
 import type { PhoneModelChoice, PhoneNewSession, PhoneProject } from '@shared/phone'
@@ -394,6 +395,13 @@ function BackgroundRow({ it, sessionId }: { it: Extract<TimelineItem, { kind: 'b
   )
 }
 
+/** The kind of picture a fenced block is (a diagram, chart or steps), or null for ordinary code. */
+function visualOf(node: { children?: unknown[] } | undefined) {
+  const code = node?.children?.[0] as { properties?: { className?: unknown } } | undefined
+  const names = Array.isArray(code?.properties?.className) ? (code?.properties?.className as unknown[]) : []
+  return visualKind(names.map((n) => /^language-(\w+)$/.exec(String(n))?.[1]).find(Boolean))
+}
+
 const Item = memo(function Item({ it, sessionId, detailed }: { it: TimelineItem; sessionId: string; detailed: boolean }) {
   switch (it.kind) {
     case 'user':
@@ -408,7 +416,18 @@ const Item = memo(function Item({ it, sessionId, detailed }: { it: TimelineItem;
     case 'assistant':
       return (
         <div className="m-ai">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer">{children}</a> }}>
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+              a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer">{children}</a>,
+              // A diagram, chart or list of steps is drawn on the computer. Here it is its summary, never its source.
+              pre: ({ node, children }) => (visualOf(node) ? <>{children}</> : <pre>{children}</pre>),
+              code: ({ className, children }) => {
+                const kind = visualKind(/language-(\w+)/.exec(className ?? '')?.[1])
+                return kind ? <div className="notice">{phoneLine(kind, String(children))}</div> : <code className={className}>{children}</code>
+              }
+            }}
+          >
             {it.text}
           </ReactMarkdown>
         </div>

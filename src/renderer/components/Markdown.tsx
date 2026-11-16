@@ -4,6 +4,8 @@ import remarkGfm from 'remark-gfm'
 import { Check, Copy } from 'lucide-react'
 import { openLink } from '@/lib/links'
 import { splitMarkdown } from '@/lib/markdown-chunks'
+import { OpenFence, Visual } from '@/features/visuals/Visual'
+import { openFenceBody, visualKind } from '@/features/visuals/spec'
 
 function CodeBlock({ code, lang }: { code: string; lang?: string }) {
   const [copied, setCopied] = useState(false)
@@ -71,6 +73,9 @@ const components: Components = {
     if (!lang && !text.includes('\n')) {
       return <code className="rounded-md bg-raised px-1.5 py-0.5 font-mono text-[0.88em] text-ink">{children as ReactNode}</code>
     }
+    // A diagram, a chart or a list of steps is drawn; any other block is code.
+    const kind = visualKind(lang)
+    if (kind) return <Visual kind={kind} source={text} />
     return <CodeBlock code={text} lang={lang} />
   }
 }
@@ -78,11 +83,14 @@ const components: Components = {
 /** One piece of a long reply. It is drawn again only when its own text changes, which for all but the last piece is never. */
 const Piece = memo(function Piece({ text, first }: { text: string; first: boolean }) {
   // Inside a piece the first and last blocks have no outer margin; the gap between pieces is made here, as between any two blocks.
+  const open = useMemo(() => openFenceBody(text), [text])
   return (
     <div className={first ? undefined : /^ {0,3}#{1,3}\s/.test(text) ? 'mt-5' : 'mt-2.5'}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-        {text}
-      </ReactMarkdown>
+      <OpenFence.Provider value={open}>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+          {text}
+        </ReactMarkdown>
+      </OpenFence.Provider>
     </div>
   )
 })

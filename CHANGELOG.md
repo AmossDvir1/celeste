@@ -16,6 +16,8 @@ All notable changes to Celeste. The format follows [Keep a Changelog](https://ke
 
 - **Scheduled workflows, the engine** (the window for making one comes next). A schedule is approved once, when it is made, on the card that lists everything the run will do; its runs then start by themselves at their time with no card. It runs once, every N minutes, daily, on chosen weekdays or on a day of the month, in the time zone it was made in (a time the clock skips runs just after the gap, one it repeats runs once). If you change the workflow, the schedule pauses at once and needs your OK again. A run that is late by more than two hours is skipped, not run late; one that overlaps the last is skipped; three failures in a row pause it; a run that waits for you for 30 minutes is stopped. A workflow can use `{{run.date}}` and `{{run.time}}`.
 
+- **Diagrams, charts and guided steps in the chat.** When an assistant answers with a diagram (Mermaid), a chart (bar, line or pie from a small list of numbers) or a how-to as steps, Celeste draws it in the answer instead of showing code: in both themes, with a text summary for screen readers, and a quiet "Drawing…" while it is still arriving. Steps can be ticked off (kept across restarts), have a Copy button for values and open links only through your browser choice. If a diagram cannot be drawn there is a short note with **Try again**, which asks the assistant to fix it (twice at most), and the source folded away. Nothing in a drawing can run a script. The phone shows what a picture says in words. The diagram library loads only when a diagram appears and adds about 8 to 9 MB to the installer.
+
 ### Fixed
 
 - **A card nobody answered stops asking when you press Stop.** Its buttons used to stay on screen and do nothing.
