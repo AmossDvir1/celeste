@@ -14,8 +14,8 @@ const work = mkdtempSync(join(tmpdir(), 'celeste-pack-'))
 const stage = join(work, 'stage')
 const archive = join(work, 'app.asar')
 const failures = []
-const check = (label, ok) => {
-  console.log(`${ok ? 'PASS' : 'FAIL'}  ${label}`)
+const check = (label, ok, detail = '') => {
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${label}${ok || !detail ? '' : `  (${detail})`}`)
   if (!ok) failures.push(label)
 }
 
@@ -66,6 +66,43 @@ try {
   const img = page.locator('img[src^="celeste-file://"]').first()
   await img.waitFor({ timeout: 10_000 })
   check('attached images load through the celeste-file address', (await img.evaluate((el) => el.complete && el.naturalWidth)) === 1)
+
+  // The drawing board, from inside the archive: the library is a chunk of its own, its fonts are fetched from files in the archive, and the
+  // page's policy is not touched (docs/plans/CHAT_DISPLAY_PLAN.md, 11b).
+  console.log('\n# The drawing board, from the archive')
+  await page.evaluate(() => {
+    window.__violations = []
+    document.addEventListener('securitypolicyviolation', (e) => window.__violations.push(`${e.violatedDirective}: ${e.blockedURI}`))
+  })
+  await page.getByRole('button', { name: 'Add to the message' }).click()
+  await page.getByRole('menuitem', { name: 'Draw' }).click()
+  const board = page.getByRole('region', { name: 'Drawing' })
+  await board.locator('.excalidraw canvas').first().waitFor({ timeout: 60_000 })
+  check('the canvas opens from inside the archive', (await board.locator('.excalidraw').count()) === 1)
+  await page.waitForTimeout(1500)
+  const fetched = await page.evaluate(async () => {
+    const r = await fetch(new URL('./fonts/Virgil/Virgil-Regular.woff2', location.href))
+    return { ok: r.ok, bytes: (await r.arrayBuffer()).byteLength }
+  })
+  check(`a font file is read from the archive by the page (${fetched.bytes} bytes)`, fetched.ok && fetched.bytes > 10_000)
+  await board.locator('.excalidraw').click({ position: { x: 300, y: 300 } })
+  await page.keyboard.press('t')
+  const area = await board.locator('.excalidraw canvas.interactive').boundingBox()
+  await page.mouse.click(area.x + 200, area.y + 250)
+  await page.keyboard.type('Hello')
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(1500)
+  check('the hand-drawn font is loaded from the archive and used for what is typed', await page.evaluate(() => [...document.fonts].some((f) => f.family === 'Excalifont' && f.status === 'loaded')))
+  await board.getByRole('button', { name: 'Add to message' }).click()
+  await page.getByRole('button', { name: /^Open drawing\.png/ }).waitFor({ timeout: 30_000 })
+  const png = await page.evaluate(async () => {
+    const chip = [...document.querySelectorAll('img')].find((i) => i.src.startsWith('celeste-file://') && /drawing/.test(i.closest('[aria-label],div')?.textContent ?? '')) ?? null
+    return chip ? { w: chip.naturalWidth } : null
+  })
+  check('Add to message makes the picture and the scene file there too', (await page.getByRole('button', { name: /^Open drawing\.excalidraw/ }).count()) === 1 && (png === null || png.w > 20))
+  const seen = await page.evaluate(() => window.__violations)
+  check('the page’s Content Security Policy blocked nothing', seen.length === 0, seen.join(' | '))
+  await board.getByRole('button', { name: 'Close panel' }).click()
   await app.close()
 
   // The real Copilot, in the same layout: its program is not in the archive, so it must say so and offer to download it.
