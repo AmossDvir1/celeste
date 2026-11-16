@@ -19,6 +19,7 @@ import {
   LoaderCircle,
   Eye,
   MonitorSmartphone,
+  Navigation,
   Pencil,
   Plug,
   Search,
@@ -31,7 +32,7 @@ import {
   type LucideIcon
 } from 'lucide-react'
 import type { AskAnswers, ContextRef, FileDiff, Question, ToolKind } from '@shared/agent'
-import type { QueueAction, QueueState, SendMode } from '@shared/queue'
+import { canSteer, type QueueAction, type QueueState, type SendMode } from '@shared/queue'
 import { describeDuration } from '@shared/desktop'
 import type { PhoneModelChoice, PhoneNewSession, PhoneProject } from '@shared/phone'
 import type { TimelineItem } from '@/stores/types'
@@ -157,6 +158,7 @@ export function Chat({ id }: { id: string }) {
       <Composer
         disabled={!online}
         working={working && !answerable}
+        canSteer={canSteer(s.vendor)}
         placeholder={placeholder}
         canAttach={!answerable}
         projectSession={s.mode === 'develop' && !answerable ? id : undefined}
@@ -505,12 +507,12 @@ function Approval({ it, sessionId }: { it: Extract<TimelineItem, { kind: 'approv
               void useApp.getState().approve(sessionId, it.requestId, true, answer)
             }}
           >
-            {it.choices?.allow ?? 'Approve'}
+            {it.choices?.allow ?? it.proposal?.accept ?? 'Approve'}
           </button>
         </div>
       ) : (
         <div className="res" style={{ color: it.status === 'allowed' ? 'var(--c-success)' : 'var(--c-ink-faint)' }}>
-          {it.status === 'allowed' ? <Check size={16} className="draw" /> : <X size={16} />} {it.status === 'allowed' ? 'Approved' : 'Denied'}
+          {it.status === 'allowed' ? <Check size={16} className="draw" /> : <X size={16} />} {it.status === 'allowed' ? 'Approved' : it.status === 'retried' ? 'Asked for another try' : 'Denied'}
         </div>
       )}
     </div>
@@ -624,6 +626,7 @@ function useListEnter(setText: (t: string) => void) {
 function Composer({
   disabled,
   working,
+  canSteer = false,
   onSend,
   onStop,
   placeholder = 'Message Celeste',
@@ -634,6 +637,8 @@ function Composer({
   disabled: boolean
   /** A turn is running, so a message waits its turn (or stops it and goes now). */
   working: boolean
+  /** The assistant can take a message into the turn it is running. */
+  canSteer?: boolean
   onSend: (text: string, attachments: string[], context: ContextRef[], mode: SendMode) => Promise<void>
   onStop?: () => void
   placeholder?: string
@@ -696,6 +701,11 @@ function Composer({
             <button className="sendbtn now" aria-label="Stop and send now" disabled={sending} onClick={() => void send('stop')}>
               <Zap size={18} />
             </button>
+            {canSteer && (
+              <button className="sendbtn now" aria-label="Steer: join what it is doing" disabled={sending} onClick={() => void send('steer')}>
+                <Navigation size={18} />
+              </button>
+            )}
             <button className="sendbtn ready" aria-label="Add to queue" disabled={sending} onClick={() => void send('queue')}>
               {sending ? <LoaderCircle size={20} className="spin" /> : <ArrowUp size={20} />}
             </button>

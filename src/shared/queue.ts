@@ -1,4 +1,4 @@
-import type { AttachmentInfo, ContextRef, Effort } from './agent'
+import type { AttachmentInfo, ContextRef, Effort, VendorId } from './agent'
 import type { LogEvent } from './api'
 
 /** How many messages may wait behind a running turn. */
@@ -8,9 +8,18 @@ export const MAX_QUEUED = 20
  * What `sessions.send` does with a message when the assistant is already working.
  * - `queue`: it waits, and is sent when the turn ends. When nothing is running it is sent at once.
  * - `stop`: the turn is stopped and this message is sent at once ("send now"). When nothing is running it is sent at once.
+ * - `steer`: the message goes into the turn that is running, to be read at its next step, and the work so far is kept. Where the vendor
+ *   cannot do that, or the assistant is waiting for an answer, it is a `queue`. When nothing is running it is sent at once.
  * Without a mode the message goes straight to the agent, as it always did.
  */
-export type SendMode = 'queue' | 'stop'
+export type SendMode = 'queue' | 'stop' | 'steer'
+
+/**
+ * The vendors whose program takes a message into a turn that is running (checked with the real programs on 16 November 2026 for Claude;
+ * Copilot's SDK documents it). The window and the phone offer Steer only for these.
+ */
+export const STEERING_VENDORS: readonly VendorId[] = ['claude', 'copilot']
+export const canSteer = (vendor: VendorId): boolean => STEERING_VENDORS.includes(vendor)
 
 /** What can be done with a message that is waiting. */
 export type QueueAction =

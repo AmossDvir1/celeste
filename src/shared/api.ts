@@ -16,6 +16,7 @@ import type {
 } from './devices'
 import type { ProducedFile } from './produced'
 import type { QueueAction, SendMode } from './queue'
+import type { VendorUsage } from './usage'
 import type { PhonePairRequest, PhoneStatus } from './phone'
 import type { RunSummary, StoredRunEvent, WorkflowDefinition, WorkflowFull, WorkflowSummary } from './workflow'
 import type {
@@ -163,7 +164,8 @@ export interface SessionPatch {
 export type LogEvent =
   | AgentEvent
   | { type: 'user.message'; text: string; attachments: AttachmentInfo[]; context?: ContextRef[] }
-  | { type: 'approval.resolved'; requestId: string; allow: boolean }
+  /** `again`: the person pressed a proposal's "Try again" (allow is false, and the card is not a refusal). */
+  | { type: 'approval.resolved'; requestId: string; allow: boolean; again?: boolean }
   | { type: 'ask.answered'; requestId: string; answers: AskAnswers }
   /** Celeste was closed while a turn was running. Written the next time it starts. */
   | { type: 'turn.abandoned' }
@@ -417,6 +419,10 @@ export interface CoreApi {
   'runs.cancel': (id: string) => Promise<void>
   'runs.respondApproval': (runId: string, requestId: string, allow: boolean) => void
   'runs.respondAsk': (runId: string, requestId: string, answers: AskAnswers) => void
+  /** How much of each connected vendor's allowance is used and when it comes back, as last read. Asks nobody. */
+  'usage.get': () => VendorUsage[]
+  /** Reads it again (one vendor, or every connected one) and answers with what is known. A vendor that cannot be read keeps its last answer. */
+  'usage.refresh': (vendor?: VendorId) => Promise<VendorUsage[]>
   /** The tools (MCP servers) the person has added, shared by every vendor. */
   'mcp.list': () => McpServerView[]
   /** Adds a server, or changes the one with `id`. It is looked at straight after. */
@@ -502,8 +508,9 @@ export type McpApi = { [K in keyof CoreApi as K extends `mcp.${string}` ? K : ne
 export type VendorLinkApi = { [K in keyof CoreApi as K extends `vendor.${string}` ? K : never]: CoreApi[K] }
 export type ProjectApi = { [K in keyof CoreApi as K extends `project.${string}` ? K : never]: CoreApi[K] }
 export type PhoneApi = { [K in keyof CoreApi as K extends `phone.${string}` ? K : never]: CoreApi[K] }
+export type UsageApi = { [K in keyof CoreApi as K extends `usage.${string}` ? K : never]: CoreApi[K] }
 /** The methods the session service answers. The device service and the vendor service answer the rest. */
-export type SessionApi = Omit<CoreApi, keyof DeviceApi | keyof VendorLinkApi | keyof ProjectApi | keyof McpApi | keyof TerminalApi | keyof WorkflowApi | keyof PhoneApi | 'app.checkUpdate'>
+export type SessionApi = Omit<CoreApi, keyof DeviceApi | keyof VendorLinkApi | keyof ProjectApi | keyof McpApi | keyof TerminalApi | keyof WorkflowApi | keyof PhoneApi | keyof UsageApi | 'app.checkUpdate'>
 
 export type CoreMethod = keyof CoreApi
 export type CoreParams<M extends CoreMethod> = Parameters<CoreApi[M]>
@@ -512,6 +519,8 @@ export type CoreResult<M extends CoreMethod> = ReturnType<CoreApi[M]>
 export type CorePush =
   | { type: 'devices' }
   | { type: 'mcp' }
+  /** A vendor's usage was read again and changed (`usage.get`). */
+  | { type: 'usage' }
   /** The list of workflows changed. */
   | { type: 'workflows' }
   /** A workflow run was created or changed. */

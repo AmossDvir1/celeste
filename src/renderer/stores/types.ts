@@ -1,6 +1,7 @@
 import type {
   AgentError,
   ApprovalChoices,
+  ApprovalProposal,
   ApprovalSlider,
   AskAnswers,
   AttachmentInfo,
@@ -53,7 +54,10 @@ export type TimelineItem =
       choices?: ApprovalChoices
       /** Set when the question asks for how long: the slider's range and where it starts. */
       slider?: ApprovalSlider
-      status: 'pending' | 'allowed' | 'denied'
+      /** Set when the card shows something to add (a workflow, a plugin) with its own buttons. `detail` says the same in words. */
+      proposal?: ApprovalProposal
+      /** `retried`: a proposal answered with "Try again". */
+      status: 'pending' | 'allowed' | 'denied' | 'retried'
     }
   | { kind: 'ask'; id: string; requestId: string; questions: Question[]; answers?: AskAnswers; status: 'pending' | 'answered' }
   /** A command the agent started in the background. It goes on after the turn ends; the card follows it to its end. */

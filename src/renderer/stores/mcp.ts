@@ -27,6 +27,28 @@ interface McpState {
   test: (id: string) => Promise<void>
 }
 
+/**
+ * Stores the values typed for a saved server's secret variables and headers, in the main process's secret store (never in Core's data),
+ * and forgets the ones a changed server no longer has. The add dialog and a plugin proposal's card both use it, so a value is only ever
+ * stored one way. A name with no value keeps what is already stored.
+ */
+export async function storeServerSecrets(saved: McpServerView, values: McpSecretValues, previous?: McpServerView): Promise<void> {
+  const keep = new Set<string>()
+  for (const kind of ['env', 'header'] as const) {
+    for (const name of kind === 'env' ? saved.envNames : saved.headerNames) {
+      keep.add(mcpSecretName(saved.id, kind, name))
+      const value = values[kind][name]
+      if (value) await secrets.set(mcpSecretName(saved.id, kind, name), value)
+    }
+  }
+  // Variables or headers the server no longer has: their values go too.
+  if (previous) {
+    for (const [kind, names] of [['env', previous.envNames], ['header', previous.headerNames]] as const) {
+      for (const name of names) if (!keep.has(mcpSecretName(saved.id, kind, name))) await secrets.remove(mcpSecretName(saved.id, kind, name)).catch(() => undefined)
+    }
+  }
+}
+
 function report(err: unknown): void {
   useUi.getState().pushToast({ text: err instanceof Error ? err.message : 'Something went wrong.' })
 }
@@ -53,20 +75,7 @@ export const useMcp = create<McpState>((set, get) => ({
 
   save: async (input, values, previous) => {
     const saved = await core.call('mcp.save', input)
-    const keep = new Set<string>()
-    for (const kind of ['env', 'header'] as const) {
-      for (const name of kind === 'env' ? saved.envNames : saved.headerNames) {
-        keep.add(mcpSecretName(saved.id, kind, name))
-        const value = values[kind][name]
-        if (value) await secrets.set(mcpSecretName(saved.id, kind, name), value)
-      }
-    }
-    // Variables or headers the server no longer has: their values go too.
-    if (previous) {
-      for (const [kind, names] of [['env', previous.envNames], ['header', previous.headerNames]] as const) {
-        for (const name of names) if (!keep.has(mcpSecretName(saved.id, kind, name))) await secrets.remove(mcpSecretName(saved.id, kind, name)).catch(() => undefined)
-      }
-    }
+    await storeServerSecrets(saved, values, previous)
     await get().refresh()
     // Looked at in the background: the status shows up on the list as it arrives.
     void core.call('mcp.test', saved.id).catch(() => undefined)

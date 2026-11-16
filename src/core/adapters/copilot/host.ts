@@ -43,6 +43,8 @@ export interface SdkClientHandle extends SdkClient {
   /** Signing in happens inside a session. */
   createLoginSession(): Promise<LoginSession>
   deleteSession(sessionId: string): Promise<void>
+  /** The runtime's own calls. Only what is read here is listed. */
+  rpc?: { account?: { getQuota?(params: Record<string, never>): Promise<{ quotaSnapshots?: Record<string, unknown> }> } }
 }
 
 /** Where the runtime program comes from: found on this computer, or downloaded the first time. */
@@ -186,6 +188,17 @@ export class CopilotHost {
     const auth = await client.getAuthStatus().catch(() => undefined)
     if (!auth?.isAuthenticated) return { state: 'signed-out' }
     return { state: 'signed-in', account: auth.login ?? auth.statusMessage ?? 'GitHub' }
+  }
+
+  /**
+   * What the signed-in account has used of each Copilot allowance (premium requests, chat, completions) and when it resets, as the runtime
+   * reports it (`account.getQuota`). Rejects when nobody is signed in or the runtime has no such call.
+   */
+  async quota(): Promise<Record<string, unknown>> {
+    const client = await this.ready()
+    const get = client.rpc?.account?.getQuota
+    if (!get) throw new Error('This Copilot runtime does not report usage.')
+    return (await get.call(client.rpc?.account, {})).quotaSnapshots ?? {}
   }
 
   /** The models this account can use, with the effort levels each takes. Cached until the runtime restarts. */

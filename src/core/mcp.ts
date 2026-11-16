@@ -175,6 +175,13 @@ export class McpService {
     return found
   }
 
+  /** What saving this would store, with nothing stored: throws the sentence a save would, for a name in use or anything not valid. */
+  check(input: McpServerInput): McpServerView {
+    const all = this.all()
+    if (all.length >= MAX_SERVERS) throw new Error(`You can add up to ${MAX_SERVERS} tools.`)
+    return this.view(clean({ ...input, id: undefined }, all))
+  }
+
   /** What the window may call. */
   readonly api: McpApi = {
     'mcp.list': () => this.all().map((s) => this.view(s)),

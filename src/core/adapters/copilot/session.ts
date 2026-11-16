@@ -10,7 +10,7 @@ import { Translator } from './translate'
 export interface SdkSession {
   readonly sessionId: string
   on(handler: (event: SessionEvent) => void): () => void
-  send(options: { prompt: string; attachments?: { type: 'file'; path: string; displayName?: string }[] }): Promise<string>
+  send(options: { prompt: string; attachments?: { type: 'file'; path: string; displayName?: string }[]; mode?: 'enqueue' | 'immediate' }): Promise<string>
   abort(): Promise<void>
   setModel(model: string, options?: { reasoningEffort?: string }): Promise<void>
   disconnect(): Promise<void>
@@ -76,15 +76,29 @@ export class CopilotAgentSession implements AgentSession {
     this.chain = this.chain.then(() => this.run(input)).catch(() => undefined)
   }
 
+  /**
+   * A message for the turn that is running: Copilot's `mode: 'immediate'` puts it in front of the next model request of that turn, so what
+   * is done so far is kept. No turn of Celeste's own begins for it. With no turn running it is an ordinary message.
+   */
+  steer(input: UserInput): void {
+    this.chain = this.chain.then(() => this.run(input, true)).catch(() => undefined)
+  }
+
   private push(events: AgentEvent[]): void {
     for (const e of events) this.events.push(e)
   }
 
-  private async run(input: UserInput): Promise<void> {
+  private async run(input: UserInput, steering = false): Promise<void> {
     if (this.closed) return
-    const turnId = nextId('turn')
-    this.stopped = false
-    this.push([this.translator.begin(turnId)])
+    // Steering a turn that is not running is just sending.
+    const immediate = steering && this.translator.running && !!this.sdk
+    if (immediate) {
+      this.translator.expectFollowUp()
+    } else {
+      const turnId = nextId('turn')
+      this.stopped = false
+      this.push([this.translator.begin(turnId)])
+    }
     try {
       const sdk = await this.ensure()
       await this.applyOptions(sdk)
@@ -106,7 +120,7 @@ export class CopilotAgentSession implements AgentSession {
         if (earlier) prompt = `Earlier in this conversation (for context; do not repeat it):\n\n${earlier}\n\n---\n\n${input.text}`
         this.needsSeed = false
       }
-      await sdk.send({ prompt, ...(attachments.length ? { attachments } : {}) })
+      await sdk.send({ prompt, ...(attachments.length ? { attachments } : {}), ...(immediate ? { mode: 'immediate' as const } : {}) })
     } catch (err) {
       this.push(this.translator.fail(failure(err)))
     }

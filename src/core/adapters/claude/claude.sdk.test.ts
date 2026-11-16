@@ -287,6 +287,97 @@ describe.skipIf(!program)('the Claude adapter with the real Claude Code', () => 
     await t.session.close()
   }, 120_000)
 
+  describe('usage (what /usage shows)', () => {
+    it('is not asked for when there is an API key, since an API key has no plan limits', async () => {
+      const h = createClaudeHost({ installedAt: require.resolve.paths('@anthropic-ai/claude-agent-sdk') ?? [], getKey: async () => 'sk-ant-api03-not-a-real-key', configDir: config })
+      expect(await h.usage()).toBeNull()
+    })
+
+    it('asks the real program when there is no key, and an account with no plan says its limits do not apply', async () => {
+      const h = createClaudeHost({ installedAt: require.resolve.paths('@anthropic-ai/claude-agent-sdk') ?? [], getKey: async () => null, configDir: config })
+      const answer = (await h.usage()) as { rate_limits_available?: boolean; rate_limits?: unknown; session?: { total_cost_usd?: number } }
+      expect(answer.rate_limits_available).toBe(false)
+      expect(answer.rate_limits ?? null).toBeNull()
+      expect(answer.session?.total_cost_usd).toBe(0)
+    }, 90_000)
+  })
+
+  describe('a message sent while the assistant works (steering)', () => {
+    /** Every event until `count` turns have ended. */
+    async function turns(session: ClaudeAgentSession, count: number, start: () => void, react: (e: AgentEvent) => void = () => undefined): Promise<AgentEvent[]> {
+      const out: AgentEvent[] = []
+      const it = session.events[Symbol.asyncIterator]()
+      start()
+      let ended = 0
+      while (ended < count) {
+        const r = await Promise.race([it.next(), new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`Timed out. Got: ${out.map((e) => e.type).join(', ')}`)), 100_000))])
+        if (r.done) break
+        out.push(r.value)
+        react(r.value)
+        if (TERMINAL.includes(r.value.type)) ended++
+      }
+      return out
+    }
+    const roles = (body: Record<string, unknown>) => (body['messages'] as { role: string; content: unknown }[]).map((m) => `${m.role}: ${typeof m.content === 'string' ? m.content : JSON.stringify(m.content)}`)
+
+    it('reaches the running turn at its next step, in the same turn, after what the running command answered (the order the real program keeps)', async () => {
+      const slow = (r: Parameters<Script>[0]) =>
+        r.last.kind === 'tool_result' ? [{ type: 'text' as const, text: 'The slow command is done.' }] : [{ type: 'tool_use' as const, name: 'Bash', input: { command: 'node -e "setTimeout(()=>console.log(\'slow done\'),4000)"', description: 'wait four seconds' } }]
+      api.setScript(slow)
+      const t = make()
+      const before = api.main.length
+      let steered = false
+      const events = await turns(t.session, 1, () => t.session.send({ text: 'please do the SLOW thing', attachments: [] }), (e) => {
+        if (e.type === 'tool.started' && !steered) {
+          steered = true
+          t.session.steer?.({ text: 'STEER: use tabs', attachments: [] })
+        }
+      })
+      const types = events.map((e) => e.type)
+      // One turn: the steering message did not start one of Celeste's own.
+      expect(types.filter((x) => x === 'turn.started')).toHaveLength(1)
+      expect(types.filter((x) => x === 'turn.completed')).toHaveLength(1)
+      expect(said(events)).toBe('The slow command is done.')
+      // The model's next request has the command's answer first and the steering message after it, in the same conversation.
+      const second = api.main.slice(before)[1]
+      const list = roles(second?.body ?? {})
+      const at = (needle: string) => list.findIndex((m) => m.includes(needle))
+      expect(at('tool_result')).toBeGreaterThan(-1)
+      expect(at('STEER: use tabs')).toBeGreaterThan(at('tool_result'))
+      expect(JSON.stringify(second?.body['messages'])).toContain('The user sent a new message while you were working')
+      await t.session.close()
+    }, 120_000)
+
+    it('becomes a turn of its own, shown, when the turn ends before Claude reads it', async () => {
+      api.setScript((r) => (r.last.kind === 'text' && r.last.text.includes('STREAM') ? [{ type: 'text', text: 'word '.repeat(50), chunk: 5, delayMs: 100 }] : [{ type: 'text', text: r.last.kind === 'text' ? `Saw: ${r.last.text}` : 'Finished' }]))
+      const t = make()
+      let steered = false
+      const events = await turns(t.session, 2, () => t.session.send({ text: 'please STREAM', attachments: [] }), (e) => {
+        if (e.type === 'message.delta' && !steered) {
+          steered = true
+          t.session.steer?.({ text: 'STEER: use tabs', attachments: [] })
+        }
+      })
+      const types = events.map((e) => e.type)
+      expect(types.filter((x) => x === 'turn.started')).toHaveLength(2)
+      expect(types.filter((x) => x === 'turn.completed')).toHaveLength(2)
+      const second = events.filter((e) => e.type === 'turn.started')[1]
+      expect(second && second.type === 'turn.started' && second.turnId).toMatch(/^steer-/)
+      // What Claude said about the steering message is after the second turn began, and so is shown.
+      expect(said(events.slice(events.findIndex((e) => e === second)))).toBe('Saw: STEER: use tabs')
+      await t.session.close()
+    }, 120_000)
+
+    it('is an ordinary message when nothing is running', async () => {
+      api.setScript(echo)
+      const t = make()
+      const events = await turns(t.session, 1, () => t.session.steer?.({ text: 'nothing runs yet', attachments: [] }))
+      expect(events.map((e) => e.type)[0]).toBe('turn.started')
+      expect(said(events)).toBe('Echo: nothing runs yet')
+      await t.session.close()
+    }, 90_000)
+  })
+
   it('picks the conversation up in a new process after a restart, with no notice', async () => {
     api.setScript(echo)
     const first = make()

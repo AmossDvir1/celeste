@@ -1,6 +1,6 @@
 import { mkdirSync, rmSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
-import type { AgentSession, ApprovalAnswer, ApprovalChoices, ApprovalSlider, ApprovalMode, AskAnswers, AttachmentInfo, ContextRef, SessionMode, ToolKind, UserInput, VendorId } from '@shared/agent'
+import type { AgentSession, ApprovalAnswer, ApprovalChoices, ApprovalProposal, ApprovalSlider, ApprovalMode, AskAnswers, AttachmentInfo, ContextRef, SessionMode, ToolKind, UserInput, VendorId } from '@shared/agent'
 import {
   UNDO_WINDOW_MS,
   type AppSettings,
@@ -127,6 +127,16 @@ const MAX_PINNED = 100
 const TRANSCRIPT_LIMIT = 24_000
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 const MAX_ATTACHMENTS = 10
+/** The most characters of what a person types on a proposal's "Try again". */
+const MAX_AGAIN = 2000
+/** What a card of Celeste's own is answered with. */
+interface ToolAnswer {
+  allow: boolean
+  always: boolean
+  minutes?: number
+  /** A proposal's Try again: the new instructions. */
+  again?: string
+}
 
 const EXTENSIONS: Record<string, string> = {
   'image/png': 'png',
@@ -178,7 +188,7 @@ export class SessionService {
   private readonly undoTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly undoMs: number
   /** Approval cards raised for tool calls that are not the agent's own (device commands), waiting for an answer. */
-  private readonly toolApprovals = new Map<string, { sessionId: string; resolve: (answer: { allow: boolean; always: boolean; minutes?: number }) => void }>()
+  private readonly toolApprovals = new Map<string, { sessionId: string; proposal?: ApprovalProposal; resolve: (answer: ToolAnswer) => void }>()
 
   /** Each session's waiting messages, folded from its log the first time they are asked for and kept up to date by `commit`. */
   private readonly queues = new Map<string, QueueState>()
@@ -595,8 +605,14 @@ export class SessionService {
     if (typeof input?.text !== 'string' || input.text.length > 200_000 || !Array.isArray(input.attachments) || input.attachments.length > MAX_ATTACHMENTS) {
       throw new Error('Invalid message')
     }
-    if (mode !== undefined && mode !== 'queue' && mode !== 'stop') throw new Error('Invalid send mode')
+    if (mode !== undefined && mode !== 'queue' && mode !== 'stop' && mode !== 'steer') throw new Error('Invalid send mode')
     if (mode && this.busy(id)) {
+      // Steering goes into the running turn. Not while a card waits for the person (the message could be taken for the answer), and not
+      // where the assistant cannot take it: then it waits its turn, like any other.
+      if (mode === 'steer' && this.pendingApprovals(id) === 0 && typeof this.live.get(id)?.session.steer === 'function') {
+        this.deliver(id, input, true)
+        return
+      }
       const queueId = this.enqueue(id, input)
       if (mode === 'stop') this.sendNow(id, queueId)
       return
@@ -604,8 +620,8 @@ export class SessionService {
     this.deliver(id, input)
   }
 
-  /** Hands a message to the agent now. */
-  private deliver(id: string, input: UserInput): void {
+  /** Hands a message to the agent now. `steer`: into the turn that is running, which is not a new turn. */
+  private deliver(id: string, input: UserInput, steer = false): void {
     const row = this.requireSession(id)
     const context = this.contextOf(row, input.context)
     // Read before this message is logged, because it is what has happened since the one before.
@@ -628,8 +644,9 @@ export class SessionService {
     if (row.mode === 'chat') live.filesBefore ??= scanFolder(this.chatDir(id))
 
     const cwd = row.cwd
+    const hand = () => (steer && live.session.steer ? live.session.steer(outgoing) : live.session.send(outgoing))
     if (!this.opts.snapshots || row.mode !== 'develop' || !cwd) {
-      live.session.send(outgoing)
+      hand()
       return
     }
     // A Develop message saves the folder first, so every message goes through one queue and the agent hears them in order.
@@ -638,7 +655,7 @@ export class SessionService {
     live.open = true
     live.chain = live.chain.then(async () => {
       if (checkpoint) await this.checkpointBefore(id, cwd, live)
-      if (this.live.get(id) === live) live.session.send(outgoing)
+      if (this.live.get(id) === live) hand()
     })
   }
 
@@ -999,8 +1016,10 @@ export class SessionService {
     const waiting = this.toolApprovals.get(requestId)
     if (waiting && waiting.sessionId === id) {
       this.toolApprovals.delete(requestId)
-      this.record(id, { type: 'approval.resolved', requestId, allow: answer.allow === true }, { text: '' })
-      waiting.resolve({ allow: answer.allow === true, always: answer.allow === true && answer.always === true, ...(answer.allow === true && typeof answer.minutes === 'number' ? { minutes: answer.minutes } : {}) })
+      // "Try again" is a no that carries words. Only a card that offers it can be answered that way, and the words are cut to a sane size.
+      const again = answer.allow !== true && waiting.proposal?.kind === 'workflow' && waiting.proposal.retry && typeof answer.again === 'string' ? answer.again.trim().slice(0, MAX_AGAIN) : ''
+      this.record(id, { type: 'approval.resolved', requestId, allow: answer.allow === true, ...(again ? { again: true } : {}) }, { text: '' })
+      waiting.resolve({ allow: answer.allow === true, always: answer.allow === true && answer.always === true, ...(answer.allow === true && typeof answer.minutes === 'number' ? { minutes: answer.minutes } : {}), ...(again ? { again } : {}) })
       return
     }
     const live = this.live.get(id)
@@ -1047,11 +1066,20 @@ export class SessionService {
     return this.ask(sessionId, request).then((a) => (a.allow ? Math.min(Math.max(request.slider.max, request.slider.until ?? 0), Math.max(request.slider.min, a.minutes ?? request.slider.value)) : null))
   }
 
-  private ask(sessionId: string, request: { kind: ToolKind; title: string; detail?: string; choices?: ApprovalChoices; slider?: ApprovalSlider }): Promise<{ allow: boolean; always: boolean; minutes?: number }> {
+  /**
+   * A card that shows what the assistant wants to add (a workflow, a plugin) with its own buttons (src/shared/agent.ts, ApprovalProposal).
+   * `detail` must say the same in plain words, since the phone draws only that. Resolves with 'accept', 'deny', or 'again' with what the
+   * person typed (a workflow's Try again). Stop, or the end of the turn, is a 'deny' and changes nothing.
+   */
+  requestProposal(sessionId: string, request: { title: string; detail: string; proposal: ApprovalProposal }): Promise<{ answer: 'accept' | 'deny' } | { answer: 'again'; text: string }> {
+    return this.ask(sessionId, { kind: 'other', title: request.title, detail: request.detail, proposal: request.proposal }).then((a) => (a.allow ? { answer: 'accept' } : a.again ? { answer: 'again', text: a.again } : { answer: 'deny' }))
+  }
+
+  private ask(sessionId: string, request: { kind: ToolKind; title: string; detail?: string; choices?: ApprovalChoices; slider?: ApprovalSlider; proposal?: ApprovalProposal }): Promise<ToolAnswer> {
     const requestId = `tool-${crypto.randomUUID()}`
     // Not tied to the running agent: the answer goes to whoever is waiting, not to the vendor.
-    this.record(sessionId, { type: 'approval.requested', requestId, kind: request.kind, title: request.title, detail: request.detail, ...(request.choices ? { choices: request.choices } : {}), ...(request.slider ? { slider: request.slider } : {}) }, { text: '' })
-    return new Promise((resolve) => this.toolApprovals.set(requestId, { sessionId, resolve }))
+    this.record(sessionId, { type: 'approval.requested', requestId, kind: request.kind, title: request.title, detail: request.detail, ...(request.choices ? { choices: request.choices } : {}), ...(request.slider ? { slider: request.slider } : {}), ...(request.proposal ? { proposal: request.proposal } : {}) }, { text: '' })
+    return new Promise((resolve) => this.toolApprovals.set(requestId, { sessionId, resolve, ...(request.proposal ? { proposal: request.proposal } : {}) }))
   }
 
   /** How a session asks before the agent acts: for the browser, whether going to a new site asks. */

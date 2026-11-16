@@ -22,7 +22,7 @@ function plainApproval(s: Session): { requestId: string; title: string } | null 
   if (!s.loaded) return null
   for (let i = s.items.length - 1; i >= 0; i--) {
     const it = s.items[i]
-    if (it?.kind === 'approval' && it.status === 'pending') return it.choices || it.slider ? null : { requestId: it.requestId, title: it.title }
+    if (it?.kind === 'approval' && it.status === 'pending') return it.choices || it.slider || it.proposal ? null : { requestId: it.requestId, title: it.title }
   }
   return null
 }

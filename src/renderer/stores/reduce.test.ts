@@ -106,6 +106,36 @@ describe('replaying a log', () => {
     expect(s.items[1]).not.toHaveProperty('choices')
   })
 
+  it('closes a card nobody answered when the response is stopped, so it does not keep asking', () => {
+    const s = foldEvents(
+      blank(),
+      log(
+        [1, { type: 'approval.requested', requestId: 'tool-a', kind: 'other', title: 'Save “Backup”' }],
+        [2, { type: 'approval.requested', requestId: 'r', kind: 'edit', title: 'Edit files' }],
+        [3, { type: 'approval.resolved', requestId: 'r', allow: true }],
+        [4, { type: 'turn.interrupted', turnId: 't' }]
+      )
+    )
+    expect(s.items.filter((i) => i.kind === 'approval').map((i) => (i.kind === 'approval' ? i.status : ''))).toEqual(['denied', 'allowed'])
+  })
+
+  it('keeps a proposal on its card, and tells Try again from a no', () => {
+    const proposal = { kind: 'workflow' as const, payload: { name: 'Backup', description: '', steps: [], inputs: [], notes: [] }, accept: 'Save', retry: 'Try again' }
+    const s = foldEvents(
+      blank(),
+      log(
+        [1, { type: 'approval.requested', requestId: 'tool-a', kind: 'other', title: 'Save “Backup”', detail: 'Backup: Zip', proposal }],
+        [2, { type: 'approval.requested', requestId: 'tool-b', kind: 'other', title: 'Save “Backup”', detail: 'Backup: Zip', proposal }],
+        [3, { type: 'approval.requested', requestId: 'tool-c', kind: 'other', title: 'Save “Backup”', detail: 'Backup: Zip', proposal }],
+        [4, { type: 'approval.resolved', requestId: 'tool-a', allow: false, again: true }],
+        [5, { type: 'approval.resolved', requestId: 'tool-b', allow: false }]
+      )
+    )
+    expect(s.items[0]).toMatchObject({ kind: 'approval', status: 'retried', proposal })
+    expect(s.items[1]).toMatchObject({ kind: 'approval', status: 'denied', proposal })
+    expect(s.items[2]).toMatchObject({ kind: 'approval', status: 'pending', proposal })
+  })
+
   it('tells you that a turn was cut off by a restart, and stops its spinners', () => {
     const s = foldEvents(
       blank(),

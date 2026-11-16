@@ -1,9 +1,10 @@
 // The Core process: database, sessions and the assistant. Started by the main process as a utility process,
 // so a slow or crashing agent can never freeze or take down the window.
-import { existsSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { homedir, hostname, userInfo } from 'node:os'
 import { join } from 'node:path'
 import type { MessagePortMain } from 'electron'
+import type { VendorId } from '@shared/agent'
 import type { CoreApi, CoreMessage, CorePush, CoreRequest } from '@shared/api'
 import { DEFAULT_SETTINGS } from '@shared/defaults'
 import { DiskFileStore } from './disk-files'
@@ -29,6 +30,9 @@ import { createProjectApi } from './project'
 import { callTool, McpService } from './mcp'
 import { serverKey } from '@shared/mcp'
 import { Attention } from './attention'
+import { claudeUsageFrom, copilotUsageFrom, UsageService, type ClaudeUsageAnswer, type CopilotQuotaSnapshot } from './usage'
+import type { VendorUsage } from '@shared/usage'
+import { AppTools } from './app/tools'
 import { createAgentStepRunner } from './workflows/agent-step'
 import { draftWorkflow } from './workflows/draft'
 import { WorkflowRunner } from './workflows/runner'
@@ -90,10 +94,16 @@ const ports = new Set<MessagePortMain>()
 const send = (port: MessagePortMain, message: CoreMessage) => port.postMessage(message)
 let phoneRef: PhoneBridge | undefined
 let attention: Attention | undefined
+let usageRef: UsageService | undefined
 const push = (p: CorePush) => {
   ports.forEach((port) => send(port, { kind: 'push', push: p }))
   phoneRef?.broadcast(p)
   attention?.observe(p)
+  // A turn ended: that vendor's usage has changed.
+  if (p.type === 'event' && p.stored.event.type === 'turn.completed') {
+    const vendor = store?.listSessions().find((s) => s.id === p.sessionId)?.vendor
+    if (vendor) usageRef?.afterTurn(vendor)
+  }
 }
 
 let service: SessionService | undefined
@@ -412,7 +422,29 @@ async function start(): Promise<void> {
     askFile: (sessionId, request) => (service as SessionService).requestApproval(sessionId, { kind: 'read', title: request.title, detail: request.detail })
   })
   browserToolsRef = browserTools
-  servers.setExtraTools(new CombinedTools([new WorkflowTools(db, runner, (sessionId) => (service as SessionService).workFolder(sessionId)), desktopControl, phoneTools, browserTools]))
+  // The assistant's tools for operating Celeste itself (docs/plans/INNER_TOOLS_PLAN.md): four that read, two that propose on a card.
+  const appTools = new AppTools({
+    // Nobody can answer a card in a workflow step, so the tools that need one are refused there.
+    where: { step: (sessionId) => sessionId.startsWith('wf-') || stepAsk.has(sessionId) },
+    plugins: () => mcp.api['mcp.list'](),
+    settings: () => (service as SessionService).api['settings.get'](),
+    workflows: () => workflows.api['workflows.list'](),
+    workflow: (id) => workflows.api['workflows.get'](id),
+    runs: (workflowId) => workflows.api['runs.list'](workflowId),
+    run: (id) => workflows.api['runs.get'](id),
+    // The two tools that need a card: it is raised in the chat, and nothing is saved until the person presses its button.
+    propose: (sessionId, request) => (service as SessionService).requestProposal(sessionId, request),
+    draft: (text) => workflows.api['workflows.draft']({ kind: 'text', text }),
+    saveWorkflow: (input) => workflows.api['workflows.save'](input),
+    mcp: {
+      check: (input) => mcp.check(input),
+      save: (input) => mcp.api['mcp.save'](input),
+      test: (id) => mcp.api['mcp.test'](id),
+      setEnabled: (id, enabled) => mcp.api['mcp.setEnabled'](id, enabled),
+      hasSecret: async (name) => !!(await getSecret(name).catch(() => null))
+    }
+  })
+  servers.setExtraTools(new CombinedTools([new WorkflowTools(db, runner, (sessionId) => (service as SessionService).workFolder(sessionId)), appTools, desktopControl, phoneTools, browserTools]))
   const workflows = new WorkflowService(db, runner, undefined, () => push({ type: 'workflows' }), dataDir, async () => (await mcp.resolved()).map((s) => s.key), (sessionId) => (service as SessionService).workFolder(sessionId), (source) =>
     // The assistant only has to write; it is in plan mode, so anything it asks to do is refused, and it has three minutes.
     draftWorkflow(source.kind === 'text' ? source : { kind: 'conversation', transcript: (service as SessionService).transcriptOf(source.sessionId) }, {
@@ -457,7 +489,33 @@ async function start(): Promise<void> {
     void fetchReleasedApk(dataDir, process.env['CELESTE_VERSION'] ?? '0.0.0').then((file) => file && push({ type: 'phone' }))
   }
   ensureApk()
+  // How much of each connected vendor's allowance is used (docs/QUEUE_AND_USAGE_PLAN.md, Part 2). Claude has plan limits only on a
+  // subscription login, which a release does not offer, so for an API key it has nothing to show; Copilot's premium requests are the real use.
+  // CELESTE_USAGE_FILE is for the app checks: a file that says what each vendor reports ({"copilot": {...}, "claude": null, "fail": ["copilot"]}),
+  // read in place of the vendors, so every state of the strip can be shown with no account.
+  const usageFile = process.env['CELESTE_USAGE_FILE']
+  const fromFile = (vendor: VendorId) => async (): Promise<VendorUsage | null> => {
+    const all = JSON.parse(readFileSync(usageFile as string, 'utf8')) as Record<string, unknown>
+    if (Array.isArray(all['fail']) && (all['fail'] as string[]).includes(vendor)) throw new Error('The stand-in was told to fail.')
+    const entry = all[vendor] as Partial<VendorUsage> | null | undefined
+    return entry ? ({ ...entry, vendor, windows: entry.windows ?? [], at: entry.at ?? Date.now() } as VendorUsage) : null
+  }
+  const usage = new UsageService({
+    readers: usageFile
+      ? { claude: fromFile('claude'), copilot: fromFile('copilot') }
+      : {
+          claude: async () => claudeUsageFrom((await claudeHost.usage()) as ClaudeUsageAnswer | null, Date.now()),
+          copilot: async () => copilotUsageFrom((await host.quota()) as Record<string, CopilotQuotaSnapshot | undefined>, Date.now())
+        },
+    connected: () => (Object.keys((service as SessionService).api['app.bootstrap']().vendors) as VendorId[]),
+    load: () => (db.settings()['usage'] as VendorUsage[] | undefined) ?? [],
+    save: (all) => db.setSetting('usage', all),
+    changed: () => push({ type: 'usage' })
+  })
+  usageRef = usage
   api = {
+    'usage.get': () => usage.get(),
+    'usage.refresh': (vendor) => usage.refresh(vendor),
     'phone.status': () => {
       // Settings, Phone was opened: a good moment to look at the network again (at most once a minute).
       phone.checkNetwork()

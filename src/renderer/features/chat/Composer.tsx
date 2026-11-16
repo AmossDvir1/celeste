@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
-import { ListPlus, Paperclip, Send, Square, TriangleAlert, X, Zap } from 'lucide-react'
+import { ListPlus, Navigation, Paperclip, Send, Square, TriangleAlert, X, Zap } from 'lucide-react'
 import type { ContextRef, SessionMode, UserInput } from '@shared/agent'
 import type { SendMode } from '@shared/queue'
 import { cn } from '@/lib/cn'
@@ -58,7 +58,9 @@ export interface ComposerProps {
   context?: ContextRef[]
   onRemoveContext?: (path: string) => void
   busy?: boolean
-  /** `mode` says what to do when the assistant is working: wait for its turn, or stop it and send now. */
+  /** The assistant can take a message into the turn it is running (Steer). Offered only then. */
+  canSteer?: boolean
+  /** `mode` says what to do when the assistant is working: wait for its turn, join the turn (steer), or stop it and send now. */
   onSend: (input: UserInput, mode: SendMode) => void | Promise<boolean>
   onStop?: () => void
   /** Up arrow in an empty box: change the newest waiting message. Returns false when there is none. */
@@ -83,6 +85,7 @@ export function Composer({
   context = NO_CONTEXT,
   onRemoveContext,
   busy,
+  canSteer = false,
   onSend,
   onStop,
   onEditLast,
@@ -192,6 +195,17 @@ export function Composer({
           >
             <Zap className="h-3.5 w-3.5" /> Send now
           </button>
+          {canSteer && (
+            <button
+              type="button"
+              title="Steer: it joins what the assistant is doing, at its next step, and the work so far is kept (Alt+Enter)"
+              disabled={sending}
+              onClick={() => void submit('steer')}
+              className="flex h-8 shrink-0 items-center gap-1 rounded-full border border-edge-strong px-3 text-[13px] font-medium text-ink-soft transition-colors hover:bg-hover hover:text-ink disabled:opacity-50"
+            >
+              <Navigation className="h-3.5 w-3.5" /> Steer
+            </button>
+          )}
           <button
             type="button"
             aria-label="Add to queue"
@@ -342,7 +356,7 @@ export function Composer({
           }
           if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault()
-            void submit(e.ctrlKey || e.metaKey ? 'stop' : 'queue')
+            void submit(e.ctrlKey || e.metaKey ? 'stop' : e.altKey && canSteer ? 'steer' : 'queue')
           }
         }}
         onPaste={(e) => {

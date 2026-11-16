@@ -68,12 +68,17 @@ interface Known {
   streamed: boolean
 }
 
+/** What Copilot says once a turn is under way, as opposed to what it says about the session. */
+const BEGINS_A_TURN = new Set(['assistant.message_delta', 'assistant.message', 'assistant.reasoning_delta', 'assistant.reasoning', 'tool.execution_start'])
+
 export class Translator {
   private readonly tools = new Map<string, Known>()
   private readonly diffs = new Map<string, FileDiff[]>()
   private readonly streamedMessages = new Set<string>()
   private readonly streamedReasoning = new Set<string>()
   private ended = true
+  /** A steering message was sent, so Copilot may run a turn of its own for it after this one has ended. */
+  private followUp = false
   private aborted = false
   private turnId = ''
 
@@ -83,8 +88,22 @@ export class Translator {
     this.cwd = cwd
   }
 
+  /** Whether a turn is running, as far as the events so far say. */
+  get running(): boolean {
+    return !this.ended
+  }
+
+  /**
+   * A message was sent with `mode: 'immediate'` into the turn that is running. Copilot's SDK says that if the turn ends first the message
+   * becomes a queued one and runs as a turn of its own, which must be shown: the next thing said after the turn has ended begins one.
+   */
+  expectFollowUp(): void {
+    this.followUp = true
+  }
+
   /** Called when a message is sent. The turn ends at the next idle or error. */
   begin(turnId: string): AgentEvent {
+    this.followUp = false
     this.ended = false
     this.aborted = false
     this.turnId = turnId
@@ -108,6 +127,11 @@ export class Translator {
   }
 
   handle(event: SessionEvent): AgentEvent[] {
+    if (this.ended && this.followUp && BEGINS_A_TURN.has((event as { type: string }).type)) return [this.begin(`steer-${crypto.randomUUID()}`), ...this.translate(event)]
+    return this.translate(event)
+  }
+
+  private translate(event: SessionEvent): AgentEvent[] {
     // Everything here is typed by `event.type`, but a newer runtime may send shapes this version does not know. Be strict about what is read.
     const e = event as { type: string; data: Record<string, unknown> }
     const d = e.data ?? {}

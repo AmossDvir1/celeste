@@ -245,7 +245,7 @@ type Handler = (e: SessionEvent) => void
 
 class FakeSession implements SdkSession {
   readonly handlers = new Set<Handler>()
-  readonly sent: { prompt: string; attachments?: { type: 'file'; path: string; displayName?: string }[] }[] = []
+  readonly sent: { prompt: string; attachments?: { type: 'file'; path: string; displayName?: string }[]; mode?: 'enqueue' | 'immediate' }[] = []
   readonly permissionResults: unknown[] = []
   readonly inputResults: unknown[] = []
   readonly models: { model: string; effort?: string }[] = []
@@ -267,10 +267,15 @@ class FakeSession implements SdkSession {
   private emit(e: SessionEvent) {
     for (const h of [...this.handlers]) h(e)
   }
-  async send(options: { prompt: string; attachments?: { type: 'file'; path: string; displayName?: string }[] }): Promise<string> {
+  async send(options: { prompt: string; attachments?: { type: 'file'; path: string; displayName?: string }[]; mode?: 'enqueue' | 'immediate' }): Promise<string> {
     this.sent.push(options)
-    void this.play()
+    // A message sent into the running turn does not start the script again: Copilot puts it in front of the turn's next request.
+    if (options.mode !== 'immediate') void this.play()
     return 'message-1'
+  }
+  /** Says something as Copilot would, from outside a script. */
+  say(e: SessionEvent): void {
+    this.emit(e)
   }
   private async play(): Promise<void> {
     for (const e of this.script) {
@@ -489,6 +494,90 @@ describe('a Copilot session', () => {
   })
 })
 
+describe('a message sent while the assistant works (steering)', () => {
+  const working = [ev('assistant.message_delta', { deltaContent: 'Working', messageId: 'm1' })]
+
+  /** Collects events until the test says stop, from one iterator that stays open. */
+  function listen(session: CopilotAgentSession) {
+    const out: AgentEvent[] = []
+    const it = session.events[Symbol.asyncIterator]()
+    void (async () => {
+      for (;;) {
+        const r = await it.next()
+        if (r.done) return
+        out.push(r.value)
+      }
+    })()
+    return out
+  }
+  const settle = () => new Promise((r) => setTimeout(r, 60))
+
+  it('is sent with mode immediate into the running turn, which keeps going: no turn of Celeste’s own begins', async () => {
+    const t = setup(working)
+    ;(t.sdk as FakeSdk).script = working
+    const out = listen(t.session)
+    t.session.send({ text: 'first', attachments: [] })
+    await settle()
+    t.session.steer({ text: 'use tabs', attachments: [] })
+    await settle()
+    const fake = (t.sdk.created[0] as { session: FakeSession }).session
+    expect(fake.sent).toHaveLength(2)
+    expect(fake.sent[0]?.mode).toBeUndefined()
+    expect(fake.sent[1]).toMatchObject({ prompt: 'use tabs', mode: 'immediate' })
+    expect(types(out).filter((x) => x === 'turn.started')).toHaveLength(1)
+    // The turn then ends once.
+    fake.say(ev('session.idle', {}))
+    await settle()
+    expect(types(out).filter((x) => TERMINAL.includes(x))).toHaveLength(1)
+  })
+
+  it('becomes a turn of its own, shown, when the turn ends before Copilot takes it', async () => {
+    const t = setup(working)
+    const out = listen(t.session)
+    t.session.send({ text: 'first', attachments: [] })
+    await settle()
+    t.session.steer({ text: 'use tabs', attachments: [] })
+    await settle()
+    const fake = (t.sdk.created[0] as { session: FakeSession }).session
+    fake.say(ev('session.idle', {}))
+    // Copilot then runs the queued message as a turn.
+    fake.say(ev('assistant.message_delta', { deltaContent: 'Using tabs', messageId: 'm2' }))
+    fake.say(ev('session.idle', {}))
+    await settle()
+    const begun = out.filter((e) => e.type === 'turn.started')
+    expect(begun).toHaveLength(2)
+    expect(begun[1] && begun[1].type === 'turn.started' && begun[1].turnId).toMatch(/^steer-/)
+    expect(text(out.slice(out.indexOf(begun[1] as AgentEvent)))).toBe('Using tabs')
+    expect(types(out).filter((x) => TERMINAL.includes(x))).toHaveLength(2)
+  })
+
+  it('is an ordinary message when nothing is running', async () => {
+    const t = setup(fixture('basic').events)
+    const events = await (async () => {
+      const out: AgentEvent[] = []
+      const it = t.session.events[Symbol.asyncIterator]()
+      t.session.steer({ text: 'nothing runs yet', attachments: [] })
+      for (;;) {
+        const r = await it.next()
+        if (r.done) break
+        out.push(r.value)
+        if (TERMINAL.includes(r.value.type)) break
+      }
+      return out
+    })()
+    expect(types(events)[0]).toBe('turn.started')
+    const fake = (t.sdk.created[0] as { session: FakeSession }).session
+    expect(fake.sent[0]?.mode).toBeUndefined()
+  })
+
+  it('says nothing new after a turn that ended when no steering message was sent', () => {
+    const t = new Translator(CWD)
+    t.begin('t1')
+    t.handle(ev('session.idle', {}))
+    expect(t.handle(ev('assistant.message_delta', { deltaContent: 'late', messageId: 'x' }))).toEqual([])
+  })
+})
+
 describe('approvals', () => {
   const edit = () => fixture('edit').events
 
@@ -678,6 +767,16 @@ describe('the Copilot host', () => {
     expect(handle.starts).toBe(0)
     expect(await host.status()).toEqual({ state: 'signed-in', account: 'octo' })
     expect(handle.starts).toBe(1)
+  })
+
+  it('reads what the account has used from the runtime, and refuses when nobody is signed in or the runtime cannot say', async () => {
+    const quotaSnapshots = { premium_interactions: { isUnlimitedEntitlement: false, entitlementRequests: 300, usedRequests: 212, remainingPercentage: 29.3, overage: 0, overageAllowedWithExhaustedQuota: false, resetDate: '2026-12-01T00:00:00Z' } }
+    const asked: unknown[] = []
+    const host = new CopilotHost(() => fakeHandle({ rpc: { account: { getQuota: async (p) => (asked.push(p), { quotaSnapshots }) } } }))
+    expect(await host.quota()).toEqual(quotaSnapshots)
+    expect(asked).toEqual([{}])
+    await expect(new CopilotHost(() => fakeHandle({ authed: false })).quota()).rejects.toThrow(/Connect/)
+    await expect(new CopilotHost(() => fakeHandle()).quota()).rejects.toThrow(/does not report usage/)
   })
 
   it('reports signed out, and refuses sessions with a message about Connect', async () => {

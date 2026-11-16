@@ -45,6 +45,11 @@ class FakeAgent implements AgentSession {
   send(input: UserInput): void {
     this.sent.push(input)
   }
+  /** Messages handed to the running turn (steering). */
+  readonly steered: UserInput[] = []
+  steer?(input: UserInput): void {
+    this.steered.push(input)
+  }
   respond(requestId: string, answer: ApprovalAnswer | AskAnswers): void {
     this.responses.push([requestId, answer])
   }
@@ -411,6 +416,72 @@ describe('sessions and their log', () => {
     answer(3, { allow: true, minutes: 100_000 })
     answer(4, { allow: false, minutes: 60 })
     expect(await Promise.all(asks)).toEqual([60, 20, 720, 720, null])
+  })
+
+  describe('a proposal card, for something the assistant wants to add', () => {
+    const workflow = { kind: 'workflow' as const, payload: { name: 'Backup', description: 'Copies files', steps: [{ name: 'Zip', summary: 'zip the folder' }], inputs: [], notes: [] }, accept: 'Save', retry: 'Try again' }
+    const plugin = { kind: 'plugin' as const, payload: { server: { name: 'Notes', type: 'stdio' as const, command: 'npx', args: ['-y', 'notes-mcp'], envNames: ['API_KEY'], headerNames: [] }, source: 'npm' }, accept: 'Install', secrets: ['API_KEY'] }
+
+    async function raise(proposal: typeof workflow | typeof plugin, n = 1) {
+      const { service, api, pushes, store } = setup()
+      const { id } = api['sessions.create'](input)
+      const asks = Array.from({ length: n }, () => service.requestProposal(id, { title: `Save “${proposal.kind}”`, detail: 'A plain summary', proposal }))
+      await flush()
+      const cards = pushedEvents(pushes, id)
+        .map((s) => s.event)
+        .filter((e) => e.type === 'approval.requested')
+        .map((e) => (e.type === 'approval.requested' ? e : (undefined as never)))
+      return { service, api, store, id, asks, cards, respond: (i: number, a: { allow: boolean; again?: string }) => api['sessions.respondApproval'](id, cards[i]!.requestId, a) }
+    }
+
+    it('is an approval card that carries the proposal and a plain summary, with no new event', async () => {
+      const { cards } = await raise(workflow)
+      expect(cards[0]).toMatchObject({ type: 'approval.requested', kind: 'other', detail: 'A plain summary', proposal: workflow })
+    })
+
+    it('is answered three ways: Allow, Try again with words, and Stop', async () => {
+      const w = await raise(workflow, 3)
+      w.respond(0, { allow: true })
+      w.respond(1, { allow: false, again: '  make it shorter  ' })
+      w.api['sessions.interrupt'](w.id)
+      expect(await Promise.all(w.asks)).toEqual([{ answer: 'accept' }, { answer: 'again', text: 'make it shorter' }, { answer: 'deny' }])
+      expect(w.service.pendingApprovals(w.id)).toBe(0)
+    })
+
+    it('writes how each ended in the log, and Try again is not a refusal there', async () => {
+      const w = await raise(workflow, 2)
+      w.respond(0, { allow: false, again: 'fewer steps' })
+      w.respond(1, { allow: false })
+      await Promise.all(w.asks)
+      const resolved = w.store.events(w.id).map((e) => e.event).filter((e) => e.type === 'approval.resolved')
+      expect(resolved).toEqual([expect.objectContaining({ allow: false, again: true }), { type: 'approval.resolved', requestId: w.cards[1]!.requestId, allow: false }])
+    })
+
+    it('cuts what is typed to a sane size, and takes an empty Try again as a no', async () => {
+      const w = await raise(workflow, 2)
+      w.respond(0, { allow: false, again: 'x'.repeat(5000) })
+      w.respond(1, { allow: false, again: '   ' })
+      const [a, b] = await Promise.all(w.asks)
+      expect(a).toMatchObject({ answer: 'again' })
+      expect((a as { text: string }).text).toHaveLength(2000)
+      expect(b).toEqual({ answer: 'deny' })
+    })
+
+    it('does not take Try again on a card that does not offer it, and a no with words never allows', async () => {
+      const w = await raise(plugin)
+      w.respond(0, { allow: false, again: 'install something else' })
+      expect(await w.asks[0]).toEqual({ answer: 'deny' })
+      const x = await raise(workflow)
+      x.respond(0, { allow: true, again: 'ignored' })
+      expect(await x.asks[0]).toEqual({ answer: 'accept' })
+    })
+
+    it('is answered by a phone with a plain Allow or Deny, which is all the phone sends', async () => {
+      const w = await raise(plugin, 2)
+      w.respond(0, { allow: true })
+      w.respond(1, { allow: false })
+      expect(await Promise.all(w.asks)).toEqual([{ answer: 'accept' }, { answer: 'deny' }])
+    })
   })
 
   it('tells how a chat asks before the agent acts', () => {
@@ -1338,6 +1409,69 @@ describe('the prompt queue', () => {
     api['sessions.send'](id, msg('hello'), 'queue')
     expect(heard(agents[0])).toEqual(['hello'])
     expect(queueOf(api, id).items).toEqual([])
+  })
+
+  describe('steering', () => {
+    it('goes into the running turn: logged at once, handed to the agent as a steer, not queued and not a second send', () => {
+      const { api, agents } = setup()
+      const { id } = api['sessions.create'](input)
+      api['sessions.send'](id, msg('write the plan'))
+      api['sessions.send'](id, msg('use tabs'), 'steer')
+      expect(heard(agents[0])).toEqual(['write the plan'])
+      expect(agents[0]?.steered.map((m) => m.text)).toEqual(['use tabs'])
+      expect(queueOf(api, id).items).toEqual([])
+      expect(typesOf(api, id).filter((t) => t === 'user.message')).toHaveLength(2)
+      expect(typesOf(api, id)).not.toContain('queue.added')
+    })
+
+    it('is an ordinary send when nothing is running', () => {
+      const { api, agents } = setup()
+      const { id } = api['sessions.create'](input)
+      api['sessions.send'](id, msg('hello'), 'steer')
+      expect(heard(agents[0])).toEqual(['hello'])
+      expect(agents[0]?.steered).toEqual([])
+    })
+
+    it('waits its turn where the assistant cannot take a message into a turn', async () => {
+      const { api, agents } = setup()
+      const { id } = api['sessions.create'](input)
+      api['sessions.send'](id, msg('first'))
+      ;(agents[0] as { steer?: unknown }).steer = undefined
+      api['sessions.send'](id, msg('use tabs'), 'steer')
+      expect(queueOf(api, id).items.map((m) => m.text)).toEqual(['use tabs'])
+      agents[0]?.emit(done)
+      await flush()
+      expect(heard(agents[0])).toEqual(['first', 'use tabs'])
+    })
+
+    it('waits its turn while a card waits for the person, so it is not taken for the answer', () => {
+      const { api, agents, service } = setup()
+      const { id } = api['sessions.create'](input)
+      api['sessions.send'](id, msg('first'))
+      void service.requestApproval(id, { kind: 'other', title: 'Use the screen' })
+      api['sessions.send'](id, msg('use tabs'), 'steer')
+      expect(agents[0]?.steered).toEqual([])
+      expect(queueOf(api, id).items.map((m) => m.text)).toEqual(['use tabs'])
+    })
+
+    it('does not stop the turn or pause the queue, and a queued message still goes when the turn ends', async () => {
+      const { api, agents } = setup()
+      const { id } = api['sessions.create'](input)
+      api['sessions.send'](id, msg('first'))
+      api['sessions.send'](id, msg('later'), 'queue')
+      api['sessions.send'](id, msg('use tabs'), 'steer')
+      expect(agents[0]?.interrupted).toBe(0)
+      agents[0]?.emit(done)
+      await flush()
+      expect(heard(agents[0])).toEqual(['first', 'later'])
+      expect(queueOf(api, id)).toEqual({ items: [], paused: false })
+    })
+
+    it('still refuses a mode it does not know', () => {
+      const { api } = setup()
+      const { id } = api['sessions.create'](input)
+      expect(() => api['sessions.send'](id, msg('x'), 'push' as never)).toThrow('Invalid send mode')
+    })
   })
 
   it('keeps messages typed during a turn and sends them in order as the turns end', async () => {

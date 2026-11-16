@@ -8,6 +8,7 @@ import { useRuns } from '@/stores/runs'
 import { useSessions } from '@/stores/sessions'
 import { setSaveErrorHandler, useSettings } from '@/stores/settings'
 import { useUi } from '@/stores/ui'
+import { useUsage } from '@/stores/usage'
 import { useVendors } from '@/stores/vendors'
 import { useWorkflows } from '@/stores/workflows'
 
@@ -41,9 +42,12 @@ export async function bootstrap(): Promise<void> {
     useWorkflows.getState().applyPush(push)
     useRuns.getState().applyPush(push)
     usePhone.getState().applyPush(push)
+    useUsage.getState().applyPush(push)
   })
   // A phone may already be waiting for an answer from before this window opened.
   void usePhone.getState().refresh()
+  // What Core knows about each vendor's usage, at once; the strip asks for a fresh reading itself.
+  void useUsage.getState().load()
 
   const data = await within(core.call('app.bootstrap'), 15_000)
 

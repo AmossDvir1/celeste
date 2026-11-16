@@ -86,6 +86,21 @@ export class ClaudeAgentSession implements AgentSession {
     this.chain = this.chain.then(() => this.run(input)).catch(() => undefined)
   }
 
+  /**
+   * A message for the turn that is running. Claude Code reads it at the next step of that turn (priority 'next': after the running tool,
+   * before the next model request), so what is done so far is kept. No turn of Celeste's own begins for it. With no turn running it is an
+   * ordinary message.
+   */
+  steer(input: UserInput): void {
+    this.chain = this.chain
+      .then(() => {
+        if (!this.translator.running || !this.query) return this.run(input)
+        this.translator.expectFollowUp()
+        return this.deliver(input, 'next')
+      })
+      .catch((err) => this.push(this.translator.fail(failure(err))))
+  }
+
   private push(events: AgentEvent[]): void {
     for (const e of events) this.events.push(e)
   }
@@ -105,7 +120,7 @@ export class ClaudeAgentSession implements AgentSession {
   }
 
   /** Starts Claude Code if it is not running, applies what changed in the window, and hands it the message. */
-  private async deliver(input: UserInput): Promise<void> {
+  private async deliver(input: UserInput, priority?: 'next'): Promise<void> {
     const q = await this.ensure()
     // Stop was pressed while the session was still starting: the turn has already been closed, so send nothing.
     if (this.stopped) return
@@ -125,7 +140,8 @@ export class ClaudeAgentSession implements AgentSession {
     this.prompt?.push({
       type: 'user',
       parent_tool_use_id: null,
-      message: { role: 'user', content: this.content(text, input) }
+      message: { role: 'user', content: this.content(text, input) },
+      ...(priority ? { priority } : {})
     } as SDKUserMessage)
   }
 

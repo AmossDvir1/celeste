@@ -56,6 +56,25 @@ async function probe(env: Env, executable: string | undefined): Promise<Probe> {
   }
 }
 
+/** Starts Claude Code with nothing to say, asks it for the data behind `/usage`, and stops it. The SDK marks the call experimental. */
+async function readUsage(env: Env, executable: string | undefined): Promise<unknown> {
+  if (!executable) throw new Error('Claude’s program is not installed.')
+  const { query } = await loadSdk()
+  const never = new Promise<never>(() => undefined)
+  async function* idle(): AsyncGenerator<SDKUserMessage> {
+    await never
+  }
+  const q = query({ prompt: idle(), options: { settingSources: [], persistSession: false, env, pathToClaudeCodeExecutable: executable } })
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    await Promise.race([q.initializationResult(), new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error('Claude did not start in time.')), 45_000)))])
+    return await q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true })
+  } finally {
+    clearTimeout(timer)
+    q.close()
+  }
+}
+
 /** Asks the API for one model, which needs a valid key and nothing else. Never throws: not reaching Anthropic says nothing about the key. */
 async function verifyKey(key: string, env: Env): Promise<'ok' | 'rejected' | 'unknown'> {
   try {
@@ -93,6 +112,7 @@ export function createClaudeHost(options: ClaudeOptions): ClaudeHost {
     program,
     ...(options.dataDir ? { download: (onProgress, signal) => downloadClaudeProgram({ dataDir: options.dataDir as string, onProgress, signal, ...(options.registry ? { registry: options.registry } : {}) }) } : {}),
     probe: (env) => probe(env, program()),
+    readUsage: (env) => readUsage(env, program()),
     getKey: options.getKey,
     verifyKey,
     baseEnv: process.env,

@@ -37,7 +37,7 @@ interface SessionsState {
   review: (id: string, from: string, to: string | null) => Promise<CheckpointReview>
   /** Puts only these files back as they were at a checkpoint. False, with a message shown, when it could not. */
   discardFiles: (id: string, checkpointId: string, paths: string[]) => Promise<boolean>
-  respondApproval: (id: string, requestId: string, allow: boolean, always?: boolean, minutes?: number) => void
+  respondApproval: (id: string, requestId: string, allow: boolean, always?: boolean, minutes?: number, again?: string) => void
   respondAsk: (id: string, requestId: string, answers: AskAnswers) => void
   setPrefs: (id: string, patch: { model?: string; effort?: Effort | null; approval?: ApprovalMode }) => void
   rename: (id: string, title: string) => void
@@ -237,7 +237,7 @@ export const useSessions = create<SessionsState>((set, get) => {
       }
     },
 
-    respondApproval: (id, requestId, allow, always, minutes) => fire(core.call('sessions.respondApproval', id, requestId, { allow, always, ...(minutes ? { minutes } : {}) })),
+    respondApproval: (id, requestId, allow, always, minutes, again) => fire(core.call('sessions.respondApproval', id, requestId, { allow, always, ...(minutes ? { minutes } : {}), ...(again ? { again } : {}) })),
 
     respondAsk: (id, requestId, answers) => fire(core.call('sessions.respondAsk', id, requestId, answers)),
 

@@ -106,7 +106,7 @@ export function reduceEvent(s: Session, e: LogEvent, at: number): Session {
       return { ...s, items: [...s.items, { kind: 'reverted', id: itemId(), restored: e.restored, removed: e.removed, undoId: e.undoId }] }
 
     case 'approval.resolved':
-      return resolveApproval(s, e.requestId, e.allow)
+      return resolveApproval(s, e.requestId, e.allow, e.again === true)
 
     case 'ask.answered':
       return resolveAsk(s, e.requestId, e.answers)
@@ -182,7 +182,7 @@ export function reduceEvent(s: Session, e: LogEvent, at: number): Session {
         ...s,
         items: [
           ...closeThinking(s.items, now),
-          { kind: 'approval', id: itemId(), requestId: e.requestId, tool: e.kind, title: e.title, detail: e.detail, ...(e.choices ? { choices: e.choices } : {}), ...(e.slider ? { slider: e.slider } : {}), status: 'pending' }
+          { kind: 'approval', id: itemId(), requestId: e.requestId, tool: e.kind, title: e.title, detail: e.detail, ...(e.choices ? { choices: e.choices } : {}), ...(e.slider ? { slider: e.slider } : {}), ...(e.proposal ? { proposal: e.proposal } : {}), status: 'pending' }
         ],
         status: 'waiting',
         activity: { label: 'Waiting for your approval', working: false }
@@ -223,10 +223,11 @@ export function reduceEvent(s: Session, e: LogEvent, at: number): Session {
       return { ...s, items: closeThinking(s.items, now), status: 'idle', activity: null }
 
     case 'turn.interrupted':
-      // Tools that were still running stopped with it: none is left spinning under "You stopped this response".
+      // Tools that were still running stopped with it: none is left spinning under "You stopped this response". A card nobody answered
+      // was declined by Stop, so it no longer asks (its buttons would do nothing).
       return {
         ...s,
-        items: [...failRunningTools(closeThinking(s.items, now), now), { kind: 'notice', id: itemId(), text: 'You stopped this response.' }],
+        items: [...failRunningTools(closeThinking(s.items, now), now).map((it) => (it.kind === 'approval' && it.status === 'pending' ? { ...it, status: 'denied' as const } : it)), { kind: 'notice', id: itemId(), text: 'You stopped this response.' }],
         status: 'idle',
         activity: null }
 
@@ -240,11 +241,11 @@ export function reduceEvent(s: Session, e: LogEvent, at: number): Session {
 }
 
 /** The user answered an approval card: mark it and go back to working. */
-export function resolveApproval(s: Session, requestId: string, allow: boolean): Session {
+export function resolveApproval(s: Session, requestId: string, allow: boolean, again = false): Session {
   return {
     ...s,
     items: s.items.map((it) =>
-      it.kind === 'approval' && it.requestId === requestId ? { ...it, status: allow ? 'allowed' : 'denied' } : it
+      it.kind === 'approval' && it.requestId === requestId ? { ...it, status: allow ? 'allowed' : again ? 'retried' : 'denied' } : it
     ),
     status: 'working',
     activity: THINKING

@@ -24,6 +24,7 @@ import { Button, IconButton, SearchInput, SectionLabel } from '@/components/ui'
 import { useSessions, needsYou } from '@/stores/sessions'
 import type { Session } from '@/stores/types'
 import { useSettings } from '@/stores/settings'
+import { UsageStrip } from './UsageStrip'
 import { useUi } from '@/stores/ui'
 import { useWorkflows } from '@/stores/workflows'
 
@@ -442,6 +443,8 @@ export function Sidebar() {
         <ChatList mode={sessionMode} query={query} limit={mode === 'workflows' ? 3 : 6} />
       </div>
       {mode === 'workflows' && <WorkflowsSection />}
+
+      <UsageStrip />
 
       <div className="mt-2 border-t border-edge pt-2">
         <button

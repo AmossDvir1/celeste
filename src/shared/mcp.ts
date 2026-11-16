@@ -23,6 +23,12 @@ export function serverKey(name: string): string {
     .slice(0, 40)
 }
 
+/** The line a plugin runs, exactly as it is: every argument, with a word that has spaces or quotes in quotes. A web address is just the address. */
+export function commandLineOf(server: { type: 'stdio' | 'http'; command?: string; args?: string[]; url?: string }): string {
+  if (server.type === 'http') return server.url ?? ''
+  return [server.command ?? '', ...(server.args ?? [])].map((p) => (/[\s"]/.test(p) || p === '' ? `"${p.replace(/"/g, '\\"')}"` : p)).join(' ')
+}
+
 /** Splits a command line into words, keeping what is inside quotes together. */
 export function splitArgs(line: string): string[] {
   const words: string[] = []

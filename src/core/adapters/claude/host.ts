@@ -48,6 +48,8 @@ export interface ClaudeHostDeps {
   configDir?: string
   /** Development only: accept a Claude subscription login. */
   allowSubscription?: boolean
+  /** Starts Claude Code briefly and asks it for what `/usage` shows. Left out where there is no program to start (tests with a stand-in probe). */
+  readUsage?: (env: Env) => Promise<unknown>
   startLogin: (env: Env) => LoginProcess
   /** Claude Code's program, when it is on this computer. Left out where there is nothing to look for (tests with a stand-in probe). */
   program?: () => string | undefined
@@ -178,6 +180,17 @@ export class ClaudeHost {
       return this.deps.allowSubscription ? { state: 'signed-in', account: `Claude ${a.subscriptionType} (development)` } : { state: 'signed-out' }
     }
     return { state: 'signed-in', account: `Console · ${a.organization ?? a.email ?? 'Anthropic'}` }
+  }
+
+  /**
+   * What Claude Code's `/usage` shows, for an account that has plan limits. An API key has none (the answer would be empty, so it is not even
+   * asked for): a Claude subscription login is not offered, so in a release this is null. Rejects when it cannot be read.
+   */
+  async usage(): Promise<unknown | null> {
+    if (!this.hasProgram() || !this.deps.readUsage) return null
+    const key = await this.deps.getKey().catch(() => null)
+    if (key) return null
+    return this.deps.readUsage(await this.env())
   }
 
   /** The models already read from Claude Code, without starting it again. Empty before the first time. */

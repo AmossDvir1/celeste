@@ -337,7 +337,7 @@ export function phoneCalls(
         const context = Array.isArray(input?.context) ? (input.context as ContextRef[]) : []
         if (context.length > PHONE_CONTEXT_MAX) throw new Error(`Add at most ${PHONE_CONTEXT_MAX} project files.`)
         if (!text.trim() && !sent.length && !context.length) throw new Error('Write something first.')
-        const sendMode = mode === 'queue' || mode === 'stop' ? mode : undefined
+        const sendMode = mode === 'queue' || mode === 'stop' || mode === 'steer' ? mode : undefined
         const done = await a['sessions.send'](String(id), { text, attachments: sent, ...(context.length ? { context } : {}) }, sendMode)
         used(phoneId, sent)
         return done

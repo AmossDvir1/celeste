@@ -114,6 +114,8 @@ export class Translator {
   private readonly tools = new Map<string, Known>()
   private readonly streamed = new Set<string>()
   private ended = true
+  /** A steering message was sent, so Claude may begin a turn of its own after this one has ended. */
+  private followUp = false
   private turnId = ''
   private lastError: { code?: string; text?: string } = {}
   /** Whether anything of the current turn has been heard since it began, so a turn that Claude never carried on with can be ended. */
@@ -136,8 +138,18 @@ export class Translator {
     this.cwd = cwd
   }
 
+  /**
+   * A message was handed to the turn that is running (steering). Claude Code reads it at the next step of that turn. If the turn ends first
+   * it carries on by itself with a turn for that message (measured on 16 November 2026), which must be shown: the next thing Claude says
+   * after the turn has ended begins one.
+   */
+  expectFollowUp(): void {
+    this.followUp = true
+  }
+
   /** Called when a message is sent. The turn ends at its result, or at a failure. */
   begin(turnId: string): AgentEvent {
+    this.followUp = false
     this.ended = false
     this.heard = false
     this.turnId = turnId
@@ -186,6 +198,14 @@ export class Translator {
   }
 
   handle(message: SDKMessage): AgentEvent[] {
+    const m = message as unknown as Record<string, unknown>
+    if (this.ended && this.followUp && !m['parent_tool_use_id'] && (m['type'] === 'assistant' || m['type'] === 'stream_event')) {
+      return [this.begin(`steer-${crypto.randomUUID()}`), ...this.translate(message)]
+    }
+    return this.translate(message)
+  }
+
+  private translate(message: SDKMessage): AgentEvent[] {
     const m = message as unknown as Record<string, unknown>
     // What a subagent says and does inside its own run is not part of the conversation. Its parent call stands for it.
     if (m['parent_tool_use_id']) return []

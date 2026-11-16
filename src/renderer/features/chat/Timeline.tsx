@@ -31,6 +31,7 @@ import { AttachmentStrip } from './attachments'
 import { AskUserCard } from './AskUserCard'
 import { describeDuration } from '@shared/desktop'
 import { ContextStrip } from './context'
+import { ProposalCard } from './ProposalCard'
 import { DesktopCard } from './DesktopCard'
 import { FileCards } from './FileCards'
 import { WorkflowRunCard } from './WorkflowRunCard'
@@ -503,7 +504,7 @@ export function Timeline({
   session: Session
   /** The element that scrolls, to keep what is being read in place when earlier messages are added above it. */
   scroller?: RefObject<HTMLDivElement | null>
-  onApproval: (requestId: string, allow: boolean, always?: boolean, minutes?: number) => void
+  onApproval: (requestId: string, allow: boolean, always?: boolean, minutes?: number, again?: string) => void
   onAsk: (requestId: string, answers: AskAnswers) => void
   onRetry: () => void
   /** The small side window: everything the assistant did is folded to one line, in Develop too, as in Chat. */
@@ -525,7 +526,7 @@ export function Timeline({
   // The callbacks the cards get never change, so a card is drawn again only when it itself changes.
   const latest = useRef({ onApproval, onAsk, onRetry })
   latest.current = { onApproval, onAsk, onRetry }
-  const approve = useCallback((requestId: string, allow: boolean, always?: boolean, minutes?: number) => latest.current.onApproval(requestId, allow, always, minutes), [])
+  const approve = useCallback((requestId: string, allow: boolean, always?: boolean, minutes?: number, again?: string) => latest.current.onApproval(requestId, allow, always, minutes, again), [])
   const ask = useCallback((requestId: string, answers: AskAnswers) => latest.current.onAsk(requestId, answers), [])
   const retry = useCallback(() => latest.current.onRetry(), [])
   const sessionId = session.id
@@ -601,7 +602,7 @@ export function Timeline({
       case 'tool':
         return <ToolCard item={it} detailed={detailed} />
       case 'approval':
-        return <ApprovalCard item={it} onAnswer={approve} />
+        return it.proposal ? <ProposalCard item={it} proposal={it.proposal} onAnswer={approve} /> : <ApprovalCard item={it} onAnswer={approve} />
       case 'ask':
         return <AskRow item={it} onAsk={ask} />
       case 'error':

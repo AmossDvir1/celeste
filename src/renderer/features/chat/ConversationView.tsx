@@ -1,3 +1,4 @@
+import { canSteer } from '@shared/queue'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDown, ChevronLeft, FileDiff, Folder, FolderTree, GitBranch, Globe, Plug, SquareTerminal, Workflow } from 'lucide-react'
 import type { ContextRef, UserInput } from '@shared/agent'
@@ -213,7 +214,7 @@ export function ConversationView({ sessionId, compact = false }: { sessionId: st
               compact={compact}
               scroller={scroller}
               session={session}
-              onApproval={(requestId, allow, always, minutes) => respondApproval(sessionId, requestId, allow, always, minutes)}
+              onApproval={(requestId, allow, always, minutes, again) => respondApproval(sessionId, requestId, allow, always, minutes, again)}
               onAsk={(requestId, answers) => respondAsk(sessionId, requestId, answers)}
               onRetry={retry}
             />
@@ -257,6 +258,7 @@ export function ConversationView({ sessionId, compact = false }: { sessionId: st
               context={context}
               onRemoveContext={(path) => useDrafts.getState().removeContext(sessionId, path)}
               busy={busy}
+              canSteer={canSteer(session.vendor)}
               onSend={async (input: UserInput, sendMode) => {
                 const sent = await send(session.mode, input, sendMode)
                 // Context is only cleared once the message has gone; the text is cleared by the composer.
