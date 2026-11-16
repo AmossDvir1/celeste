@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Notification, shell, type IpcMainEvent, type IpcMainInvokeEvent, type WebContents } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Notification, powerMonitor, shell, type IpcMainEvent, type IpcMainInvokeEvent, type WebContents } from 'electron'
 import { existsSync, writeFileSync } from 'node:fs'
 import { copyFile, readFile, stat, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
@@ -11,8 +11,9 @@ import { DesktopService } from './desktop/service'
 import { secrets } from './secrets'
 import { APP_ID, registerDevIdentity } from './identity'
 import { LayoutService } from './layout'
+import { BACKGROUND_ARG, LoginItem } from './login-item'
 import { TrayService } from './tray'
-import { hidesOnClose, quitQuestion, shouldNotify } from './tray-rules'
+import { hidesOnClose, quitQuestion, shouldNotify, startsHidden } from './tray-rules'
 
 const DEV_URL = process.env['ELECTRON_RENDERER_URL']
 // Test scripts open a specific view, for example CELESTE_QUERY="bare=chat".
@@ -45,19 +46,41 @@ let quitting = false
 let closeToTray = true
 let working = 0
 let waiting = 0
+/** How many schedules there are, and whether they are all paused: Core tells us, for the tray's menu. */
+let scheduleCount = 0
+let schedulesPaused = false
+/** Started with the computer (`--background`): the first window stays hidden in the tray. */
+let background = process.argv.includes(BACKGROUND_ARG)
+/** The window was left hidden at start-up and nobody has asked for it yet. */
+let startedHidden = false
+const loginItem = new LoginItem()
 const APP_ICON = join(__dirname, '../../resources/icon.png')
 const tray = new TrayService({
   icon: APP_ICON,
   open: () => showMain(),
   quit: () => void quitFromTray(),
   compact: () => layout.state().compact,
-  toggleCompact: () => layout.set(showMain(), { compact: !layout.state().compact })
+  toggleCompact: () => layout.set(showMain(), { compact: !layout.state().compact }),
+  schedules: () => ({ count: scheduleCount, paused: schedulesPaused }),
+  // Core makes the change and tells us the new state, which redraws the menu.
+  togglePauseSchedules: () => core.send({ type: 'schedules-pause', on: !schedulesPaused })
 })
 /** The window's two shapes, the full window and the small side window (docs/TRAY_AND_COMPACT_PLAN.md, Part 2). */
 const layout = new LayoutService(join(app.getPath('userData'), 'layout.json'), () => tray.refresh())
 /** The first time the window is hidden, one notice says where Celeste went. Remembered in a file of its own, so it is said once. */
 const trayNote = join(app.getPath('userData'), 'tray-told')
 const notices = new Set<Notification>()
+
+// The app checks read the tray's menu and the notifications that were shown, and press them, through this (the system's own menu and
+// notifications cannot be reached from a script).
+const shown: { title: string; body: string; click?: () => void }[] = []
+if (process.env['CELESTE_TEST_HOOKS'] === '1') {
+  ;(globalThis as Record<string, unknown>)['celesteTest'] = {
+    tray: () => tray.inspect(),
+    notices: () => shown.map(({ title, body }) => ({ title, body })),
+    clickNotice: (i: number) => shown[i]?.click?.()
+  }
+}
 
 /** The window of the app itself (not the bar or a border of desktop control). */
 function mainWindow(): BrowserWindow | undefined {
@@ -66,6 +89,7 @@ function mainWindow(): BrowserWindow | undefined {
 
 /** Brings the window back from the tray, the taskbar or nothing at all. */
 function showMain(): BrowserWindow {
+  startedHidden = false
   const win = mainWindow() ?? createWindow()
   if (win.isMinimized()) win.restore()
   win.show()
@@ -90,6 +114,7 @@ function hideMain(win: BrowserWindow): void {
 
 function say(title: string, body: string, onClick?: () => void): void {
   if (!Notification.isSupported()) return
+  if (process.env['CELESTE_TEST_HOOKS'] === '1') shown.push({ title, body, ...(onClick ? { click: onClick } : {}) })
   const n = new Notification({ title, body, icon: APP_ICON })
   notices.add(n)
   n.on('click', () => onClick?.())
@@ -119,8 +144,17 @@ function hearCore(message: AppMessage): void {
   if (message.type === 'app-settings') {
     if (typeof message.closeToTray === 'boolean') closeToTray = message.closeToTray
     // The icon is only there while closing hides the window; with the setting off it is taken away.
-    if (!closeToTray) tray.destroy()
-    else if (process.platform === 'win32') tray.ensure()
+    if (!closeToTray) {
+      tray.destroy()
+      // Started hidden into a tray that is now gone: nothing could bring the window back.
+      if (startedHidden) showMain()
+    } else if (process.platform === 'win32') tray.ensure()
+  } else if (message.type === 'schedules-state') {
+    if (typeof message.paused === 'boolean' && typeof message.count === 'number') {
+      schedulesPaused = message.paused
+      scheduleCount = message.count
+      tray.refresh()
+    }
   } else if (message.type === 'attention') {
     if (typeof message.working === 'number' && typeof message.waiting === 'number') {
       working = message.working
@@ -134,6 +168,14 @@ function hearCore(message: AppMessage): void {
     const win = mainWindow()
     if (!shouldNotify(win ? { visible: win.isVisible(), minimized: win.isMinimized(), focused: win.isFocused() } : null)) return
     say(title, text, () => showMain().webContents.send('celeste:open', { kind: 'chat', target }))
+  } else if (message.type === 'notice') {
+    // A scheduled run failed or finished, or a schedule paused itself: said while the person may not be looking. A click opens the run, or the list of schedules.
+    const { kind, target, title, text } = message
+    if (typeof title !== 'string' || typeof text !== 'string') return
+    const win = mainWindow()
+    if (!shouldNotify(win ? { visible: win.isVisible(), minimized: win.isMinimized(), focused: win.isFocused() } : null)) return
+    const opens = kind === 'schedule-paused' || typeof target !== 'string' || !target ? { kind: 'schedules', target: '' } : { kind: 'run', target }
+    say(title, text, () => showMain().webContents.send('celeste:open', opens))
   } else if (message.type === 'needs-you') {
     const { kind, target, title, text } = message
     if ((kind === 'chat' || kind === 'run') && typeof target === 'string' && typeof title === 'string' && typeof text === 'string') needsYou({ kind, target, title, text })
@@ -183,7 +225,16 @@ function createWindow(): BrowserWindow {
   ownContents.add(win.webContents)
   // Left as the small side window last time: it opens as that again.
   layout.restore(win)
-  win.once('ready-to-show', () => win.show())
+  win.once('ready-to-show', () => {
+    // Started with the computer: it stays in the tray until someone opens it, when there is a tray icon to open it from.
+    const hide = startsHidden({ background, platform: process.platform, trayReady: background && (tray.ready || tray.ensure()) })
+    background = false
+    if (hide) {
+      startedHidden = true
+      return
+    }
+    win.show()
+  })
 
   // Control ends with the last of Celeste's own windows: nothing may be left controlling the computer with no chat in view.
   win.on('closed', () => {
@@ -356,6 +407,15 @@ ipcMain.handle('celeste:open-text', async (event, extensions: unknown) => {
   return { name: basename(path), text: await readFile(path, 'utf8') }
 })
 
+// Starting Celeste when the person signs in. The operating system holds the answer; see login-item.ts.
+ipcMain.handle('celeste:login-item', (event, op: unknown, on: unknown) => {
+  if (!fromOurWindow(event)) throw new Error('Not allowed')
+  if (op === 'get') return loginItem.state()
+  if (op !== 'set' || typeof on !== 'boolean') throw new Error('Invalid request')
+  loginItem.set(on)
+  return loginItem.state()
+})
+
 ipcMain.handle('celeste:reveal-data', (event) => {
   if (!fromOurWindow(event)) throw new Error('Not allowed')
   shell.showItemInFolder(join(app.getPath('userData'), 'celeste.db'))
@@ -384,6 +444,8 @@ if (!app.requestSingleInstanceLock()) {
     if (!app.isPackaged) registerDevIdentity('Celeste', APP_ICON)
     core.setApp(hearCore)
     core.start()
+    // What came due while the computer slept is looked at now, not at the next half minute.
+    powerMonitor.on('resume', () => core.send({ type: 'power-resume' }))
     serveAttachments()
     void browser.init()
     createWindow()

@@ -213,6 +213,46 @@ try {
   check('never the source of any of them', !/FORMSRC|SERVERSRC|STEPSRC|flowchart|mermaid/.test(shown), shown)
   check('while an ordinary code block is still code', /const plain = 1/.test(shown))
 
+  console.log('\n# Schedules on the phone')
+  const call = (method, ...params) => page.evaluate(([m, p]) => window.celeste.core.call(m, p), [method, params])
+  const until = async (fn, what) => {
+    for (let i = 0; i < 60; i++) {
+      if (await fn()) return true
+      await page.waitForTimeout(250)
+    }
+    throw new Error(`Timed out waiting for ${what}`)
+  }
+  const wf = await call('workflows.save', {
+    name: 'Phone schedule',
+    description: '',
+    definition: {
+      nodes: [
+        { id: 'start', type: 'start', name: 'Start', inputs: [] },
+        { id: 'write', type: 'tool', name: 'Write', tool: { kind: 'file', op: 'write', path: 'p.md', content: 'hi' } },
+        { id: 'end', type: 'end', name: 'End' }
+      ],
+      edges: [{ from: 'start', to: 'write' }, { from: 'write', to: 'end' }]
+    }
+  })
+  const sched = await call('schedules.save', { workflowId: wf.id, spec: { kind: 'daily', time: '07:30' }, inputs: {}, approved: true })
+  await phone.getByRole('button', { name: 'Back' }).click()
+  await phone.getByRole('button', { name: 'Workflows', exact: true }).click()
+  const row = phone.getByRole('listitem', { name: /Phone schedule, Daily at 07:30/ })
+  await row.waitFor({ timeout: 20_000 })
+  check('the phone lists the computer’s schedules, with when each runs next', /Next:/.test(await row.innerText()), await row.innerText())
+  await row.click()
+  await until(async () => (await call('schedules.list')).find((x) => x.id === sched.id)?.enabled === false, 'the schedule to be switched off')
+  check('switching one off on the phone switches it off on the computer', true)
+  await row.click()
+  await until(async () => (await call('schedules.list')).find((x) => x.id === sched.id)?.enabled === true, 'the schedule to be switched on')
+  check('and on again', true)
+  await call('workflows.save', { id: wf.id, name: 'Phone schedule', description: '', definition: { nodes: [{ id: 'start', type: 'start', name: 'Start', inputs: [] }, { id: 'write', type: 'tool', name: 'Write', tool: { kind: 'file', op: 'write', path: 'p.md', content: 'changed' } }, { id: 'end', type: 'end', name: 'End' }], edges: [{ from: 'start', to: 'write' }, { from: 'write', to: 'end' }] } })
+  await phone.getByText(/approve it again on the computer/).waitFor({ timeout: 20_000 })
+  check('when the workflow changes the phone says it has to be approved again on the computer', true)
+  check('and it cannot be switched back on from the phone', await row.isDisabled())
+  const refusedOn = await call('schedules.setEnabled', sched.id, true).then(() => false, (err) => /approve this again|approve it again/i.test(String(err.message)))
+  check('the computer refuses too', refusedOn)
+
   console.log('\n# What a phone may not do')
   const refused = await phone.evaluate(async (port) => {
     const r = await fetch(`http://127.0.0.1:${port}/rpc`, { method: 'POST', body: JSON.stringify({ phone: 'someone-else', box: 'AAAA' }) })

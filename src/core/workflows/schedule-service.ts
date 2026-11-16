@@ -66,6 +66,8 @@ export class ScheduleService {
       dataDir?: string
       /** Whether the person paused every schedule. */
       paused?: () => boolean
+      /** Pauses or resumes every schedule (kept as a setting, so it survives a restart). */
+      setPaused?: (on: boolean) => void
     } = {}
   ) {}
 
@@ -207,7 +209,15 @@ export class ScheduleService {
       this.opts.changed?.()
     },
 
-    'schedules.log': (id) => this.store.scheduleLog(this.require(id).id, 200)
+    'schedules.log': (id) => this.store.scheduleLog(this.require(id).id, 200),
+
+    'schedules.paused': () => this.opts.paused?.() === true,
+
+    'schedules.pauseAll': (on) => {
+      this.opts.setPaused?.(on === true)
+      this.opts.changed?.()
+      return this.opts.paused?.() === true
+    }
   }
 
   /** The answers checked and typed as the workflow's Start step wants them. Throws a sentence. */

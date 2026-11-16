@@ -27,14 +27,10 @@ function StateIcon({ n }: { n: NodeView | undefined }) {
   return <CircleAlert className="h-4 w-4 text-danger" aria-hidden />
 }
 
-/** The card shown before anything happens: everything the run will do, to allow or refuse as a whole. */
-function ApprovalCard({ runId, requestId, actions }: { runId: string; requestId: string; actions: PlannedAction[] }) {
-  const approve = useRuns((s) => s.approve)
+/** What a run will do, one box for each command, request, file change or tool call. The approval card and the schedule dialog's card both show it. */
+export function ActionList({ actions }: { actions: PlannedAction[] }) {
   return (
-    <div role="group" aria-label="Approval needed" className="animate-fade-up rounded-xl border border-accent-edge bg-accent-soft/50 p-4">
-      <div className="flex items-center gap-2 text-[14px] font-medium text-ink">
-        <ShieldQuestion className="h-[18px] w-[18px] text-accent-text" /> Allow this run to do the following?
-      </div>
+    <>
       <ol className="mt-3 space-y-2">
         {actions.map((a, i) => {
           const Icon = KIND_ICON[a.kind]
@@ -50,6 +46,19 @@ function ApprovalCard({ runId, requestId, actions }: { runId: string; requestId:
         })}
       </ol>
       <p className="mt-2.5 text-xs text-ink-muted">Where a command uses the result of an earlier step, it is shown as {'{{ }}'} and filled in when it runs.</p>
+    </>
+  )
+}
+
+/** The card shown before anything happens: everything the run will do, to allow or refuse as a whole. */
+function ApprovalCard({ runId, requestId, actions }: { runId: string; requestId: string; actions: PlannedAction[] }) {
+  const approve = useRuns((s) => s.approve)
+  return (
+    <div role="group" aria-label="Approval needed" className="animate-fade-up rounded-xl border border-accent-edge bg-accent-soft/50 p-4">
+      <div className="flex items-center gap-2 text-[14px] font-medium text-ink">
+        <ShieldQuestion className="h-[18px] w-[18px] text-accent-text" /> Allow this run to do the following?
+      </div>
+      <ActionList actions={actions} />
       <div className="mt-3 flex gap-2">
         <Button variant="primary" size="sm" onClick={() => void approve(runId, requestId, true)} autoFocus>
           Allow and run

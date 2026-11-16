@@ -79,7 +79,7 @@ export type PhoneMethod = (typeof PHONE_METHODS)[number]
 export const isPhoneMethod = (m: string): m is PhoneMethod => (PHONE_METHODS as readonly string[]).includes(m)
 
 /** The pushes a phone receives. Terminals, vendor sign-ins, devices and tools stay on the computer. */
-export const PHONE_PUSHES: CorePush['type'][] = ['event', 'summary', 'removed', 'run', 'runEvent', 'workflows']
+export const PHONE_PUSHES: CorePush['type'][] = ['event', 'summary', 'removed', 'run', 'runEvent', 'workflows', 'schedules']
 
 /** A phone that was allowed to connect. */
 export interface PhoneRecord {
@@ -530,6 +530,8 @@ export interface PhoneLinkAnswer {
  */
 export type PhoneWake =
   | { type: 'notify'; kind: 'approval' | 'ask'; id: string; sessionId: string; chat: string; text: string }
+  /** A workflow run needs the person, or a scheduled run failed or finished: shown as a plain notice (the phone's app has nothing to open for it yet). `chat` is the title. */
+  | { type: 'notify'; kind: 'run'; id: string; sessionId: string; chat: string; text: string; runId?: string }
   | PhoneRequestPush
   | PhoneCancelPush
 

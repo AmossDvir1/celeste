@@ -119,9 +119,13 @@ const bridge: CelesteBridge = {
       }
     }
   },
+  loginItem: {
+    get: () => ipcRenderer.invoke('celeste:login-item', 'get'),
+    set: (on) => ipcRenderer.invoke('celeste:login-item', 'set', on)
+  },
   onOpen: (listener) => {
     const on = (_event: unknown, payload: { kind?: unknown; target?: unknown }) => {
-      if ((payload?.kind === 'chat' || payload?.kind === 'run') && typeof payload.target === 'string') listener({ kind: payload.kind, target: payload.target })
+      if ((payload?.kind === 'chat' || payload?.kind === 'run' || payload?.kind === 'schedules') && typeof payload.target === 'string') listener({ kind: payload.kind, target: payload.target })
     }
     ipcRenderer.on('celeste:open', on)
     return () => {

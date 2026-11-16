@@ -1,11 +1,11 @@
 import { useRef, useState } from 'react'
-import { FolderOpen, Play } from 'lucide-react'
+import { Play } from 'lucide-react'
 import { checkInputs, type InputDef } from '@shared/workflow'
-import { Field, SelectField } from '@/components/form'
 import { Modal } from '@/components/Dialog'
-import { Button, Checkbox, TextInput } from '@/components/ui'
+import { Button } from '@/components/ui'
 import { useRuns } from '@/stores/runs'
 import { useUi } from '@/stores/ui'
+import { FolderField, InputFields, initialAnswers } from './RunFields'
 
 /**
  * Asks what a run needs before it starts: the answers to the Start step's questions, and the folder it works in. Starting shows the
@@ -15,18 +15,11 @@ export function RunDialog({ workflowId, name, inputs, onClose }: { workflowId: s
   const start = useRuns((s) => s.start)
   const lastFolder = useRuns((s) => s.folders[workflowId])
   const pushToast = useUi((s) => s.pushToast)
-  const [values, setValues] = useState<Record<string, string | boolean>>(() =>
-    Object.fromEntries(inputs.map((i) => [i.name, i.type === 'boolean' ? i.default === true : i.default === undefined ? '' : String(i.default)]))
-  )
+  const [values, setValues] = useState(() => initialAnswers(inputs))
   const [folder, setFolder] = useState(lastFolder ?? '')
   const [problem, setProblem] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
   const first = useRef<HTMLButtonElement>(null)
-
-  const choose = async () => {
-    const picked = await window.celeste?.chooseFolder()
-    if (picked) setFolder(picked)
-  }
 
   const go = async () => {
     try {
@@ -52,46 +45,8 @@ export function RunDialog({ workflowId, name, inputs, onClose }: { workflowId: s
           void go()
         }}
       >
-        {inputs.length === 0 && <p className="text-[13px] text-ink-muted">This workflow asks nothing before it starts.</p>}
-        {inputs.map((i) => {
-          const label = i.label || i.name
-          return i.type === 'boolean' ? (
-            <Checkbox key={i.name} label={label} checked={values[i.name] === true} onChange={(v) => setValues({ ...values, [i.name]: v })} />
-          ) : (
-            <Field key={i.name} label={`${label}${i.required ? ' (required)' : ''}`}>
-              {(id) =>
-                i.type === 'choice' ? (
-                  <SelectField id={id} value={String(values[i.name] ?? '')} onChange={(e) => setValues({ ...values, [i.name]: e.target.value })}>
-                    <option value="">Choose…</option>
-                    {(i.options ?? []).map((o) => (
-                      <option key={o}>{o}</option>
-                    ))}
-                  </SelectField>
-                ) : (
-                  <TextInput id={id} inputMode={i.type === 'number' ? 'decimal' : undefined} value={String(values[i.name] ?? '')} onChange={(e) => setValues({ ...values, [i.name]: e.target.value })} />
-                )
-              }
-            </Field>
-          )
-        })}
-
-        <div className="space-y-1.5">
-          <div className="text-[13px] text-ink-muted">Works in this folder</div>
-          <div className="flex items-center gap-2">
-            <div className="min-w-0 flex-1 truncate rounded-control border border-edge bg-field px-3 py-2.5 text-[13px] text-ink" title={folder || undefined}>
-              {folder || 'A private folder Celeste keeps for this workflow'}
-            </div>
-            <Button ref={first} type="button" variant="secondary" onClick={() => void choose()}>
-              <FolderOpen className="h-4 w-4" /> Choose…
-            </Button>
-            {folder && (
-              <Button type="button" variant="ghost" onClick={() => setFolder('')}>
-                Use the private one
-              </Button>
-            )}
-          </div>
-          <p className="text-xs text-ink-faint">Files and commands of the workflow stay inside it.</p>
-        </div>
+        <InputFields inputs={inputs} values={values} onChange={setValues} />
+        <FolderField ref={first} folder={folder} onChange={setFolder} />
 
         {problem && (
           <p role="alert" className="text-[13px] text-danger">

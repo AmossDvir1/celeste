@@ -1,5 +1,5 @@
-import { Menu, nativeImage, Tray, type NativeImage } from 'electron'
-import { paintDot, tooltip } from './tray-rules'
+import { Menu, nativeImage, Tray, type MenuItemConstructorOptions, type NativeImage } from 'electron'
+import { paintDot, pauseItem, tooltip } from './tray-rules'
 
 const SIZE = 32
 
@@ -13,6 +13,10 @@ export class TrayService {
   private dotted: NativeImage | null = null
   private working = 0
   private waiting = 0
+  /** The menu as last drawn, so the app checks can read it and press an item (the system's own menu cannot be reached from a script). */
+  private labels: string[] = []
+  private presses = new Map<string, () => void>()
+  private tip = ''
 
   constructor(
     private readonly deps: {
@@ -23,6 +27,9 @@ export class TrayService {
       /** Whether the window is the small side window now, and a way to switch (the menu item's words and action). */
       compact: () => boolean
       toggleCompact: () => void
+      /** How many schedules there are and whether they are all paused, and the menu item's action (pauses, or resumes). */
+      schedules: () => { count: number; paused: boolean }
+      togglePauseSchedules: () => void
     }
   ) {}
 
@@ -64,16 +71,34 @@ export class TrayService {
   refresh(): void {
     const tray = this.tray
     if (!tray || tray.isDestroyed()) return
-    tray.setToolTip(tooltip(this.working, this.waiting))
+    const schedules = this.deps.schedules()
+    this.tip = tooltip(this.working, this.waiting, schedules.paused)
+    tray.setToolTip(this.tip)
+    const pause = pauseItem(schedules.count, schedules.paused)
     const image = this.waiting > 0 ? this.dotted : this.plain
     if (image) tray.setImage(image)
-    tray.setContextMenu(
-      Menu.buildFromTemplate([
-        { label: 'Open Celeste', click: () => this.deps.open() },
-        { label: this.deps.compact() ? 'Full view' : 'Compact view', click: () => this.deps.toggleCompact() },
-        { type: 'separator' },
-        { label: 'Quit Celeste', click: () => this.deps.quit() }
-      ])
-    )
+    const items: { label: string; run: () => void }[] = [
+      { label: 'Open Celeste', run: () => this.deps.open() },
+      { label: this.deps.compact() ? 'Full view' : 'Compact view', run: () => this.deps.toggleCompact() },
+      ...(pause ? [{ label: pause, run: () => this.deps.togglePauseSchedules() }] : [])
+    ]
+    const quit = { label: 'Quit Celeste', run: () => this.deps.quit() }
+    this.labels = [...items, quit].map((i) => i.label)
+    this.presses = new Map([...items, quit].map((i) => [i.label, i.run]))
+    const template: MenuItemConstructorOptions[] = [...items.map((i) => ({ label: i.label, click: i.run })), { type: 'separator' }, { label: quit.label, click: quit.run }]
+    tray.setContextMenu(Menu.buildFromTemplate(template))
+  }
+
+  /** For the app checks: the words of the menu items now, the tooltip, and pressing an item by its words. */
+  inspect(): { labels: string[]; tooltip: string; press: (label: string) => boolean } {
+    return {
+      labels: this.labels,
+      tooltip: this.tip,
+      press: (label) => {
+        const run = this.presses.get(label)
+        run?.()
+        return !!run
+      }
+    }
   }
 }

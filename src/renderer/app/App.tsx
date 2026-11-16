@@ -24,6 +24,7 @@ import { useRuns } from '@/stores/runs'
 import { useSessions } from '@/stores/sessions'
 import { useSettings } from '@/stores/settings'
 import { startLayout, useUi } from '@/stores/ui'
+import { useWorkflows } from '@/stores/workflows'
 import { Sidebar } from './Sidebar'
 import { TopBar } from './TopBar'
 
@@ -81,6 +82,9 @@ function useOpenFromNotification() {
         if (!session) return
         useUi.getState().setMode(session.mode)
         useSessions.getState().open(target)
+      } else if (kind === 'schedules') {
+        useUi.getState().setMode('workflows')
+        useWorkflows.getState().close()
       } else {
         useUi.getState().setMode('workflows')
         void useRuns.getState().load(target).then(() => useRuns.getState().watch(target))

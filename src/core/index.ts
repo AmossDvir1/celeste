@@ -29,7 +29,7 @@ import { createUnavailableSession } from './adapters/unavailable'
 import { createProjectApi } from './project'
 import { callTool, McpService } from './mcp'
 import { serverKey } from '@shared/mcp'
-import { Attention } from './attention'
+import { Attention, scheduleNotice } from './attention'
 import { claudeUsageFrom, copilotUsageFrom, UsageService, type ClaudeUsageAnswer, type CopilotQuotaSnapshot } from './usage'
 import type { VendorUsage } from '@shared/usage'
 import { AppTools } from './app/tools'
@@ -98,6 +98,8 @@ let phoneRef: PhoneBridge | undefined
 let attention: Attention | undefined
 let usageRef: UsageService | undefined
 let schedulerRef: Scheduler | undefined
+let schedulesRef: ScheduleService | undefined
+let tellSchedulesRef: (() => void) | undefined
 const push = (p: CorePush) => {
   ports.forEach((port) => send(port, { kind: 'push', push: p }))
   phoneRef?.broadcast(p)
@@ -381,15 +383,29 @@ async function start(): Promise<void> {
   // The schedules (docs/plans/SCHEDULING_PLAN.md): the person approved each when they made it, so its runs start with no card. Looked at every
   // half minute, when Celeste starts, and when the computer wakes. CELESTE_SCHEDULER_TICK_MS is for the app checks.
   const schedulesPaused = () => db.settings()['schedulesPaused'] === true
+  // The window looks again, and the main process (the tray's "Pause all schedules" item) hears how many there are and whether they are paused.
+  const tellSchedules = () => parent.postMessage({ type: 'schedules-state', paused: schedulesPaused(), count: db.listSchedules().length })
+  const schedulesChanged = () => {
+    push({ type: 'schedules' })
+    tellSchedules()
+  }
+  tellSchedulesRef = tellSchedules
   const scheduler = new Scheduler({
     store: db,
     runner,
     paused: schedulesPaused,
-    changed: () => push({ type: 'schedules' }),
+    changed: schedulesChanged,
+    // A scheduled run that failed (or finished, when asked), or a schedule that paused itself: the computer's notification, and the phones'.
+    notify: (n) => {
+      const message = scheduleNotice(n, Date.now())
+      parent.postMessage(message)
+      phoneRef?.tell({ id: message.id, title: message.title, text: message.text, ...(n.runId ? { runId: n.runId } : {}) })
+    },
     ...(Number(process.env['CELESTE_SCHEDULER_TICK_MS']) > 0 ? { tickMs: Number(process.env['CELESTE_SCHEDULER_TICK_MS']) } : {})
   })
   schedulerRef = scheduler
-  const schedules = new ScheduleService(db, runner, { dataDir, changed: () => push({ type: 'schedules' }), paused: schedulesPaused })
+  const schedules = new ScheduleService(db, runner, { dataDir, changed: schedulesChanged, paused: schedulesPaused, setPaused: (on) => db.setSetting('schedulesPaused', on) })
+  schedulesRef = schedules
   scheduler.start()
   // The workflows the person allowed the assistant to run are tools of Celeste's own tool server.
   // The assistant's use of the mouse and keyboard is off until switched on in Settings, and always asks first on a card of Celeste's own.
@@ -588,6 +604,7 @@ async function start(): Promise<void> {
   // The main process shows the tray, and notifications while no window is open, from these two kinds of message.
   attention = new Attention((message) => parent.postMessage(message), (sessionId) => db.listSessions().find((x) => x.id === sessionId)?.title)
   parent.postMessage({ type: 'app-settings', closeToTray: (service as SessionService).api['settings.get']().closeToTray })
+  tellSchedulesRef?.()
   parent.postMessage({ type: 'ready' })
 }
 
@@ -632,8 +649,7 @@ parent.on('message', (event) => {
     void schedulerRef?.tick()
   } else if (message?.type === 'schedules-pause') {
     // The tray's "Pause all schedules". Nothing new starts while it is on; runs that are going carry on.
-    store?.setSetting('schedulesPaused', (message as { on?: unknown }).on === true)
-    push({ type: 'schedules' })
+    schedulesRef?.api['schedules.pauseAll']((message as { on?: unknown }).on === true)
   } else if (message?.type === 'secret-reply' && typeof message.id === 'number') {
     waitingForSecret.get(message.id)?.(message.value ?? null)
     waitingForSecret.delete(message.id)

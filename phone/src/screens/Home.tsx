@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { AlarmClock, AppWindow, Bell, CalendarDays, ChevronRight, Hand, Code2, Images, Laptop, MapPin, MessageSquare, Monitor, Moon, Pencil, Phone, Pin, PinOff, Play, Plus, Search, ShieldOff, Smartphone, Sun, Trash2, Unplug, Wifi, Workflow } from 'lucide-react'
+import { AlarmClock, AppWindow, Bell, CalendarClock, CalendarDays, ChevronRight, Hand, Code2, Images, Laptop, MapPin, MessageSquare, Monitor, Moon, Pencil, Phone, Pin, PinOff, Play, Plus, Search, ShieldOff, Smartphone, Sun, Trash2, Unplug, Wifi, Workflow } from 'lucide-react'
 import type { Session } from '@/stores/types'
 import { abilities, appVersion, notificationsAllowed, type AbilityState } from '../native'
 import type { PhoneWorkflow } from '@shared/phone'
@@ -422,9 +422,15 @@ function Runs() {
   const [workflows, setWorkflows] = useState<PhoneWorkflow[] | null>(null)
   const [starting, setStarting] = useState<PhoneWorkflow | null>(null)
   const [open, setOpen] = useState<string | null>(null)
+  const schedules = useApp((s) => s.schedules)
+  const loadSchedules = useApp((s) => s.loadSchedules)
+  const setSchedule = useApp((s) => s.setSchedule)
   useEffect(() => {
     void loadRuns()
   }, [loadRuns])
+  useEffect(() => {
+    if (online) void loadSchedules()
+  }, [online, loadSchedules])
   useEffect(() => {
     if (!link || !online) return
     void link.call<PhoneWorkflow[]>('phone.workflows').then(setWorkflows, () => setWorkflows([]))
@@ -458,6 +464,34 @@ function Runs() {
                 <Play size={18} className="faint" />
               </button>
             ))}
+          </div>
+        </>
+      )}
+      {schedules.length > 0 && (
+        <>
+          <div className="section-title" {...rise(2)}>
+            Scheduled
+          </div>
+          <div className="card" data-rise style={{ margin: '0 16px 6px', ['--i' as string]: 2 }} role="list" aria-label="Scheduled">
+            {schedules.map((s) => {
+              // Switching on is only for one that is paused by the person; one whose workflow changed, or that failed, is looked at on the computer.
+              const needsComputer = s.pausedReason === 'edited' || s.pausedReason === 'failures'
+              const note = needsComputer ? (s.pausedReason === 'edited' ? 'Changed: approve it again on the computer' : 'Failed 3 times: look at it on the computer') : s.pausedReason === 'all' ? 'Paused: all' : s.enabled && s.nextRunAt ? `Next: ${when(s.nextRunAt)}` : 'Off'
+              return (
+                <button key={s.id} role="listitem" className="row tap" style={{ width: '100%', textAlign: 'left' }} disabled={!online || (needsComputer && !s.enabled)} aria-pressed={s.enabled} aria-label={`${s.workflowName}, ${s.describe}`} onClick={() => void setSchedule(s.id, !s.enabled)}>
+                  <span className={`ibox${needsComputer ? ' accent' : ''}`}>
+                    <CalendarClock size={18} />
+                  </span>
+                  <div className="grow">
+                    <div className="t">{s.workflowName}</div>
+                    <div className="s">
+                      {s.describe} · {note}
+                    </div>
+                  </div>
+                  <span className={`switch${s.enabled ? ' on' : ''}`} />
+                </button>
+              )
+            })}
           </div>
         </>
       )}

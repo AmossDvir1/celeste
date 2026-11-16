@@ -1,9 +1,9 @@
-// Scheduled workflows, in the real built app, as far as Core goes (docs/plans/SCHEDULING_PLAN.md, steps 1 to 3; the window comes with step 4):
+// Scheduled workflows, in the real built app (docs/plans/SCHEDULING_PLAN.md, steps 1 to 4; the window is the last part of this file):
 // a schedule made with the card's approval starts a real run at its time with no card, the run is marked as the schedule's, editing the
 // workflow pauses the schedule at once, a schedule that is switched off does not run, and everything is still there after a restart without
 // firing twice.   npm run verify:schedules     (no account, no cost)
 // The scheduler looks every half second here (CELESTE_SCHEDULER_TICK_MS), not every thirty seconds.
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { launch, saveSettings } from './lib/app.mjs'
@@ -36,7 +36,9 @@ const definition = (content) => ({
   ],
   edges: [{ from: 'start', to: 'write' }, { from: 'write', to: 'end' }]
 })
-const open = (env = {}) => launch({ width: 1440, height: 900, theme: null, profile, env: { CELESTE_SCHEDULER_TICK_MS: '500', ...env } })
+// A file stands in for the system's list of programs that start at sign-in, so the checkbox can be tried anywhere.
+const loginFile = join(work, 'login-item')
+const open = (env = {}) => launch({ width: 1440, height: 900, theme: null, profile, env: { CELESTE_SCHEDULER_TICK_MS: '500', CELESTE_FAKE_LOGIN_ITEM: loginFile, ...env } })
 
 let app
 try {
@@ -107,6 +109,95 @@ try {
   await core(page, 'schedules.remove', daily.id)
   await core(page, 'workflows.remove', wf.id)
   check('removing the workflow takes its schedules with it', (await core(page, 'schedules.list')).length === 0)
+
+  console.log('\n# The window')
+  const ww = await core(page, 'workflows.save', { name: 'Window report', description: 'Writes a report.', definition: definition('Hello {{inputs.who}}') })
+  await page.getByRole('navigation', { name: 'Modes' }).getByRole('button', { name: 'Workflows' }).click()
+  await page.getByRole('list', { name: 'Your workflows' }).getByRole('button').first().click()
+  await page.getByRole('button', { name: 'Schedule', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Schedule “Window report”' })
+  await dialog.waitFor({ timeout: 10_000 })
+  await dialog.getByLabel('At', { exact: true }).fill('08:15')
+  const card = dialog.getByRole('group', { name: 'What this schedule will do' })
+  await card.waitFor({ timeout: 10_000 })
+  const cardText = (await card.innerText()).replace(/\s+/g, ' ')
+  check('the dialog draws the card from what a run would do, worded for repeating, with no run started', /Daily at 08:15, Celeste will do this for “Window report”, without asking again/.test(cardText) && /report-/.test(cardText) && (await core(page, 'runs.list', ww.id)).length === 0, cardText)
+  check('and says when the next ones are, and that Celeste has to be running', (await dialog.innerText()).includes('Next:') && (await dialog.innerText()).includes('Celeste is running'))
+  await page.screenshot({ path: join(import.meta.dirname, '.output', 'schedules-dialog.png') })
+  await dialog.getByLabel('When', { exact: true }).selectOption('every')
+  await dialog.getByLabel('Every', { exact: true }).fill('2')
+  await dialog.getByRole('radio', { name: 'minutes' }).click()
+  await dialog.getByRole('alert').waitFor({ timeout: 10_000 })
+  check('a time that is too often is refused in words, and the button waits', /more often than every 5 minutes/.test(await dialog.getByRole('alert').innerText()) && (await dialog.getByRole('button', { name: 'Schedule', exact: true }).isDisabled()))
+  await dialog.getByLabel('When', { exact: true }).selectOption('daily')
+  await card.waitFor({ timeout: 10_000 })
+  const signIn = dialog.getByRole('checkbox', { name: /Start Celeste when I sign in/ })
+  check('the dialog offers to start Celeste when the person signs in, off until asked', (await signIn.getAttribute('aria-checked')) === 'false' && !existsSync(loginFile))
+  await signIn.click()
+  await dialog.getByRole('button', { name: 'Schedule', exact: true }).click()
+  await dialog.waitFor({ state: 'hidden', timeout: 10_000 })
+  check('and when it is ticked, the system is asked to start it', existsSync(loginFile) && readFileSync(loginFile, 'utf8') === 'on')
+  const made1 = (await core(page, 'schedules.list', ww.id))[0]
+  check('pressing Schedule is the approval: the schedule is made, on, and bound to the version', made1?.enabled === true && made1.approvedVersion === 1 && made1.describe === 'Daily at 08:15', JSON.stringify(made1))
+  await page.getByRole('button', { name: 'Back to all workflows' }).click()
+  const scheduled = page.getByRole('region', { name: 'Scheduled' })
+  await scheduled.waitFor({ timeout: 10_000 })
+  const rowText = (await scheduled.innerText()).replace(/\s+/g, ' ')
+  check('the home screen lists it with when it runs next, and the workflow’s row has a clock chip', /Window report/.test(rowText) && /Daily at 08:15/.test(rowText) && /Next:/.test(rowText) && (await page.getByRole('list', { name: 'Your workflows' }).innerText()).includes('Daily at 08:15'), rowText)
+  await page.screenshot({ path: join(import.meta.dirname, '.output', 'schedules-list.png') })
+
+  const sw = scheduled.getByRole('switch')
+  await sw.click()
+  await scheduled.getByText('Off', { exact: true }).waitFor({ timeout: 10_000 })
+  check('its switch turns it off', (await core(page, 'schedules.list', ww.id))[0].enabled === false)
+  await sw.click()
+  await waitFor(async () => (await core(page, 'schedules.list', ww.id))[0].enabled === true, 'it to be on again')
+  check('and on again', true)
+
+  await scheduled.getByRole('button', { name: 'Pause all' }).click()
+  await scheduled.getByText('Paused: all').waitFor({ timeout: 10_000 })
+  check('"Pause all" pauses every schedule at once, and says so on each', (await core(page, 'schedules.paused')) === true && (await core(page, 'schedules.list', ww.id))[0].pausedReason === 'all')
+  await scheduled.getByRole('button', { name: 'Resume all' }).click()
+  await waitFor(async () => (await core(page, 'schedules.paused')) === false, 'them to be resumed')
+  check('and "Resume all" lets them run again', (await scheduled.getByText('Paused: all').count()) === 0)
+
+  await core(page, 'workflows.save', { id: ww.id, name: 'Window report', description: 'Writes a report.', definition: definition('Changed after approval') })
+  await scheduled.getByText('Needs your OK again').waitFor({ timeout: 10_000 })
+  check('after the workflow is edited it says "Needs your OK again", on the row and on the chip', (await page.getByRole('list', { name: 'Your workflows' }).innerText()).includes('Needs your OK'))
+  await page.screenshot({ path: join(import.meta.dirname, '.output', 'schedules-needs-ok.png') })
+
+  await scheduled.getByRole('button', { name: /More about the schedule/ }).click()
+  await page.getByRole('menuitem', { name: 'Look and approve again' }).click()
+  const again1 = page.getByRole('dialog', { name: 'Change the schedule of “Window report”' })
+  await again1.waitFor({ timeout: 10_000 })
+  await again1.getByRole('group', { name: 'What this schedule will do' }).waitFor({ timeout: 10_000 })
+  check('Change opens the dialog with its own answers and says why it asks again', (await again1.innerText()).includes('The workflow changed since you approved this') && (await again1.getByLabel('At', { exact: true }).inputValue()) === '08:15')
+  await again1.getByRole('button', { name: 'Approve and save' }).click()
+  await again1.waitFor({ state: 'hidden', timeout: 10_000 })
+  const approved = (await core(page, 'schedules.list', ww.id))[0]
+  check('approving again switches it on for the new version', approved.enabled === true && !approved.pausedReason && approved.approvedVersion === 2, JSON.stringify(approved))
+  check('and the row no longer asks', (await scheduled.getByText('Needs your OK again').count()) === 0)
+
+  await scheduled.getByRole('button', { name: /More about the schedule/ }).click()
+  await page.getByRole('menuitem', { name: 'Log' }).click()
+  const log = page.getByRole('dialog', { name: /^Log of/ })
+  await log.waitFor({ timeout: 10_000 })
+  check('the log says it was paused and approved again', /paused/i.test(await log.innerText()) && /Approved again/.test(await log.innerText()))
+  await log.getByRole('button', { name: 'Close', exact: true }).first().click()
+
+  await scheduled.getByRole('button', { name: /More about the schedule/ }).click()
+  await page.getByRole('menuitem', { name: 'Run now' }).click()
+  const askCard = page.getByRole('group', { name: 'Approval needed' })
+  await askCard.waitFor({ timeout: 15_000 })
+  check('"Run now" is an ordinary run: it opens the workflow and shows the usual card, nothing runs before it is allowed', (await core(page, 'runs.list', ww.id)).every((r) => r.startedBy !== 'schedule') && (await core(page, 'runs.list', ww.id)).length === 1)
+  await askCard.getByRole('button', { name: 'Cancel' }).click()
+  await page.getByRole('button', { name: 'Back to all workflows' }).click()
+
+  await scheduled.getByRole('button', { name: /More about the schedule/ }).click()
+  await page.getByRole('menuitem', { name: 'Delete' }).click()
+  await page.getByRole('button', { name: 'Delete it' }).click()
+  await waitFor(async () => (await core(page, 'schedules.list')).length === 0, 'the schedule to be deleted')
+  check('Delete takes it away, and the workflow stays', (await page.getByRole('region', { name: 'Scheduled' }).count()) === 0 && (await core(page, 'workflows.get', ww.id)) !== null)
 } catch (err) {
   console.error(err)
   failures.push('the script itself failed')

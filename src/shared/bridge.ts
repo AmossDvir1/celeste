@@ -51,8 +51,13 @@ export interface CelesteBridge {
     /** The window starts to change shape (it is animated): the page fades out until the new shape arrives through `onChange`. */
     onStart(listener: () => void): () => void
   }
-  /** A notification was clicked while Celeste was in the tray: open the chat or the workflow run it was about. */
-  onOpen(listener: (target: { kind: 'chat' | 'run'; target: string }) => void): () => void
+  /** Starting Celeste when the person signs in, so schedules keep running. `available` is false where it cannot be done (not the installed Windows app). */
+  loginItem: {
+    get(): Promise<{ available: boolean; enabled: boolean }>
+    set(on: boolean): Promise<{ available: boolean; enabled: boolean }>
+  }
+  /** A notification was clicked while Celeste was in the tray: open the chat or the workflow run it was about (`schedules`: the list of schedules, for one that paused itself). */
+  onOpen(listener: (target: { kind: 'chat' | 'run' | 'schedules'; target: string }) => void): () => void
   revealDataFolder(): Promise<void>
   /** Asks the person to choose a folder. Null when they cancel. */
   chooseFolder(): Promise<string | null>

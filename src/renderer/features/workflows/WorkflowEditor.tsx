@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Bot, Clock, FileText, Globe, History, MoreHorizontal, MousePointer2, Play, Plug, Plus, Save, Share2, Smartphone, Sparkles, Terminal, Trash2 } from 'lucide-react'
+import { ArrowLeft, Bot, CalendarClock, Clock, FileText, Globe, History, MoreHorizontal, MousePointer2, Play, Plug, Plus, Save, Share2, Smartphone, Sparkles, Terminal, Trash2 } from 'lucide-react'
 import { Background, Controls, MarkerType, ReactFlow, ReactFlowProvider, useReactFlow, type Edge, type Node, type NodeChange } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { core } from '@/api'
@@ -17,6 +17,7 @@ import { NodeDetails } from './NodeDetails'
 import { BuildDialog } from './BuildDialog'
 import { RunDialog } from './RunDialog'
 import { RunPanel } from './RunPanel'
+import { useScheduleDialog } from './SchedulesList'
 import { metaOf, StepNode, type StepData } from './steps'
 
 const nodeTypes = { step: StepNode }
@@ -172,7 +173,7 @@ function RunHistory({ id, onClose }: { id: string; onClose: () => void }) {
               >
                 <span className="flex-1 text-[14px] text-ink">
                   {STATUS[r.status] ?? r.status}
-                  <span className="ml-2 text-[12.5px] text-ink-muted">version {r.version}</span>
+                  <span className="ml-2 text-[12.5px] text-ink-muted">version {r.version}{r.startedBy === 'schedule' ? ', scheduled' : ''}</span>
                 </span>
                 <span className="text-[12.5px] text-ink-muted">{sameDay(r.startedAt, Date.now()) ? formatTime(r.startedAt) : `${formatDay(r.startedAt)}, ${formatTime(r.startedAt)}`}</span>
               </button>
@@ -252,9 +253,11 @@ export function WorkflowEditor() {
   const [history, setHistory] = useState(false)
   const watching = useRuns((s) => s.watching)
   const watch = useRuns((s) => s.watch)
-  // Another workflow's run has nothing to do with this canvas.
+  const schedule = useScheduleDialog()
+  // Another workflow's run has nothing to do with this canvas. (A run just started from the list of schedules is this workflow's.)
   useEffect(() => {
-    watch(null)
+    const shown = useRuns.getState().watching
+    if (shown && useRuns.getState().runs[shown]?.summary.workflowId !== draft?.id) watch(null)
   }, [draft?.id, watch])
   if (!draft) return null
   const dirty = isDirty(draft)
@@ -346,6 +349,25 @@ export function WorkflowEditor() {
             >
               <Play className="h-4 w-4" /> Run
             </Button>
+            <Button
+              variant="secondary"
+              disabled={saving || problems.length > 0}
+              title={problems[0] ?? 'Run this workflow by itself, at times you choose'}
+              onClick={async () => {
+                // Like Run: what is on the screen is saved first, so what is approved is the version that will run.
+                let id = draft.id
+                if (dirty || !id) {
+                  setSaving(true)
+                  const ok = await save()
+                  setSaving(false)
+                  if (!ok) return
+                  id = useWorkflows.getState().draft?.id
+                }
+                if (id) schedule.ask(id)
+              }}
+            >
+              <CalendarClock className="h-4 w-4" /> Schedule
+            </Button>
           </div>
         </header>
 
@@ -384,6 +406,7 @@ export function WorkflowEditor() {
         />
       )}
       {building && <BuildDialog onClose={() => setBuilding(false)} />}
+      {schedule.dialog}
       {history && draft.id && <RunHistory id={draft.id} onClose={() => setHistory(false)} />}
       {versions && draft.id && <Versions id={draft.id} current={draft.version} onClose={() => setVersions(false)} />}
       <ConfirmDialog

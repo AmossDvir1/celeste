@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { CorePush } from '@shared/api'
 import type { SessionSummary } from '@shared/api'
 import type { RunSummary } from '@shared/workflow'
-import { Attention, type AttentionMessage } from './attention'
+import { Attention, scheduleNotice, type AttentionMessage } from './attention'
 
 const session = (id: string, status: SessionSummary['status']): CorePush => ({
   type: 'summary',
@@ -105,5 +105,32 @@ describe('Attention', () => {
     const { a, out } = setup()
     a.observe({ type: 'phone' })
     expect(out).toEqual([])
+  })
+})
+
+describe('scheduleNotice', () => {
+  it('turns a failed scheduled run into a notice that opens the run', () => {
+    expect(scheduleNotice({ kind: 'run-failed', scheduleId: 'sch-1', runId: 'r1', title: 'Backup failed', text: 'The upload step could not reach the server' }, 1000)).toEqual({
+      type: 'notice',
+      id: 'run-failed-r1-1000',
+      kind: 'run-failed',
+      target: 'r1',
+      title: 'Backup failed',
+      text: 'The upload step could not reach the server'
+    })
+  })
+
+  it('has no run to open for a schedule that paused itself, and keeps each notice apart in time', () => {
+    const a = scheduleNotice({ kind: 'schedule-paused', scheduleId: 'sch-1', title: 'Backup', text: 'Daily at 09:00: it failed 3 times' }, 5)
+    const b = scheduleNotice({ kind: 'schedule-paused', scheduleId: 'sch-1', title: 'Backup', text: 'Daily at 09:00: it failed 3 times' }, 6)
+    expect(a).toMatchObject({ kind: 'schedule-paused', target: '', id: 'schedule-paused-sch-1-5' })
+    expect(a.id).not.toBe(b.id)
+  })
+
+  it('cuts a long title and text to what a notification can show', () => {
+    const n = scheduleNotice({ kind: 'run-finished', scheduleId: 's', runId: 'r', title: 'x'.repeat(500), text: 'y'.repeat(900) }, 1)
+    expect(n.title).toHaveLength(120)
+    expect(n.text).toHaveLength(300)
+    expect(n.text.endsWith('…')).toBe(true)
   })
 })

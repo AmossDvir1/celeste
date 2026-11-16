@@ -6,6 +6,7 @@ import { Button } from '@/components/ui'
 import { formatDay, formatTime, sameDay } from '@/lib/format'
 import { useWorkflows } from '@/stores/workflows'
 import { BuildDialog } from './BuildDialog'
+import { ScheduleChip, SchedulesList } from './SchedulesList'
 import { WorkflowEditor } from './WorkflowEditor'
 
 const STATUS: Record<string, string> = { running: 'Running now', waiting: 'Waiting for you', completed: 'Last run finished', failed: 'Last run failed', cancelled: 'Last run was stopped' }
@@ -26,7 +27,10 @@ function Row({ w }: { w: WorkflowSummary }) {
           <WorkflowIcon className="h-5 w-5" />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[15px] font-medium text-ink">{w.name}</span>
+          <span className="flex items-center gap-2">
+            <span className="truncate text-[15px] font-medium text-ink">{w.name}</span>
+            <ScheduleChip workflowId={w.id} />
+          </span>
           <span className="block truncate text-[13px] text-ink-muted">{w.description || 'No description.'}</span>
         </span>
         <span className="shrink-0 text-right text-[12.5px] text-ink-muted">
@@ -87,11 +91,14 @@ function Home() {
           </div>
         </div>
       ) : (
-        <ul aria-label="Your workflows" className="mt-8 min-h-0 flex-1 space-y-2.5 overflow-y-auto pr-1">
-          {list.map((w) => (
-            <Row key={w.id} w={w} />
-          ))}
-        </ul>
+        <div className="mt-8 min-h-0 flex-1 overflow-y-auto pr-1">
+          <ul aria-label="Your workflows" className="space-y-2.5">
+            {list.map((w) => (
+              <Row key={w.id} w={w} />
+            ))}
+          </ul>
+          <SchedulesList />
+        </div>
       )}
       {building && <BuildDialog onClose={() => setBuilding(false)} />}
     </div>

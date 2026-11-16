@@ -244,6 +244,29 @@ describe('waking a closed app', () => {
     expect(bridge.phones()[0]?.push).toBeUndefined()
   })
 
+  it('wakes it when a workflow run starts to wait for the person, once, and when a scheduled run fails', async () => {
+    const { bridge, google, pairing } = await setup()
+    await new PhoneLink(pairing).call('phone.push', FAKE_TOKEN)
+    const run = (status: string) => ({ type: 'run', run: { id: 'r9', workflowId: 'w1', workflowName: 'Nightly backup', version: 1, status, startedBy: 'schedule', inputs: {}, folder: '/x', startedAt: 1 } }) as unknown as CorePush
+    bridge.broadcast(run('running'))
+    bridge.broadcast(run('waiting'))
+    // The same run pushed again while it still waits is not announced again.
+    bridge.broadcast(run('waiting'))
+    await waitFor(() => google.sent.length >= 1)
+    await new Promise((r) => setTimeout(r, 200))
+    expect(google.sent).toHaveLength(1)
+    expect(await woken(pairing, google.sent[0]!.data['b']!)).toEqual({ type: 'notify', kind: 'run', id: 'run-r9', sessionId: '', chat: 'Nightly backup', text: 'This workflow is waiting for your answer.', runId: 'r9' })
+    // It was answered, and later waits again: that is announced.
+    bridge.broadcast(run('running'))
+    bridge.broadcast(run('waiting'))
+    await waitFor(() => google.sent.length >= 2)
+
+    bridge.tell({ id: 'run-failed-r9-1', title: 'Nightly backup failed', text: 'The upload step: could not reach the server', runId: 'r9' })
+    await waitFor(() => google.sent.length >= 3)
+    expect(await woken(pairing, google.sent[2]!.data['b']!)).toEqual({ type: 'notify', kind: 'run', id: 'run-failed-r9-1', sessionId: '', chat: 'Nightly backup failed', text: 'The upload step: could not reach the server', runId: 'r9' })
+    expect(google.sent[2]!.data['b']).not.toContain('upload step')
+  })
+
   it('asks a closed phone to do something, and takes its answer over HTTP, with no stream open', async () => {
     const { bridge, google, relay, pairing } = await setup()
     await new PhoneLink(pairing).call('phone.push', FAKE_TOKEN)

@@ -15,6 +15,8 @@ export type AppMessage =
   | { type: 'app-settings'; closeToTray?: unknown }
   | { type: 'attention'; working?: unknown; waiting?: unknown }
   | { type: 'needs-you'; id?: unknown; kind?: unknown; target?: unknown; title?: unknown; text?: unknown }
+  | { type: 'schedules-state'; paused?: unknown; count?: unknown }
+  | { type: 'notice'; id?: unknown; kind?: unknown; target?: unknown; title?: unknown; text?: unknown }
   | { type: 'finished'; id?: unknown; target?: unknown; title?: unknown; text?: unknown }
 
 /**
@@ -118,7 +120,7 @@ export class CoreProcess {
         return
       }
       // What the main process needs to run the tray: the setting, how much is going on, and when something needs the person.
-      if (message?.type === 'app-settings' || message?.type === 'attention' || message?.type === 'needs-you' || message?.type === 'finished') {
+      if (message?.type === 'app-settings' || message?.type === 'schedules-state' || message?.type === 'notice' || message?.type === 'attention' || message?.type === 'needs-you' || message?.type === 'finished') {
         this.app?.(message as unknown as AppMessage)
         return
       }

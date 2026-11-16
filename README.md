@@ -30,7 +30,8 @@ vendor account.
   only. Commands on another machine always show the exact command and ask first.
 - **Workflows.** Build a repeatable job on a canvas from commands, web requests, files, tools and assistant steps, or let
   an assistant draft one for you. **Before a run does anything, one card lists everything it will do.** Start one from a
-  conversation with `/`.
+  conversation with `/`, or **schedule** it (daily, weekly, every so often): you approve what it will do once, and
+  while Celeste is running it starts by itself, and tells you if it fails.
 - **Tools and devices.** Add a tool once and every assistant can use it. Give the assistant other computers, virtual
   machines and Android phones to work with, read-only unless you say otherwise.
 - **A browser beside the chat.** A real browser inside Celeste, with tabs for each chat (Ctrl+Shift+B). Open links from a
@@ -113,7 +114,8 @@ An Android app that works as a remote for the Celeste on your computer, on the s
   the model, stop a reply, pin, rename or delete a chat with a long press, and answer approvals and questions (also as
   notifications, with the app closed);
 - see the files and pictures an assistant made in a Chat, and open a picture full screen with pinch zoom;
-- start your workflows and approve what a run is about to do;
+- start your workflows, approve what a run is about to do, and switch your schedules off and on (a failed scheduled run
+  reaches you as a notification);
 - share text or a link from any app to start a chat with it;
 - let the assistant use your phone, **each thing off until you switch it on, and each request asking you on the phone
   first**: read and reply to notifications, open an app, set an alarm, find where the phone is, pick photos and files for
@@ -174,7 +176,7 @@ Tried on Windows by hand and on macOS by automatic checks only (no one working o
 2. Trying the Android app away from home on real phones and with a real Firebase key, and the browser with Copilot and with sign-in to Google, Microsoft and GitHub
 3. Trying OpenAI with a real ChatGPT account and Gemini with a real key, and Gemini through Google's Antigravity if Google confirms that other apps may start its sign-in
 4. Signed installers (Windows first), automatic updates, Linux
-5. Branches, schedules and templates for workflows
+5. Branches and templates for workflows
 
 The full plan, with the reasoning behind each decision, is in [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md), and the
 phone's in [docs/PHONE_PLAN.md](docs/PHONE_PLAN.md), the browser's in [docs/BROWSER_PLAN.md](docs/BROWSER_PLAN.md).

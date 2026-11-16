@@ -435,6 +435,9 @@ export interface CoreApi {
   'schedules.remove': (id: string) => void
   /** What a schedule skipped, missed or was paused for, newest first. */
   'schedules.log': (id: string) => ScheduleLogEntry[]
+  /** Whether every schedule is paused (the tray's item and the button on the list). Nothing new starts while it is; runs that are going carry on. */
+  'schedules.paused': () => boolean
+  'schedules.pauseAll': (on: boolean) => boolean
   /** The tools (MCP servers) the person has added, shared by every vendor. */
   'mcp.list': () => McpServerView[]
   /** Adds a server, or changes the one with `id`. It is looked at straight after. */

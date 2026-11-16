@@ -392,6 +392,6 @@ describe('schedules from a phone', () => {
     const { isPhoneMethod } = await import('@shared/phone')
     expect(isPhoneMethod('schedules.list')).toBe(true)
     expect(isPhoneMethod('schedules.setEnabled')).toBe(true)
-    for (const m of ['schedules.save', 'schedules.remove', 'schedules.preview', 'schedules.log']) expect(isPhoneMethod(m)).toBe(false)
+    for (const m of ['schedules.save', 'schedules.remove', 'schedules.preview', 'schedules.log', 'schedules.pauseAll', 'schedules.paused']) expect(isPhoneMethod(m)).toBe(false)
   })
 })

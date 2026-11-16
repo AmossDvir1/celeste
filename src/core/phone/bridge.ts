@@ -601,8 +601,21 @@ export class PhoneBridge {
     }, 30_000).unref?.()
   }
 
-  /** What the person should be told about, from what Core pushes: an approval or a question waiting for them. */
+  /** The runs that were waiting for the person at the last push, so a run is announced when it starts waiting and not at every push. */
+  private readonly waitingRuns = new Set<string>()
+
+  /** What the person should be told about, from what Core pushes: an approval or a question waiting for them, or a run that has started to wait. */
   private notice(push: CorePush): PhoneWake | null {
+    if (push.type === 'run') {
+      const { run } = push
+      if (run.status !== 'waiting') {
+        this.waitingRuns.delete(run.id)
+        return null
+      }
+      if (this.waitingRuns.has(run.id)) return null
+      this.waitingRuns.add(run.id)
+      return { type: 'notify', kind: 'run', id: `run-${run.id}`, sessionId: '', chat: run.workflowName.slice(0, 120), text: 'This workflow is waiting for your answer.', runId: run.id }
+    }
     if (push.type !== 'event') return null
     const e = push.stored.event
     const chat = (this.deps.chatTitle?.(push.sessionId) ?? 'Celeste').slice(0, 120)
@@ -615,6 +628,12 @@ export class PhoneBridge {
       return { type: 'notify', kind: 'ask', id: e.requestId, sessionId: push.sessionId, chat, text }
     }
     return null
+  }
+
+  /** Tells every paired phone something, as a notification (a scheduled run failed, or was paused). The phone shows it once, by `id`. */
+  tell(notice: { id: string; title: string; text: string; runId?: string }): void {
+    const wake: PhoneWake = { type: 'notify', kind: 'run', id: notice.id, sessionId: '', chat: notice.title.slice(0, 120), text: notice.text.slice(0, 1200), ...(notice.runId ? { runId: notice.runId } : {}) }
+    for (const phone of this.phones()) this.wake(phone, wake)
   }
 
   /** Sends a push to every phone that is listening, sealed for each, in order. */

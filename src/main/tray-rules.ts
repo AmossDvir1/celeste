@@ -21,12 +21,27 @@ export function hidesOnClose(s: CloseState): boolean {
 }
 
 /** The words on the tray icon when the pointer rests on it. */
-export function tooltip(working: number, waiting: number): string {
+export function tooltip(working: number, waiting: number, schedulesPaused = false): string {
   const parts = [
     ...(working > 0 ? [`${working} working`] : []),
-    ...(waiting > 0 ? [`${waiting} ${waiting === 1 ? 'needs' : 'need'} you`] : [])
+    ...(waiting > 0 ? [`${waiting} ${waiting === 1 ? 'needs' : 'need'} you`] : []),
+    ...(schedulesPaused ? ['schedules paused'] : [])
   ]
   return parts.length ? `Celeste: ${parts.join(', ')}` : 'Celeste'
+}
+
+/** The words of the tray menu's item for pausing the schedules, or null while there are none (and none are paused) to pause. */
+export function pauseItem(count: number, paused: boolean): string | null {
+  if (paused) return 'Resume all schedules'
+  return count > 0 ? 'Pause all schedules' : null
+}
+
+/**
+ * Whether Celeste, started with the computer (`--background`), leaves its window hidden. Only when there is a tray icon to bring it back
+ * from: a hidden window nobody can find again would look like Celeste not running.
+ */
+export function startsHidden(s: { background: boolean; platform: NodeJS.Platform; trayReady: boolean }): boolean {
+  return s.background && s.platform === 'win32' && s.trayReady
 }
 
 /** The question before quitting from the tray, or null when nothing is going on and Celeste simply quits. */

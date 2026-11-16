@@ -31,7 +31,7 @@ function world(def: WorkflowDefinition = chain(start([{ name: 'env', default: 's
   store.saveWorkflow({ id: 'w1', name: 'Backup', description: '', version: 1, allowAssistant: false, definition: def, createdAt: 1, updatedAt: 1 })
   const runner = new WorkflowRunner({ store, push: () => undefined, agent: { run: async () => 'x' }, mcp: { find: async () => undefined, call: async () => ({ text: '', isError: false }) }, now: () => clock.now })
   const state = { paused: false }
-  const service = new ScheduleService(store, runner, { now: () => clock.now, changed: () => void changes++, paused: () => state.paused, dataDir: folder })
+  const service = new ScheduleService(store, runner, { now: () => clock.now, changed: () => void changes++, paused: () => state.paused, setPaused: (on) => void (state.paused = on), dataDir: folder })
   const api: ScheduleApi = service.api
   const input = (over: Partial<ScheduleSaveInput> = {}): ScheduleSaveInput => ({ workflowId: 'w1', spec: { kind: 'daily', time: '09:00' }, inputs: {}, folder, timezone: 'UTC', approved: true, ...over })
   return { store, clock, api, input, changes: () => changes, state }
@@ -229,5 +229,27 @@ describe('sharing a workflow', () => {
     const file = toFile(wf?.name ?? '', wf?.description ?? '', wf?.definition as WorkflowDefinition)
     expect(Object.keys(JSON.parse(file.text) as object).sort()).toEqual(['definition', 'description', 'format', 'name', 'version'])
     expect(file.text).not.toMatch(/schedule|nextRunAt|approved/i)
+  })
+})
+
+describe('pausing every schedule', () => {
+  it('says whether they are paused, pauses and resumes them, and tells the window each time', async () => {
+    const w = world()
+    const s = await w.api['schedules.save'](w.input())
+    const before = w.changes()
+    expect(w.api['schedules.paused']()).toBe(false)
+    expect(w.api['schedules.pauseAll'](true)).toBe(true)
+    expect(w.api['schedules.paused']()).toBe(true)
+    // Every schedule that is on shows "Paused: all", and its own switch is untouched.
+    expect(w.api['schedules.list']()[0]).toMatchObject({ id: s.id, enabled: true, pausedReason: 'all' })
+    expect(w.api['schedules.pauseAll'](false)).toBe(false)
+    expect(w.api['schedules.list']()[0]?.pausedReason).toBeUndefined()
+    expect(w.changes()).toBe(before + 2)
+  })
+
+  it('treats anything but true as resume', () => {
+    const w = world()
+    w.api['schedules.pauseAll'](true)
+    expect(w.api['schedules.pauseAll']('yes' as never)).toBe(false)
   })
 })

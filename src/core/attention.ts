@@ -11,10 +11,19 @@ export type AttentionMessage =
   /** A command the assistant started in the background has ended (not one the person stopped). */
   | { type: 'finished'; id: string; target: string; title: string; text: string }
   | { type: 'attention'; working: number; waiting: number }
+  /** A scheduled run failed or finished, or a schedule paused itself. `target` is the run's id, or empty. */
+  | { type: 'notice'; id: string; kind: 'run-failed' | 'run-finished' | 'schedule-paused'; target: string; title: string; text: string }
   /** `target` is the chat's id, or the run's. `text` is what it asks. */
   | { type: 'needs-you'; id: string; kind: 'chat' | 'run'; target: string; title: string; text: string }
 
 const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
+
+/** What a scheduled run's end, or a schedule pausing itself, becomes for the main process (a notification) and the phones (a wake). */
+export type NoticeMessage = Extract<AttentionMessage, { type: 'notice' }>
+export function scheduleNotice(n: { kind: NoticeMessage['kind']; scheduleId: string; runId?: string; title: string; text: string }, at: number): NoticeMessage {
+  // `id` is what a notification is filed under, so each one is its own and a repeat of the same text does not replace another.
+  return { type: 'notice', id: `${n.kind}-${n.runId ?? n.scheduleId}-${at}`, kind: n.kind, target: n.runId ?? '', title: clip(n.title, 120), text: clip(n.text, 300) }
+}
 
 export class Attention {
   private readonly sessions = new Map<string, 'idle' | 'working' | 'waiting'>()

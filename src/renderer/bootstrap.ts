@@ -5,6 +5,7 @@ import { useMcp } from '@/stores/mcp'
 import { useModels } from '@/stores/models'
 import { usePhone } from '@/stores/phone'
 import { useRuns } from '@/stores/runs'
+import { useSchedules } from '@/stores/schedules'
 import { useSessions } from '@/stores/sessions'
 import { setSaveErrorHandler, useSettings } from '@/stores/settings'
 import { useUi } from '@/stores/ui'
@@ -43,6 +44,7 @@ export async function bootstrap(): Promise<void> {
     useRuns.getState().applyPush(push)
     usePhone.getState().applyPush(push)
     useUsage.getState().applyPush(push)
+    useSchedules.getState().applyPush(push)
   })
   // A phone may already be waiting for an answer from before this window opened.
   void usePhone.getState().refresh()
@@ -63,6 +65,7 @@ export async function bootstrap(): Promise<void> {
   await useDevices.getState().refresh()
   await useMcp.getState().refresh()
   await useWorkflows.getState().refresh()
+  await useSchedules.getState().refresh()
   useUi.getState().setDataDir(data.dataDir)
   useUi.getState().setVersion(data.version)
   useUi.getState().resetDraft()

@@ -9,6 +9,7 @@ import type { ProducedFile } from '@shared/produced'
 import { EMPTY_QUEUE, type QueueAction, type SendMode } from '@shared/queue'
 import type { PhoneBootstrap, PhoneCancelPush, PhoneModelChoice, PhoneModels, PhoneNewSession, PhoneRequestPush } from '@shared/phone'
 import { PhoneLink, type LinkState, type PhonePairing } from '@shared/phone-client'
+import type { ScheduleSummary } from '@shared/schedule'
 import type { RunSummary } from '@shared/workflow'
 import { foldEvents, resolveApproval, resolveAsk } from '@/stores/reduce'
 import type { Session } from '@/stores/types'
@@ -95,6 +96,8 @@ interface AppState {
   boot: PhoneBootstrap | null
   sessions: Record<string, Session>
   runs: RunSummary[]
+  /** The computer's schedules, to look at and switch off or on. Making or changing one is only possible on the computer. */
+  schedules: ScheduleSummary[]
   /** The models the computer offers, once asked. */
   models: PhoneModels | null
   /** Text another app shared to Celeste, for New chat to start with. */
@@ -146,6 +149,9 @@ interface AppState {
   approve: (id: string, requestId: string, allow: boolean, minutes?: number) => Promise<void>
   answer: (id: string, requestId: string, answers: AskAnswers) => Promise<void>
   loadRuns: () => Promise<void>
+  loadSchedules: () => Promise<void>
+  /** Switches a schedule off or on. The computer may refuse (the workflow changed since it was approved): its sentence is shown. */
+  setSchedule: (id: string, on: boolean) => Promise<void>
   applyPush: (push: CorePush | PhoneRequestPush | PhoneCancelPush) => void
 }
 
@@ -160,6 +166,7 @@ export const useApp = create<AppState>((set, get) => ({
   boot: null,
   sessions: {},
   runs: [],
+  schedules: [],
   models: null,
   shared: null,
   screen: load<PhonePairing | null>(PAIRING_KEY, null) ? { name: 'home', tab: 'chats' } : { name: 'setup' },
@@ -475,9 +482,29 @@ export const useApp = create<AppState>((set, get) => ({
     }
   },
 
+  loadSchedules: async () => {
+    try {
+      set({ schedules: (await get().link?.call<ScheduleSummary[]>('schedules.list')) ?? [] })
+    } catch {
+      // Shown as none.
+    }
+  },
+
+  setSchedule: async (id, on) => {
+    try {
+      await get().link?.call('schedules.setEnabled', id, on)
+    } catch (err) {
+      get().say(err instanceof Error ? err.message : 'The computer did not change it.')
+    }
+    await get().loadSchedules()
+  },
+
   applyPush: (push) => {
     const sessions = get().sessions
     switch (push.type) {
+      case 'schedules':
+        void get().loadSchedules()
+        return
       case 'summary': {
         const had = sessions[push.session.id]
         set({ sessions: { ...sessions, [push.session.id]: had ? { ...had, ...push.session } : fresh(push.session) } })

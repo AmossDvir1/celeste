@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { hidesOnClose, paintDot, quitQuestion, shouldNotify, tooltip } from './tray-rules'
+import { hidesOnClose, paintDot, pauseItem, quitQuestion, shouldNotify, startsHidden, tooltip } from './tray-rules'
 
 const base = { platform: 'win32' as const, closeToTray: true, quitting: false, trayReady: true }
 
@@ -26,6 +26,32 @@ describe('tooltip', () => {
     expect(tooltip(2, 0)).toBe('Celeste: 2 working')
     expect(tooltip(0, 1)).toBe('Celeste: 1 needs you')
     expect(tooltip(2, 3)).toBe('Celeste: 2 working, 3 need you')
+  })
+})
+
+describe('the schedules in the tray', () => {
+  it('says so in the tooltip while they are paused', () => {
+    expect(tooltip(0, 0, true)).toBe('Celeste: schedules paused')
+    expect(tooltip(1, 0, true)).toBe('Celeste: 1 working, schedules paused')
+    expect(tooltip(0, 0, false)).toBe('Celeste')
+  })
+  it('offers to pause when there are schedules, to resume when they are paused, and nothing when there are none', () => {
+    expect(pauseItem(0, false)).toBeNull()
+    expect(pauseItem(2, false)).toBe('Pause all schedules')
+    expect(pauseItem(2, true)).toBe('Resume all schedules')
+    expect(pauseItem(0, true)).toBe('Resume all schedules')
+  })
+})
+
+describe('startsHidden', () => {
+  const start = { background: true, platform: 'win32' as const, trayReady: true }
+  it('stays in the tray when started with the computer and there is a tray icon to open it from', () => {
+    expect(startsHidden(start)).toBe(true)
+  })
+  it('shows the window for any other start, and when there would be no way back to it', () => {
+    expect(startsHidden({ ...start, background: false })).toBe(false)
+    expect(startsHidden({ ...start, trayReady: false })).toBe(false)
+    expect(startsHidden({ ...start, platform: 'darwin' })).toBe(false)
   })
 })
 
