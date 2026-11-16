@@ -1,3 +1,4 @@
+import { VISUALS_INSTRUCTION } from '../visuals'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -138,7 +139,8 @@ describe.skipIf(!program || !existsSync(program))('the Gemini adapter with the r
     const events = await turn(session, 'Say hello')
     expect(types(events)[0]).toBe('turn.started')
     expect(events.at(-1)?.type).toBe('turn.completed')
-    expect(said(events)).toBe('Echo: Say hello')
+    // A new conversation starts with what the assistant is told about pictures, once; the real program echoes all of it back.
+    expect(said(events)).toBe(`Echo: ${VISUALS_INSTRUCTION}\n\n---\n\nSay hello`)
     expect(events.some((e) => e.type === 'usage.updated')).toBe(true)
     expect(api.requests.at(-1)?.key).toBe(KEY)
     expect(api.requests.at(-1)?.model).toBe('gemini-3-flash-preview')

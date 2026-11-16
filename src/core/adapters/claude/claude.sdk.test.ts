@@ -1,3 +1,4 @@
+import { VISUALS_INSTRUCTION } from '../visuals'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -65,11 +66,11 @@ describe.skipIf(!program)('the Claude adapter with the real Claude Code', () => 
     remembered: string[]
     set: (patch: Partial<ReturnType<AdapterContext['options']>>) => void
   }
-  const make = (over: { approval?: ApprovalMode; vendorSessionId?: string; transcript?: string; model?: string; attachmentPath?: (id: string) => string | undefined; mcp?: ResolvedMcpServer[] } = {}): Made => {
+  const make = (over: { sessionId?: string; approval?: ApprovalMode; vendorSessionId?: string; transcript?: string; model?: string; attachmentPath?: (id: string) => string | undefined; mcp?: ResolvedMcpServer[] } = {}): Made => {
     const remembered: string[] = []
     const options: ReturnType<AdapterContext['options']> = { model: over.model ?? 'claude:haiku', effort: null, approval: over.approval ?? 'auto', cwd: dir }
     const ctx: AdapterContext = {
-      sessionId: 's-1',
+      sessionId: over.sessionId ?? 's-1',
       vendor: 'claude',
       mode: 'develop',
       options: () => ({ ...options }),
@@ -286,6 +287,31 @@ describe.skipIf(!program)('the Claude adapter with the real Claude Code', () => 
     expect(said(next)).toBe('Back again')
     await t.session.close()
   }, 120_000)
+
+  describe('what Claude is told about pictures', () => {
+    it('has it added to its own instructions, which stay, so it draws a diagram, chart or steps when one helps', async () => {
+      api.setScript(echo)
+      const t = make()
+      const before = api.main.length
+      await turn(t.session, 'How does login work?')
+      const system = JSON.stringify(api.main.slice(before)[0]?.body['system'])
+      expect(system).toContain('Celeste can draw some code blocks as pictures')
+      expect(system).toContain('```chart')
+      expect(system).toContain('```steps')
+      // Claude Code's own instructions are still there.
+      expect(system).toMatch(/Claude Code/)
+      await t.session.close()
+    }, 90_000)
+
+    it('is not added for a step of a workflow', async () => {
+      api.setScript(echo)
+      const t = make({ sessionId: 'wf-1' })
+      const before = api.main.length
+      await turn(t.session, 'Summarize this')
+      expect(JSON.stringify(api.main.slice(before)[0]?.body['system'])).not.toContain('Celeste can draw some code blocks')
+      await t.session.close()
+    }, 90_000)
+  })
 
   describe('usage (what /usage shows)', () => {
     it('is not asked for when there is an API key, since an API key has no plan limits', async () => {

@@ -1,3 +1,4 @@
+import { VISUALS_INSTRUCTION } from '../visuals'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -271,12 +272,12 @@ class FakeAcp implements Transport {
   }
 }
 
-function sessionWith(over: { approval?: ApprovalMode; vendorSessionId?: string; answers?: FakeAcp['answers']; model?: string } = {}) {
+function sessionWith(over: { approval?: ApprovalMode; vendorSessionId?: string; answers?: FakeAcp['answers']; model?: string; sessionId?: string } = {}) {
   const processes: FakeAcp[] = []
   const remembered: string[] = []
   const options = { model: over.model ?? 'gemini:gemini-3-flash-preview', effort: null as null, approval: over.approval ?? ('ask' as ApprovalMode), cwd: 'D:\\p' }
   const ctx: AdapterContext = {
-    sessionId: 's',
+    sessionId: over.sessionId ?? 's',
     vendor: 'gemini',
     mode: 'develop',
     options: () => ({ ...options }),
@@ -313,6 +314,27 @@ const collect = async (session: GeminiAgentSession, until: string[], into: Agent
 }
 const tick = () => new Promise((r) => setTimeout(r, 25))
 
+describe('what Gemini is told about pictures', () => {
+  const prompts = async (over: Parameters<typeof sessionWith>[0], messages: string[]) => {
+    const { session, processes } = sessionWith({ ...over, answers: { 'session/prompt': () => ({ stopReason: 'end_turn' }) } })
+    for (const text of messages) {
+      session.send({ text, attachments: [] })
+      await tick()
+    }
+    const sent = (processes[0] as FakeAcp).method('session/prompt').map((m) => ((m['params'] as { prompt: { text: string }[] }).prompt[0] as { text: string }).text)
+    await session.close()
+    return sent
+  }
+
+  it('is put in front of the first message of a new conversation, once', async () => {
+    expect(await prompts({}, ['first', 'second'])).toEqual([`${VISUALS_INSTRUCTION}\n\n---\n\nfirst`, 'second'])
+  })
+
+  it('is not put in front of a step of a workflow', async () => {
+    expect(await prompts({ sessionId: 'wf-1' }, ['hi'])).toEqual(['hi'])
+  })
+})
+
 describe('the session, with a fake Gemini', () => {
   it('opens a session with the person’s tools, sets the model and mode, and sends the message in the protocol’s form', async () => {
     const { session, processes, remembered } = sessionWith({ approval: 'auto' })
@@ -326,7 +348,7 @@ describe('the session, with a fake Gemini', () => {
     expect(gemini.method('session/set_model')[0]?.['params']).toEqual({ sessionId: 'session-1', modelId: 'gemini-3-flash-preview' })
     expect(gemini.method('session/set_mode')[0]?.['params']).toEqual({ sessionId: 'session-1', modeId: 'yolo' })
     expect(remembered).toEqual(['session-1'])
-    expect(gemini.method('session/prompt')[0]?.['params']).toEqual({ sessionId: 'session-1', prompt: [{ type: 'text', text: 'hi' }] })
+    expect(gemini.method('session/prompt')[0]?.['params']).toEqual({ sessionId: 'session-1', prompt: [{ type: 'text', text: `${VISUALS_INSTRUCTION}\n\n---\n\nhi` }] })
     await session.close()
   })
 

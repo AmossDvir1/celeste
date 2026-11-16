@@ -4,6 +4,7 @@ import type { AdapterContext } from '../types'
 import { EventQueue } from '../event-queue'
 import { forCopilot, type ResolvedMcpServer } from '../../mcp'
 import { DEVICE_SERVER, decide, describe, type PermissionLike } from './permissions'
+import { visualsFor } from '../visuals'
 import { Translator } from './translate'
 
 /** The part of the SDK's session that the adapter uses. A test supplies a fake that plays recorded events. */
@@ -141,6 +142,8 @@ export class CopilotAgentSession implements AgentSession {
       ...(resolved.effort ? { reasoningEffort: resolved.effort } : {}),
       ...(options.cwd ? { workingDirectory: options.cwd } : {}),
       streaming: true,
+      // Added after Copilot's own instructions (not for a workflow's step): when a picture helps, and how to write one.
+      ...(visualsFor(ctx) ? { systemMessage: { mode: 'append' as const, content: visualsFor(ctx) as string } } : {}),
       onPermissionRequest: (request: unknown) => this.onPermission(request as PermissionLike),
       onUserInputRequest: (request: { question: string; choices?: string[] }) => this.onUserInput(request),
       // The person's own tools, and Celeste's device server under its reserved name, which no tool of theirs may have.

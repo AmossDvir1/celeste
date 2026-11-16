@@ -5,6 +5,7 @@ import type { AdapterContext } from '../types'
 import { EventQueue } from '../event-queue'
 import { forClaude, type ResolvedMcpServer } from '../../mcp'
 import { DEVICE_SERVER, decide, describe, questionsFrom } from './permissions'
+import { visualsFor } from '../visuals'
 import { Translator, errorFrom } from './translate'
 
 /** The part of the SDK's running query that the adapter uses. A test supplies a fake that plays recorded messages. */
@@ -193,6 +194,8 @@ export class ClaudeAgentSession implements AgentSession {
         ...(launch.executable ? { pathToClaudeCodeExecutable: launch.executable } : {}),
         env: launch.env,
         permissionMode: 'default',
+        // Claude Code's own instructions stay; the line about pictures is added after them (not for a workflow's step).
+        ...(visualsFor(ctx) ? { systemPrompt: { type: 'preset' as const, preset: 'claude_code' as const, append: visualsFor(ctx) as string } } : {}),
         canUseTool: this.canUseTool,
         includePartialMessages: true,
         // Celeste's approval modes are the only rule. A person's own allow rules in ~/.claude must not skip them, and a Develop

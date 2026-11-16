@@ -18,6 +18,8 @@ All notable changes to Celeste. The format follows [Keep a Changelog](https://ke
 
 - **Diagrams, charts and guided steps in the chat.** When an assistant answers with a diagram (Mermaid), a chart (bar, line or pie from a small list of numbers) or a how-to as steps, Celeste draws it in the answer instead of showing code: in both themes, with a text summary for screen readers, and a quiet "Drawing…" while it is still arriving. Steps can be ticked off (kept across restarts), have a Copy button for values and open links only through your browser choice. If a diagram cannot be drawn there is a short note with **Try again**, which asks the assistant to fix it (twice at most), and the source folded away. Nothing in a drawing can run a script. The phone shows what a picture says in words. The diagram library loads only when a diagram appears and adds about 8 to 9 MB to the installer.
 
+- **Assistants now draw a diagram, chart or steps by themselves when one helps**, without being asked, and keep to plain text for short or factual answers. Claude and Copilot are told in their own instructions; OpenAI and Gemini at the start of a new conversation. A workflow's own assistant steps are not told.
+
 ### Fixed
 
 - **A card nobody answered stops asking when you press Stop.** Its buttons used to stay on screen and do nothing.

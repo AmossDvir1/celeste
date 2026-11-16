@@ -1,3 +1,4 @@
+import { VISUALS_INSTRUCTION } from '../visuals'
 import { describe, expect, it } from 'vitest'
 import type { AgentEvent, ApprovalMode } from '@shared/agent'
 import type { AdapterContext } from '../types'
@@ -368,12 +369,12 @@ class FakeCodex implements Transport {
   }
 }
 
-function sessionWith(over: { approval?: ApprovalMode; token?: () => string; vendorSessionId?: string; answers?: FakeCodex['answers'] } = {}) {
+function sessionWith(over: { approval?: ApprovalMode; token?: () => string; vendorSessionId?: string; answers?: FakeCodex['answers']; sessionId?: string } = {}) {
   const processes: FakeCodex[] = []
   const remembered: string[] = []
   const options = { model: 'openai:gpt-x', effort: null as null, approval: over.approval ?? ('ask' as ApprovalMode), cwd: 'D:\\p' }
   const ctx: AdapterContext = {
-    sessionId: 's',
+    sessionId: over.sessionId ?? 's',
     vendor: 'openai',
     mode: 'develop',
     options: () => ({ ...options }),
@@ -413,6 +414,31 @@ const collect = async (session: OpenAiAgentSession, until: string[], into: Agent
 }
 const tick = () => new Promise((r) => setTimeout(r, 15))
 
+describe('what Codex is told about pictures', () => {
+  const firstText = async (over: Parameters<typeof sessionWith>[0] = {}, messages = ['hi']) => {
+    const { session, processes } = sessionWith(over)
+    const sent: string[] = []
+    for (const [i, text] of messages.entries()) {
+      session.send({ text, attachments: [] })
+      await tick()
+      const codex = processes[0] as FakeCodex
+      sent.push(((codex.method('turn/start')[i]?.['params'] as { input: { text: string }[] }).input[0] as { text: string }).text)
+      codex.say({ method: 'turn/completed', params: { turn: { id: 'codex-turn-1', status: 'completed' } } })
+      await tick()
+    }
+    await session.close()
+    return sent
+  }
+
+  it('is put in front of the first message of a new conversation, once', async () => {
+    expect(await firstText({}, ['first', 'second'])).toEqual([`${VISUALS_INSTRUCTION}\n\n---\n\nfirst`, 'second'])
+  })
+
+  it('is not put in front of a step of a workflow', async () => {
+    expect(await firstText({ sessionId: 'wf-1' })).toEqual(['hi'])
+  })
+})
+
 describe('the session, with a fake Codex', () => {
   it('starts the program once, opens a thread with the session’s settings, and sends each message as a turn with them', async () => {
     const { session, processes, remembered, options } = sessionWith({ approval: 'ask' })
@@ -426,7 +452,7 @@ describe('the session, with a fake Codex', () => {
     expect(remembered).toEqual(['thread-1'])
     const turn = codex.method('turn/start')[0]?.['params'] as Record<string, unknown>
     expect(turn).toMatchObject({ threadId: 'thread-1', approvalPolicy: 'untrusted', sandboxPolicy: { type: 'dangerFullAccess' }, model: 'gpt-x' })
-    expect((turn['input'] as { text: string }[])[0]?.text).toBe('hi')
+    expect((turn['input'] as { text: string }[])[0]?.text).toBe(`${VISUALS_INSTRUCTION}\n\n---\n\nhi`)
     // A change in the window applies to the next message, on the same process.
     codex.say({ method: 'turn/completed', params: { turn: { id: 'codex-turn-1', status: 'completed' } } })
     await tick()

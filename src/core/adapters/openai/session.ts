@@ -6,6 +6,7 @@ import type { ResolvedMcpServer } from '../../mcp'
 import { TOKEN_VAR, type Launch } from './host'
 import { DEVICE_SERVER, decide, mcpConfig, policyFor, questionsFrom } from './permissions'
 import type { RpcClient, RpcHandlers } from '../rpc'
+import { visualsFor } from '../visuals'
 import { Translator, errorFrom } from './translate'
 
 export interface OpenAiDeps {
@@ -98,6 +99,9 @@ export class OpenAiAgentSession implements AgentSession {
       // The log already holds this message as its last entry. Everything before it is the history.
       const earlier = history.endsWith(`User: ${input.text}`) ? history.slice(0, history.length - `User: ${input.text}`.length).trim() : history
       if (earlier) text = `Earlier in this conversation (for context; do not repeat it):\n\n${earlier}\n\n---\n\n${input.text}`
+      // This program has no way to add to its own instructions, so a new conversation starts with them, once. They stay in its history after.
+      const lead = visualsFor(this.deps.ctx)
+      if (lead) text = `${lead}\n\n---\n\n${text}`
       this.needsSeed = false
     }
     const options = this.deps.ctx.options()

@@ -6,6 +6,7 @@ import type { ResolvedMcpServer } from '../../mcp'
 import type { RpcClient, RpcHandlers } from '../rpc'
 import { displayPath } from '../copilot/diff'
 import type { Launch } from './host'
+import { visualsFor } from '../visuals'
 import { Translator, errorFrom, toolKind } from './translate'
 
 export interface GeminiDeps {
@@ -126,6 +127,9 @@ export class GeminiAgentSession implements AgentSession {
       // The log already holds this message as its last entry. Everything before it is the history.
       const earlier = history.endsWith(`User: ${input.text}`) ? history.slice(0, history.length - `User: ${input.text}`.length).trim() : history
       if (earlier) text = `Earlier in this conversation (for context; do not repeat it):\n\n${earlier}\n\n---\n\n${input.text}`
+      // This program has no way to add to its own instructions, so a new conversation starts with them, once. They stay in its history after.
+      const lead = visualsFor(this.deps.ctx)
+      if (lead) text = `${lead}\n\n---\n\n${text}`
       this.needsSeed = false
     }
     try {

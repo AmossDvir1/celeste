@@ -114,6 +114,9 @@ try {
   await page.keyboard.press('Escape')
   await page.getByRole('dialog', { name: 'Open this link where?' }).waitFor({ state: 'detached', timeout: 5000 })
 
+  const told = JSON.stringify(stub.main[0]?.body.system ?? '')
+  check('the assistant was told, in its own instructions, when a picture helps and how to write each kind (so it draws without being asked)', /Celeste can draw some code blocks as pictures/.test(told) && /```mermaid/.test(told) && /```chart/.test(told) && /```steps/.test(told))
+
   console.log('\n# The policy of the page, and the library')
   const seen = await page.evaluate(() => window.__violations)
   check('nothing was blocked by the Content Security Policy while they were drawn', seen.length === 0, seen.join(' | '))

@@ -1,3 +1,4 @@
+import { VISUALS_INSTRUCTION } from '../visuals'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import type { ResumeSessionConfig, SessionConfig, SessionEvent } from '@github/copilot-sdk'
@@ -333,12 +334,12 @@ interface Setup {
   set: (patch: Partial<ReturnType<AdapterContext['options']>>) => void
 }
 
-function setup(script: SessionEvent[], over: { approval?: ApprovalMode; vendorSessionId?: string; transcript?: string; client?: () => Promise<SdkClient>; devices?: boolean; mcp?: () => Promise<ResolvedMcpServer[]> } = {}): Setup {
+function setup(script: SessionEvent[], over: { sessionId?: string; approval?: ApprovalMode; vendorSessionId?: string; transcript?: string; client?: () => Promise<SdkClient>; devices?: boolean; mcp?: () => Promise<ResolvedMcpServer[]> } = {}): Setup {
   const sdk = new FakeSdk(script)
   const remembered: string[] = []
   const options: ReturnType<AdapterContext['options']> = { model: 'claude-haiku-4.5', effort: null, approval: over.approval ?? 'auto', cwd: CWD }
   const ctx: AdapterContext = {
-    sessionId: 's-1',
+    sessionId: over.sessionId ?? 's-1',
     vendor: 'copilot',
     mode: 'develop',
     options: () => ({ ...options }),
@@ -372,6 +373,23 @@ async function run(session: CopilotAgentSession, message: string, react: (e: Age
   }
   return out
 }
+
+describe('what Copilot is told about pictures', () => {
+  it('is added to its own instructions when the session starts, and again when one is resumed', async () => {
+    const t = setup(fixture('basic').events)
+    await run(t.session, 'hi')
+    expect(t.sdk.created[0]?.config.systemMessage).toEqual({ mode: 'append', content: VISUALS_INSTRUCTION })
+    const resumed = setup(fixture('basic').events, { vendorSessionId: 'copilot-old' })
+    await run(resumed.session, 'hi')
+    expect(resumed.sdk.resumed[0]?.config.systemMessage).toEqual({ mode: 'append', content: VISUALS_INSTRUCTION })
+  })
+
+  it('is not added for a step of a workflow', async () => {
+    const t = setup(fixture('basic').events, { sessionId: 'wf-1' })
+    await run(t.session, 'hi')
+    expect(t.sdk.created[0]?.config).not.toHaveProperty('systemMessage')
+  })
+})
 
 describe('a Copilot session', () => {
   it('starts Copilot with the session settings, streams, and remembers the id', async () => {
