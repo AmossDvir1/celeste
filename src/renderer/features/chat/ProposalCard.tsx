@@ -34,15 +34,16 @@ export const ProposalCard = memo(function ProposalCard({
     return (
       <div className="flex max-w-[760px] items-center gap-2 text-[13px] text-ink-muted">
         {done ? <Check className="h-3.5 w-3.5 text-success" /> : <X className="h-3.5 w-3.5 text-danger" />}
-        {done ? (proposal.kind === 'workflow' ? 'You saved' : 'You installed') : item.status === 'retried' ? 'You asked for another try' : 'You denied'}: <span className="truncate font-mono text-[12.5px]">{name}</span>
+        {done ? (proposal.kind === 'workflow' ? (proposal.edit ? 'You saved the changes to' : 'You saved') : 'You installed') : item.status === 'retried' ? 'You asked for another try' : 'You denied'}: <span className="truncate font-mono text-[12.5px]">{name}</span>
       </div>
     )
   }
+  const heading = proposal.kind === 'workflow' ? (proposal.edit ? 'Save these changes?' : 'Save this workflow?') : 'Install this plugin?'
   return (
-    <div role="group" aria-label={proposal.kind === 'workflow' ? 'Save this workflow?' : 'Install this plugin?'} className="animate-fade-up max-w-[760px] rounded-xl border border-accent-edge bg-accent-soft/50 p-4">
+    <div role="group" aria-label={heading} className="animate-fade-up max-w-[760px] rounded-xl border border-accent-edge bg-accent-soft/50 p-4">
       <div className="flex items-center gap-2 text-[14px] font-medium text-ink">
         <ShieldQuestion className="h-[18px] w-[18px] text-accent-text" />
-        {proposal.kind === 'workflow' ? 'Save this workflow?' : 'Install this plugin?'}
+        {heading}
       </div>
       {proposal.kind === 'workflow' ? <WorkflowBody proposal={proposal} item={item} onAnswer={onAnswer} /> : <PluginBody proposal={proposal} item={item} onAnswer={onAnswer} />}
     </div>

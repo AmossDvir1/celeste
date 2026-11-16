@@ -34,7 +34,7 @@ export class WorkflowService {
     /** The folder a conversation works in, for a run started from it. */
     private readonly folderOfSession?: (sessionId: string) => string,
     /** Asks an assistant to draft a workflow. */
-    private readonly drafter?: (source: { kind: 'text'; text: string } | { kind: 'conversation'; sessionId: string }) => Promise<Drafted>
+    private readonly drafter?: (source: { kind: 'text'; text: string } | { kind: 'conversation'; sessionId: string } | { kind: 'edit'; current: { name: string; description: string; definition: WorkflowDefinition }; text: string }) => Promise<Drafted>
   ) {}
 
   private summary(w: WorkflowRow): WorkflowSummary {
@@ -121,6 +121,12 @@ export class WorkflowService {
         return this.drafter({ kind: 'text', text: wanted })
       }
       if (source?.kind === 'conversation') return this.drafter({ kind: 'conversation', sessionId: text(source.sessionId, 'conversation', 100) })
+      if (source?.kind === 'edit') {
+        const wanted = text(source.text, 'change', 8000).trim()
+        if (wanted.length < 4) throw new Error('Say what to change.')
+        const w = this.require(source.workflowId)
+        return this.drafter({ kind: 'edit', current: { name: w.name, description: w.description, definition: w.definition }, text: wanted })
+      }
       throw new Error('Say what to make the workflow from.')
     },
 

@@ -42,6 +42,8 @@ export type ApprovalProposal =
       accept: string
       /** The words on the button that asks for another try. The answer carries what the person typed. */
       retry?: string
+      /** A change to a workflow the person already has (not a new one): the card says so, and Save keeps a new version of it. */
+      edit?: true
     }
   | {
       kind: 'plugin'

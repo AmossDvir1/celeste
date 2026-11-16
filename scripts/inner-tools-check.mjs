@@ -1,6 +1,8 @@
 // The assistant operating Celeste itself, in the real built app (docs/plans/INNER_TOOLS_PLAN.md): it reads plugins, settings and runs; it drafts
 // a workflow that the person looks over on a card (Save, Try again, Deny); it proposes a plugin whose whole command and secrets the person
 // sees on a card, and that is switched on only after its test passes. A secret typed on the card reaches the program and is nowhere else.
+// The light tools turn a plugin on or off and change the theme with one line in the chat and no card (and refuse the rest); a workflow is changed
+// on a card that keeps a new version; a plugin is removed only after a yes.
 //   npm run verify:inner-tools     (no account, no cost)
 // Claude is real (the real SDK and program); what it says is chosen by a stand-in for Anthropic's API (scripts/lib/stub.mjs).
 // The plugin is a small real MCP server (scripts/lib/mcp-fixture.mjs).
@@ -26,9 +28,19 @@ const spec = (name) =>
     result: '{{nodes.say.output}}'
   })
 
+/** The workflow of `spec`, with one more step: what the assistant answers when it is asked to change it. */
+const edited = () => {
+  const base = JSON.parse(spec('Greet people twice'))
+  base.steps.push({ id: 'bye', name: 'Say goodbye', do: 'command', command: 'echo goodbye-from-an-edit' })
+  base.result = '{{nodes.bye.output}}'
+  return JSON.stringify(base)
+}
+
 const script = (r) => {
   if (r.last.kind === 'tool_result') return [{ type: 'text', text: `${r.last.isError ? 'It failed' : 'The tool said'}: ${r.last.text}` }]
   const text = r.last.text
+  // The assistant Celeste asks to change a workflow (an agent step of its own).
+  if (/The user already has this workflow/.test(text)) return [{ type: 'text', text: edited() }]
   // The assistant Celeste asks to draft a workflow (an agent step of its own).
   if (/Make a workflow for this/.test(text)) return [{ type: 'text', text: spec(/asked for these changes/.test(text) ? 'Greet people twice' : 'Greet people') }]
   const call = (name, input) => [{ type: 'tool_use', name: TOOL(name), input }]
@@ -39,6 +51,13 @@ const script = (r) => {
   if (/INSTALL A BROKEN PLUGIN/.test(text)) return call('plugin_install', { name: 'Broken tools', type: 'stdio', command: process.execPath, args: ['-e', 'process.exit(3)'] })
   if (/INSTALL A SECRET PLUGIN/.test(text)) return call('plugin_install', { name: 'Secret tools', type: 'stdio', command: process.execPath, args: [FIXTURE], envNames: ['FIXTURE_TOKEN'], source: 'scripts/lib/mcp-fixture.mjs' })
   if (/INSTALL A DENIED PLUGIN/.test(text)) return call('plugin_install', { name: 'Denied tools', type: 'stdio', command: process.execPath, args: [FIXTURE] })
+  if (/TURN OFF FIXTURE/.test(text)) return call('plugin_set_enabled', { name: 'Fixture tools', enabled: false })
+  if (/TURN ON FIXTURE/.test(text)) return call('plugin_set_enabled', { name: 'Fixture tools', enabled: true })
+  if (/TURN ON BROKEN/.test(text)) return call('plugin_set_enabled', { name: 'Broken tools', enabled: true })
+  if (/CHANGE THE THEME/.test(text)) return call('settings_change', { key: 'theme', value: 'light' })
+  if (/CHANGE FORBIDDEN/.test(text)) return call('settings_change', { key: 'desktopControl', value: true })
+  if (/EDIT THE WORKFLOW/.test(text)) return call('workflow_edit', { name: 'Greet people twice', change: 'Add a last step that says goodbye' })
+  if (/REMOVE BROKEN/.test(text)) return call('plugin_remove', { name: 'Broken tools' })
   if (/USE THE SECRET PLUGIN/.test(text)) return [{ type: 'tool_use', name: 'mcp__secret-tools__whoami', input: {} }]
   return [{ type: 'text', text: `Echo: ${text}. The canary hosts go first.` }]
 }
@@ -193,6 +212,65 @@ try {
   check('the value is in the secret store', await page.evaluate((id) => window.celeste.secrets.has(`mcp.${id}.env.FIXTURE_TOKEN`), secretServer?.id))
   await idle(page)
 
+  console.log('\n# Light tools: one line in the chat, no card')
+  await send(page, 'TURN OFF FIXTURE')
+  await page.getByText(/The tool said: “Fixture tools” is now off/).first().waitFor({ timeout: 60_000 })
+  check('a plugin is turned off, and the chat says so in one line', (await core(page, 'mcp.list')).find((s) => s.name === 'Fixture tools')?.enabled === false && (await page.getByText('“Fixture tools” was turned off.').count()) === 1)
+  check('with no card to answer', (await page.getByRole('group', { name: 'Approval needed' }).count()) === 0)
+  await idle(page)
+  await send(page, 'TURN ON FIXTURE')
+  await page.getByText(/The tool said: “Fixture tools” is now on/).first().waitFor({ timeout: 60_000 })
+  check('and on again, because its last test passed', (await core(page, 'mcp.list')).find((s) => s.name === 'Fixture tools')?.enabled === true && (await page.getByText('“Fixture tools” was turned on.').count()) === 1)
+  await idle(page)
+  await send(page, 'TURN ON BROKEN')
+  await page.getByText(/It failed: “Broken tools” cannot be turned on/).first().waitFor({ timeout: 60_000 })
+  check('a plugin whose test failed is not turned on', (await core(page, 'mcp.list')).find((s) => s.name === 'Broken tools')?.enabled === false)
+  await idle(page)
+  await send(page, 'CHANGE THE THEME')
+  await page.getByText(/The tool said: The theme was changed to light/).first().waitFor({ timeout: 60_000 })
+  check('the theme is changed in the window at once, and kept', (await page.evaluate(() => document.documentElement.dataset.theme)) === 'light' && (await core(page, 'settings.get')).theme === 'light')
+  check('with one line in the chat', (await page.getByText('The theme was changed to light.', { exact: true }).count()) === 1)
+  await idle(page)
+  await send(page, 'CHANGE FORBIDDEN')
+  await page.getByText(/It failed: “desktopControl” is the user’s own to change, in Settings/).first().waitFor({ timeout: 60_000 })
+  check('a setting that grants power is refused, and unchanged', (await core(page, 'settings.get')).desktopControl === false)
+  await idle(page)
+
+  console.log('\n# A workflow changed on a card, a plugin removed after a yes')
+  await send(page, 'EDIT THE WORKFLOW')
+  const change = page.getByRole('group', { name: 'Save these changes?' })
+  await change.waitFor({ timeout: 90_000 })
+  const changeText = await change.innerText()
+  check('the card shows the workflow with the new step', /Say goodbye/.test(changeText) && /echo goodbye-from-an-edit/.test(changeText) && /Write the note/.test(changeText), changeText)
+  check('and Save changes, Try again and Deny', (await change.getByRole('button', { name: 'Save changes', exact: true }).count()) === 1 && (await change.getByRole('button', { name: 'Try again', exact: true }).count()) === 1)
+  const before = (await core(page, 'workflows.list'))[0]
+  check('nothing changes while it waits', (await core(page, 'workflows.get', before.id)).definition.nodes.length === 4)
+  await page.screenshot({ path: join(import.meta.dirname, '.output', 'inner-tools-edit-card.png') })
+  await change.getByRole('button', { name: 'Save changes', exact: true }).click()
+  await page.getByText(/The tool said: Saved the changes to “Greet people twice” as a new version/).first().waitFor({ timeout: 60_000 })
+  const after1 = await core(page, 'workflows.get', before.id)
+  check('Save changes keeps the new step in the same workflow, as a new version', (await core(page, 'workflows.list')).length === 1 && after1.definition.nodes.length === 5 && after1.version === 2, `${after1.definition.nodes.length} nodes, version ${after1.version}`)
+  check('and the old version is still there, as it was', (await core(page, 'workflows.versions', before.id)).length === 2 && (await core(page, 'workflows.version', before.id, 1))?.nodes.length === 4)
+  check('the card says what happened', (await page.getByText('You saved the changes to').count()) === 1)
+  await idle(page)
+
+  await send(page, 'REMOVE BROKEN')
+  const remove = page.getByRole('group', { name: 'Approval needed' }).last()
+  await remove.waitFor({ timeout: 90_000 })
+  const removeText = await remove.innerText()
+  check('a plain card names the plugin and its command', /Remove the plugin “Broken tools”/.test(removeText) && /process\.exit\(3\)/.test(removeText), removeText)
+  await remove.getByRole('button', { name: 'Deny', exact: true }).click()
+  await page.getByText(/The tool said: The user did not remove it/).first().waitFor({ timeout: 60_000 })
+  check('Deny removes nothing', (await core(page, 'mcp.list')).some((s) => s.name === 'Broken tools'))
+  await idle(page)
+  await send(page, 'REMOVE BROKEN')
+  const again = page.getByRole('group', { name: 'Approval needed' }).last()
+  await again.getByRole('button', { name: 'Allow', exact: true }).waitFor({ timeout: 90_000 })
+  await again.getByRole('button', { name: 'Allow', exact: true }).click()
+  await page.getByText(/The tool said: Removed “Broken tools”/).first().waitFor({ timeout: 60_000 })
+  check('Allow removes it', !(await core(page, 'mcp.list')).some((s) => s.name === 'Broken tools'))
+  await idle(page)
+
   console.log('\n# The secret goes nowhere else')
   check('the assistant never saw it', !JSON.stringify(stub.requests.map((r) => r.body)).includes(SECRET))
   const sessions = (await core(page, 'app.bootstrap')).sessions
@@ -213,8 +291,8 @@ try {
   await p2.getByText(`The tool said: token=${SECRET}`).first().waitFor({ timeout: 60_000 })
   check('a new chat’s assistant uses the new plugin, and the typed secret arrived in the program’s environment', true)
   const after = await core(p2, 'mcp.list')
-  check('both installed plugins are still there, on, and the broken one still off', after.filter((s) => s.enabled).map((s) => s.name).sort().join() === 'Fixture tools,Secret tools' && after.find((s) => s.name === 'Broken tools')?.enabled === false)
-  check('and the saved workflow', (await core(p2, 'workflows.list')).length === 1)
+  check('both installed plugins are still there and on, and the removed one is still gone', after.filter((s) => s.enabled).map((s) => s.name).sort().join() === 'Fixture tools,Secret tools' && !after.some((s) => s.name === 'Broken tools'))
+  check('and the saved workflow, with its new step', (await core(p2, 'workflows.list')).length === 1 && (await core(p2, 'workflows.get', (await core(p2, 'workflows.list'))[0].id)).definition.nodes.length === 5)
   await idle(p2)
 
   console.log('\n# Stop ends a card nobody answered')

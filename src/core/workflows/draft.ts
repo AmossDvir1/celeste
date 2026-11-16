@@ -1,5 +1,5 @@
 import { nodeIdFrom, validateWorkflow, type InputDef, type WorkflowDefinition, type WorkflowNode } from '@shared/workflow'
-import { fromFile, toFile } from '@shared/workflow-file'
+import { fromFile, SECRET_HEADER, toFile } from '@shared/workflow-file'
 
 /*
  * "Build with AI" and "Make this a workflow": an assistant is asked to describe a workflow as JSON, which is checked as strictly as one
@@ -7,7 +7,8 @@ import { fromFile, toFile } from '@shared/workflow-file'
  * and nothing in it runs until they say so.
  */
 
-export type DraftSource = { kind: 'text'; text: string } | { kind: 'conversation'; transcript: string }
+/** `edit`: a workflow the person already has, and the change they want. */
+export type DraftSource = { kind: 'text'; text: string } | { kind: 'conversation'; transcript: string } | { kind: 'edit'; current: { name: string; description: string; definition: WorkflowDefinition }; text: string }
 
 export interface Drafted {
   name: string
@@ -91,6 +92,60 @@ export function definitionFromSpec(spec: unknown): { name: string; description: 
   return { name: (text(spec['name']) ?? 'New workflow').slice(0, 100), description: (text(spec['description']) ?? '').slice(0, 1000), definition }
 }
 
+/**
+ * A workflow written the way an assistant is asked to write one (the opposite of `definitionFromSpec`), so it can be shown the workflow to
+ * change. A header that looks like a secret is left empty: the assistant is never shown the value, and `keepWhatTheDraftCannotSay` puts it back.
+ */
+export function specFromDefinition(name: string, description: string, def: WorkflowDefinition): Record<string, unknown> {
+  const start = def.nodes.find((n): n is Extract<WorkflowNode, { type: 'start' }> => n.type === 'start')
+  const end = def.nodes.find((n): n is Extract<WorkflowNode, { type: 'end' }> => n.type === 'end')
+  const steps: Record<string, unknown>[] = []
+  for (const n of def.nodes) {
+    if (n.type === 'start' || n.type === 'end') continue
+    const base = { id: n.id, name: n.name, ...(n.description ? { description: n.description } : {}), ...(n.onError ? { onError: n.onError } : {}) }
+    if (n.type === 'agent') steps.push({ ...base, do: 'assistant', prompt: n.prompt, ...(n.outputFormat === 'json' ? { json: true } : {}) })
+    else {
+      const t = n.tool
+      if (t.kind === 'shell') steps.push({ ...base, do: 'command', command: t.command, ...(t.cwd ? { cwd: t.cwd } : {}) })
+      else if (t.kind === 'http') steps.push({ ...base, do: 'web', method: t.method, url: t.url, ...(t.headers ? { headers: Object.fromEntries(Object.entries(t.headers).map(([k, v]) => [k, SECRET_HEADER.test(k) && !/^\{\{[^}]*\}\}$/.test(v.trim()) ? '' : v])) } : {}), ...(t.body ? { body: t.body } : {}) })
+      else if (t.kind === 'file') steps.push({ ...base, do: 'file', op: t.op, path: t.path, ...(t.content !== undefined ? { content: t.content } : {}) })
+      else steps.push({ ...base, do: 'tool', server: t.server, tool: t.tool, args: t.args })
+    }
+  }
+  return { name, description, inputs: start?.inputs ?? [], steps, ...(end?.output ? { result: end.output } : {}) }
+}
+
+/**
+ * What the words of a draft cannot say (which assistant, how long, a device, a secret header's value) is
+ * taken from the step of the same id in the workflow that was changed, so an edit does not quietly lose it.
+ */
+export function keepWhatTheDraftCannotSay(old: WorkflowDefinition, drafted: WorkflowDefinition): WorkflowDefinition {
+  const before = new Map(old.nodes.map((n) => [n.id, n]))
+  const nodes = drafted.nodes.map((n): WorkflowNode => {
+    const was = before.get(n.id)
+    if (!was || was.type !== n.type) return n
+    if (n.type === 'agent' && was.type === 'agent') {
+      const { vendor, model, effort, approval, computer, phone, timeoutSec, retries } = was
+      return { ...n, ...(vendor ? { vendor } : {}), ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(approval ? { approval } : {}), ...(computer ? { computer } : {}), ...(phone ? { phone } : {}), ...(timeoutSec !== undefined ? { timeoutSec } : {}), ...(retries !== undefined && n.onError === 'retry' ? { retries } : {}) }
+    }
+    if (n.type === 'tool' && was.type === 'tool') {
+      const t = n.tool
+      const w = was.tool
+      let tool = t
+      if (t.kind === 'shell' && w.kind === 'shell' && w.deviceId) tool = { ...t, deviceId: w.deviceId }
+      if (t.kind === 'http' && w.kind === 'http' && w.headers) {
+        const headers = { ...(t.headers ?? {}) }
+        // A secret header the draft left empty or left out keeps its old value.
+        for (const [k, v] of Object.entries(w.headers)) if (SECRET_HEADER.test(k) && v && !/^\{\{[^}]*\}\}$/.test(v.trim()) && !headers[k]) headers[k] = v
+        tool = { ...t, headers }
+      }
+      return { ...n, tool, ...(was.timeoutSec !== undefined ? { timeoutSec: was.timeoutSec } : {}), ...(was.retries !== undefined && n.onError === 'retry' ? { retries: was.retries } : {}) }
+    }
+    return n
+  })
+  return { nodes, edges: drafted.edges }
+}
+
 /** The JSON in an answer, even when the assistant wrapped it in a code fence or a sentence. */
 export function jsonIn(answer: string): unknown {
   const cleaned = answer.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')
@@ -109,7 +164,9 @@ export async function draftWorkflow(source: DraftSource, deps: { ask: (prompt: s
   const wanted =
     source.kind === 'text'
       ? `Make a workflow for this:\n\n${source.text.trim()}`
-      : `Below is a conversation in which an assistant did some work for the user. Make a workflow that does the same work again, so the user can start it in one click next time.\n\n--- conversation ---\n${source.transcript}\n--- end ---`
+      : source.kind === 'edit'
+        ? `The user already has this workflow, written in the same form:\n\n${JSON.stringify(specFromDefinition(source.current.name, source.current.description, source.current.definition), null, 2)}\n\nChange it like this, and keep everything else as it is (the same step ids and names for steps that stay):\n\n${source.text.trim()}\n\nAnswer with the whole changed workflow.`
+        : `Below is a conversation in which an assistant did some work for the user. Make a workflow that does the same work again, so the user can start it in one click next time.\n\n--- conversation ---\n${source.transcript}\n--- end ---`
   const context = tools.length ? `\n\nThe user has these tool servers, usable in "tool" steps: ${tools.join(', ')}.` : '\n\nThe user has no tool servers, so do not use "tool" steps.'
   let prompt = `${GUIDE}${context}\n\n${wanted}`
   let problem = ''
@@ -120,7 +177,13 @@ export async function draftWorkflow(source: DraftSource, deps: { ask: (prompt: s
       if (problems.length === 0) {
         // Through the file reader, so that what is said about missing tools and the like is the same as for an imported file.
         const read = fromFile(toFile(made.name, made.description, made.definition).text, { mcpServers: tools })
-        return { name: read.name, description: read.description, definition: read.definition, notes: read.notes }
+        // An edit keeps what the words cannot say, and is checked once more with it.
+        const definition = source.kind === 'edit' ? keepWhatTheDraftCannotSay(source.current.definition, read.definition) : read.definition
+        if (source.kind === 'edit') {
+          const kept = validateWorkflow(definition)
+          if (kept.length) throw new Error(kept.slice(0, 4).join(' '))
+        }
+        return { name: read.name, description: read.description, definition, notes: read.notes }
       }
       problem = problems.slice(0, 4).join(' ')
     } catch (err) {

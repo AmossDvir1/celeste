@@ -45,6 +45,7 @@ export async function bootstrap(): Promise<void> {
     usePhone.getState().applyPush(push)
     useUsage.getState().applyPush(push)
     useSchedules.getState().applyPush(push)
+    useSettings.getState().applyPush(push)
   })
   // A phone may already be waiting for an answer from before this window opened.
   void usePhone.getState().refresh()

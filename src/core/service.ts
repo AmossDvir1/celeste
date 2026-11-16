@@ -1045,6 +1045,12 @@ export class SessionService {
     }
   }
 
+  /** One line in the chat for something the assistant changed in Celeste itself with a light tool. Not part of what the assistant is told. */
+  noteChange(sessionId: string, text: string): void {
+    if (!this.store.getSession(sessionId)) return
+    this.record(sessionId, { type: 'app.changed', text: text.slice(0, 300) }, { text: '' })
+  }
+
   /** Raises an approval card in the session for something that is not the agent's own tool, and waits. */
   requestApproval(sessionId: string, request: { kind: ToolKind; title: string; detail?: string }): Promise<boolean> {
     return this.ask(sessionId, request).then((a) => a.allow)

@@ -471,19 +471,37 @@ async function start(): Promise<void> {
     // The two tools that need a card: it is raised in the chat, and nothing is saved until the person presses its button.
     propose: (sessionId, request) => (service as SessionService).requestProposal(sessionId, request),
     draft: (text) => workflows.api['workflows.draft']({ kind: 'text', text }),
+    draftEdit: (workflowId, text) => workflows.api['workflows.draft']({ kind: 'edit', workflowId, text }),
     saveWorkflow: (input) => workflows.api['workflows.save'](input),
+    // The light tools: the same change the window makes, then the window is told (a theme changes where the person is looking).
+    changeSettings: (patch) => {
+      const next = (api as CoreApi)['settings.patch'](patch)
+      push({ type: 'settings', settings: next })
+      return next
+    },
+    note: (sessionId, text) => (service as SessionService).noteChange(sessionId, text),
+    confirm: (sessionId, request) => (service as SessionService).requestApproval(sessionId, { kind: 'other', ...request }),
     mcp: {
       check: (input) => mcp.check(input),
       save: (input) => mcp.api['mcp.save'](input),
       test: (id) => mcp.api['mcp.test'](id),
-      setEnabled: (id, enabled) => mcp.api['mcp.setEnabled'](id, enabled),
-      hasSecret: async (name) => !!(await getSecret(name).catch(() => null))
+      setEnabled: (id, enabled) => {
+        const server = mcp.api['mcp.setEnabled'](id, enabled)
+        push({ type: 'mcp' })
+        return server
+      },
+      hasSecret: async (name) => !!(await getSecret(name).catch(() => null)),
+      remove: (id) => {
+        mcp.api['mcp.remove'](id)
+        push({ type: 'mcp' })
+      },
+      removeSecret: async (name) => void (await removeSecret(name))
     }
   })
   servers.setExtraTools(new CombinedTools([new WorkflowTools(db, runner, (sessionId) => (service as SessionService).workFolder(sessionId)), appTools, desktopControl, phoneTools, browserTools]))
   const workflows = new WorkflowService(db, runner, undefined, () => push({ type: 'workflows' }), dataDir, async () => (await mcp.resolved()).map((s) => s.key), (sessionId) => (service as SessionService).workFolder(sessionId), (source) =>
     // The assistant only has to write; it is in plan mode, so anything it asks to do is refused, and it has three minutes.
-    draftWorkflow(source.kind === 'text' ? source : { kind: 'conversation', transcript: (service as SessionService).transcriptOf(source.sessionId) }, {
+    draftWorkflow(source.kind === 'conversation' ? { kind: 'conversation', transcript: (service as SessionService).transcriptOf(source.sessionId) } : source, {
       tools: async () => (await mcp.resolved()).map((s) => s.key),
       ask: (prompt) => {
         const stop = new AbortController()

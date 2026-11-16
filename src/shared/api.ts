@@ -176,6 +176,8 @@ export type LogEvent =
   | ({ type: 'checkpoint.summary'; id: string } & CheckpointChanges)
   /** Celeste could not save the folder before this message, so it cannot be reverted. */
   | { type: 'checkpoint.skipped'; reason: string }
+  /** The assistant changed something in Celeste itself with a light tool (a plugin turned on or off, a setting): one line for the chat, never part of what the assistant is told. */
+  | { type: 'app.changed'; text: string }
   /** A workflow was started from this conversation (the `/` menu, or the assistant). The run's own log is read with `runs.get`. */
   | { type: 'workflow.started'; runId: string; workflowId: string; name: string; startedBy?: 'you' | 'menu' | 'assistant' }
   /** That run ended. `output` is its result, which the assistant is told with the person's next message. */
@@ -406,7 +408,7 @@ export interface CoreApi {
   /** Reads a shared file into a workflow that is not saved yet. Throws a sentence when it is not one, or is not valid. */
   'workflows.import': (text: string) => Promise<{ name: string; description: string; definition: WorkflowDefinition; notes: string[] }>
   /** Asks an assistant to draft a workflow, from a description or from a conversation. Not saved: it opens for the person to look over. */
-  'workflows.draft': (source: { kind: 'text'; text: string } | { kind: 'conversation'; sessionId: string }) => Promise<{ name: string; description: string; definition: WorkflowDefinition; notes: string[] }>
+  'workflows.draft': (source: { kind: 'text'; text: string } | { kind: 'conversation'; sessionId: string } | { kind: 'edit'; workflowId: string; text: string }) => Promise<{ name: string; description: string; definition: WorkflowDefinition; notes: string[] }>
   /** Lets the assistant start this workflow (after Celeste asks), or stops it. */
   'workflows.setAssistant': (id: string, allow: boolean) => WorkflowSummary
   /** Deletes the workflow, its versions and its runs. A run in progress is stopped first. */
@@ -555,6 +557,8 @@ export type CorePush =
   | { type: 'phone' }
   /** A phone is asking to connect (the person compares the pictures and answers), or no longer is (null). */
   | { type: 'phonePairing'; request: PhonePairRequest | null }
+  /** The settings were changed from inside Core (the assistant's `settings_change`), so the window shows them. */
+  | { type: 'settings'; settings: AppSettings }
 
 /** Wire format over the message port between the window and Core. */
 export type CoreRequest = { id: number; method: CoreMethod; params: unknown[] }

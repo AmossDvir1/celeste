@@ -12,7 +12,7 @@ export const FILE_EXTENSION = '.celeste-workflow.json'
 export const MAX_FILE_BYTES = 1_000_000
 
 /** Header names whose values are taken out when a workflow is shared. */
-const SECRET_HEADER = /authori[sz]ation|token|secret|key|password|passwd|cookie|credential|signature|session/i
+export const SECRET_HEADER = /authori[sz]ation|token|secret|key|password|passwd|cookie|credential|signature|session/i
 
 export interface WorkflowFile {
   format: typeof FILE_FORMAT

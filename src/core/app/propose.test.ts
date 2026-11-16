@@ -64,6 +64,10 @@ function world(opts: { test?: McpStatus; existing?: McpServerView[] } = {}) {
       if (draftError) throw new Error(draftError)
       return drafts.shift() ?? drafted()
     },
+    draftEdit: async () => drafted(),
+    changeSettings: () => DEFAULT_SETTINGS,
+    note: () => undefined,
+    confirm: async () => false,
     saveWorkflow: (input) => {
       if (saveError) throw new Error(saveError)
       saved.push(input)
@@ -91,7 +95,9 @@ function world(opts: { test?: McpStatus; existing?: McpServerView[] } = {}) {
         s.enabled = enabled
         return s
       },
-      hasSecret: async (name) => secrets.has(name)
+      hasSecret: async (name) => secrets.has(name),
+      remove: () => undefined,
+      removeSecret: async () => undefined
     }
   }
   const tools = new AppTools(deps)

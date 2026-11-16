@@ -102,6 +102,9 @@ export function reduceEvent(s: Session, e: LogEvent, at: number): Session {
     case 'checkpoint.skipped':
       return { ...s, items: [...s.items, { kind: 'notice', id: itemId(), text: `Celeste could not save the folder before this message, so it cannot be reverted. ${e.reason}` }] }
 
+    case 'app.changed':
+      return { ...s, items: [...s.items, { kind: 'notice', id: itemId(), text: e.text }] }
+
     case 'checkpoint.reverted':
       return { ...s, items: [...s.items, { kind: 'reverted', id: itemId(), restored: e.restored, removed: e.removed, undoId: e.undoId }] }
 

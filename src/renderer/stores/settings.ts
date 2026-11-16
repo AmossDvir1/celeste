@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AppSettings, SettingsPatch, ThemePref } from '@shared/api'
+import type { AppSettings, CorePush, SettingsPatch, ThemePref } from '@shared/api'
 import { DEFAULT_SETTINGS } from '@shared/defaults'
 import { core } from '@/api'
 
@@ -8,6 +8,8 @@ export type { ThemePref }
 interface SettingsState extends AppSettings {
   /** Replaces everything with what Core has saved. Used once at start-up. */
   load: (settings: AppSettings) => void
+  /** Core changed a setting itself (the assistant's `settings_change`): shown without saving it again. */
+  applyPush: (push: CorePush) => void
   set: (patch: Partial<Omit<AppSettings, 'defaults'>>) => void
   setDefaults: (patch: Partial<AppSettings['defaults']>) => void
   /** Pins a model to the top of the model menu, or unpins it. */
@@ -26,6 +28,9 @@ const save = (patch: SettingsPatch): void => void core.call('settings.patch', pa
 export const useSettings = create<SettingsState>()((set, get) => ({
   ...DEFAULT_SETTINGS,
   load: (settings) => set(settings),
+  applyPush: (push) => {
+    if (push.type === 'settings') set(push.settings)
+  },
   set: (patch) => {
     set(patch)
     save(patch)

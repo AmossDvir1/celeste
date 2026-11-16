@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { validateWorkflow } from '@shared/workflow'
-import { definitionFromSpec, draftWorkflow, jsonIn } from './draft'
+import { definitionFromSpec, draftWorkflow, jsonIn, keepWhatTheDraftCannotSay, specFromDefinition } from './draft'
 
 const good = {
   name: 'Update old KBs',
@@ -101,5 +101,59 @@ describe('building a workflow with an assistant', () => {
   it('does not fail just because the tools could not be listed', async () => {
     const out = await draftWorkflow({ kind: 'text', text: 'x' }, { tools: async () => Promise.reject(new Error('no')), ask: async () => JSON.stringify(good) })
     expect(out.name).toBe('Update old KBs')
+  })
+})
+
+describe('changing a workflow the person already has', () => {
+  const tools = async () => []
+  const current = definitionFromSpec({
+    ...good,
+    result: '{{nodes.run.output}}',
+    steps: [
+      { id: 'ask', name: 'Ask', do: 'assistant', prompt: 'Summarize', onError: 'continue' },
+      { id: 'call', name: 'Call', do: 'web', method: 'GET', url: 'https://api.test/x', headers: { Authorization: 'Bearer sk-SECRET-VALUE', Accept: 'application/json' } },
+      { id: 'run', name: 'Run', do: 'command', command: 'echo hi' }
+    ]
+  }).definition
+  // What the words cannot say: a model, a time limit, a computer to use, a device.
+  const agent = current.nodes[1]
+  const shell = current.nodes[3]
+  if (agent?.type === 'agent') Object.assign(agent, { vendor: 'claude', model: 'opus', timeoutSec: 90, computer: { app: 'Notepad' } })
+  if (shell?.type === 'tool' && shell.tool.kind === 'shell') shell.tool.deviceId = 'dev-1'
+
+  it('writes the workflow the way an assistant is asked to write one, and never shows a secret header’s value', () => {
+    const spec = specFromDefinition('Nightly', 'Does it', current)
+    const text = JSON.stringify(spec)
+    expect(text).not.toContain('sk-SECRET-VALUE')
+    expect(text).toContain('application/json')
+    expect(spec['steps']).toHaveLength(3)
+    expect((spec['steps'] as { do: string }[]).map((s) => s.do)).toEqual(['assistant', 'web', 'command'])
+    // It reads back as the same steps.
+    expect(definitionFromSpec(spec).definition.nodes.map((n) => n.id)).toEqual(['start', 'ask', 'call', 'run', 'end'])
+  })
+
+  it('shows the assistant the workflow and the change, and keeps what the words cannot say', async () => {
+    const asked: string[] = []
+    const changed = { ...specFromDefinition('Nightly', 'Does it', current), steps: [...(specFromDefinition('Nightly', 'Does it', current)['steps'] as unknown[]), { name: 'Tell me', do: 'command', command: 'echo done' }] }
+    const out = await draftWorkflow({ kind: 'edit', current: { name: 'Nightly', description: 'Does it', definition: current }, text: 'Add a step that tells me' }, { tools, ask: async (p) => (asked.push(p), JSON.stringify(changed)) })
+    expect(asked[0]).toContain('The user already has this workflow')
+    expect(asked[0]).toContain('"id": "call"')
+    expect(asked[0]).toContain('Add a step that tells me')
+    expect(asked[0]).not.toContain('sk-SECRET-VALUE')
+    expect(out.definition.nodes.map((n) => n.id)).toEqual(['start', 'ask', 'call', 'run', 'tell_me', 'end'])
+    const byId = (id: string) => out.definition.nodes.find((n) => n.id === id)
+    expect(byId('ask')).toMatchObject({ vendor: 'claude', model: 'opus', timeoutSec: 90, computer: { app: 'Notepad' } })
+    expect(byId('run')).toMatchObject({ tool: { kind: 'shell', deviceId: 'dev-1' } })
+    // The secret header comes back from the old step.
+    expect(byId('call')).toMatchObject({ tool: { kind: 'http', headers: { Authorization: 'Bearer sk-SECRET-VALUE', Accept: 'application/json' } } })
+    expect(validateWorkflow(out.definition)).toEqual([])
+  })
+
+  it('does not carry anything over to a step with a new id, or of another kind', () => {
+    const drafted = definitionFromSpec({ steps: [{ id: 'ask', name: 'Ask', do: 'command', command: 'x' }, { id: 'fresh', name: 'Fresh', do: 'assistant', prompt: 'p' }] }).definition
+    const kept = keepWhatTheDraftCannotSay(current, drafted)
+    expect(kept.nodes.find((n) => n.id === 'ask')).toMatchObject({ type: 'tool' })
+    expect(kept.nodes.find((n) => n.id === 'ask')).not.toHaveProperty('vendor')
+    expect(kept.nodes.find((n) => n.id === 'fresh')).not.toHaveProperty('vendor')
   })
 })

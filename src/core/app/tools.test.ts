@@ -13,6 +13,7 @@ import { WorkflowRunner } from '../workflows/runner'
 import { AppTools, NOT_HERE, READABLE_SETTINGS, offeredHere, type AppToolsDeps } from './tools'
 
 const NOW = 10_000_000_000
+const AppTools_NAMES = ['plugin_list', 'settings_read', 'runs_list', 'run_get', 'plugin_set_enabled', 'settings_change', 'workflow_draft', 'workflow_edit', 'plugin_install', 'plugin_remove']
 
 const plugin = (over: Partial<McpServerView> = {}): McpServerView => ({ id: 'mcp-1', name: 'Playwright', type: 'stdio', command: 'npx', args: ['-y', 'secret-looking-arg'], envNames: ['API_KEY'], headerNames: [], enabled: true, status: { state: 'ok', tools: [{ name: 'a' }, { name: 'b' }], at: 1 }, ...over })
 
@@ -45,9 +46,16 @@ function world(over: Partial<AppToolsDeps> = {}) {
     draft: async () => {
       throw new Error('not used here')
     },
+    draftEdit: async () => {
+      throw new Error('not used here')
+    },
     saveWorkflow: () => {
       throw new Error('not used here')
     },
+    // The light and card tools of steps 4 and 5 have their own tests (light.test.ts).
+    changeSettings: () => settings,
+    note: () => undefined,
+    confirm: async () => false,
     mcp: {
       check: () => {
         throw new Error('not used here')
@@ -55,7 +63,9 @@ function world(over: Partial<AppToolsDeps> = {}) {
       save: async () => plugin(),
       test: async () => ({ state: 'unchecked' }),
       setEnabled: () => plugin(),
-      hasSecret: async () => false
+      hasSecret: async () => false,
+      remove: () => undefined,
+      removeSecret: async () => undefined
     },
     ...over
   })
@@ -63,9 +73,9 @@ function world(over: Partial<AppToolsDeps> = {}) {
 }
 
 describe('the open tools of the Celeste assistant', () => {
-  it('are four that only read, then two that propose and so are not read only', () => {
+  it('are four that only read, then six that change something and so are not read only', () => {
     const { tools } = world()
-    expect(tools.list().map((t) => [t.name, t.readOnly])).toEqual([['plugin_list', true], ['settings_read', true], ['runs_list', true], ['run_get', true], ['workflow_draft', false], ['plugin_install', false]])
+    expect(tools.list().map((t) => [t.name, t.readOnly])).toEqual([['plugin_list', true], ['settings_read', true], ['runs_list', true], ['run_get', true], ['plugin_set_enabled', false], ['settings_change', false], ['workflow_draft', false], ['workflow_edit', false], ['plugin_install', false], ['plugin_remove', false]])
   })
 
   it('list the plugins with their state and give no argument, variable or secret', async () => {
@@ -185,7 +195,7 @@ describe('an agent reaching the tools over the tool server', () => {
 
   it('lists them and answers each call', async () => {
     const client = await connect(true)
-    expect((await client.listTools()).tools.map((t) => t.name)).toEqual(expect.arrayContaining(['plugin_list', 'settings_read', 'runs_list', 'run_get', 'workflow_draft', 'plugin_install']))
+    expect((await client.listTools()).tools.map((t) => t.name)).toEqual(expect.arrayContaining(['plugin_list', 'settings_read', 'runs_list', 'run_get', 'plugin_set_enabled', 'settings_change', 'workflow_draft', 'workflow_edit', 'plugin_install', 'plugin_remove']))
     const text = (r: Awaited<ReturnType<Client['callTool']>>) => JSON.stringify(r.content)
     expect(text(await client.callTool({ name: 'plugin_list', arguments: {} }))).toContain('Playwright')
     expect(text(await client.callTool({ name: 'settings_read', arguments: {} }))).toContain('Dana')
@@ -196,11 +206,13 @@ describe('an agent reaching the tools over the tool server', () => {
     expect(tools.find((t) => t.name === 'run_get')?.annotations?.readOnlyHint).toBe(true)
   })
 
-  it('cost little in every message: the six add under 4,500 characters (about 1,100 tokens) to the tool list', async () => {
+  it('cost little in every message: the ten add under 5,500 characters (about 1,400 tokens) to the tool list', async () => {
     const before = JSON.stringify((await (await connect(false)).listTools()).tools).length
-    const after = JSON.stringify((await (await connect(true)).listTools()).tools).length
+    const listed = (await (await connect(true)).listTools()).tools
+    const after = JSON.stringify(listed).length
+    console.info(`per tool: ${listed.filter((t) => AppTools_NAMES.includes(t.name)).map((t) => `${t.name}=${JSON.stringify(t).length}`).join(' ')}`)
     // Measured when written: see docs/plans/INNER_TOOLS_PLAN.md, step 1.
     console.info(`tool list: ${before} characters before, ${after} after (+${after - before}, about ${Math.round((after - before) / 4)} tokens)`)
-    expect(after - before).toBeLessThan(4500)
+    expect(after - before).toBeLessThan(5500)
   })
 })

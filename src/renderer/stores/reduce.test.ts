@@ -246,6 +246,12 @@ describe('checkpoints in the log', () => {
     expect(s.items[2]).toMatchObject({ kind: 'reverted', restored: 2, removed: 1, undoId: 'b'.repeat(40) })
   })
 
+  it('shows what the assistant changed in Celeste as one line, and leaves the status alone', () => {
+    const s = foldEvents(blank(), log([1000, { type: 'user.message', text: 'dark please', attachments: [] }], [1010, { type: 'app.changed', text: 'The theme was changed to dark.' }]))
+    expect(s.items[1]).toMatchObject({ kind: 'notice', text: 'The theme was changed to dark.' })
+    for (const status of ['idle', 'working', 'waiting'] as SessionStatus[]) expect(nextStatus(status, { type: 'app.changed', text: 'x' })).toBe(status)
+  })
+
   it('does not change the session’s status, which the sidebar keeps from the same events', () => {
     const events: LogEvent[] = [
       { type: 'checkpoint.created', id: ID },
