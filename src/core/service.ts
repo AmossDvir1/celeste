@@ -606,10 +606,12 @@ export class SessionService {
       throw new Error('Invalid message')
     }
     if (mode !== undefined && mode !== 'queue' && mode !== 'stop' && mode !== 'steer') throw new Error('Invalid send mode')
+    // A turn that waits on a card (a question, an approval) cannot finish, so a message queued behind it would wait for ever. Typing a new
+    // message instead of answering is saying "never mind that": the turn is stopped, the card is let go of, and the message goes at once.
+    if (this.busy(id) && this.pendingApprovals(id) > 0) mode = 'stop'
     if (mode && this.busy(id)) {
-      // Steering goes into the running turn. Not while a card waits for the person (the message could be taken for the answer), and not
-      // where the assistant cannot take it: then it waits its turn, like any other.
-      if (mode === 'steer' && this.pendingApprovals(id) === 0 && typeof this.live.get(id)?.session.steer === 'function') {
+      // Steering goes into the running turn, where the assistant can take it; otherwise it waits its turn, like any other.
+      if (mode === 'steer' && typeof this.live.get(id)?.session.steer === 'function') {
         this.deliver(id, input, true)
         return
       }

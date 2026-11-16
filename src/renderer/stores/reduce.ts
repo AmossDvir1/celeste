@@ -227,10 +227,13 @@ export function reduceEvent(s: Session, e: LogEvent, at: number): Session {
 
     case 'turn.interrupted':
       // Tools that were still running stopped with it: none is left spinning under "You stopped this response". A card nobody answered
-      // was declined by Stop, so it no longer asks (its buttons would do nothing).
+      // was declined by Stop, so it no longer asks (its buttons would do nothing): an approval is denied, a question is skipped.
       return {
         ...s,
-        items: [...failRunningTools(closeThinking(s.items, now), now).map((it) => (it.kind === 'approval' && it.status === 'pending' ? { ...it, status: 'denied' as const } : it)), { kind: 'notice', id: itemId(), text: 'You stopped this response.' }],
+        items: [
+          ...failRunningTools(closeThinking(s.items, now), now).map((it) => (it.kind === 'approval' && it.status === 'pending' ? { ...it, status: 'denied' as const } : it.kind === 'ask' && it.status === 'pending' ? { ...it, status: 'skipped' as const } : it)),
+          { kind: 'notice', id: itemId(), text: 'You stopped this response.' }
+        ],
         status: 'idle',
         activity: null }
 

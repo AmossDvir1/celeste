@@ -541,6 +541,19 @@ function Approval({ it, sessionId }: { it: Extract<TimelineItem, { kind: 'approv
 function Ask({ it, sessionId }: { it: Extract<TimelineItem, { kind: 'ask' }>; sessionId: string }) {
   const [picked, setPicked] = useState<Record<string, string[]>>({})
   const [other, setOther] = useState<Record<string, string>>({})
+  if (it.status === 'skipped') {
+    return (
+      <div className="approval done ask">
+        {it.questions.map((q) => (
+          <div key={q.question} className="small">
+            <span className="faint">{q.question}</span>
+            <br />
+            Skipped
+          </div>
+        ))}
+      </div>
+    )
+  }
   if (it.status === 'answered') {
     return (
       <div className="approval done ask">

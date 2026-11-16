@@ -1444,14 +1444,18 @@ describe('the prompt queue', () => {
       expect(heard(agents[0])).toEqual(['first', 'use tabs'])
     })
 
-    it('waits its turn while a card waits for the person, so it is not taken for the answer', () => {
+    it('is not taken for the answer while a card waits for the person: the turn is stopped and the message goes at once', async () => {
       const { api, agents, service } = setup()
       const { id } = api['sessions.create'](input)
       api['sessions.send'](id, msg('first'))
       void service.requestApproval(id, { kind: 'other', title: 'Use the screen' })
       api['sessions.send'](id, msg('use tabs'), 'steer')
       expect(agents[0]?.steered).toEqual([])
-      expect(queueOf(api, id).items.map((m) => m.text)).toEqual(['use tabs'])
+      expect(agents[0]?.interrupted).toBe(1)
+      agents[0]?.emit(stopped)
+      await flush()
+      expect(heard(agents[0])).toEqual(['first', 'use tabs'])
+      expect(queueOf(api, id)).toEqual({ items: [], paused: false })
     })
 
     it('does not stop the turn or pause the queue, and a queued message still goes when the turn ends', async () => {
@@ -1498,6 +1502,46 @@ describe('the prompt queue', () => {
     api['sessions.send'](id, msg('one'))
     api['sessions.send'](id, msg('two'))
     expect(heard(agents[0])).toEqual(['one', 'two'])
+  })
+
+  describe('a message typed while the assistant waits for an answer', () => {
+    const ask: AgentEvent = { type: 'ask_user.requested', requestId: 'q1', questions: [{ header: 'Scope', question: 'Which scope?', options: [{ label: 'Staging' }], multiSelect: false }] }
+
+    it('lets go of the question and goes at once, in the usual queue mode too, instead of waiting behind a turn that cannot finish', async () => {
+      const { api, agents } = setup()
+      const { id } = api['sessions.create'](input)
+      api['sessions.send'](id, msg('deploy it'))
+      agents[0]?.emit(ask)
+      await flush()
+      api['sessions.send'](id, msg('never mind, just build it'), 'queue')
+      expect(agents[0]?.interrupted).toBe(1)
+      agents[0]?.emit(stopped)
+      await flush()
+      expect(heard(agents[0])).toEqual(['deploy it', 'never mind, just build it'])
+      expect(queueOf(api, id)).toEqual({ items: [], paused: false })
+    })
+
+    it('does the same for a message sent with no mode', async () => {
+      const { api, agents } = setup()
+      const { id } = api['sessions.create'](input)
+      api['sessions.send'](id, msg('deploy it'))
+      agents[0]?.emit(ask)
+      await flush()
+      api['sessions.send'](id, msg('build it instead'))
+      expect(agents[0]?.interrupted).toBe(1)
+      agents[0]?.emit(stopped)
+      await flush()
+      expect(heard(agents[0])).toEqual(['deploy it', 'build it instead'])
+    })
+
+    it('still queues behind a turn that is working and waits for nobody', () => {
+      const { api, agents } = setup()
+      const { id } = api['sessions.create'](input)
+      api['sessions.send'](id, msg('first'))
+      api['sessions.send'](id, msg('later'), 'queue')
+      expect(agents[0]?.interrupted).toBe(0)
+      expect(queueOf(api, id).items.map((m) => m.text)).toEqual(['later'])
+    })
   })
 
   it('holds the queue when the turn is stopped, until it is resumed', async () => {

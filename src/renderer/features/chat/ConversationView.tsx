@@ -274,7 +274,7 @@ export function ConversationView({ sessionId, compact = false }: { sessionId: st
               }}
               history={prompts}
               compact={compact}
-              placeholder={session.status === 'waiting' ? 'Answer above, or type a message to send after…' : busy ? 'Type a message to send after this answer…' : 'Message Celeste...'}
+              placeholder={session.status === 'waiting' ? 'Answer above, or type a message to skip it…' : busy ? 'Type a message to send after this answer…' : 'Message Celeste...'}
             />
             <div className={cn('mt-2 flex h-4 items-center justify-center gap-2 text-[11px] text-ink-faint', compact && 'hidden')}>
               {onChatGptPlan ? (

@@ -1,6 +1,7 @@
 // Messages sent while the assistant works, in the real built app: one that waits its turn (Add to queue), and one that joins the turn that is
 // running (Steer). Claude is real (the real SDK and program); what it says is chosen by a stand-in for Anthropic's API (scripts/lib/stub.mjs),
-// which also records what the model was sent and in what order.   npm run verify:queue     (no account, no cost)
+// which also records what the model was sent and in what order. A message typed while the assistant waits for an answer lets go of the question
+// and goes at once.   npm run verify:queue     (no account, no cost)
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -11,6 +12,9 @@ const SLOW = 'node -e "setTimeout(()=>console.log(\'slow done\'),5000)"'
 
 /** What the model does: a slow command for "SLOW", a slow answer for "STREAM", and otherwise it says what it was told. */
 const script = (r) => {
+  // After a Stop, Claude Code answers the cut-off call first, so the new message is in the last turn but not the last block.
+  if (/NEVERMIND/.test(JSON.stringify(r.body.messages.at(-1)))) return [{ type: 'text', text: 'Saw: NEVERMIND just say hi' }]
+  if (r.last.kind === 'text' && /ASK ME/.test(r.last.text)) return [{ type: 'tool_use', name: 'AskUserQuestion', input: { questions: [{ question: 'Which colour should the button be?', header: 'Colour', multiSelect: false, options: [{ label: 'Pink', description: 'The accent' }, { label: 'Blue', description: 'Calmer' }] }] } }]
   if (r.last.kind === 'tool_result') return [{ type: 'text', text: 'The slow command is done.' }]
   const text = r.last.text
   if (/SLOW/.test(text) && !/STEER|WAIT/.test(text)) return [{ type: 'tool_use', name: 'Bash', input: { command: SLOW, description: 'Wait five seconds' } }]
@@ -111,6 +115,19 @@ try {
   check('Alt+Enter steers, and puts nothing in the waiting list', (await page.getByRole('list', { name: 'Messages waiting' }).count()) === 0)
   await page.getByText('The slow command is done.').nth(2).waitFor({ timeout: 90_000 })
   await idle(page)
+
+  console.log('\n# A question that is not answered')
+  await send(page, 'ASK ME something')
+  const question = page.getByText('Which colour should the button be?').first()
+  await question.waitFor({ timeout: 60_000 })
+  check('the assistant asks and the chat waits for the person', (await page.getByRole('group', { name: 'Celeste is asking you a question' }).count()) === 1)
+  await send(page, 'NEVERMIND just say hi')
+  await page.getByText('Saw: NEVERMIND just say hi').first().waitFor({ timeout: 90_000 })
+  await idle(page)
+  check('typing a message instead of answering lets go of the question: it says it was skipped and no longer asks', (await page.getByText('You skipped:').count()) === 1 && (await page.getByRole('group', { name: 'Celeste is asking you a question' }).count()) === 0)
+  check('the message was not left waiting in the queue', (await page.getByRole('list', { name: 'Messages waiting' }).count()) === 0)
+  check('and it was sent to the model once', stub.main.filter((r) => /NEVERMIND/.test(JSON.stringify(r.body.messages.at(-1)))).length === 1, String(stub.main.filter((r) => /NEVERMIND/.test(JSON.stringify(r.body.messages.at(-1)))).length))
+  await page.screenshot({ path: join(import.meta.dirname, '.output', 'queue-skipped-question.png') })
 
   console.log('\n# After a restart')
   await app.close()

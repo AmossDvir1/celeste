@@ -93,6 +93,22 @@ describe('replaying a log', () => {
     expect(s.items[1]).toMatchObject({ kind: 'ask', status: 'answered', answers: { Scope: 'Staging' } })
   })
 
+  it('closes a question nobody answered when the turn is stopped, so it does not keep asking', () => {
+    const s = foldEvents(
+      blank(),
+      log(
+        [1, { type: 'ask_user.requested', requestId: 'q', questions: [{ header: 'Scope', question: 'Which scope?', options: [], multiSelect: false }] }],
+        [2, { type: 'ask_user.requested', requestId: 'q2', questions: [] }],
+        [3, { type: 'ask.answered', requestId: 'q2', answers: {} }],
+        [4, { type: 'turn.interrupted', turnId: 't' }]
+      )
+    )
+    expect(s.items[0]).toMatchObject({ kind: 'ask', requestId: 'q', status: 'skipped' })
+    // One that was answered stays as it was.
+    expect(s.items[1]).toMatchObject({ kind: 'ask', requestId: 'q2', status: 'answered' })
+    expect(s.status).toBe('idle')
+  })
+
   it('keeps the words of a question that can be answered for now or for good, and none on one that cannot', () => {
     const choices = { allow: 'Allow for this chat', always: 'Always allow shop.test' }
     const s = foldEvents(

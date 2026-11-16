@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, ShieldQuestion } from 'lucide-react'
+import { Check, ShieldQuestion, X } from 'lucide-react'
 import type { AskAnswers, Question } from '@shared/agent'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui'
@@ -25,6 +25,18 @@ export function AskUserCard({
   useEffect(() => {
     if (item.status === 'pending') root.current?.focus()
   }, [item.status])
+
+  // Stopped, or let go of by a new message: it no longer asks.
+  if (item.status === 'skipped') {
+    return (
+      <div className="flex max-w-[760px] items-start gap-2 text-[13px] text-ink-muted">
+        <X className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
+        <span>
+          You skipped: <span className="text-ink">{questions.map((qq) => qq.question).join(' ')}</span>
+        </span>
+      </div>
+    )
+  }
 
   if (item.status === 'answered' && item.answers) {
     return (

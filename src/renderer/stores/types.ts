@@ -59,7 +59,7 @@ export type TimelineItem =
       /** `retried`: a proposal answered with "Try again". */
       status: 'pending' | 'allowed' | 'denied' | 'retried'
     }
-  | { kind: 'ask'; id: string; requestId: string; questions: Question[]; answers?: AskAnswers; status: 'pending' | 'answered' }
+  | { kind: 'ask'; id: string; requestId: string; questions: Question[]; answers?: AskAnswers; status: 'pending' | 'answered' | 'skipped' }
   /** A command the agent started in the background. It goes on after the turn ends; the card follows it to its end. */
   | { kind: 'background'; id: string; taskId: string; title: string; command?: string; status: 'running' | 'completed' | 'failed' | 'stopped'; summary?: string; outputFile?: string; startedAt: number; endedAt?: number }
   | { kind: 'error'; id: string; error: AgentError }
