@@ -125,6 +125,24 @@ const RevertedNotice = memo(function RevertedNotice({ item, canUndo, onUndo }: {
   )
 })
 
+/** A command the agent started and did not wait for: one line that follows it to its end. */
+const BackgroundNotice = memo(function BackgroundNotice({ item, onStop }: { item: Extract<TimelineItem, { kind: 'background' }>; onStop: (taskId: string) => void }) {
+  const running = item.status === 'running'
+  return (
+    <div className="flex max-w-[760px] items-center gap-2 rounded-xl border border-edge bg-panel/60 px-3 py-2 text-[13.5px]" title={item.command}>
+      <SquareTerminal className="h-4 w-4 shrink-0 text-ink-muted" />
+      <span className="min-w-0 flex-1 truncate text-ink">{running ? `Running in the background: ${item.title}` : item.status === 'stopped' ? `Stopped: ${item.title}` : item.summary || item.title}</span>
+      {item.endedAt ? <span className="shrink-0 text-xs text-ink-faint">{formatDuration(item.endedAt - item.startedAt)}</span> : null}
+      {running && (
+        <button type="button" aria-label="Stop this command" onClick={() => onStop(item.taskId)} className="shrink-0 rounded-md px-1.5 py-0.5 text-xs text-ink-muted hover:bg-hover hover:text-ink">
+          Stop
+        </button>
+      )}
+      {running ? <Spinner className="h-3.5 w-3.5" /> : item.status === 'completed' ? <Check className="h-3.5 w-3.5 text-success" /> : <X className="h-3.5 w-3.5 text-danger" />}
+    </div>
+  )
+})
+
 const AssistantMessage = memo(function AssistantMessage({ item }: { item: Extract<TimelineItem, { kind: 'assistant' }> }) {
   return (
     <div className="animate-fade-up max-w-[760px]">
@@ -454,6 +472,7 @@ export function Timeline({
   const blocks = useMemo(() => toBlocks(session.items, compact ? 'chat' : session.mode), [session.items, session.mode, compact])
   const detailed = session.mode === 'develop' && !compact
   const revert = useSessions((s) => s.revert)
+  const stopSession = useSessions((s) => s.stopBackground)
   const [target, setTarget] = useState<string | null>(null)
   const [reviewing, setReviewing] = useState<string | null>(null)
   // Only the newest revert can be undone, and only until the person says something else: after that, files have moved on.
@@ -471,6 +490,7 @@ export function Timeline({
   const retry = useCallback(() => latest.current.onRetry(), [])
   const sessionId = session.id
   const undo = useCallback((undoId: string) => void revert(sessionId, undoId), [revert, sessionId])
+  const stopBackground = useCallback((taskId: string) => stopSession(sessionId, taskId), [stopSession, sessionId])
 
   // A long conversation is drawn from near its end; what is above is held back until the reader goes there. The first block that
   // is drawn is remembered by its id, so what is drawn does not shift as the conversation grows.
@@ -530,6 +550,8 @@ export function Timeline({
         return <MemoDesktopCard item={it} />
       case 'files':
         return <MemoFileCards sessionId={session.id} files={it.files} more={it.more} />
+      case 'background':
+        return <BackgroundNotice item={it} onStop={stopBackground} />
       case 'reverted':
         return <RevertedNotice item={it} canUndo={idle && it.id === lastReverted} onUndo={() => undo(it.undoId)} />
       case 'assistant':

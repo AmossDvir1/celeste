@@ -127,6 +127,13 @@ function hearCore(message: AppMessage): void {
       waiting = message.waiting
       tray.update(working, waiting)
     }
+  } else if (message.type === 'finished') {
+    // A command the assistant started has ended: said only while the person may not be looking, like the others.
+    const { target, title, text } = message
+    if (typeof target !== 'string' || typeof title !== 'string' || typeof text !== 'string') return
+    const win = mainWindow()
+    if (!shouldNotify(win ? { visible: win.isVisible(), minimized: win.isMinimized(), focused: win.isFocused() } : null)) return
+    say(title, text, () => showMain().webContents.send('celeste:open', { kind: 'chat', target }))
   } else if (message.type === 'needs-you') {
     const { kind, target, title, text } = message
     if ((kind === 'chat' || kind === 'run') && typeof target === 'string' && typeof title === 'string' && typeof text === 'string') needsYou({ kind, target, title, text })

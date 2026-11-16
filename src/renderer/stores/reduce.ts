@@ -202,6 +202,20 @@ export function reduceEvent(s: Session, e: LogEvent, at: number): Session {
     case 'usage.updated':
       return s
 
+    case 'background.started':
+      // The same task twice (the log replayed over what is already shown) adds nothing.
+      if (s.items.some((it) => it.kind === 'background' && it.taskId === e.taskId)) return s
+      return { ...s, items: [...s.items, { kind: 'background', id: itemId(), taskId: e.taskId, title: e.title, ...(e.command ? { command: e.command } : {}), status: 'running', startedAt: now }] }
+
+    case 'background.finished': {
+      const found = s.items.some((it) => it.kind === 'background' && it.taskId === e.taskId)
+      // Its start was not seen (the notice came first, or the log began later): the card is made from the end alone.
+      if (!found) {
+        return { ...s, items: [...s.items, { kind: 'background', id: itemId(), taskId: e.taskId, title: e.summary, status: e.status, summary: e.summary, startedAt: now, endedAt: now }] }
+      }
+      return { ...s, items: s.items.map((it) => (it.kind === 'background' && it.taskId === e.taskId ? { ...it, status: e.status, summary: e.summary, endedAt: now } : it)) }
+    }
+
     case 'turn.completed':
       return { ...s, items: closeThinking(s.items, now), status: 'idle', activity: null }
 

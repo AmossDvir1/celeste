@@ -56,6 +56,8 @@ export type TimelineItem =
       status: 'pending' | 'allowed' | 'denied'
     }
   | { kind: 'ask'; id: string; requestId: string; questions: Question[]; answers?: AskAnswers; status: 'pending' | 'answered' }
+  /** A command the agent started in the background. It goes on after the turn ends; the card follows it to its end. */
+  | { kind: 'background'; id: string; taskId: string; title: string; command?: string; status: 'running' | 'completed' | 'failed' | 'stopped'; summary?: string; startedAt: number; endedAt?: number }
   | { kind: 'error'; id: string; error: AgentError }
   | { kind: 'notice'; id: string; text: string }
   /** A workflow started from this conversation. The card reads the run itself, so it shows steps as they happen and the result after. */

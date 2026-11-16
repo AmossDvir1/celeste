@@ -204,6 +204,10 @@ class FakeQuery implements ClaudeQuery {
     this.interrupted++
     this.emit({ type: 'result', subtype: 'error_during_execution', is_error: true, session_id: SID } as never)
   }
+  readonly stoppedTasks: string[] = []
+  async stopTask(taskId: string): Promise<void> {
+    this.stoppedTasks.push(taskId)
+  }
   async setModel(model?: string): Promise<void> {
     this.models.push(model)
   }
@@ -449,6 +453,43 @@ describe('a Claude session', () => {
     expect(events[events.length - 1]).toMatchObject({ type: 'turn.interrupted' })
     expect(types(events)).not.toContain('turn.failed')
     expect((t.queries[0] as FakeQuery).interrupted).toBe(1)
+  })
+
+  it('stops one command that goes on after the turn, and tells the program that the card has a Stop for it', async () => {
+    const t = setup(plain)
+    await run(t.session, 'hi')
+    const q = t.queries[0] as FakeQuery
+    expect(q.options.perTaskStopAffordance).toBe(true)
+    await t.session.stopBackground('b1')
+    expect(q.stoppedTasks).toEqual(['b1'])
+  })
+
+  it('has nothing to stop a command in before Claude has started', async () => {
+    const t = setup(plain)
+    await expect(t.session.stopBackground('b1')).rejects.toThrow('not running')
+  })
+
+  it('shows the turn Claude Code starts by itself when a command that went on after the turn ends', async () => {
+    const t = setup((_m, q) =>
+      q.emit(init(), { type: 'system', subtype: 'task_started', task_id: 'b1', description: 'Run the tests', task_type: 'local_bash', is_backgrounded: true } as never, ...text('Started it.'), done())
+    )
+    const first = await run(t.session, 'run the tests in the background')
+    expect(types(first)).toContain('background.started')
+    expect(first[first.length - 1]).toMatchObject({ type: 'turn.completed' })
+
+    // Later the command ends and Claude Code goes on by itself, with no message from the person.
+    const q = t.queries[0] as FakeQuery
+    q.emit({ type: 'system', subtype: 'task_notification', task_id: 'b1', status: 'completed', summary: 'Completed (exit code 0)', output_file: 'x' } as never, ...text('All passed.'), done())
+    const it = t.session.events[Symbol.asyncIterator]()
+    const later: AgentEvent[] = []
+    for (;;) {
+      const r = await Promise.race([it.next(), new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`Timed out. Got: ${types(later).join(', ')}`)), 4000))])
+      if (r.done) break
+      later.push(r.value)
+      if (TERMINAL.includes(r.value.type)) break
+    }
+    expect(types(later)).toEqual(['turn.started', 'background.finished', 'message.delta', 'usage.updated', 'turn.completed'])
+    expect(later[2]).toEqual({ type: 'message.delta', text: 'All passed.' })
   })
 
   it('ends the turn when Stop is pressed before Claude has even started', async () => {

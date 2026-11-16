@@ -121,6 +121,10 @@ export type AgentEvent =
   | { type: 'approval.requested'; requestId: string; kind: ToolKind; title: string; detail?: string; choices?: ApprovalChoices; slider?: ApprovalSlider }
   | { type: 'ask_user.requested'; requestId: string; questions: Question[] }
   | { type: 'usage.updated'; usage: Usage }
+  /** A command the agent started and did not wait for (Claude's background shell). It goes on after the turn ends. */
+  | { type: 'background.started'; taskId: string; title: string; command?: string }
+  /** The background command ended. The agent may start a turn of its own to deal with the result. */
+  | { type: 'background.finished'; taskId: string; status: 'completed' | 'failed' | 'stopped'; summary: string }
   | { type: 'turn.completed'; turnId: string }
   | { type: 'turn.interrupted'; turnId: string }
   | { type: 'turn.failed'; turnId: string; error: AgentError }
@@ -142,5 +146,7 @@ export interface AgentSession {
   setModel(model: string, effort?: Effort): Promise<void>
   setApprovalMode(mode: ApprovalMode): Promise<void>
   interrupt(): Promise<void>
+  /** Stops one command that goes on after the turn (see `background.started`), and nothing else. Only an assistant that has such commands offers it. */
+  stopBackground?(taskId: string): Promise<void>
   close(): Promise<void>
 }

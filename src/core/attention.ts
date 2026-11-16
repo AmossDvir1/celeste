@@ -8,6 +8,8 @@ import type { RunStatus } from '@shared/workflow'
  */
 
 export type AttentionMessage =
+  /** A command the assistant started in the background has ended (not one the person stopped). */
+  | { type: 'finished'; id: string; target: string; title: string; text: string }
   | { type: 'attention'; working: number; waiting: number }
   /** `target` is the chat's id, or the run's. `text` is what it asks. */
   | { type: 'needs-you'; id: string; kind: 'chat' | 'run'; target: string; title: string; text: string }
@@ -17,6 +19,8 @@ const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0
 export class Attention {
   private readonly sessions = new Map<string, 'idle' | 'working' | 'waiting'>()
   private readonly runs = new Map<string, RunStatus>()
+  /** The commands each chat has going in the background. They count as working, whatever the chat itself is doing. */
+  private readonly background = new Map<string, Set<string>>()
   /** What was last reported. Nothing going on is the starting point, so it is not reported. */
   private last = '0:0'
 
@@ -33,6 +37,7 @@ export class Attention {
         break
       case 'removed':
         this.sessions.delete(push.id)
+        this.background.delete(push.id)
         break
       case 'run': {
         const was = this.runs.get(push.run.id)
@@ -45,7 +50,19 @@ export class Attention {
       }
       case 'event': {
         const e = push.stored.event
-        if (e.type === 'approval.requested') {
+        if (e.type === 'background.started') {
+          const tasks = this.background.get(push.sessionId) ?? new Set<string>()
+          tasks.add(e.taskId)
+          this.background.set(push.sessionId, tasks)
+        } else if (e.type === 'background.finished') {
+          const tasks = this.background.get(push.sessionId)
+          const was = tasks?.delete(e.taskId) ?? false
+          if (tasks?.size === 0) this.background.delete(push.sessionId)
+          // Said once, and not for one the person stopped.
+          if (was && e.status !== 'stopped') {
+            this.emit({ type: 'finished', id: `bg-${push.sessionId}-${e.taskId}`, target: push.sessionId, title: clip(this.titleOf(push.sessionId) ?? 'Celeste', 120), text: clip(e.summary, 300) })
+          }
+        } else if (e.type === 'approval.requested') {
           this.emit({ type: 'needs-you', id: e.requestId, kind: 'chat', target: push.sessionId, title: clip(this.titleOf(push.sessionId) ?? 'Celeste', 120), text: clip(`${e.title}${e.detail ? `: ${e.detail}` : ''}`, 300) })
         } else if (e.type === 'ask_user.requested') {
           this.emit({ type: 'needs-you', id: e.requestId, kind: 'chat', target: push.sessionId, title: clip(this.titleOf(push.sessionId) ?? 'Celeste', 120), text: clip(e.questions[0]?.question ?? 'Celeste has a question for you.', 300) })
@@ -66,6 +83,7 @@ export class Attention {
       if (s === 'working') working++
       else if (s === 'waiting') waiting++
     }
+    for (const tasks of this.background.values()) working += tasks.size
     for (const r of this.runs.values()) {
       if (r === 'running') working++
       else waiting++

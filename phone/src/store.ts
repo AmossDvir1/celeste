@@ -129,6 +129,8 @@ interface AppState {
   queueAction: (id: string, action: QueueAction) => Promise<void>
   newChat: (text: string, how?: PhoneNewSession, attachments?: string[]) => Promise<void>
   stop: (id: string) => Promise<void>
+  /** Stops one command the assistant started in the background. */
+  stopBackground: (id: string, taskId: string) => Promise<void>
   /** Delete a chat, on the computer too. Drops it here at once and offers Undo for the computer's undo window. */
   remove: (id: string) => Promise<void>
   /** Brings back a chat removed with `remove`, if the computer has not purged it yet. */
@@ -337,6 +339,14 @@ export const useApp = create<AppState>((set, get) => ({
   stop: async (id) => {
     try {
       await get().link?.call('sessions.interrupt', id)
+    } catch (err) {
+      get().say(err instanceof Error ? err.message : 'Could not stop it.')
+    }
+  },
+
+  stopBackground: async (id, taskId) => {
+    try {
+      await get().link?.call('sessions.stopBackground', id, taskId)
     } catch (err) {
       get().say(err instanceof Error ? err.message : 'Could not stop it.')
     }

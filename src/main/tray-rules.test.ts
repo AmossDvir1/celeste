@@ -34,8 +34,8 @@ describe('quitQuestion', () => {
     expect(quitQuestion(0, 0)).toBeNull()
   })
   it('asks, in the singular and the plural', () => {
-    expect(quitQuestion(1, 0)).toContain('One chat or workflow is still going')
-    expect(quitQuestion(1, 1)).toContain('2 chats and workflows are still going')
+    expect(quitQuestion(1, 0)).toContain('One chat, workflow or command is still going')
+    expect(quitQuestion(1, 1)).toContain('2 chats, workflows and commands are still going')
   })
 })
 

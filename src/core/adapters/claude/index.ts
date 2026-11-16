@@ -182,6 +182,7 @@ export function createClaudeSession(
         }
       },
       interrupt: async () => (await ready).interrupt(),
+      stopTask: async (taskId) => (await ready).stopTask(taskId),
       setModel: async (m) => (await ready).setModel(m),
       applyFlagSettings: async (s) => (await ready).applyFlagSettings(s),
       close: () => void ready.then((q) => q.close(), () => undefined)

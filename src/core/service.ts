@@ -251,6 +251,7 @@ export class SessionService {
     'sessions.send': (id, input, mode) => this.send(id, input, mode),
     'sessions.queue': (id, action) => this.queueAction(id, action),
     'sessions.interrupt': (id) => this.interrupt(id),
+    'sessions.stopBackground': (id, taskId) => this.stopBackground(id, taskId),
     'sessions.respondApproval': (id, requestId, answer) => this.respondApproval(id, requestId, answer),
     'sessions.respondAsk': (id, requestId, answers) => this.respondAsk(id, requestId, answers),
     'sessions.update': (id, patch) => this.update(id, patch),
@@ -1070,6 +1071,15 @@ export class SessionService {
       this.toolApprovals.delete(requestId)
       waiting.resolve({ allow: false, always: false })
     }
+  }
+
+  /** Stops one background command. The assistant that started it ends it, and says so with a `background.finished` of status stopped. */
+  private async stopBackground(id: string, taskId: unknown): Promise<void> {
+    this.requireSession(id)
+    if (typeof taskId !== 'string' || !taskId || taskId.length > 100) throw new Error('Invalid command')
+    const stop = this.live.get(id)?.session.stopBackground
+    if (!stop) throw new Error('That command is not running any more.')
+    await stop.call(this.live.get(id)?.session, taskId)
   }
 
   private interrupt(id: string): void {

@@ -19,6 +19,10 @@ class FakeAgent implements AgentSession {
   readonly responses: [string, unknown][] = []
   interrupted = 0
   closed = false
+  readonly stoppedCommands: string[] = []
+  stopBackground = async (taskId: string): Promise<void> => {
+    this.stoppedCommands.push(taskId)
+  }
   private buffer: AgentEvent[] = []
   private waiting: ((r: IteratorResult<AgentEvent>) => void) | null = null
 
@@ -233,6 +237,24 @@ describe('sessions and their log', () => {
     api['sessions.send'](id, { text: 'Go', attachments: [] })
     api['sessions.interrupt'](id)
     expect(agents[0].interrupted).toBe(1)
+  })
+
+  it('stops one background command through the agent that started it, and leaves the chat running', async () => {
+    const { api, agents } = setup()
+    const { id } = api['sessions.create'](input)
+    api['sessions.send'](id, { text: 'Go', attachments: [] })
+    await api['sessions.stopBackground'](id, 'b1')
+    expect(agents[0].stoppedCommands).toEqual(['b1'])
+    expect(agents[0].interrupted).toBe(0)
+    await expect(api['sessions.stopBackground'](id, '')).rejects.toThrow('Invalid command')
+    await expect(api['sessions.stopBackground'](id, 'x'.repeat(101))).rejects.toThrow('Invalid command')
+    await expect(api['sessions.stopBackground']('nope', 'b1')).rejects.toThrow()
+  })
+
+  it('says so when no agent is running to stop a command', async () => {
+    const { api } = setup()
+    const { id } = api['sessions.create'](input)
+    await expect(api['sessions.stopBackground'](id, 'b1')).rejects.toThrow('not running any more')
   })
 
   it('updates the title and settings of a session and tells the windows', () => {

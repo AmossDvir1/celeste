@@ -11,7 +11,11 @@ const DEVICE_SECRET = /^(device\.dev-[0-9a-f-]{36}\.(password|passphrase)|vendor
 const CORE_STORES = /^(phone\.key|vendor\.openai\.tokens)$/
 
 /** What Core tells the main process on its own (see src/core/attention.ts). Checked where it is used. */
-export type AppMessage = { type: 'app-settings'; closeToTray?: unknown } | { type: 'attention'; working?: unknown; waiting?: unknown } | { type: 'needs-you'; id?: unknown; kind?: unknown; target?: unknown; title?: unknown; text?: unknown }
+export type AppMessage =
+  | { type: 'app-settings'; closeToTray?: unknown }
+  | { type: 'attention'; working?: unknown; waiting?: unknown }
+  | { type: 'needs-you'; id?: unknown; kind?: unknown; target?: unknown; title?: unknown; text?: unknown }
+  | { type: 'finished'; id?: unknown; target?: unknown; title?: unknown; text?: unknown }
 
 /**
  * The Core process: database, sessions and the assistant, in a utility process of its own. Windows talk to it
@@ -114,7 +118,7 @@ export class CoreProcess {
         return
       }
       // What the main process needs to run the tray: the setting, how much is going on, and when something needs the person.
-      if (message?.type === 'app-settings' || message?.type === 'attention' || message?.type === 'needs-you') {
+      if (message?.type === 'app-settings' || message?.type === 'attention' || message?.type === 'needs-you' || message?.type === 'finished') {
         this.app?.(message as unknown as AppMessage)
         return
       }

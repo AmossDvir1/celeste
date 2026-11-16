@@ -72,6 +72,35 @@ describe('Attention', () => {
     ])
   })
 
+  it('counts a command the assistant started in the background, whatever the chat is doing, until it ends', () => {
+    const { a, out } = setup()
+    const event = (e: CorePush & { type: 'event' }) => e
+    const started: CorePush = event({ type: 'event', sessionId: 'c1', stored: { seq: 1, at: 1, event: { type: 'background.started', taskId: 'b1', title: 'Run the tests' } } })
+    const finished = (status: 'completed' | 'failed' | 'stopped'): CorePush => ({ type: 'event', sessionId: 'c1', stored: { seq: 2, at: 2, event: { type: 'background.finished', taskId: 'b1', status, summary: 'Completed (exit code 0)' } } })
+    a.observe(started)
+    expect(out).toEqual([{ type: 'attention', working: 1, waiting: 0 }])
+    a.observe(session('c1', 'idle'))
+    expect(out).toHaveLength(1)
+    a.observe(finished('completed'))
+    expect(out.slice(1)).toEqual([
+      { type: 'finished', id: 'bg-c1-b1', target: 'c1', title: 'Fix the tests', text: 'Completed (exit code 0)' },
+      { type: 'attention', working: 0, waiting: 0 }
+    ])
+  })
+
+  it('does not announce a command the person stopped, or one it never saw start, and forgets a removed chat', () => {
+    const { a, out } = setup()
+    const started = (session: string, taskId: string): CorePush => ({ type: 'event', sessionId: session, stored: { seq: 1, at: 1, event: { type: 'background.started', taskId, title: 't' } } })
+    const finished = (session: string, taskId: string, status: 'completed' | 'stopped'): CorePush => ({ type: 'event', sessionId: session, stored: { seq: 2, at: 2, event: { type: 'background.finished', taskId, status, summary: 's' } } })
+    a.observe(started('c1', 'b1'))
+    a.observe(finished('c1', 'b1', 'stopped'))
+    a.observe(finished('c1', 'never', 'completed'))
+    expect(out.filter((m) => m.type === 'finished')).toEqual([])
+    a.observe(started('c2', 'b2'))
+    a.observe({ type: 'removed', id: 'c2' })
+    expect(out[out.length - 1]).toEqual({ type: 'attention', working: 0, waiting: 0 })
+  })
+
   it('ignores pushes that do not matter', () => {
     const { a, out } = setup()
     a.observe({ type: 'phone' })

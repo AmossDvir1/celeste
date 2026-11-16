@@ -26,7 +26,8 @@ function fakeApi(sessions: SessionSummary[]) {
       return { id: `att${saved.length}`, name: f.name, mime: f.mime, size: f.data.byteLength }
     },
     'attachments.discard': (id: string) => void discarded.push(id),
-    'sessions.interrupt': (id: string) => void sent.push({ id, input: { text: 'STOP', attachments: [] } })
+    'sessions.interrupt': (id: string) => void sent.push({ id, input: { text: 'STOP', attachments: [] } }),
+    'sessions.stopBackground': (id: string, taskId: string) => Promise.resolve(void sent.push({ id, input: { text: `STOP ${taskId}`, attachments: [] } }))
   }
   return { api, created, sent, saved, discarded }
 }
@@ -156,6 +157,12 @@ describe('phone calls', () => {
     await phoneCalls(() => api, () => 'PC')('sessions.interrupt', ['s9'])
     expect(sent[0]?.id).toBe('s9')
     await expect(phoneCalls(() => api, () => 'PC')('runs.list', [])).rejects.toThrow('Not available from a phone.')
+  })
+
+  it('lets a phone stop one background command, and nothing else about it', async () => {
+    const { api, sent } = fakeApi([])
+    await phoneCalls(() => api, () => 'PC')('sessions.stopBackground', ['s9', 'b1'])
+    expect(sent[0]).toEqual({ id: 's9', input: { text: 'STOP b1', attachments: [] } })
   })
 
   it('deletes a chat for the phone, and brings it back when the phone asks within the undo window', async () => {

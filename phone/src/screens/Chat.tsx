@@ -397,6 +397,17 @@ const Item = memo(function Item({ it, sessionId, detailed }: { it: TimelineItem;
       return <DesktopRow it={it} />
     case 'reverted':
       return <div className="notice">The folder was put back ({it.restored} restored, {it.removed} removed).</div>
+    case 'background':
+      return (
+        <div className="notice">
+          {it.status === 'running' ? `Running in the background: ${it.title}` : it.status === 'stopped' ? `Stopped: ${it.title}` : it.summary || `${it.title}: ${it.status}`}
+          {it.status === 'running' && (
+            <button className="btn text sm" aria-label="Stop this command" onClick={() => void useApp.getState().stopBackground(sessionId, it.taskId)}>
+              Stop
+            </button>
+          )}
+        </div>
+      )
   }
 })
 

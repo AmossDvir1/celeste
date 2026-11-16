@@ -302,3 +302,39 @@ describe('the prompt queue in the log', () => {
     expect(foldEvents(blank(), log(add, [2, { type: 'queue.paused' }], [3, { type: 'queue.sent', id: 'a' }])).queue).toEqual({ paused: false, items: [] })
   })
 })
+
+describe('commands that go on after the turn', () => {
+  it('shows a card that follows the command to its end, and the answer of the turn that follows', () => {
+    const s = foldEvents(
+      blank(),
+      log(
+        [1000, { type: 'user.message', text: 'run the tests', attachments: [] }],
+        [1100, { type: 'turn.started', turnId: 't' }],
+        [1200, { type: 'background.started', taskId: 'b1', title: 'Run the tests', command: 'npm test' }],
+        [1300, { type: 'turn.completed', turnId: 't' }],
+        [6300, { type: 'turn.started', turnId: 'bg-1' }],
+        [6310, { type: 'background.finished', taskId: 'b1', status: 'completed', summary: 'Completed (exit code 0)' }],
+        [6400, { type: 'message.delta', text: 'The tests passed.' }],
+        [6500, { type: 'turn.completed', turnId: 'bg-1' }]
+      )
+    )
+    const card = s.items.find((i) => i.kind === 'background')
+    expect(card).toMatchObject({ taskId: 'b1', title: 'Run the tests', command: 'npm test', status: 'completed', summary: 'Completed (exit code 0)', startedAt: 1200, endedAt: 6310 })
+    expect(s.items.filter((i) => i.kind === 'background')).toHaveLength(1)
+    expect(s.items.some((i) => i.kind === 'assistant' && i.text === 'The tests passed.')).toBe(true)
+    expect(s.status).toBe('idle')
+  })
+
+  it('does not change what the chat is doing, and does not add a card twice', () => {
+    const working = blank({ status: 'working' })
+    const started = reduceEvent(working, { type: 'background.started', taskId: 'b1', title: 'x' }, 1)
+    expect(started.status).toBe('working')
+    expect(reduceEvent(started, { type: 'background.started', taskId: 'b1', title: 'x' }, 2).items).toHaveLength(1)
+    expect(nextStatus('idle', { type: 'background.finished', taskId: 'b1', status: 'completed', summary: 'x' })).toBe('idle')
+  })
+
+  it('makes a card from the end alone when the start was not seen', () => {
+    const s = reduceEvent(blank(), { type: 'background.finished', taskId: 'z', status: 'failed', summary: 'Failed with exit code 1' }, 5)
+    expect(s.items[0]).toMatchObject({ kind: 'background', taskId: 'z', status: 'failed', title: 'Failed with exit code 1' })
+  })
+})

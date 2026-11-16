@@ -33,7 +33,7 @@ export function tooltip(working: number, waiting: number): string {
 export function quitQuestion(working: number, waiting: number): string | null {
   const n = working + waiting
   if (n === 0) return null
-  return `${n === 1 ? 'One chat or workflow is' : `${n} chats and workflows are`} still going. If you quit now, ${n === 1 ? 'it stops' : 'they stop'}.`
+  return `${n === 1 ? 'One chat, workflow or command is' : `${n} chats, workflows and commands are`} still going. If you quit now, ${n === 1 ? 'it stops' : 'they stop'}.`
 }
 
 /** Whether to show a notification for something that needs the person: not while they are looking at Celeste. */

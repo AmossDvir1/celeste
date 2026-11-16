@@ -111,6 +111,15 @@ export class Translator {
   private ended = true
   private turnId = ''
   private lastError: { code?: string; text?: string } = {}
+  /** Whether anything of the current turn has been heard since it began, so a turn that Claude never carried on with can be ended. */
+  private heard = false
+  /** The commands the agent started, by tool call, until their task is known: what a background card shows. */
+  private readonly commands = new Map<string, string>()
+  /** Commands seen starting in the foreground: they get a card only if they are moved to the background. */
+  private readonly foreground = new Map<string, { title: string; command?: string }>()
+  /** The background commands that have a card, and every task that may wake the agent when it ends. */
+  private readonly shown = new Set<string>()
+  private readonly tasks = new Set<string>()
   sessionId: string | undefined
 
   constructor(private cwd?: string) {}
@@ -122,6 +131,7 @@ export class Translator {
   /** Called when a message is sent. The turn ends at its result, or at a failure. */
   begin(turnId: string): AgentEvent {
     this.ended = false
+    this.heard = false
     this.turnId = turnId
     this.streamed.clear()
     this.lastError = {}
@@ -141,6 +151,25 @@ export class Translator {
     return [{ type: 'turn.interrupted', turnId: this.turnId }]
   }
 
+  /**
+   * A turn that began on its own (see `taskNotification`) and in which Claude has said nothing: it did not carry on after all, so the
+   * turn ends, quietly, and the session is not left working.
+   */
+  quietTurn(turnId: string): AgentEvent[] {
+    if (this.ended || this.turnId !== turnId || this.heard) return []
+    this.ended = true
+    return [{ type: 'turn.completed', turnId }]
+  }
+
+  /** Claude's program ended, and the commands it was running went with it: their cards must not go on saying they run. */
+  endTasks(): AgentEvent[] {
+    const out: AgentEvent[] = [...this.shown].map((taskId): AgentEvent => ({ type: 'background.finished', taskId, status: 'stopped', summary: 'The command stopped when Claude did.' }))
+    this.shown.clear()
+    this.tasks.clear()
+    this.foreground.clear()
+    return out
+  }
+
   /** Whether a turn is running, as far as the messages so far say. */
   get running(): boolean {
     return !this.ended
@@ -153,6 +182,9 @@ export class Translator {
     switch (m['type']) {
       case 'system': {
         if (m['subtype'] === 'init' && str(m['session_id'])) this.sessionId = m['session_id'] as string
+        if (m['subtype'] === 'task_started') return this.taskStarted(m)
+        if (m['subtype'] === 'task_updated') return this.taskUpdated(m)
+        if (m['subtype'] === 'task_notification') return this.taskNotification(m)
         return []
       }
       case 'stream_event':
@@ -170,6 +202,7 @@ export class Translator {
 
   private stream(e: Record<string, unknown>): AgentEvent[] {
     if (this.ended) return []
+    this.heard = true
     if (e['type'] === 'message_start') {
       const id = str(obj(e['message'])['id'])
       if (id) this.streamed.add(id)
@@ -184,6 +217,7 @@ export class Translator {
 
   private assistant(m: Record<string, unknown>): AgentEvent[] {
     if (this.ended) return []
+    this.heard = true
     const message = obj(m['message'])
     if (str(m['error'])) this.lastError = { code: m['error'] as string }
     const out: AgentEvent[] = []
@@ -203,9 +237,73 @@ export class Translator {
         const input = obj(block['input'])
         const kind = toolKind(name)
         this.tools.set(id, { name, kind, input })
+        const command = str(input['command'])
+        if (command && (name === 'Bash' || name === 'PowerShell')) this.commands.set(id, command)
         out.push({ type: 'tool.started', id, kind, title: this.title(name, input), input })
       }
     }
+    return out
+  }
+
+  // --- commands that go on after the turn ----------------------------------------------------------------
+
+  private taskStarted(m: Record<string, unknown>): AgentEvent[] {
+    const id = str(m['task_id'])
+    // Housekeeping (the CLI's own watchers) is not activity.
+    if (!id || m['skip_transcript'] === true || m['ambient'] === true) return []
+    this.tasks.add(id)
+    const type = str(m['task_type'])
+    const toolUse = str(m['tool_use_id'])
+    const command = toolUse ? this.commands.get(toolUse) : undefined
+    // A command or a watch gets a card. A helper (a subagent) is already shown as its own tool call.
+    if (type !== 'local_bash' && type !== 'monitor' && !(type === undefined && command)) return []
+    const title = str(m['description']) ?? command ?? 'A command'
+    // Still in the foreground: the tool call that started it is waiting for it. It gets a card only if it is moved to the background.
+    if (m['is_backgrounded'] !== true) {
+      this.foreground.set(id, { title, ...(command ? { command } : {}) })
+      return []
+    }
+    return this.showTask(id, title, command)
+  }
+
+  private taskUpdated(m: Record<string, unknown>): AgentEvent[] {
+    const id = str(m['task_id'])
+    if (!id || obj(m['patch'])['is_backgrounded'] !== true) return []
+    const waiting = this.foreground.get(id)
+    if (!waiting) return []
+    this.foreground.delete(id)
+    return this.showTask(id, waiting.title, waiting.command)
+  }
+
+  private showTask(id: string, title: string, command?: string): AgentEvent[] {
+    if (this.shown.has(id)) return []
+    this.shown.add(id)
+    const cut = command && command.length > 600 ? `${command.slice(0, 600)}…` : command
+    return [{ type: 'background.started', taskId: id, title, ...(cut ? { command: cut } : {}) }]
+  }
+
+  /**
+   * A command that went on after the turn has ended. Claude Code then carries on by itself: it tells the model and a turn follows, which
+   * the person never asked for. That turn must be shown, so one begins here (it used to be dropped, because every message after a
+   * `result` was ignored until Celeste sent the next one). If Claude says nothing after all, `quietTurn` ends it.
+   */
+  private taskNotification(m: Record<string, unknown>): AgentEvent[] {
+    const id = str(m['task_id'])
+    const status = m['status']
+    if (!id || m['skip_transcript'] === true || m['ambient'] === true) return []
+    if (status !== 'completed' && status !== 'failed' && status !== 'stopped') return []
+    const wasForeground = this.foreground.delete(id)
+    const known = this.tasks.delete(id)
+    const shown = this.shown.delete(id)
+    // A command that ran in the foreground came back through its own tool call: nothing to add.
+    if (wasForeground) return []
+    const out: AgentEvent[] = []
+    if (shown || !known) {
+      out.push({ type: 'background.finished', taskId: id, status, summary: str(m['summary']) ?? (status === 'completed' ? 'The command finished.' : status === 'failed' ? 'The command failed.' : 'The command was stopped.') })
+    }
+    // A task that finishes or fails after the turn has ended wakes the agent. One that was stopped does not (seen on 16 November 2026:
+    // the program tells the model nothing when the person ends a command), so no turn is begun for it.
+    if (this.ended && (known || shown) && status !== 'stopped') out.unshift(this.begin(`bg-${crypto.randomUUID()}`))
     return out
   }
 
@@ -243,6 +341,7 @@ export class Translator {
 
   private user(m: Record<string, unknown>): AgentEvent[] {
     if (this.ended) return []
+    this.heard = true
     const content = obj(m['message'])['content']
     if (!Array.isArray(content)) return []
     const out: AgentEvent[] = []
@@ -278,6 +377,7 @@ export class Translator {
 
   private result(m: Record<string, unknown>): AgentEvent[] {
     if (this.ended) return []
+    this.heard = true
     this.ended = true
     const usage = obj(m['usage'])
     const events: AgentEvent[] = []

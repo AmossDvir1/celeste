@@ -52,6 +52,8 @@ export const PHONE_METHODS = [
   /** Edit, remove, send now, resume or clear the messages waiting behind a running turn. */
   'sessions.queue',
   'sessions.interrupt',
+  /** Stop one command the assistant started in the background. */
+  'sessions.stopBackground',
   /** Delete a chat for good (the computer's own undo is not offered on the phone). */
   'sessions.remove',
   'sessions.restore',

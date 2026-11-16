@@ -25,6 +25,8 @@ interface SessionsState {
    */
   send: (mode: SessionMode, input: UserInput, sendMode?: SendMode) => Promise<boolean>
   stop: (id: string) => void
+  /** Stops one command the assistant started in the background. */
+  stopBackground: (id: string, taskId: string) => void
   /** Edits, removes or sends now a message waiting behind the running turn; resumes or clears a paused queue. */
   queueAction: (id: string, action: QueueAction) => void
   /** What reverting to a checkpoint would change. Rejects with a message fit to show. */
@@ -204,6 +206,7 @@ export const useSessions = create<SessionsState>((set, get) => {
     },
 
     stop: (id) => fire(core.call('sessions.interrupt', id)),
+    stopBackground: (id, taskId) => fire(core.call('sessions.stopBackground', id, taskId)),
 
     queueAction: (id, action) => fire(core.call('sessions.queue', id, action)),
 

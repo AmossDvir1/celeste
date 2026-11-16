@@ -10,6 +10,8 @@ import { Translator, errorFrom } from './translate'
 /** The part of the SDK's running query that the adapter uses. A test supplies a fake that plays recorded messages. */
 export interface ClaudeQuery extends AsyncIterable<SDKMessage> {
   interrupt(): Promise<unknown>
+  /** Stops one background task. It ends with a `task_notification` of status `stopped`. */
+  stopTask(taskId: string): Promise<void>
   setModel(model?: string): Promise<void>
   applyFlagSettings(settings: { effortLevel?: Effort | null }): Promise<void>
   close(): void
@@ -41,6 +43,8 @@ const IMAGES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
 /** What the user sees when a vendor session could not be resumed and a new one was started in its place. */
 export const RESUME_NOTICE = '*Claude no longer had this conversation, so I continued from what was said here.*\n\n'
 
+/** How long a turn that Claude Code began on its own may stay silent before it is ended (see `pushHandled`). */
+const SELF_TURN_GRACE_MS = 30_000
 const MISSING = /no conversation found|session .*not found|could not (find|resume)|no such session/i
 
 function failure(err: unknown): AgentError {
@@ -178,6 +182,9 @@ export class ClaudeAgentSession implements AgentSession {
         // Celeste's approval modes are the only rule. A person's own allow rules in ~/.claude must not skip them, and a Develop
         // session reads the project's own settings and CLAUDE.md.
         settingSources: ctx.mode === 'develop' ? ['project'] : [],
+        // Celeste has a Stop on each background command (`stopBackground`), which is what the program asks to be told before it leaves
+        // a command running when the person stops the chat's turn. (Measured on 16 November 2026: it was left running either way.)
+        perTaskStopAffordance: true,
         abortController: abort
       }
     })
@@ -191,6 +198,21 @@ export class ClaudeAgentSession implements AgentSession {
     this.translator.setCwd(options.cwd)
     void this.read(q)
     return q
+  }
+
+  /**
+   * Pushes what a message became. A turn that began on its own, because a command ended and Claude Code went on by itself, is ended
+   * quietly if Claude has said nothing after a while, so the chat is not left working on a turn that never came.
+   */
+  private pushHandled(events: AgentEvent[]): void {
+    this.push(events)
+    for (const e of events) {
+      if (e.type !== 'turn.started' || !e.turnId.startsWith('bg-')) continue
+      const turnId = e.turnId
+      setTimeout(() => {
+        if (!this.closed) this.push(this.translator.quietTurn(turnId))
+      }, SELF_TURN_GRACE_MS).unref?.()
+    }
   }
 
   /** Reads what Claude Code says until it stops, one query for the life of the process. */
@@ -221,7 +243,7 @@ export class ClaudeAgentSession implements AgentSession {
           this.onResult?.()
           continue
         }
-        this.push(this.translator.handle(message))
+        this.pushHandled(this.translator.handle(message))
       }
     } catch (err) {
       if (q !== this.query || this.closed) return
@@ -236,6 +258,7 @@ export class ClaudeAgentSession implements AgentSession {
     if (q === this.query) {
       this.query = undefined
       this.prompt = undefined
+      this.push(this.translator.endTasks())
       this.push(this.translator.fail({ code: 'unknown', message: 'Claude stopped unexpectedly.', retryable: true }))
     }
     this.onResult?.()
@@ -365,6 +388,12 @@ export class ClaudeAgentSession implements AgentSession {
     // Claude Code ends the turn with a result of its own. If it never came, end it here.
     this.interrupting = false
     this.push(this.translator.interrupted())
+  }
+
+  async stopBackground(taskId: string): Promise<void> {
+    const q = this.query
+    if (!q) throw new Error('Claude is not running, so there is nothing to stop.')
+    await q.stopTask(taskId)
   }
 
   async close(): Promise<void> {

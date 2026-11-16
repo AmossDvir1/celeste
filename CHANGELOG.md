@@ -9,6 +9,10 @@ All notable changes to Celeste. The format follows [Keep a Changelog](https://ke
 - **Celeste stays in the tray** (Windows). Closing the window hides it and Celeste keeps running, so chats, workflow runs and the phone connection carry on. Click the tray icon to open it, right-click to quit (it asks first if something is still going). While the window is hidden, a notification tells you when a chat or a workflow needs you, and clicking it opens that chat. Hiding the window ends any desktop control. One choice, in Settings, General, turns it off.
 - A **compact window**. A button in the top bar (next to the window buttons, or Ctrl+Shift+M, or the tray menu) turns Celeste into a small side window at the bottom right of the screen, kept above other windows (a pin turns that off). It shows the chat folded to one line per step, with the message box under it; with no chat chosen it shows what needs you, a box to type in, and your recent chats; the Workflows tab lists your workflows with a Run button and what is running. Settings and the setup wizard open in the full window, and Celeste always starts as the full window (the small one remembers where you left it, and its pin). The change between the two is animated.
 
+### Fixed
+
+- **A command Claude starts in the background no longer loses its answer.** When a command ended after the turn, Claude Code carried on by itself and said something about the result, but Celeste threw that away, so the chat looked finished and silent. Now a one-line card follows the command ("Running in the background: …", then how it ended), and what Claude says when it ends is shown, as a turn of its own. Each card has a **Stop** for that one command (the chat's own Stop leaves it running), the tray's tooltip and the question before quitting count such commands, a notification says when one ends while the window is hidden, and the phone can stop one too.
+
 ## [1.3.0] - 2026-11-14
 
 ### Added

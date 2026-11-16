@@ -377,6 +377,8 @@ export interface CoreApi {
   /** Edit, remove, send now, resume or clear the messages waiting behind the running turn. */
   'sessions.queue': (id: string, action: QueueAction) => void
   'sessions.interrupt': (id: string) => void
+  /** Stops one command the assistant started in the background (a card's Stop). The chat's own Stop leaves such commands running. */
+  'sessions.stopBackground': (id: string, taskId: string) => Promise<void>
   'sessions.respondApproval': (id: string, requestId: string, answer: ApprovalAnswer) => void
   'sessions.respondAsk': (id: string, requestId: string, answers: AskAnswers) => void
   'sessions.update': (id: string, patch: SessionPatch) => SessionSummary
