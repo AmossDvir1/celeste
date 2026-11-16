@@ -11,7 +11,7 @@ All notable changes to Celeste. The format follows [Keep a Changelog](https://ke
 
 ### Fixed
 
-- **A command Claude starts in the background no longer loses its answer.** When a command ended after the turn, Claude Code carried on by itself and said something about the result, but Celeste threw that away, so the chat looked finished and silent. Now a one-line card follows the command ("Running in the background: …", then how it ended), and what Claude says when it ends is shown, as a turn of its own. Each card has a **Stop** for that one command (the chat's own Stop leaves it running), the tray's tooltip and the question before quitting count such commands, a notification says when one ends while the window is hidden, and the phone can stop one too.
+- **A command Claude starts in the background no longer loses its answer.** When a command ended after the turn, Claude Code carried on by itself and said something about the result, but Celeste threw that away, so the chat looked finished and silent. Now a one-line card follows the command ("Running in the background: …", then how it ended), and what Claude says when it ends is shown, as a turn of its own. Each card has a **Stop** for that one command (the chat's own Stop leaves it running), the tray's tooltip and the question before quitting count such commands, a notification says when one ends while the window is hidden, and the phone can stop one too. **Show output** on the card shows the end of what the command has written, also while it runs.
 
 ## [1.3.0] - 2026-11-14
 

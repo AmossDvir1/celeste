@@ -211,10 +211,13 @@ export function reduceEvent(s: Session, e: LogEvent, at: number): Session {
       const found = s.items.some((it) => it.kind === 'background' && it.taskId === e.taskId)
       // Its start was not seen (the notice came first, or the log began later): the card is made from the end alone.
       if (!found) {
-        return { ...s, items: [...s.items, { kind: 'background', id: itemId(), taskId: e.taskId, title: e.summary, status: e.status, summary: e.summary, startedAt: now, endedAt: now }] }
+        return { ...s, items: [...s.items, { kind: 'background', id: itemId(), taskId: e.taskId, title: e.summary, status: e.status, summary: e.summary, ...(e.outputFile ? { outputFile: e.outputFile } : {}), startedAt: now, endedAt: now }] }
       }
-      return { ...s, items: s.items.map((it) => (it.kind === 'background' && it.taskId === e.taskId ? { ...it, status: e.status, summary: e.summary, endedAt: now } : it)) }
+      return { ...s, items: s.items.map((it) => (it.kind === 'background' && it.taskId === e.taskId ? { ...it, status: e.status, summary: e.summary, ...(e.outputFile ? { outputFile: e.outputFile } : {}), endedAt: now } : it)) }
     }
+
+    case 'background.output':
+      return { ...s, items: s.items.map((it) => (it.kind === 'background' && it.taskId === e.taskId ? { ...it, outputFile: e.outputFile } : it)) }
 
     case 'turn.completed':
       return { ...s, items: closeThinking(s.items, now), status: 'idle', activity: null }

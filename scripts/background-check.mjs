@@ -60,6 +60,15 @@ try {
   await page.getByRole('button', { name: 'Stop', exact: true }).waitFor({ state: 'detached', timeout: 30_000 })
   check('the chat is idle again afterwards', (await page.getByRole('button', { name: 'Stop', exact: true }).count()) === 0)
 
+  console.log('\n# Its output')
+  await page.getByRole('button', { name: 'Show output' }).first().click()
+  const shown = page.getByLabel('Output')
+  await shown.waitFor({ timeout: 10_000 })
+  await page.waitForFunction(() => /finished/.test(document.querySelector('[aria-label="Output"]')?.textContent ?? ''), undefined, { timeout: 15_000 })
+  check('Show output shows what the command wrote', /finished/.test((await shown.innerText()) ?? ''))
+  await page.getByRole('button', { name: 'Hide output' }).first().click()
+  check('and Hide output closes it', (await page.getByLabel('Output').count()) === 0)
+
   console.log('\n# The chat still works')
   await box.fill('another START please')
   await box.press('Enter')
@@ -74,6 +83,7 @@ try {
   await box.press('Enter')
   await page.getByText('Wait twelve seconds', { exact: false }).first().waitFor({ timeout: 60_000 })
   await page.getByRole('button', { name: 'Stop', exact: true }).waitFor({ state: 'detached', timeout: 30_000 })
+  check('a command that is still running already offers its output', (await page.locator('[title*="not-stopped"]').getByRole('button', { name: 'Show output' }).count()) === 1)
   await page.getByRole('button', { name: 'Stop this command' }).click()
   await page.getByRole('button', { name: 'Stop this command' }).waitFor({ state: 'detached', timeout: 30_000 })
   const cards = await page.locator('[title*="not-stopped"]').allInnerTexts()

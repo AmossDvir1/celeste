@@ -12,6 +12,11 @@ import { HIDDEN_TOOLS, toolKind } from './permissions'
 /** The most of a tool's result kept as its output. The agent still sees all of it. */
 const RESULT_LIMIT = 4000
 
+/** Where the program says a background command's output is written: "Output is being written to: <path>.output. You will be…". */
+export function outputFileOf(text: string): string | undefined {
+  return /Output is being written to:\s*(.+?\.output)(?=[.\s]|$)/.exec(text)?.[1]
+}
+
 const str = (value: unknown): string | undefined => (typeof value === 'string' && value ? value : undefined)
 const obj = (value: unknown): Record<string, unknown> => (value && typeof value === 'object' ? (value as Record<string, unknown>) : {})
 
@@ -116,10 +121,13 @@ export class Translator {
   /** The commands the agent started, by tool call, until their task is known: what a background card shows. */
   private readonly commands = new Map<string, string>()
   /** Commands seen starting in the foreground: they get a card only if they are moved to the background. */
-  private readonly foreground = new Map<string, { title: string; command?: string }>()
+  private readonly foreground = new Map<string, { title: string; command?: string; toolUse?: string }>()
   /** The background commands that have a card, and every task that may wake the agent when it ends. */
   private readonly shown = new Set<string>()
   private readonly tasks = new Set<string>()
+  /** Which task a tool call started, and where its output goes when the tool's answer came before the task was known. */
+  private readonly taskOfTool = new Map<string, string>()
+  private readonly outputs = new Map<string, string>()
   sessionId: string | undefined
 
   constructor(private cwd?: string) {}
@@ -167,6 +175,8 @@ export class Translator {
     this.shown.clear()
     this.tasks.clear()
     this.foreground.clear()
+    this.taskOfTool.clear()
+    this.outputs.clear()
     return out
   }
 
@@ -260,10 +270,10 @@ export class Translator {
     const title = str(m['description']) ?? command ?? 'A command'
     // Still in the foreground: the tool call that started it is waiting for it. It gets a card only if it is moved to the background.
     if (m['is_backgrounded'] !== true) {
-      this.foreground.set(id, { title, ...(command ? { command } : {}) })
+      this.foreground.set(id, { title, ...(command ? { command } : {}), ...(toolUse ? { toolUse } : {}) })
       return []
     }
-    return this.showTask(id, title, command)
+    return this.showTask(id, title, command, toolUse)
   }
 
   private taskUpdated(m: Record<string, unknown>): AgentEvent[] {
@@ -272,14 +282,24 @@ export class Translator {
     const waiting = this.foreground.get(id)
     if (!waiting) return []
     this.foreground.delete(id)
-    return this.showTask(id, waiting.title, waiting.command)
+    return this.showTask(id, waiting.title, waiting.command, waiting.toolUse)
   }
 
-  private showTask(id: string, title: string, command?: string): AgentEvent[] {
+  private showTask(id: string, title: string, command?: string, toolUse?: string): AgentEvent[] {
     if (this.shown.has(id)) return []
     this.shown.add(id)
     const cut = command && command.length > 600 ? `${command.slice(0, 600)}…` : command
-    return [{ type: 'background.started', taskId: id, title, ...(cut ? { command: cut } : {}) }]
+    const out: AgentEvent[] = [{ type: 'background.started', taskId: id, title, ...(cut ? { command: cut } : {}) }]
+    if (toolUse) {
+      this.taskOfTool.set(toolUse, id)
+      // The tool's answer came first: its output file is known now.
+      const file = this.outputs.get(toolUse)
+      if (file) {
+        this.outputs.delete(toolUse)
+        out.push({ type: 'background.output', taskId: id, outputFile: file })
+      }
+    }
+    return out
   }
 
   /**
@@ -299,7 +319,13 @@ export class Translator {
     if (wasForeground) return []
     const out: AgentEvent[] = []
     if (shown || !known) {
-      out.push({ type: 'background.finished', taskId: id, status, summary: str(m['summary']) ?? (status === 'completed' ? 'The command finished.' : status === 'failed' ? 'The command failed.' : 'The command was stopped.') })
+      out.push({
+        type: 'background.finished',
+        taskId: id,
+        status,
+        summary: str(m['summary']) ?? (status === 'completed' ? 'The command finished.' : status === 'failed' ? 'The command failed.' : 'The command was stopped.'),
+        ...(str(m['output_file']) ? { outputFile: str(m['output_file']) as string } : {})
+      })
     }
     // A task that finishes or fails after the turn has ended wakes the agent. One that was stopped does not (seen on 16 November 2026:
     // the program tells the model nothing when the person ends a command), so no turn is begun for it.
@@ -362,6 +388,13 @@ export class Translator {
         ...(text ? { result: text.length > RESULT_LIMIT ? `${text.slice(0, RESULT_LIMIT)}…` : text } : {}),
         ...(diff ? { diff: [diff] } : {})
       })
+      // A command started in the background says where its output goes. The task may be known already, or become known just after.
+      const file = known.name === 'Bash' || known.name === 'PowerShell' ? outputFileOf(text) : undefined
+      if (file) {
+        const taskId = this.taskOfTool.get(id)
+        if (taskId && this.shown.has(taskId)) out.push({ type: 'background.output', taskId, outputFile: file })
+        else this.outputs.set(id, file)
+      }
     }
     return out
   }

@@ -1,7 +1,7 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk'
 import { describe, expect, it } from 'vitest'
 import type { AgentEvent } from '@shared/agent'
-import { Translator } from './translate'
+import { Translator, outputFileOf } from './translate'
 
 /*
  * Commands that go on after the turn. The messages below are what Claude Code's program really sent in the spike of 15 November 2026
@@ -22,6 +22,41 @@ function firstTurn(t: Translator): AgentEvent[] {
   return [t.begin('t1'), ...feed(t, bashCall, started, toolResult, result)]
 }
 
+const OUT = 'C:\\Users\\me\\AppData\\Local\\Temp\\claude\\h\\s\\tasks\\b1.output'
+const placeholder = `Command running in background with ID: b1. Output is being written to: ${OUT}. You will be notified when it completes. To check interim output, use Read on that file path.`
+
+describe('where the output of a background command goes', () => {
+  it('reads the path from the answer the program gives the tool call', () => {
+    expect(outputFileOf(placeholder)).toBe(OUT)
+    expect(outputFileOf('Output is being written to: /tmp/my dir/tasks/x.output\nMore')).toBe('/tmp/my dir/tasks/x.output')
+    expect(outputFileOf('Done.')).toBeUndefined()
+  })
+
+  it('tells where the output is once the task is known, whichever of the two messages comes first', () => {
+    const t = new Translator('/p')
+    t.begin('t1')
+    const events = feed(t, bashCall, started, { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: placeholder }] } })
+    expect(events.filter((e) => e.type === 'background.output')).toEqual([{ type: 'background.output', taskId: 'b1', outputFile: OUT }])
+
+    // The answer first, the task after.
+    const u = new Translator('/p')
+    u.begin('t1')
+    const early = feed(u, bashCall, { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: placeholder }] } })
+    expect(early.some((e) => e.type === 'background.output')).toBe(false)
+    expect(feed(u, started).map((e) => e.type)).toEqual(['background.started', 'background.output'])
+  })
+
+  it('carries the file the notification names, and asks for no output for a command that was never shown', () => {
+    const t = new Translator('/p')
+    firstTurn(t)
+    const finished = feed(t, { type: 'system', subtype: 'task_notification', task_id: 'b1', status: 'completed', summary: 'done', output_file: OUT })
+    expect(finished.find((e) => e.type === 'background.finished')).toMatchObject({ outputFile: OUT })
+    const plain = new Translator('/p')
+    plain.begin('t1')
+    expect(feed(plain, bashCall, { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'ok' }] } }).some((e) => e.type === 'background.output')).toBe(false)
+  })
+})
+
 describe('commands that go on after the turn', () => {
   it('shows a command started in the background, with what it runs', () => {
     const t = new Translator('/p')
@@ -36,7 +71,7 @@ describe('commands that go on after the turn', () => {
     const events = feed(t, notified('completed'))
     expect(events[0]).toMatchObject({ type: 'turn.started' })
     expect((events[0] as { turnId: string }).turnId).toMatch(/^bg-/)
-    expect(events[1]).toEqual({ type: 'background.finished', taskId: 'b1', status: 'completed', summary: 'Background command "Run the tests" completed (exit code 0)' })
+    expect(events[1]).toEqual({ type: 'background.finished', taskId: 'b1', status: 'completed', summary: 'Background command "Run the tests" completed (exit code 0)', outputFile: 'x' })
     // The follow-up that used to be dropped.
     const next = feed(t, { type: 'assistant', message: { id: 'm2', content: [{ type: 'text', text: 'The tests passed.' }] } }, { type: 'result', subtype: 'success', result: 'The tests passed.' })
     expect(next.find((e) => e.type === 'message.delta')).toEqual({ type: 'message.delta', text: 'The tests passed.' })

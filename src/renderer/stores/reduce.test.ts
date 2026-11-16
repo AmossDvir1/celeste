@@ -333,6 +333,15 @@ describe('commands that go on after the turn', () => {
     expect(nextStatus('idle', { type: 'background.finished', taskId: 'b1', status: 'completed', summary: 'x' })).toBe('idle')
   })
 
+  it('keeps where the output is, from the event that names it or from the end', () => {
+    const started = reduceEvent(blank(), { type: 'background.started', taskId: 'b1', title: 'x' }, 1)
+    const named = reduceEvent(started, { type: 'background.output', taskId: 'b1', outputFile: '/a/tasks/b1.output' }, 2)
+    expect(named.items[0]).toMatchObject({ kind: 'background', outputFile: '/a/tasks/b1.output', status: 'running' })
+    const ended = reduceEvent(named, { type: 'background.finished', taskId: 'b1', status: 'completed', summary: 'done' }, 3)
+    expect(ended.items[0]).toMatchObject({ status: 'completed', outputFile: '/a/tasks/b1.output' })
+    expect(reduceEvent(blank(), { type: 'background.finished', taskId: 'z', status: 'failed', summary: 's', outputFile: '/a/tasks/z.output' }, 1).items[0]).toMatchObject({ outputFile: '/a/tasks/z.output' })
+  })
+
   it('makes a card from the end alone when the start was not seen', () => {
     const s = reduceEvent(blank(), { type: 'background.finished', taskId: 'z', status: 'failed', summary: 'Failed with exit code 1' }, 5)
     expect(s.items[0]).toMatchObject({ kind: 'background', taskId: 'z', status: 'failed', title: 'Failed with exit code 1' })

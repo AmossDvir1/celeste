@@ -28,6 +28,7 @@ import type { AttachmentRow, FileStore, SessionRow, Store } from './store'
 import type { Snapshots } from './snapshots'
 import { cleanTitle, type Titler } from './titles'
 import { contextText, MAX_CONTEXT } from './context'
+import { outputFileFor, readTail } from './background-output'
 import { listFolder, readPreview } from './files'
 import { producedSince, scanFolder, type Manifest } from './produced-files'
 
@@ -252,6 +253,7 @@ export class SessionService {
     'sessions.queue': (id, action) => this.queueAction(id, action),
     'sessions.interrupt': (id) => this.interrupt(id),
     'sessions.stopBackground': (id, taskId) => this.stopBackground(id, taskId),
+    'sessions.backgroundOutput': async (id, taskId) => this.backgroundOutput(id, taskId),
     'sessions.respondApproval': (id, requestId, answer) => this.respondApproval(id, requestId, answer),
     'sessions.respondAsk': (id, requestId, answers) => this.respondAsk(id, requestId, answers),
     'sessions.update': (id, patch) => this.update(id, patch),
@@ -1071,6 +1073,16 @@ export class SessionService {
       this.toolApprovals.delete(requestId)
       waiting.resolve({ allow: false, always: false })
     }
+  }
+
+  /** The end of a background command's output, from the file the program named in this chat's log. */
+  private backgroundOutput(id: string, taskId: unknown): { text: string; truncated: boolean } {
+    this.requireSession(id)
+    if (typeof taskId !== 'string' || !taskId || taskId.length > 100) throw new Error('Invalid command')
+    this.flushBurst(id)
+    const file = outputFileFor(this.store.events(id), taskId)
+    if (!file) throw new Error('There is no output to show for that command.')
+    return readTail(file)
   }
 
   /** Stops one background command. The assistant that started it ends it, and says so with a `background.finished` of status stopped. */

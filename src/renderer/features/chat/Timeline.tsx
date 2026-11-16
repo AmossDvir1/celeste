@@ -17,6 +17,7 @@ import {
   X
 } from 'lucide-react'
 import type { AskAnswers, ToolKind } from '@shared/agent'
+import { core } from '@/api'
 import { cn } from '@/lib/cn'
 import { formatDuration } from '@/lib/format'
 import { Markdown } from '@/components/Markdown'
@@ -125,20 +126,59 @@ const RevertedNotice = memo(function RevertedNotice({ item, canUndo, onUndo }: {
   )
 })
 
-/** A command the agent started and did not wait for: one line that follows it to its end. */
-const BackgroundNotice = memo(function BackgroundNotice({ item, onStop }: { item: Extract<TimelineItem, { kind: 'background' }>; onStop: (taskId: string) => void }) {
+/** A command the agent started and did not wait for: one line that follows it to its end, with its output one click away. */
+const BackgroundNotice = memo(function BackgroundNotice({ item, sessionId, onStop }: { item: Extract<TimelineItem, { kind: 'background' }>; sessionId: string; onStop: (taskId: string) => void }) {
   const running = item.status === 'running'
+  const [showing, setShowing] = useState(false)
+  const [output, setOutput] = useState<{ text: string; truncated: boolean } | { error: string } | null>(null)
+  const box = useRef<HTMLPreElement>(null)
+
+  // What it has written so far, looked at again every couple of seconds while it runs and the output is open, and once more when it ends.
+  useEffect(() => {
+    if (!showing || !item.outputFile) return
+    let alive = true
+    const look = () =>
+      void core.call('sessions.backgroundOutput', sessionId, item.taskId).then(
+        (r) => alive && setOutput(r),
+        (err: unknown) => alive && setOutput({ error: err instanceof Error ? err.message : 'The output could not be read.' })
+      )
+    look()
+    const timer = running ? setInterval(look, 2000) : undefined
+    return () => {
+      alive = false
+      if (timer) clearInterval(timer)
+    }
+  }, [showing, running, item.outputFile, item.taskId, sessionId])
+
+  // Follow the end of the output, as a terminal does.
+  useLayoutEffect(() => {
+    const el = box.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [output])
+
   return (
-    <div className="flex max-w-[760px] items-center gap-2 rounded-xl border border-edge bg-panel/60 px-3 py-2 text-[13.5px]" title={item.command}>
-      <SquareTerminal className="h-4 w-4 shrink-0 text-ink-muted" />
-      <span className="min-w-0 flex-1 truncate text-ink">{running ? `Running in the background: ${item.title}` : item.status === 'stopped' ? `Stopped: ${item.title}` : item.summary || item.title}</span>
-      {item.endedAt ? <span className="shrink-0 text-xs text-ink-faint">{formatDuration(item.endedAt - item.startedAt)}</span> : null}
-      {running && (
-        <button type="button" aria-label="Stop this command" onClick={() => onStop(item.taskId)} className="shrink-0 rounded-md px-1.5 py-0.5 text-xs text-ink-muted hover:bg-hover hover:text-ink">
-          Stop
-        </button>
+    <div className="max-w-[760px] overflow-hidden rounded-xl border border-edge bg-panel/60 text-[13.5px]">
+      <div className="flex items-center gap-2 px-3 py-2" title={item.command}>
+        <SquareTerminal className="h-4 w-4 shrink-0 text-ink-muted" />
+        <span className="min-w-0 flex-1 truncate text-ink">{running ? `Running in the background: ${item.title}` : item.status === 'stopped' ? `Stopped: ${item.title}` : item.summary || item.title}</span>
+        {item.endedAt ? <span className="shrink-0 text-xs text-ink-faint">{formatDuration(item.endedAt - item.startedAt)}</span> : null}
+        {item.outputFile && (
+          <button type="button" aria-expanded={showing} onClick={() => setShowing(!showing)} className="shrink-0 rounded-md px-1.5 py-0.5 text-xs text-ink-muted hover:bg-hover hover:text-ink">
+            {showing ? 'Hide output' : 'Show output'}
+          </button>
+        )}
+        {running && (
+          <button type="button" aria-label="Stop this command" onClick={() => onStop(item.taskId)} className="shrink-0 rounded-md px-1.5 py-0.5 text-xs text-ink-muted hover:bg-hover hover:text-ink">
+            Stop
+          </button>
+        )}
+        {running ? <Spinner className="h-3.5 w-3.5" /> : item.status === 'completed' ? <Check className="h-3.5 w-3.5 text-success" /> : <X className="h-3.5 w-3.5 text-danger" />}
+      </div>
+      {showing && (
+        <pre ref={box} aria-label="Output" className="selectable max-h-[260px] overflow-auto border-t border-edge/70 bg-field p-3 font-mono text-[12.5px] leading-[1.6] whitespace-pre-wrap text-ink-muted">
+          {output === null ? 'Reading…' : 'error' in output ? output.error : `${output.truncated ? '[only the end is shown]\n' : ''}${output.text.trimEnd() || '(nothing written yet)'}`}
+        </pre>
       )}
-      {running ? <Spinner className="h-3.5 w-3.5" /> : item.status === 'completed' ? <Check className="h-3.5 w-3.5 text-success" /> : <X className="h-3.5 w-3.5 text-danger" />}
     </div>
   )
 })
@@ -551,7 +591,7 @@ export function Timeline({
       case 'files':
         return <MemoFileCards sessionId={session.id} files={it.files} more={it.more} />
       case 'background':
-        return <BackgroundNotice item={it} onStop={stopBackground} />
+        return <BackgroundNotice item={it} sessionId={session.id} onStop={stopBackground} />
       case 'reverted':
         return <RevertedNotice item={it} canUndo={idle && it.id === lastReverted} onUndo={() => undo(it.undoId)} />
       case 'assistant':

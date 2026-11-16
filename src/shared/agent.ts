@@ -124,7 +124,9 @@ export type AgentEvent =
   /** A command the agent started and did not wait for (Claude's background shell). It goes on after the turn ends. */
   | { type: 'background.started'; taskId: string; title: string; command?: string }
   /** The background command ended. The agent may start a turn of its own to deal with the result. */
-  | { type: 'background.finished'; taskId: string; status: 'completed' | 'failed' | 'stopped'; summary: string }
+  | { type: 'background.finished'; taskId: string; status: 'completed' | 'failed' | 'stopped'; summary: string; outputFile?: string }
+  /** Where a background command's output is being written (the program's own file), so the card can show it. */
+  | { type: 'background.output'; taskId: string; outputFile: string }
   | { type: 'turn.completed'; turnId: string }
   | { type: 'turn.interrupted'; turnId: string }
   | { type: 'turn.failed'; turnId: string; error: AgentError }

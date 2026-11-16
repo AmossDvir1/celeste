@@ -251,6 +251,33 @@ describe('sessions and their log', () => {
     await expect(api['sessions.stopBackground']('nope', 'b1')).rejects.toThrow()
   })
 
+  it('shows the end of a background command\'s output from the file the log names, and only that', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'celeste-svc-out-'))
+    try {
+      const tasks = join(dir, 'tasks')
+      mkdirSync(tasks)
+      const file = join(tasks, 'b1.output')
+      writeFileSync(file, 'compiling\nready\n')
+      const { api, agents } = setup()
+      const { id } = api['sessions.create'](input)
+      api['sessions.send'](id, { text: 'Go', attachments: [] })
+      agents[0].emit({ type: 'background.started', taskId: 'b1', title: 'Build' })
+      agents[0].emit({ type: 'background.output', taskId: 'b1', outputFile: file })
+      await flush()
+      await vi.advanceTimersByTimeAsync(100)
+      expect(await api['sessions.backgroundOutput'](id, 'b1')).toEqual({ text: 'compiling\nready\n', truncated: false })
+      await expect(api['sessions.backgroundOutput'](id, 'other')).rejects.toThrow('no output to show')
+      await expect(api['sessions.backgroundOutput'](id, '')).rejects.toThrow('Invalid command')
+      // A path that is not one of these is never read, whoever put it in the log.
+      agents[0].emit({ type: 'background.output', taskId: 'evil', outputFile: join(dir, 'secret.txt') })
+      await flush()
+      await vi.advanceTimersByTimeAsync(100)
+      await expect(api['sessions.backgroundOutput'](id, 'evil')).rejects.toThrow('not a file Celeste shows')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('says so when no agent is running to stop a command', async () => {
     const { api } = setup()
     const { id } = api['sessions.create'](input)

@@ -379,6 +379,8 @@ export interface CoreApi {
   'sessions.interrupt': (id: string) => void
   /** Stops one command the assistant started in the background (a card's Stop). The chat's own Stop leaves such commands running. */
   'sessions.stopBackground': (id: string, taskId: string) => Promise<void>
+  /** The end of what a background command has written so far (at most 64 KB). The window names the chat and the command, never a path. */
+  'sessions.backgroundOutput': (id: string, taskId: string) => Promise<{ text: string; truncated: boolean }>
   'sessions.respondApproval': (id: string, requestId: string, answer: ApprovalAnswer) => void
   'sessions.respondAsk': (id: string, requestId: string, answers: AskAnswers) => void
   'sessions.update': (id: string, patch: SessionPatch) => SessionSummary
