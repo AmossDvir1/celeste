@@ -1,0 +1,1 @@
+{"name":"csp-excalidraw-spike","version":"1.0.0","private":true,"type":"module","dependencies":{"@excalidraw/excalidraw":"0.18.1","react":"19.2.0","react-dom":"19.2.0"},"devDependencies":{"vite":"7.1.12"}}

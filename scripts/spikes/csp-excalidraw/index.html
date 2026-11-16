@@ -1,0 +1,13 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <!-- The app's policy in a release (electron.vite.config.ts builds it), minus the dev-server parts. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: celeste-file:; font-src 'self' data:; connect-src 'self'" />
+    <title>csp excalidraw</title>
+  </head>
+  <body style="margin:0">
+    <div id="root" style="width:900px;height:600px"></div>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
