@@ -32,7 +32,8 @@ import {
   type LucideIcon
 } from 'lucide-react'
 import type { AskAnswers, ContextRef, FileDiff, Question, ToolKind } from '@shared/agent'
-import { phoneLine, visualKind } from '@/features/visuals/spec'
+import { openFenceBody, visualKind } from '@/features/visuals/spec'
+import { Picture } from '../Pictures'
 import { canSteer, heldText, type QueueAction, type QueueState, type SendMode } from '@shared/queue'
 import { clockText } from '@shared/usage'
 import { describeDuration } from '@shared/desktop'
@@ -45,8 +46,8 @@ import { Arc, Shimmer, buzz, greeting, rise } from '../ui'
 import { ModelChip } from '../ModelPicker'
 import { AutoScroll } from '../AutoScroll'
 import { continueNumbering } from '@shared/numbering'
-import { AttachButton, CameraButton, Chips, ProjectFiles, pastedFiles, useAttachments } from '../Attach'
-import { SketchButton } from '../Sketch'
+import { AddButton } from '../AddMenu'
+import { Chips, ProjectFiles, pastedFiles, useAttachments } from '../Attach'
 import { WatchScreen } from '../Watch'
 import { FileCards } from '../Files'
 
@@ -100,7 +101,7 @@ export function Chat({ id }: { id: string }) {
   const usingComputer = liveDesktop && !liveDesktop.ended ? liveDesktop : null
   // What Celeste is doing, shown right under the newest message, as on the computer.
   const showActivity = s.activity && !(last?.kind === 'thinking' && last.endedAt === undefined) && !(s.activity.working === false && (pendingAsk || pendingApproval))
-  const placeholder = answerable ? 'Type your answer' : pendingApproval || pendingAsk ? 'Answer above, or type a message to send after' : working ? 'Type a message to send after this answer' : 'Message Celeste'
+  const placeholder = answerable ? 'Type your answer' : pendingApproval || pendingAsk ? 'Answer above, or type to skip it' : working ? 'Message to send next' : 'Message Celeste'
 
   return (
     <>
@@ -404,6 +405,27 @@ function visualOf(node: { children?: unknown[] } | undefined) {
   return visualKind(names.map((n) => /^language-(\w+)$/.exec(String(n))?.[1]).find(Boolean))
 }
 
+/** An assistant's answer as text. A diagram, chart, list of steps or drawing in it is drawn (src/phone/Pictures.tsx), when its block is whole. */
+const AssistantText = memo(function AssistantText({ text, sessionId }: { text: string; sessionId: string }) {
+  // The block of the answer that has not been closed yet, which is not drawn until it is whole.
+  const open = useMemo(() => openFenceBody(text), [text])
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer">{children}</a>,
+        pre: ({ node, children }) => (visualOf(node) ? <>{children}</> : <pre>{children}</pre>),
+        code: ({ className, children }) => {
+          const kind = visualKind(/language-(\w+)/.exec(className ?? '')?.[1])
+          return kind ? <Picture kind={kind} source={String(children).replace(/\n$/, '')} sessionId={sessionId} open={open} /> : <code className={className}>{children}</code>
+        }
+      }}
+    >
+      {text}
+    </ReactMarkdown>
+  )
+})
+
 const Item = memo(function Item({ it, sessionId, detailed }: { it: TimelineItem; sessionId: string; detailed: boolean }) {
   switch (it.kind) {
     case 'user':
@@ -418,20 +440,7 @@ const Item = memo(function Item({ it, sessionId, detailed }: { it: TimelineItem;
     case 'assistant':
       return (
         <div className="m-ai">
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            components={{
-              a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer">{children}</a>,
-              // A diagram, chart or list of steps is drawn on the computer. Here it is its summary, never its source.
-              pre: ({ node, children }) => (visualOf(node) ? <>{children}</> : <pre>{children}</pre>),
-              code: ({ className, children }) => {
-                const kind = visualKind(/language-(\w+)/.exec(className ?? '')?.[1])
-                return kind ? <div className="notice">{phoneLine(kind, String(children))}</div> : <code className={className}>{children}</code>
-              }
-            }}
-          >
-            {it.text}
-          </ReactMarkdown>
+          <AssistantText text={it.text} sessionId={sessionId} />
         </div>
       )
     case 'thinking':
@@ -727,9 +736,7 @@ function Composer({
       )}
       <Chips files={att.files} context={context} onRemoveFile={att.remove} onRemoveContext={(p) => setContext((c) => c.filter((x) => x.path !== p))} />
       <div className="composer">
-        {canAttach && <AttachButton onPick={att.add} />}
-        {canAttach && <CameraButton onPick={att.add} />}
-        {canAttach && <SketchButton onPick={att.add} />}
+        {canAttach && <AddButton onPick={att.add} />}
         <textarea ref={ta} rows={1} placeholder={placeholder} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onListEnter} onPaste={canAttach ? (e) => pastedFiles(e, att.add) : undefined} />
         {working && ready ? (
           <>
@@ -974,9 +981,7 @@ function SeededComposer({ seed, disabled, how, extra }: { seed: string; disabled
       {extra && <div className="modelbar">{extra}</div>}
       <Chips files={att.files} context={[]} onRemoveFile={att.remove} onRemoveContext={() => undefined} />
       <div className="composer">
-        <AttachButton onPick={att.add} />
-        <CameraButton onPick={att.add} />
-        <SketchButton onPick={att.add} />
+        <AddButton onPick={att.add} />
         <textarea rows={1} autoFocus={!!seed} placeholder="Message Celeste" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onListEnter} onPaste={(e) => pastedFiles(e, att.add)} />
         <button
           className={`sendbtn${ready ? ' ready' : ''}`}

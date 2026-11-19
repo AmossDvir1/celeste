@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowLeft, Camera, Check, ChevronRight, FileText, Folder, LoaderCircle, Paperclip, X } from 'lucide-react'
+import { ArrowLeft, Check, ChevronRight, FileText, Folder, LoaderCircle, X } from 'lucide-react'
 import type { ContextRef } from '@shared/agent'
 import type { FileListing } from '@shared/api'
 import { PHONE_CONTEXT_MAX, PHONE_UPLOAD_MAX_BYTES, PHONE_UPLOAD_MAX_FILES, type PhoneUploaded, type PhoneUploadPart } from '@shared/phone'
@@ -241,83 +241,6 @@ export function pastedFiles(e: { clipboardData: DataTransfer | null; preventDefa
   if (!files.length) return
   e.preventDefault()
   add(files)
-}
-
-export function AttachButton({ onPick, disabled }: { onPick: (files: File[]) => void; disabled?: boolean }) {
-  const input = useRef<HTMLInputElement>(null)
-  // The system's file chooser takes a moment to appear: the button spins until it has, and again when it closes without a choice.
-  const [opening, setOpening] = useState(false)
-  useEffect(() => {
-    if (!opening) return
-    const done = () => setOpening(false)
-    const timer = setTimeout(done, 10_000)
-    // The chooser is a screen of its own; coming back to the app (with or without a choice) ends the wait.
-    const back = () => !document.hidden && setTimeout(done, 400)
-    document.addEventListener('visibilitychange', back)
-    window.addEventListener('focus', back)
-    const el = input.current
-    el?.addEventListener('cancel', done)
-    return () => {
-      clearTimeout(timer)
-      el?.removeEventListener('cancel', done)
-      document.removeEventListener('visibilitychange', back)
-      window.removeEventListener('focus', back)
-    }
-  }, [opening])
-  return (
-    <>
-      <button
-        type="button"
-        className="attachbtn"
-        aria-label="Attach files"
-        aria-busy={opening}
-        disabled={disabled}
-        onClick={() => {
-          if (opening) return
-          setOpening(true)
-          input.current?.click()
-        }}
-      >
-        {opening ? <LoaderCircle size={20} className="spin" /> : <Paperclip size={20} />}
-      </button>
-      <input
-        ref={input}
-        type="file"
-        multiple
-        hidden
-        onChange={(e) => {
-          const list = Array.from(e.target.files ?? [])
-          e.target.value = ''
-          setOpening(false)
-          if (list.length) onPick(list)
-        }}
-      />
-    </>
-  )
-}
-
-// Opens the camera straight away (capture) and hands over the photo as a file, like a picked one.
-export function CameraButton({ onPick, disabled }: { onPick: (files: File[]) => void; disabled?: boolean }) {
-  const input = useRef<HTMLInputElement>(null)
-  return (
-    <>
-      <button type="button" className="camerabtn" aria-label="Take a photo" disabled={disabled} onClick={() => input.current?.click()}>
-        <Camera size={20} />
-      </button>
-      <input
-        ref={input}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        hidden
-        onChange={(e) => {
-          const list = Array.from(e.target.files ?? [])
-          e.target.value = ''
-          if (list.length) onPick(list)
-        }}
-      />
-    </>
-  )
 }
 
 export function Chips({ files, context, onRemoveFile, onRemoveContext }: { files: Attached[]; context: ContextRef[]; onRemoveFile: (key: string) => void; onRemoveContext: (path: string) => void }) {

@@ -33,8 +33,5 @@ export function useThemeName(): string {
   return theme
 }
 
-/** The value of one of the theme's colours (a token such as `--c-ink`), for a library that cannot read a CSS variable. */
-export function themeColor(name: string, fallback = '#888888'): string {
-  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
-  return v || fallback
-}
+/** The value of one of the theme's colours: the same function the phone uses (colors.ts). */
+export { themeColor } from './colors'

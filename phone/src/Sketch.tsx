@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
-import { Eraser, PenLine, Trash2, Undo2, X } from 'lucide-react'
+import { Eraser, Trash2, Undo2, X } from 'lucide-react'
 import { SKETCH_COLORS, SKETCH_FILE, SKETCH_PAPER, SKETCH_PENS, exportSize, hasInk, keepPoint, withStroke, type SketchPen, type Stroke } from '@shared/sketch'
 import { useApp } from './store'
 import { buzz } from './ui'
@@ -36,29 +35,7 @@ function paint(ctx: CanvasRenderingContext2D, strokes: Stroke[], width: number, 
   }
 }
 
-export function SketchButton({ onPick, disabled }: { onPick: (files: File[]) => void; disabled?: boolean }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <>
-      <button type="button" className="camerabtn" aria-label="Draw a sketch" disabled={disabled} onClick={() => setOpen(true)}>
-        <PenLine size={20} />
-      </button>
-      {open &&
-        createPortal(
-          <SketchPad
-            onClose={() => setOpen(false)}
-            onDone={(file) => {
-              setOpen(false)
-              onPick([file])
-            }}
-          />,
-          document.body
-        )}
-    </>
-  )
-}
-
-function SketchPad({ onClose, onDone }: { onClose: () => void; onDone: (file: File) => void }) {
+export function SketchPad({ onClose, onDone }: { onClose: () => void; onDone: (file: File) => void }) {
   const wrap = useRef<HTMLDivElement>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
   const strokes = useRef<Stroke[]>([])

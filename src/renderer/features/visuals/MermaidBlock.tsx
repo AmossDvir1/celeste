@@ -1,43 +1,8 @@
 import { useEffect, useState } from 'react'
 import { ErrorNote } from './ErrorNote'
-import { themeColor, useThemeName } from './chat'
+import { useThemeName } from './chat'
+import { mermaidThemeVariables } from './colors'
 import { hashOf, prepareMermaid } from './spec'
-
-/** The library's colours from the theme's own, so a diagram looks like the rest of the window in both themes. Solid colours only. */
-function mermaidTheme(): Record<string, string> {
-  const ink = themeColor('--c-ink')
-  const edge = themeColor('--c-edge-strong')
-  const box = themeColor('--c-raised-2')
-  return {
-    primaryColor: box,
-    primaryTextColor: ink,
-    primaryBorderColor: themeColor('--c-accent'),
-    secondaryColor: themeColor('--c-raised'),
-    secondaryTextColor: ink,
-    tertiaryColor: themeColor('--c-field'),
-    tertiaryTextColor: ink,
-    lineColor: themeColor('--c-ink-muted'),
-    textColor: ink,
-    background: themeColor('--c-panel'),
-    mainBkg: box,
-    nodeBorder: themeColor('--c-accent'),
-    clusterBkg: themeColor('--c-field'),
-    clusterBorder: edge,
-    edgeLabelBackground: themeColor('--c-panel'),
-    noteBkgColor: themeColor('--c-raised'),
-    noteTextColor: ink,
-    noteBorderColor: edge,
-    actorBkg: box,
-    actorBorder: themeColor('--c-accent'),
-    actorTextColor: ink,
-    actorLineColor: themeColor('--c-ink-faint'),
-    signalColor: themeColor('--c-ink-muted'),
-    signalTextColor: ink,
-    labelBoxBkgColor: themeColor('--c-raised'),
-    labelTextColor: ink,
-    fontFamily: 'inherit'
-  }
-}
 
 let counter = 0
 
@@ -59,7 +24,7 @@ export function MermaidBlock({ source }: { source: string }) {
     void (async () => {
       try {
         const { default: mermaid } = await import('mermaid')
-        mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', suppressErrorRendering: true, theme: 'base', themeVariables: mermaidTheme() })
+        mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', suppressErrorRendering: true, theme: 'base', themeVariables: mermaidThemeVariables() })
         const { svg } = await mermaid.render(`mermaid-${hashOf(checked.value.source)}-${++counter}`, checked.value.source)
         if (!cancelled) setDrawn({ svg })
       } catch (err) {

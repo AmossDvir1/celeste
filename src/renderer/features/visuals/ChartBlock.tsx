@@ -1,10 +1,9 @@
 import { useEffect, useRef } from 'react'
+import type { ChartConfiguration } from 'chart.js'
 import { ErrorNote } from './ErrorNote'
-import { themeColor, useThemeName } from './chat'
+import { useThemeName } from './chat'
+import { chartColors, chartConfig } from './colors'
 import { parseChart } from './spec'
-
-/** The colours a chart's series take, from the theme and never from the spec. */
-const SERIES = ['--c-accent', '--c-info', '--c-success', '--c-warning', '--c-accent-text', '--c-danger']
 
 /** A bar, line or pie chart from a small JSON spec, drawn by Chart.js on a canvas when first needed (a separate chunk). No animation, no script. */
 export function ChartBlock({ source }: { source: string }) {
@@ -21,32 +20,7 @@ export function ChartBlock({ source }: { source: string }) {
     void (async () => {
       const { Chart } = await import('chart.js/auto')
       if (cancelled || !canvas.current) return
-      const colors = SERIES.map((c) => themeColor(c))
-      const text = themeColor('--c-ink-muted')
-      const grid = themeColor('--c-edge')
-      chart = new Chart(canvas.current, {
-        type: spec.type,
-        data: {
-          labels: spec.labels,
-          datasets: spec.series.map((s, i) => ({
-            label: s.name,
-            data: s.data,
-            backgroundColor: spec.type === 'pie' ? spec.labels.map((_, j) => colors[j % colors.length] as string) : (colors[i % colors.length] as string),
-            borderColor: spec.type === 'line' ? (colors[i % colors.length] as string) : themeColor('--c-panel'),
-            borderWidth: spec.type === 'pie' ? 2 : spec.type === 'line' ? 2 : 0
-          }))
-        },
-        options: {
-          animation: false,
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: { display: spec.series.length > 1 || spec.type === 'pie', labels: { color: text } },
-            title: { display: !!spec.title, text: spec.title ?? '', color: themeColor('--c-ink') }
-          },
-          ...(spec.type === 'pie' ? {} : { scales: { x: { ticks: { color: text }, grid: { color: grid } }, y: { ticks: { color: text }, grid: { color: grid } } } })
-        }
-      })
+      chart = new Chart(canvas.current, chartConfig(spec, chartColors()) as ChartConfiguration)
     })()
     return () => {
       cancelled = true

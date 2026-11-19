@@ -41,10 +41,13 @@ const api = new FakeAnthropic((r) => {
   if (r.last.text.includes('BG SHORT')) return [{ type: 'tool_use', name: 'Bash', input: { command: 'node -e "setTimeout(()=>console.log(\'bg-output-line\'),4000)"', run_in_background: true, description: 'Wait four seconds' } }]
   if (r.last.text.includes('BG LONG')) return [{ type: 'tool_use', name: 'Bash', input: { command: 'node -e "setTimeout(()=>{},60000)"', run_in_background: true, description: 'Wait a minute' } }]
   if (r.last.text.includes('RUN IT')) return [{ type: 'tool_use', name: 'Bash', input: { command: 'mkdir made-on-approval && echo approved-from-the-phone', description: 'Make a folder' } }]
-  // A diagram, a chart and steps: the computer draws them, the phone shows what they say in words and never their source.
+  // A diagram, a chart, steps and a drawing: the phone draws them too (phone/src/Pictures.tsx), and never shows their source.
   if (r.last.text.includes('DRAW FOR PHONE')) {
     const fence = (lang, body) => '```' + lang + '\n' + body + '\n```'
-    return [{ type: 'text', text: ['Here you go.', fence('mermaid', '%% summary: Sign-in goes from the form to the server.\nflowchart TD\n  FORMSRC[Form] --> SERVERSRC[Server]'), fence('chart', JSON.stringify({ type: 'bar', labels: ['a'], series: [{ name: 'x', data: [1] }], summary: 'Sales grew.' })), fence('steps', JSON.stringify({ title: 'T', steps: [{ title: 'STEPSRC' }] })), fence('excalidraw', JSON.stringify({ summary: 'A sketch of the page.', shapes: [{ id: 'SKETCHSRC', text: 'Header' }] })), fence('ts', 'const plain = 1'), 'Done drawing.'].join('\n\n') }]
+    const chart = { type: 'bar', labels: ['Jan', 'Feb', 'Mar'], series: [{ name: 'Sales', data: [3, 5, 8] }], summary: 'Sales grew.' }
+    const steps = { title: 'Set it up', steps: [{ title: 'Open the folder', text: 'Go to the project.', copy: 'cd project' }, { title: 'Read the guide', link: { label: 'The guide', url: 'https://example.com/guide' } }] }
+    const drawing = { summary: 'A sketch of the page.', shapes: [{ id: 'SKETCHSRC', text: 'Header' }, { id: 'body', text: 'Body', kind: 'ellipse' }], arrows: [{ from: 'SKETCHSRC', to: 'body', text: 'then' }] }
+    return [{ type: 'text', text: ['Here you go.', fence('mermaid', '%% summary: Sign-in goes from the form to the server.\nflowchart TD\n  FORMSRC[Form] --> SERVERSRC[Server]'), fence('chart', JSON.stringify(chart)), fence('steps', JSON.stringify(steps)), fence('excalidraw', JSON.stringify(drawing)), fence('ts', 'const plain = 1'), 'Done drawing.'].join('\n\n') }]
   }
   return [{ type: 'text', text: `Echo: ${r.last.text}` }]
 })
@@ -141,7 +144,34 @@ try {
       return real.call(this, (b) => ((window.__sketch = b), cb(b)), type, quality)
     }
   })
-  await phone.getByRole('button', { name: 'Draw a sketch' }).click()
+  // The "+" in the message box, as on the computer: one button, and a sheet with what can be added.
+  const plus = phone.getByRole('button', { name: 'Add to the message' })
+  const sheet = phone.getByRole('menu', { name: 'Add to the message' })
+  await plus.click()
+  await sheet.waitFor({ timeout: 10_000 })
+  check('the + opens a small menu with the three things that can be added', (await sheet.getByRole('menuitem', { name: 'Attach files' }).count()) === 1 && (await sheet.getByRole('menuitem', { name: 'Take a photo' }).count()) === 1 && (await sheet.getByRole('menuitem', { name: 'Draw a sketch' }).count()) === 1)
+  const menuBox = await sheet.boundingBox()
+  const plusBox = await plus.boundingBox()
+  check('it opens just above the button, not as a drawer over the screen', !!menuBox && !!plusBox && menuBox.y + menuBox.height <= plusBox.y + 1 && menuBox.width < 300 && Math.abs(menuBox.x - plusBox.x) < 40, JSON.stringify({ menuBox, plusBox }))
+  await phone.screenshot({ path: join(root, 'scripts', '.output', 'phone-menu.png') })
+  await phone.keyboard.press('Escape')
+  await sheet.waitFor({ state: 'detached', timeout: 10_000 })
+  check('Escape closes it and adds nothing', (await phone.locator('.achip').count()) === 0)
+  check('the message box has the one + for them, not a button for each', (await phone.locator('.composer .attachbtn').count()) === 1 && (await phone.getByRole('button', { name: /Take a photo|Draw a sketch/ }).count()) === 0)
+  // Attach files opens the system's chooser from the row that was pressed.
+  await plus.click()
+  await sheet.waitFor({ timeout: 10_000 })
+  const chooser = phone.waitForEvent('filechooser', { timeout: 10_000 })
+  await sheet.getByRole('menuitem', { name: 'Attach files' }).click()
+  await (await chooser).setFiles({ name: 'notes-from-the-phone.txt', mimeType: 'text/plain', buffer: Buffer.from('a file from the phone') })
+  const picked = phone.locator('.achip', { hasText: 'notes-from-the-phone.txt' })
+  await picked.waitFor({ timeout: 15_000 })
+  await phone.locator('.achip.busy').waitFor({ state: 'detached', timeout: 30_000 })
+  check('Attach files from the sheet puts the file on the message, sent to the computer', (await picked.count()) === 1)
+  await picked.getByRole('button', { name: /^Remove/ }).click()
+  await picked.waitFor({ state: 'detached', timeout: 10_000 })
+  await plus.click()
+  await sheet.getByRole('menuitem', { name: 'Draw a sketch' }).click()
   const pad = phone.getByRole('dialog', { name: 'Sketch' })
   await pad.waitFor({ timeout: 10_000 })
   check('the sketch pad opens over the chat, and Add to message waits for a first line', await pad.getByRole('button', { name: 'Add to message' }).isDisabled())
@@ -202,7 +232,8 @@ try {
   // The turn must have ended before the next section talks to the same chat.
   await page.waitForTimeout(1500)
   await phone.getByRole('button', { name: /^Stop/ }).waitFor({ state: 'detached', timeout: 90_000 })
-  await phone.getByRole('button', { name: 'Draw a sketch' }).click()
+  await plus.click()
+  await sheet.getByRole('menuitem', { name: 'Draw a sketch' }).click()
   await pad.waitFor({ timeout: 10_000 })
   await stroke([40, 80], [200, 200])
   await pad.getByRole('button', { name: 'Close the sketch' }).click()
@@ -235,6 +266,10 @@ try {
   const fromPhone = boot.sessions.find((s) => s.title.startsWith('RUN IT'))
   check('the new chat is on the computer, with Claude and the person’s approval setting', fromPhone?.vendor === 'claude' && fromPhone?.approval === 'ask', JSON.stringify(fromPhone))
   await phone.getByRole('button', { name: 'Approve' }).click()
+  // While it works the box says what a message now does, on one line even on a narrow screen.
+  const working = await phone.getByPlaceholder('Message to send next').boundingBox().catch(() => null)
+  await phone.screenshot({ path: join(root, 'scripts', '.output', 'phone-working.png') })
+  check('the message box says in a few words what a message does while it works, on one line', working !== null && working.height < 60, JSON.stringify(working))
   await phone.getByText(/Finished: approved-from-the-phone/).waitFor({ timeout: 90_000 })
   check('approved on the phone, the command ran on the computer and the answer came back', true)
 
@@ -279,15 +314,48 @@ try {
   await phone.getByText('Stopped: Wait a minute').waitFor({ timeout: 30_000 })
   check('Stop on the phone ends that one command', true)
 
-  console.log('\n# A diagram, a chart and steps')
+  console.log('\n# A diagram, a chart, steps and a drawing, drawn on the phone')
   await phone.getByPlaceholder('Message Celeste').fill('DRAW FOR PHONE')
   await phone.getByRole('button', { name: 'Send', exact: true }).click()
   await phone.getByText('Done drawing.').waitFor({ timeout: 90_000 })
-  const shown = await phone.locator('.m-ai').last().innerText()
-  check('the phone says what a diagram shows, and where to see it', /Sign-in goes from the form to the server\. \(open on the computer to see the picture\)/.test(shown), shown)
-  check('and the same for a chart, and for steps that have no summary', /Sales grew\./.test(shown) && /Steps \(open on the computer\)/.test(shown), shown)
-  check('and for a drawing, its summary and not its shapes', /A sketch of the page\. \(open on the computer to see the picture\)/.test(shown) && !/SKETCHSRC/.test(shown), shown)
-  check('never the source of any of them', !/FORMSRC|SERVERSRC|STEPSRC|SKETCHSRC|flowchart|mermaid|excalidraw/.test(shown), shown)
+  const answer = phone.locator('.m-ai').last()
+  const arts = answer.locator('.pic-art')
+  // The drawing is ready at once; the diagram's library is loaded when it is first needed, so both are waited for.
+  for (let i = 0; i < 240 && (await arts.count()) < 2; i++) await page.waitForTimeout(250)
+  check('a diagram is drawn on the phone, with its own labels', (await arts.nth(0).innerText()).includes('Form') && (await arts.nth(0).innerText()).includes('Server'), await arts.nth(0).innerText())
+  check('with what it says in words under it', (await answer.getByText('Sign-in goes from the form to the server.').count()) === 1)
+  const inked = () => answer.locator('canvas').evaluate((c) => c.getContext('2d').getImageData(0, 0, c.width, c.height).data.some((v, i) => i % 4 === 3 && v > 0))
+  for (let i = 0; i < 40 && !(await inked()); i++) await page.waitForTimeout(250)
+  check('a chart is drawn on a canvas, with its words under it', (await inked()) && (await answer.getByText('Sales grew.').count()) === 1)
+  await answer.getByText('Show the numbers').click()
+  check('and its numbers can be opened', (await answer.locator('.pic-table').innerText()).includes('Feb') && (await answer.locator('.pic-table').innerText()).includes('5'))
+  const steps = answer.getByRole('region', { name: 'Set it up' })
+  check('steps are a list with a title and a count', (await steps.getByText('0 of 2 done').count()) === 1 && (await steps.getByText('Open the folder').count()) === 1)
+  check('with a line to copy and a link', (await steps.getByText('cd project').count()) === 1 && (await steps.getByRole('link', { name: /The guide/ }).getAttribute('href')) === 'https://example.com/guide')
+  await steps.getByRole('checkbox', { name: /Step 1/ }).click()
+  check('a step can be ticked, and the tick is kept on the phone', (await steps.getByText('1 of 2 done').count()) === 1 && (await phone.evaluate(() => Object.keys(localStorage).some((k) => k.startsWith('celeste.steps.')))))
+  const drawn = await arts.nth(1).locator('div > svg').innerHTML()
+  check('a drawing is drawn from its shapes and its arrow', ['Header', 'Body', 'then'].every((w) => drawn.includes(w)) && !drawn.includes('SKETCHSRC'))
+  check('with its words under it', (await answer.getByText('A sketch of the page.').count()) === 1)
+  await arts.nth(1).click()
+  const viewer = phone.getByRole('dialog', { name: 'A sketch of the page.' })
+  await viewer.waitFor({ timeout: 10_000 })
+  const widthOf = () => viewer.locator('.pv-art').evaluate((e) => e.style.width)
+  const before = await widthOf()
+  await viewer.getByRole('button', { name: 'Zoom in' }).click()
+  check('a tap opens a picture large, and Zoom in makes it larger', before === '100%' && (await widthOf()) === '150%', `${before} then ${await widthOf()}`)
+  await phone.screenshot({ path: join(root, 'scripts', '.output', 'phone-viewer.png') })
+  await viewer.getByRole('button', { name: 'Close the picture' }).click()
+  await viewer.waitFor({ state: 'detached', timeout: 10_000 })
+  await answer.screenshot({ path: join(root, 'scripts', '.output', 'phone-pictures.png') })
+  // The colours come from the theme: in the light one the lines of a drawing are the light theme's ink.
+  await phone.evaluate(() => (document.documentElement.dataset.theme = 'light'))
+  for (let i = 0; i < 20 && !(await arts.nth(1).locator('div > svg').innerHTML()).includes('#111b4c'); i++) await page.waitForTimeout(150)
+  check('the pictures are drawn again in the other theme’s colours', (await arts.nth(1).locator('div > svg').innerHTML()).includes('#111b4c'))
+  await phone.screenshot({ path: join(root, 'scripts', '.output', 'phone-pictures-light.png') })
+  await phone.evaluate(() => (document.documentElement.dataset.theme = 'dark'))
+  const shown = await answer.innerText()
+  check('never the source of any of them', !/FORMSRC|SERVERSRC|SKETCHSRC|flowchart|mermaid|excalidraw|"shapes"|"steps"/.test(shown), shown)
   check('while an ordinary code block is still code', /const plain = 1/.test(shown))
 
   console.log('\n# Schedules on the phone')
