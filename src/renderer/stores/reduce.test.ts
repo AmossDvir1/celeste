@@ -262,6 +262,18 @@ describe('checkpoints in the log', () => {
     expect(s.items[2]).toMatchObject({ kind: 'reverted', restored: 2, removed: 1, undoId: 'b'.repeat(40) })
   })
 
+  it('ignores an event it does not know, so a newer computer cannot blank a chat in an older app', () => {
+    const future = { type: 'something.from.a.newer.version', value: 1 } as unknown as LogEvent
+    const before = foldEvents(blank(), log([1000, { type: 'user.message', text: 'hello', attachments: [] }], [1010, { type: 'message.delta', text: 'Hi' }]))
+    expect(reduceEvent(before, future, 1)).toBe(before)
+    // In the middle of a log: what came before and after is kept, and the position moves on past it.
+    const s = foldEvents(blank(), log([1000, { type: 'user.message', text: 'hello', attachments: [] }], [1010, future], [1020, { type: 'message.delta', text: 'Hi' }], [1030, { type: 'turn.completed', turnId: 't' }]))
+    expect(s.items.map((i) => i.kind)).toEqual(['user', 'assistant'])
+    expect(s.status).toBe('idle')
+    expect(s.foldedSeq).toBe(4)
+    expect(s.lastSeq).toBe(4)
+  })
+
   it('shows what the assistant changed in Celeste as one line, and leaves the status alone', () => {
     const s = foldEvents(blank(), log([1000, { type: 'user.message', text: 'dark please', attachments: [] }], [1010, { type: 'app.changed', text: 'The theme was changed to dark.' }]))
     expect(s.items[1]).toMatchObject({ kind: 'notice', text: 'The theme was changed to dark.' })

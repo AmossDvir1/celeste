@@ -243,6 +243,11 @@ export function reduceEvent(s: Session, e: LogEvent, at: number): Session {
         items: [...closeThinking(s.items, now), { kind: 'error', id: itemId(), error: e.error }],
         status: 'idle',
         activity: null }
+
+    // An event this version does not know: a computer newer than this phone's app may log kinds of event it has never seen. Ignored, so the
+    // chat is shown as it was, instead of coming back empty (a switch with no answer returns nothing, and the spread of nothing is no chat).
+    default:
+      return s
   }
 }
 
