@@ -1534,6 +1534,22 @@ describe('the prompt queue', () => {
       expect(heard(agents[0])).toEqual(['deploy it', 'build it instead'])
     })
 
+    it('queues normally again afterwards: a question that was let go of is not still waiting', async () => {
+      const { api, agents } = setup()
+      const { id } = api['sessions.create'](input)
+      api['sessions.send'](id, msg('deploy it'))
+      agents[0]?.emit(ask)
+      await flush()
+      api['sessions.send'](id, msg('never mind'), 'queue')
+      agents[0]?.emit(stopped)
+      await flush()
+      expect(heard(agents[0])).toEqual(['deploy it', 'never mind'])
+      // The new turn is working and nothing waits for the person: a message typed now waits its turn.
+      api['sessions.send'](id, msg('and then this'), 'queue')
+      expect(agents[0]?.interrupted).toBe(1)
+      expect(queueOf(api, id).items.map((m) => m.text)).toEqual(['and then this'])
+    })
+
     it('still queues behind a turn that is working and waits for nobody', () => {
       const { api, agents } = setup()
       const { id } = api['sessions.create'](input)
@@ -1569,6 +1585,120 @@ describe('the prompt queue', () => {
     await flush()
     expect(queueOf(api, id).paused).toBe(true)
     expect(agents[0].sent).toHaveLength(1)
+  })
+
+  describe('a vendor at its limit', () => {
+    const limited = { type: 'turn.failed', turnId: 't', error: { code: 'rate_limit', message: 'Too many requests', retryable: true } } as AgentEvent
+    const HOUR = 3_600_000
+    // The service's clock starts at 1,000,000 and moves a little at each look, so a reset "in two hours" is that far from now.
+    const AT = 1_000_000
+    const reset = (hours: number) => ({ resetsAt: AT + hours * HOUR, window: '5-hour session' })
+    const eventsOf = (api: ReturnType<typeof setup>['api'], id: string) => (api['sessions.get'](id)?.events ?? []).map((e) => e.event)
+    const limitsOf = (api: ReturnType<typeof setup>['api'], id: string) => eventsOf(api, id).filter((e) => e.type === 'limit.hit')
+
+    async function ran(found: Awaited<ReturnType<NonNullable<ConstructorParameters<typeof SessionService>[0]['limit']>>> | 'hang' | 'throw', waiting = ['two']) {
+      const limit = vi.fn(async () => {
+        if (found === 'throw') throw new Error('no usage')
+        if (found === 'hang') return new Promise<never>(() => undefined)
+        return found
+      })
+      const s = setup(new MemoryStore(), '/data', { limit })
+      const { id } = s.api['sessions.create'](input)
+      s.api['sessions.send'](id, msg('one'), 'queue')
+      for (const t of waiting) s.api['sessions.send'](id, msg(t), 'queue')
+      s.agents[0]?.emit(limited)
+      await flush()
+      return { ...s, id, limit }
+    }
+
+    it('says so in the chat, with when it comes back and which allowance ran out', async () => {
+      const { api, id, limit } = await ran(reset(2))
+      expect(limit).toHaveBeenCalledWith('claude')
+      expect(limitsOf(api, id)).toEqual([{ type: 'limit.hit', vendor: 'claude', resetsAt: AT + 2 * HOUR, window: '5-hour session' }])
+    })
+
+    it('holds the queue until the reset and sends it by itself then', async () => {
+      const { api, agents, id } = await ran(reset(2))
+      expect(queueOf(api, id)).toMatchObject({ paused: true, waitUntil: AT + 2 * HOUR, items: [{ text: 'two' }] })
+      expect(heard(agents[0])).toEqual(['one'])
+      await vi.advanceTimersByTimeAsync(2 * HOUR - 60_000)
+      expect(heard(agents[0])).toEqual(['one'])
+      await vi.advanceTimersByTimeAsync(2 * 60_000 + 5000)
+      expect(heard(agents[0])).toEqual(['one', 'two'])
+      expect(queueOf(api, id)).toEqual({ items: [], paused: false })
+    })
+
+    it('does not send twice when the person sends the held messages before the reset', async () => {
+      const { api, agents, id } = await ran(reset(2), ['two', 'three'])
+      api['sessions.queue'](id, { type: 'resume' })
+      expect(heard(agents[0])).toEqual(['one', 'two'])
+      await vi.advanceTimersByTimeAsync(3 * HOUR)
+      expect(heard(agents[0])).toEqual(['one', 'two'])
+      expect(queueOf(api, id).items.map((m) => m.text)).toEqual(['three'])
+    })
+
+    it('does not send what the person cleared, or when something else is running by then', async () => {
+      const cleared = await ran(reset(2))
+      cleared.api['sessions.queue'](cleared.id, { type: 'clear' })
+      await vi.advanceTimersByTimeAsync(3 * HOUR)
+      expect(heard(cleared.agents[0])).toEqual(['one'])
+      const busy = await ran(reset(2))
+      busy.api['sessions.send'](busy.id, msg('typed meanwhile'))
+      await vi.advanceTimersByTimeAsync(3 * HOUR)
+      expect(heard(busy.agents[0])).toEqual(['one', 'typed meanwhile'])
+      expect(queueOf(busy.api, busy.id).items.map((m) => m.text)).toEqual(['two'])
+    })
+
+    it('says so but does not wait when it comes back later than six hours from now: the queue stays paused', async () => {
+      const { api, agents, id } = await ran(reset(30))
+      expect(limitsOf(api, id)).toHaveLength(1)
+      expect(queueOf(api, id)).toMatchObject({ paused: true, items: [{ text: 'two' }] })
+      expect(queueOf(api, id).waitUntil).toBeUndefined()
+      await vi.advanceTimersByTimeAsync(40 * HOUR)
+      expect(heard(agents[0])).toEqual(['one'])
+    })
+
+    it('says so without a time when the vendor cannot tell, and the queue stays paused', async () => {
+      const { api, agents, id } = await ran(null)
+      expect(limitsOf(api, id)).toEqual([{ type: 'limit.hit', vendor: 'claude' }])
+      expect(queueOf(api, id).paused).toBe(true)
+      await vi.advanceTimersByTimeAsync(10 * HOUR)
+      expect(heard(agents[0])).toEqual(['one'])
+    })
+
+    it('says so even when the reading fails, or takes too long', async () => {
+      const failed = await ran('throw')
+      expect(limitsOf(failed.api, failed.id)).toEqual([{ type: 'limit.hit', vendor: 'claude' }])
+      const slow = await ran('hang')
+      expect(limitsOf(slow.api, slow.id)).toHaveLength(0)
+      await vi.advanceTimersByTimeAsync(8100)
+      expect(limitsOf(slow.api, slow.id)).toEqual([{ type: 'limit.hit', vendor: 'claude' }])
+    })
+
+    it('says so with no queue too, and writes nothing about the queue', async () => {
+      const { api, id } = await ran(reset(2), [])
+      expect(limitsOf(api, id)).toHaveLength(1)
+      expect(eventsOf(api, id).some((e) => e.type === 'queue.waiting')).toBe(false)
+    })
+
+    it('does not write a limit for a failure that is not one', async () => {
+      const limit = vi.fn(async () => reset(2))
+      const { api, agents } = setup(new MemoryStore(), '/data', { limit })
+      const { id } = api['sessions.create'](input)
+      api['sessions.send'](id, msg('one'), 'queue')
+      agents[0]?.emit({ type: 'turn.failed', turnId: 't', error: { code: 'network', message: 'offline', retryable: true } } as AgentEvent)
+      await flush()
+      expect(limit).not.toHaveBeenCalled()
+      expect(limitsOf(api, id)).toHaveLength(0)
+    })
+
+    it('writes one limit for a message sent into it that fails the same way a moment later', async () => {
+      const { api, agents, id } = await ran(reset(2), [])
+      api['sessions.send'](id, msg('try again'))
+      agents[0]?.emit(limited)
+      await flush()
+      expect(limitsOf(api, id)).toHaveLength(1)
+    })
   })
 
   it('stops the turn and sends the message as soon as it has stopped, with "stop"', async () => {

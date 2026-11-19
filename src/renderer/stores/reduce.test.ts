@@ -274,6 +274,21 @@ describe('checkpoints in the log', () => {
     expect(s.lastSeq).toBe(4)
   })
 
+  it('shows a vendor at its limit as one line with when it comes back, and holds the queue it was told to', () => {
+    const at = new Date(2026, 10, 17, 12, 0).getTime()
+    const s = foldEvents(
+      blank(),
+      log(
+        [at, { type: 'queue.added', id: 'a', text: 'two', attachments: [] }],
+        [at + 1, { type: 'limit.hit', vendor: 'claude', resetsAt: at + 2 * 3_600_000, window: '5-hour session' }],
+        [at + 2, { type: 'queue.waiting', until: at + 2 * 3_600_000 }]
+      )
+    )
+    expect(s.items.at(-1)).toMatchObject({ kind: 'notice' })
+    expect((s.items.at(-1) as { text: string }).text).toContain('Claude is at its limit (5-hour session). It comes back in 2 h')
+    expect(s.queue).toMatchObject({ paused: true, waitUntil: at + 2 * 3_600_000 })
+  })
+
   it('shows what the assistant changed in Celeste as one line, and leaves the status alone', () => {
     const s = foldEvents(blank(), log([1000, { type: 'user.message', text: 'dark please', attachments: [] }], [1010, { type: 'app.changed', text: 'The theme was changed to dark.' }]))
     expect(s.items[1]).toMatchObject({ kind: 'notice', text: 'The theme was changed to dark.' })

@@ -33,7 +33,8 @@ import {
 } from 'lucide-react'
 import type { AskAnswers, ContextRef, FileDiff, Question, ToolKind } from '@shared/agent'
 import { phoneLine, visualKind } from '@/features/visuals/spec'
-import { canSteer, type QueueAction, type QueueState, type SendMode } from '@shared/queue'
+import { canSteer, heldText, type QueueAction, type QueueState, type SendMode } from '@shared/queue'
+import { clockText } from '@shared/usage'
 import { describeDuration } from '@shared/desktop'
 import type { PhoneModelChoice, PhoneNewSession, PhoneProject } from '@shared/phone'
 import type { TimelineItem } from '@/stores/types'
@@ -45,6 +46,7 @@ import { ModelChip } from '../ModelPicker'
 import { AutoScroll } from '../AutoScroll'
 import { continueNumbering } from '@shared/numbering'
 import { AttachButton, CameraButton, Chips, ProjectFiles, pastedFiles, useAttachments } from '../Attach'
+import { SketchButton } from '../Sketch'
 import { WatchScreen } from '../Watch'
 import { FileCards } from '../Files'
 
@@ -727,6 +729,7 @@ function Composer({
       <div className="composer">
         {canAttach && <AttachButton onPick={att.add} />}
         {canAttach && <CameraButton onPick={att.add} />}
+        {canAttach && <SketchButton onPick={att.add} />}
         <textarea ref={ta} rows={1} placeholder={placeholder} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onListEnter} onPaste={canAttach ? (e) => pastedFiles(e, att.add) : undefined} />
         {working && ready ? (
           <>
@@ -776,9 +779,9 @@ function QueueBar({ sessionId, queue, working }: { sessionId: string; queue: Que
     <div className="qbar" role="list" aria-label="Messages waiting">
       {queue.paused && (
         <div className="qpaused">
-          <span>Paused{working ? '' : ', so nothing is sent by itself'}.</span>
+          <span>{heldText(queue, working, Date.now(), (at) => clockText(at, Date.now()))}</span>
           <button type="button" onClick={() => act({ type: 'resume' })}>
-            Send {queue.items.length === 1 ? 'it' : 'them'}
+            Send {queue.items.length === 1 ? 'it' : 'them'}{queue.waitUntil !== undefined && queue.waitUntil > Date.now() ? ' now' : ''}
           </button>
           <button type="button" className="mute" onClick={() => act({ type: 'clear' })}>
             Clear
@@ -973,6 +976,7 @@ function SeededComposer({ seed, disabled, how, extra }: { seed: string; disabled
       <div className="composer">
         <AttachButton onPick={att.add} />
         <CameraButton onPick={att.add} />
+        <SketchButton onPick={att.add} />
         <textarea rows={1} autoFocus={!!seed} placeholder="Message Celeste" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onListEnter} onPaste={(e) => pastedFiles(e, att.add)} />
         <button
           className={`sendbtn${ready ? ' ready' : ''}`}

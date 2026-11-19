@@ -46,9 +46,20 @@ export interface QueueState {
   items: QueuedMessage[]
   /** The person stopped the turn, it failed, or Celeste was closed: nothing is sent by itself until `resume`. */
   paused: boolean
+  /** The vendor is at its limit: held until this time (milliseconds since 1970), then sent by itself. Set only with `paused`. */
+  waitUntil?: number
 }
 
 export const EMPTY_QUEUE: QueueState = { items: [], paused: false }
+
+/**
+ * What the banner over a held queue says. `clock` is the time of day the limit lifts, as the screen writes it. A queue held for a limit that
+ * has already lifted (Celeste was closed meanwhile) is an ordinary paused one: nothing is sent by itself.
+ */
+export function heldText(q: QueueState, working: boolean, now: number, clock: (at: number) => string): string {
+  if (q.waitUntil !== undefined && q.waitUntil > now) return `Waiting for the limit to lift, around ${clock(q.waitUntil)}. ${q.items.length === 1 ? 'It goes by itself' : 'They go by themselves'} then.`
+  return working ? 'Paused.' : 'Paused, so nothing is sent by itself.'
+}
 
 /**
  * The queue after one more logged event. Core keeps its queue with this, and the window and the phone replay the same events with
@@ -76,12 +87,22 @@ export function foldQueue(q: QueueState, e: LogEvent): QueueState {
     case 'queue.removed':
     case 'queue.sent': {
       const items = q.items.filter((m) => m.id !== e.id)
-      return { items, paused: items.length > 0 && q.paused }
+      const held = items.length > 0 && q.paused
+      return { items, paused: held, ...(held && q.waitUntil !== undefined ? { waitUntil: q.waitUntil } : {}) }
     }
-    case 'queue.paused':
-      return q.items.length ? { ...q, paused: true } : q
-    case 'queue.resumed':
-      return q.paused ? { ...q, paused: false } : q
+    case 'queue.paused': {
+      // A plain pause (the person stopped the turn) ends a wait for a limit: nothing goes by itself now.
+      if (!q.items.length) return q
+      const { waitUntil: _gone, ...rest } = q
+      return { ...rest, paused: true }
+    }
+    case 'queue.waiting':
+      return q.items.length ? { ...q, paused: true, waitUntil: e.until } : q
+    case 'queue.resumed': {
+      if (!q.paused) return q
+      const { waitUntil: _gone, ...rest } = q
+      return { ...rest, paused: false }
+    }
     default:
       return q
   }

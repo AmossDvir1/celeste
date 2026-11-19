@@ -31,6 +31,7 @@ import { callTool, McpService } from './mcp'
 import { serverKey } from '@shared/mcp'
 import { Attention, scheduleNotice } from './attention'
 import { claudeUsageFrom, copilotUsageFrom, UsageService, type ClaudeUsageAnswer, type CopilotQuotaSnapshot } from './usage'
+import { limitReset } from '@shared/usage'
 import type { VendorUsage } from '@shared/usage'
 import { AppTools } from './app/tools'
 import { createAgentStepRunner } from './workflows/agent-step'
@@ -278,6 +279,11 @@ async function start(): Promise<void> {
     // A new session is named by a small model of its own vendor; the other vendors have no adapter yet.
     titler: {
       title: (vendor, text) => (vendor === 'claude' ? claudeTitle(text) : vendor === 'copilot' ? copilotTitle(text) : Promise.resolve(undefined))
+    },
+    // A vendor said it is at its limit: its usage is read again, and the meter that ran out says when it comes back (null when it cannot say).
+    limit: async (vendor) => {
+      const all = await usageRef?.refresh(vendor)
+      return limitReset(all?.find((u) => u.vendor === vendor), Date.now())
     },
     onSessionStopped: (id) => {
       tools.cancel(id)

@@ -133,6 +133,82 @@ try {
   await page.getByText('Echo: Hello from the phone').waitFor({ timeout: 15_000 })
   check('… and the same answer is on the computer', true)
 
+  console.log('\n# A sketch, drawn on the phone')
+  // The page's picture is kept as it is made, so the check can look at what is sent.
+  await phone.evaluate(() => {
+    const real = HTMLCanvasElement.prototype.toBlob
+    HTMLCanvasElement.prototype.toBlob = function (cb, type, quality) {
+      return real.call(this, (b) => ((window.__sketch = b), cb(b)), type, quality)
+    }
+  })
+  await phone.getByRole('button', { name: 'Draw a sketch' }).click()
+  const pad = phone.getByRole('dialog', { name: 'Sketch' })
+  await pad.waitFor({ timeout: 10_000 })
+  check('the sketch pad opens over the chat, and Add to message waits for a first line', await pad.getByRole('button', { name: 'Add to message' }).isDisabled())
+  const canvas = pad.locator('canvas')
+  const area = await canvas.boundingBox()
+  const stroke = async (from, to) => {
+    await phone.mouse.move(area.x + from[0], area.y + from[1])
+    await phone.mouse.down()
+    await phone.mouse.move(area.x + to[0], area.y + to[1], { steps: 14 })
+    await phone.mouse.up()
+  }
+  await stroke([30, 60], [area.width - 30, 300])
+  check('a line makes Add to message ready', await pad.getByRole('button', { name: 'Add to message' }).isEnabled())
+  await pad.getByRole('radio', { name: 'Red' }).click()
+  await pad.getByRole('radio', { name: 'Thick pen' }).click()
+  await stroke([30, 340], [area.width - 30, 340])
+  await pad.getByRole('radio', { name: 'Green' }).click()
+  await stroke([30, 420], [area.width - 30, 440])
+  await pad.getByRole('button', { name: 'Undo' }).click()
+  await phone.screenshot({ path: join(root, 'scripts', '.output', 'phone-sketch.png') })
+  await pad.getByRole('button', { name: 'Add to message' }).click()
+  await pad.waitFor({ state: 'detached', timeout: 10_000 })
+  const chip = phone.locator('.achip', { hasText: 'sketch.png' })
+  await chip.waitFor({ timeout: 10_000 })
+  await phone.locator('.achip.busy').waitFor({ state: 'detached', timeout: 30_000 })
+  check('the pad closes and the sketch is a picture on the message, sent to the computer', (await chip.count()) === 1)
+  const made = await phone.evaluate(async () => {
+    const blob = window.__sketch
+    const bitmap = await createImageBitmap(blob)
+    const c = document.createElement('canvas')
+    c.width = bitmap.width
+    c.height = bitmap.height
+    const ctx = c.getContext('2d')
+    ctx.drawImage(bitmap, 0, 0)
+    const data = ctx.getImageData(0, 0, c.width, c.height).data
+    const near = (r, g, b, want) => Math.abs(r - want[0]) < 40 && Math.abs(g - want[1]) < 40 && Math.abs(b - want[2]) < 40
+    const count = { black: 0, red: 0, green: 0, white: 0 }
+    for (let i = 0; i < data.length; i += 4) {
+      if (near(data[i], data[i + 1], data[i + 2], [27, 27, 31])) count.black++
+      else if (near(data[i], data[i + 1], data[i + 2], [217, 54, 54])) count.red++
+      else if (near(data[i], data[i + 1], data[i + 2], [31, 157, 85])) count.green++
+      else if (near(data[i], data[i + 1], data[i + 2], [255, 255, 255])) count.white++
+    }
+    return { type: blob.type, width: bitmap.width, height: bitmap.height, ...count }
+  })
+  check('it is a PNG with its longer side at 1024 pixels, in the shape of the page', made.type === 'image/png' && Math.max(made.width, made.height) === 1024 && Math.abs(made.width / made.height - area.width / area.height) < 0.02, JSON.stringify(made))
+  check('it has the black line and the red one, a white page, and not the green line that was undone', made.black > 500 && made.red > 500 && made.green === 0 && made.white > made.width * made.height * 0.8, JSON.stringify(made))
+  await phone.getByPlaceholder('Message Celeste').fill('Here is my sketch')
+  await phone.getByRole('button', { name: 'Send', exact: true }).click()
+  // With a picture attached the model's last words are the picture's marker, so the request itself is looked at, not the echo.
+  const sketchRequest = () => api.main.find((r) => JSON.stringify(r.body.messages).includes('Here is my sketch'))
+  for (let i = 0; i < 300 && !sketchRequest(); i++) await page.waitForTimeout(200)
+  const sent = sketchRequest()
+  const lastUser = sent ? [...sent.body.messages].reverse().find((m) => m.role === 'user') : undefined
+  const images = Array.isArray(lastUser?.content) ? lastUser.content.filter((b) => b.type === 'image') : []
+  check('the assistant is sent the picture with the message, as a PNG', images.length === 1 && images[0].source?.media_type === 'image/png', JSON.stringify(images.map((b) => b.source?.media_type)))
+  check('and the message on the phone names it, with the chip gone', (await phone.getByText('sketch.png').count()) >= 1 && (await phone.locator('.achip').count()) === 0)
+  // The turn must have ended before the next section talks to the same chat.
+  await page.waitForTimeout(1500)
+  await phone.getByRole('button', { name: /^Stop/ }).waitFor({ state: 'detached', timeout: 90_000 })
+  await phone.getByRole('button', { name: 'Draw a sketch' }).click()
+  await pad.waitFor({ timeout: 10_000 })
+  await stroke([40, 80], [200, 200])
+  await pad.getByRole('button', { name: 'Close the sketch' }).click()
+  await pad.waitFor({ state: 'detached', timeout: 10_000 })
+  check('closing the pad adds nothing to the message', (await phone.locator('.achip').count()) === 0)
+
   console.log('\n# A question, answered in the message box')
   await phone.getByPlaceholder('Message Celeste').fill('ASK ME something')
   await phone.getByRole('button', { name: 'Send', exact: true }).click()

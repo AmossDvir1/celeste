@@ -201,6 +201,10 @@ export type LogEvent =
   /** The person stopped the turn, it failed, or Celeste restarted: waiting messages are held until `queue.resumed`. */
   | { type: 'queue.paused' }
   | { type: 'queue.resumed' }
+  /** The queue is held because the vendor is at its limit, and goes on by itself at `until` (milliseconds since 1970). */
+  | { type: 'queue.waiting'; until: number }
+  /** A turn ended because the vendor is at its limit. `resetsAt` is when it comes back, when that is known; `window` is which allowance ran out ("5-hour session"). */
+  | { type: 'limit.hit'; vendor: VendorId; resetsAt?: number; window?: string }
 
 /** One file that a turn changed, or that a revert would change. */
 export interface CheckpointFile {

@@ -12,6 +12,8 @@ export type Block =
   | { type: 'tool_use'; name: string; input: Record<string, unknown> }
   /** Starts an answer and never finishes it, so a test can stop it in the middle. */
   | { type: 'hold' }
+  /** Refuses the request with an HTTP error, as the API does (a 429 `rate_limit_error` for a vendor at its limit), after `delayMs`. Told not to be retried. */
+  | { type: 'error'; status: number; kind: string; message: string; delayMs?: number }
 
 export interface FakeRequest {
   model: string
@@ -86,6 +88,13 @@ export class FakeAnthropic {
     const blocks: Block[] = naming ? [{ type: 'text', text: this.naming(request.last.kind === 'text' ? request.last.text : '') }] : this.script(request)
     const id = `msg_fake_${++this.counter}`
     const model = String(body['model'] ?? 'claude-fake')
+    const refusal = blocks.find((b): b is Extract<Block, { type: 'error' }> => b.type === 'error')
+    if (refusal) {
+      if (refusal.delayMs) await new Promise((resolve) => setTimeout(resolve, refusal.delayMs))
+      res.writeHead(refusal.status, { 'content-type': 'application/json', 'x-should-retry': 'false', 'retry-after': '1' })
+      res.end(JSON.stringify({ type: 'error', error: { type: refusal.kind, message: refusal.message } }))
+      return
+    }
     if (body['stream'] !== true) {
       res.writeHead(200, { 'content-type': 'application/json' })
       res.end(JSON.stringify(message(id, model, blocks)))
@@ -100,6 +109,7 @@ export class FakeAnthropic {
         send('content_block_delta', { type: 'content_block_delta', index, delta: { type: 'text_delta', text: 'Working on it' } })
         return
       }
+      if (b.type === 'error') continue
       if (b.type === 'text') {
         send('content_block_start', { type: 'content_block_start', index, content_block: { type: 'text', text: '' } })
         // Two pieces, so the stream is seen to arrive in parts; or many small ones, when asked.

@@ -47,6 +47,40 @@ export const usageLevel = (percentUsed: number | null): UsageLevel => (percentUs
 /** The meter the strip draws: the first one, which each vendor's reader puts first. */
 export const mainWindow = (u: VendorUsage): UsageWindow | undefined => u.windows[0]
 
+/** How the vendors are named in a sentence. */
+export const VENDOR_NAMES: Record<VendorId, string> = { copilot: 'GitHub Copilot', claude: 'Claude', openai: 'OpenAI', gemini: 'Gemini' }
+
+/** A vendor that is at its limit and comes back later than this is not waited for: the person is told, and decides. */
+export const LIMIT_WAIT_MAX_MS = 6 * 3_600_000
+
+/**
+ * When a vendor that has just said it is at its limit comes back, from its latest reading: the meters at 95% or more that have a reset time
+ * ahead, and the latest of those (every one has to come back). Null when no meter is at its limit, or none says when.
+ */
+export function limitReset(u: VendorUsage | undefined, now: number): { resetsAt: number; window: string } | null {
+  if (!u) return null
+  const hit = u.windows.filter((w) => !w.unlimited && w.percentUsed !== null && w.percentUsed >= 95 && w.resetsAt !== null && w.resetsAt > now)
+  if (!hit.length) return null
+  const last = hit.reduce((a, b) => ((b.resetsAt as number) > (a.resetsAt as number) ? b : a))
+  return { resetsAt: last.resetsAt as number, window: last.label }
+}
+
+/** A time of day for a sentence: "4:30 PM", with the day when it is not today ("Dec 1, 4:30 PM"). */
+export function clockText(at: number, now: number): string {
+  const d = new Date(at)
+  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  const same = d.toDateString() === new Date(now).toDateString()
+  return same ? time : `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${time}`
+}
+
+/** The line in the chat when a vendor is at its limit (`at` is when it happened). */
+export function limitNotice(e: { vendor: VendorId; resetsAt?: number; window?: string }, at: number): string {
+  const name = VENDOR_NAMES[e.vendor]
+  const which = e.window ? ` (${e.window})` : ''
+  if (e.resetsAt === undefined) return `${name} is at its limit${which}. It did not say when it comes back.`
+  return `${name} is at its limit${which}. It comes back in ${untilText(e.resetsAt, at)}, around ${clockText(e.resetsAt, at)}.`
+}
+
 /** "3 h 12 min", "5 min", "2 days" until a time, or "now" when it has passed. */
 export function untilText(at: number, now: number): string {
   const ms = at - now

@@ -1,6 +1,7 @@
 import { Check, Paperclip, Pencil, Play, Trash2, X, Zap } from 'lucide-react'
-import type { QueueAction, QueuedMessage, QueueState } from '@shared/queue'
+import { heldText, type QueueAction, type QueuedMessage, type QueueState } from '@shared/queue'
 import { IconButton } from '@/components/ui'
+import { clockText } from '@shared/usage'
 import { cn } from '@/lib/cn'
 
 /** What a waiting message shows: its first words, or what it carries when it has no words. */
@@ -57,9 +58,9 @@ export function QueueList({
     <div className="mb-2 rounded-xl border border-edge bg-raised/50 px-2 py-1.5" role="list" aria-label="Messages waiting">
       {queue.paused && (
         <div className="mb-1 flex flex-wrap items-center gap-2 px-1.5 py-1 text-xs text-ink-soft">
-          <span>{working ? 'Paused.' : 'Paused, so nothing is sent by itself.'}</span>
+          <span>{heldText(queue, working, Date.now(), (at) => clockText(at, Date.now()))}</span>
           <button type="button" onClick={() => onAction({ type: 'resume' })} className="inline-flex items-center gap-1 font-medium text-accent-text hover:underline">
-            <Play className="h-3 w-3" /> Send {queue.items.length === 1 ? 'it' : 'them'}
+            <Play className="h-3 w-3" /> Send {queue.items.length === 1 ? 'it' : 'them'}{queue.waitUntil !== undefined && queue.waitUntil > Date.now() ? ' now' : ''}
           </button>
           <button type="button" onClick={() => onAction({ type: 'clear' })} className="text-ink-muted hover:text-ink hover:underline">
             Clear

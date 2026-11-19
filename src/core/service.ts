@@ -24,6 +24,7 @@ import { SIDEBAR_WIDTH } from '@shared/defaults'
 import { coalesceEvents } from '@shared/coalesce'
 import { nextStatus } from '@shared/status'
 import { EMPTY_QUEUE, foldQueue, MAX_QUEUED, type QueueAction, type QueueState, type SendMode } from '@shared/queue'
+import { LIMIT_WAIT_MAX_MS } from '@shared/usage'
 import type { AttachmentRow, FileStore, SessionRow, Store } from './store'
 import type { Snapshots } from './snapshots'
 import { cleanTitle, type Titler } from './titles'
@@ -58,6 +59,11 @@ export interface ServiceOptions {
   snapshots?: Snapshots
   /** Writes the short title shown for a session after its first message. Without it the first words stay as the title. */
   titler?: Titler
+  /**
+   * A vendor has just said it is at its limit: when does it come back? Null when that is not known. Without it a limit still gets its line
+   * in the chat, and the queue is held until the person sends it.
+   */
+  limit?: (vendor: VendorId) => Promise<{ resetsAt: number; window?: string } | null>
   now?: () => number
   undoMs?: number
 }
@@ -124,6 +130,15 @@ const THEMES = ['dark', 'light', 'system']
 const VENDOR_IDS: VendorId[] = ['copilot', 'claude', 'openai', 'gemini']
 const SETTINGS_KEYS = ['theme', 'userName', 'wizardDone', 'sidebarCollapsed', 'sidebarWidth', 'closeToTray', 'desktopControl', 'desktopNeverApps', 'browserTools', 'browserAllowedSites', 'pinnedModels', 'defaults'] as const
 const MAX_PINNED = 100
+/** How long after a vendor's reset time a queue held for its limit goes on. */
+const LIMIT_GRACE_MS = 3000
+/** How long to wait for the vendor's usage to say when the limit lifts, before the line is written without it. */
+const LIMIT_LOOKUP_MS = 8000
+const withLimitTimeout = <T>(p: Promise<T> | undefined): Promise<T | undefined> => {
+  if (!p) return Promise.resolve(undefined)
+  let timer: ReturnType<typeof setTimeout> | undefined
+  return Promise.race([p, new Promise<undefined>((resolve) => (timer = setTimeout(() => resolve(undefined), LIMIT_LOOKUP_MS)))]).finally(() => clearTimeout(timer))
+}
 const TRANSCRIPT_LIMIT = 24_000
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 const MAX_ATTACHMENTS = 10
@@ -192,6 +207,10 @@ export class SessionService {
 
   /** Each session's waiting messages, folded from its log the first time they are asked for and kept up to date by `commit`. */
   private readonly queues = new Map<string, QueueState>()
+  /** A queue held for a vendor's limit goes on by itself at the reset. One timer for each session. */
+  private readonly limitTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  /** The last limit written in a session, so one that comes back at once (a message sent into it) is not written again. */
+  private readonly lastLimit = new Map<string, { resetsAt?: number; at: number }>()
 
   constructor(private readonly opts: ServiceOptions) {
     this.store = opts.store
@@ -578,9 +597,11 @@ export class SessionService {
       case 'turn.abandoned':
         if (live.text) this.store.index(id, 'assistant', live.text)
         live.text = ''
+        // Whatever the agent was still waiting on died with the turn: a question let go of by Stop is not answered, so it is never removed otherwise.
+        live.pending?.clear()
         this.finishCheckpoint(id)
         this.finishFiles(id)
-        this.afterTurn(id, event.type)
+        this.afterTurn(id, event.type, event.type === 'turn.failed' && event.error.code === 'rate_limit')
         break
     }
 
@@ -725,7 +746,7 @@ export class SessionService {
    * When a turn ends, the queue moves. A message marked for "send now" goes first. Otherwise the next waiting message goes after a
    * finished turn, and a turn that was stopped or failed pauses the queue, so nothing is sent that the person did not expect.
    */
-  private afterTurn(id: string, type: 'turn.completed' | 'turn.interrupted' | 'turn.failed' | 'turn.abandoned'): void {
+  private afterTurn(id: string, type: 'turn.completed' | 'turn.interrupted' | 'turn.failed' | 'turn.abandoned', limited = false): void {
     const live = this.live.get(id)
     if (live) live.active = false
     const sendNext = live?.sendNext
@@ -745,8 +766,61 @@ export class SessionService {
         else if (!this.busy(id)) this.dispatch(id, (q.items[0] as { id: string }).id)
       } catch (err) {
         console.error('[core] could not move the queue on', err)
+      } finally {
+        // After the queue has been paused above, so a wait for the limit replaces that pause and not the other way round.
+        if (limited) void this.noteLimit(id)
       }
     })
+  }
+
+  /**
+   * The vendor said it is at its limit. A line in the chat says so, with when it comes back when that is known. If messages are waiting and
+   * it comes back soon (`LIMIT_WAIT_MAX_MS`), the queue is held until then and goes on by itself; later than that, or not known, it stays
+   * paused and the person decides. A limit is not waited for twice: a message sent into it fails the same way and is not written again.
+   */
+  private async noteLimit(id: string): Promise<void> {
+    try {
+      const row = this.store.getSession(id)
+      if (!row || row.deletedAt !== null) return
+      let found: { resetsAt: number; window?: string } | null = null
+      try {
+        found = (await withLimitTimeout(this.opts.limit?.(row.vendor))) ?? null
+      } catch {
+        found = null
+      }
+      const now = this.now()
+      if (found && found.resetsAt <= now) found = null
+      const before = this.lastLimit.get(id)
+      if (before && before.resetsAt === found?.resetsAt && now - before.at < 10 * 60_000) return
+      this.lastLimit.set(id, { ...(found ? { resetsAt: found.resetsAt } : {}), at: now })
+      const live = this.live.get(id) ?? { text: '' }
+      this.record(id, { type: 'limit.hit', vendor: row.vendor, ...(found ? { resetsAt: found.resetsAt, ...(found.window ? { window: found.window } : {}) } : {}) }, live)
+      const q = this.queueOf(id)
+      if (!found || !q.items.length || found.resetsAt - now > LIMIT_WAIT_MAX_MS) return
+      this.record(id, { type: 'queue.waiting', until: found.resetsAt }, live)
+      this.armLimitTimer(id, found.resetsAt)
+    } catch (err) {
+      console.error('[core] could not write a limit', err)
+    }
+  }
+
+  /** At the reset the held queue goes on, if it is still held for that time and nothing is running. */
+  private armLimitTimer(id: string, until: number): void {
+    clearTimeout(this.limitTimers.get(id))
+    // A little after the reset, so the vendor has surely counted it.
+    const timer = setTimeout(() => {
+      this.limitTimers.delete(id)
+      try {
+        const row = this.store.getSession(id)
+        if (!row || row.deletedAt !== null) return
+        const q = this.queueOf(id)
+        if (q.waitUntil !== until || !q.items.length || this.busy(id)) return
+        this.queueAction(id, { type: 'resume' })
+      } catch (err) {
+        console.error('[core] could not send the waiting messages at the reset', err)
+      }
+    }, Math.max(0, until - this.now()) + LIMIT_GRACE_MS)
+    this.limitTimers.set(id, timer)
   }
 
   private queueAction(id: string, action: QueueAction): void {
@@ -1156,6 +1230,8 @@ export class SessionService {
 
   private remove(id: string): void {
     this.requireSession(id)
+    clearTimeout(this.limitTimers.get(id))
+    this.limitTimers.delete(id)
     this.declineToolApprovals(id)
     this.opts.onSessionStopped?.(id)
     this.stopRuntime(id)

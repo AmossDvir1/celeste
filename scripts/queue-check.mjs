@@ -1,8 +1,9 @@
 // Messages sent while the assistant works, in the real built app: one that waits its turn (Add to queue), and one that joins the turn that is
 // running (Steer). Claude is real (the real SDK and program); what it says is chosen by a stand-in for Anthropic's API (scripts/lib/stub.mjs),
 // which also records what the model was sent and in what order. A message typed while the assistant waits for an answer lets go of the question
-// and goes at once.   npm run verify:queue     (no account, no cost)
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+// and goes at once. A vendor at its limit gets a line in the chat, and the messages waiting for it go on by themselves when it comes back.
+// npm run verify:queue     (no account, no cost)
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { launch, saveSettings } from './lib/app.mjs'
@@ -12,6 +13,8 @@ const SLOW = 'node -e "setTimeout(()=>console.log(\'slow done\'),5000)"'
 
 /** What the model does: a slow command for "SLOW", a slow answer for "STREAM", and otherwise it says what it was told. */
 const script = (r) => {
+  // The API refuses the request, as it does for an account at its limit (after a few seconds, so a message can be queued meanwhile).
+  if (r.last.kind === 'text' && /LIMIT soon/.test(r.last.text)) return [{ type: 'error', status: 429, kind: 'rate_limit_error', message: 'Number of request tokens has exceeded your per-minute rate limit', delayMs: 4000 }]
   // After a Stop, Claude Code answers the cut-off call first, so the new message is in the last turn but not the last block.
   if (/NEVERMIND/.test(JSON.stringify(r.body.messages.at(-1)))) return [{ type: 'text', text: 'Saw: NEVERMIND just say hi' }]
   if (r.last.kind === 'text' && /ASK ME/.test(r.last.text)) return [{ type: 'tool_use', name: 'AskUserQuestion', input: { questions: [{ question: 'Which colour should the button be?', header: 'Colour', multiSelect: false, options: [{ label: 'Pink', description: 'The accent' }, { label: 'Blue', description: 'Calmer' }] }] } }]
@@ -23,6 +26,8 @@ const script = (r) => {
 }
 
 const profile = mkdtempSync(join(tmpdir(), 'celeste-queue-'))
+/** What the vendor reports about its allowance (CELESTE_USAGE_FILE stands in for Claude's own reading). */
+const usageFile = join(profile, 'usage.json')
 mkdirSync(join(import.meta.dirname, '.output'), { recursive: true })
 const failures = []
 const check = (label, ok, detail = '') => {
@@ -48,7 +53,7 @@ let stub
 let app
 try {
   stub = await startStub(script)
-  app = await launch({ width: 1440, height: 900, theme: null, profile, env: stub.env })
+  app = await launch({ width: 1440, height: 900, theme: null, profile, env: { ...stub.env, CELESTE_USAGE_FILE: usageFile } })
   const { page } = app
   await page.getByRole('dialog', { name: 'Set up Celeste' }).waitFor({ timeout: 20_000 })
   await saveSettings(page, { wizardDone: true, userName: 'Dana' })
@@ -129,9 +134,30 @@ try {
   check('and it was sent to the model once', stub.main.filter((r) => /NEVERMIND/.test(JSON.stringify(r.body.messages.at(-1)))).length === 1, String(stub.main.filter((r) => /NEVERMIND/.test(JSON.stringify(r.body.messages.at(-1)))).length))
   await page.screenshot({ path: join(import.meta.dirname, '.output', 'queue-skipped-question.png') })
 
+  console.log('\n# A vendor at its limit')
+  // The 5-hour window is used up and comes back in fourteen seconds.
+  writeFileSync(usageFile, JSON.stringify({ claude: { plan: 'max', windows: [{ key: 'five_hour', label: '5-hour session', percentUsed: 100, resetsAt: Date.now() + 14_000 }] } }))
+  const beforeLimit = stub.main.length
+  await send(page, 'LIMIT soon please')
+  await page.getByRole('button', { name: 'Stop', exact: true }).waitFor({ timeout: 30_000 })
+  await box(page).fill('WAIT after the limit')
+  await page.getByRole('button', { name: 'Add to queue' }).click()
+  await page.getByRole('list', { name: 'Messages waiting' }).waitFor({ timeout: 10_000 })
+  await page.getByText(/Claude is at its limit \(5-hour session\)\. It comes back in/).first().waitFor({ timeout: 60_000 })
+  check('the chat says the vendor is at its limit, which allowance, and when it comes back', true)
+  const held = page.getByRole('list', { name: 'Messages waiting' })
+  await held.getByText(/Waiting for the limit to lift/).waitFor({ timeout: 10_000 })
+  check('the waiting message says it is held until the limit lifts, and goes by itself', /It goes by itself then/.test(await held.innerText()))
+  check('and nothing is sent to the model meanwhile', stub.main.slice(beforeLimit).every((r) => !/WAIT after the limit/.test(JSON.stringify(r.body.messages.at(-1)))))
+  await page.screenshot({ path: join(import.meta.dirname, '.output', 'queue-limit.png') })
+  await page.getByText('Saw: WAIT after the limit').first().waitFor({ timeout: 90_000 })
+  await idle(page)
+  check('after the reset it is sent by itself, once, and answered', stub.main.filter((r) => /WAIT after the limit/.test(JSON.stringify(r.body.messages.at(-1)))).length === 1)
+  check('and the list is empty again', (await page.getByRole('list', { name: 'Messages waiting' }).count()) === 0)
+
   console.log('\n# After a restart')
   await app.close()
-  app = await launch({ width: 1440, height: 900, theme: null, profile, env: stub.env })
+  app = await launch({ width: 1440, height: 900, theme: null, profile, env: { ...stub.env, CELESTE_USAGE_FILE: usageFile } })
   const p2 = app.page
   await p2.getByText('please do the SLOW thing').first().click()
   await p2.getByText('STEER use tabs', { exact: true }).first().waitFor({ timeout: 20_000 })
