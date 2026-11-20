@@ -43,13 +43,52 @@ const keepFont = (path: string) => !/Xiaolai/.test(path)
 // It also subsets each font to the letters used when it makes an SVG, with a worker and a WebAssembly step that the policy refuses (the worker does
 // not start, and the step needs `eval`): each export then reported a violation. The step is skipped, and the whole font file goes into the SVG instead.
 const SUBSET = /(=async\((\w+),\w+\)=>\{let\{Commands:\w+,subsetToBase64:\w+,toBase64:(\w+)\}=await \w+\(\);)return /
+// What the canvas does not need is left out of the build (docs/plans/CHAT_DISPLAY_PLAN.md, "Trimmed on 21 November 2026"). Each is a stand-in for a module of
+// the library, so nothing in its own code is edited: (1) the translations other than English (the canvas is never asked for another language), (2) the
+// glyph subsetting program with its WebAssembly (about 1.8 MB, which the step above no longer uses; only its small base64 helper is kept), and (3)
+// the library's "Mermaid to drawing" bridge with its own second copy of Mermaid (Celeste draws Mermaid itself, in a block of its own).
+const SUBSET_STAND_IN = `export const Commands = { Subset: 'SUBSET' }
+export const toBase64 = async (data) => {
+  let text
+  if (typeof Buffer !== 'undefined') text = Buffer.from(data).toString('base64')
+  else {
+    const bytes = new Uint8Array(data)
+    let binary = ''
+    for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+    text = btoa(binary)
+  }
+  return 'data:font/woff2;base64,' + text
+}
+export const subsetToBinary = async (data) => data
+export const subsetToBase64 = async (data) => toBase64(data)
+`
 let cdnCut = false
 let subsetOff = false
+let bridgeOff = false
+let subsetChunkOff = false
+let localesCut = 0
 let building = false
 const canvasAssets = {
   name: 'celeste-canvas-assets',
   configResolved(config: { command: string }) {
     building = config.command === 'build'
+  },
+  load(id: string) {
+    if (!building) return null
+    const file = id.replace(/\\/g, '/').split('?')[0] as string
+    if (/@excalidraw\/mermaid-to-excalidraw\/dist\/index\.js$/.test(file)) {
+      bridgeOff = true
+      return `export const parseMermaidToExcalidraw = async () => { throw new Error('Turning Mermaid into a drawing is not part of Celeste.') }\nexport default {}\n`
+    }
+    if (/@excalidraw\/excalidraw\/dist\/prod\/subset-shared\.chunk\.js$/.test(file)) {
+      subsetChunkOff = true
+      return SUBSET_STAND_IN
+    }
+    if (/@excalidraw\/excalidraw\/dist\/prod\/locales\/(?!en-)[^/]+\.js$/.test(file)) {
+      localesCut++
+      return 'export default {}\n'
+    }
+    return null
   },
   transform(code: string) {
     let out = code
@@ -65,6 +104,7 @@ const canvasAssets = {
   },
   closeBundle() {
     // A version of the library that changed these places must be looked at again, not shipped with the old behaviour.
+    if (building && (!bridgeOff || !subsetChunkOff || localesCut < 20)) throw new Error(`Excalidraw's code is not what the canvas build expects (Mermaid bridge left out: ${bridgeOff}, subsetting chunk left out: ${subsetChunkOff}, translations emptied: ${localesCut}). Try the canvas again: npm run verify:canvas.`)
     if (building && (!cdnCut || !subsetOff)) throw new Error(`Excalidraw's code is not what the canvas build expects (CDN cut: ${cdnCut}, subsetting off: ${subsetOff}). Try the canvas again: npm run verify:canvas.`)
     if (excalidrawFonts && existsSync(excalidrawFonts)) cpSync(excalidrawFonts, resolve('out/renderer/fonts'), { recursive: true, filter: keepFont })
   },

@@ -6,6 +6,7 @@ import { layoutDrawing, parseDrawing } from '@/features/visuals/drawing'
 import { chartColors, chartConfig, drawingPalette, mermaidThemeVariables } from '@/features/visuals/colors'
 import { drawingSvg } from '@/features/visuals/drawingSvg'
 import { MAX_RETRIES, hashOf, noteRetry, parseChart, parseSteps, prepareMermaid, retriesOf, retryMessage, type VisualKind } from '@/features/visuals/spec'
+import { ZOOM_DOUBLE_TAP, ZOOM_MAX, ZOOM_MIN, TAP_SLOP, clampZoom, distance, fractionAt, isDoubleTap, keepUnder, middle, pinchZoom, stepZoom, type Point } from '@shared/pinch'
 import { useApp } from './store'
 import { Shimmer, buzz } from './ui'
 
@@ -92,16 +93,119 @@ function Art({ html, label, caption }: { html: string; label: string; caption?: 
   )
 }
 
-const ZOOMS = [1, 1.5, 2, 3, 4]
-
-/** The picture over the whole screen, with Zoom in and out; the page scrolls both ways when it is larger than the screen. */
+/**
+ * The picture over the whole screen. Two fingers pinch it larger and smaller around the place between them; one finger moves it; a double tap
+ * zooms in and out; the buttons do the same by steps. The picture is moved and zoomed here, not by the WebView (`touch-action: none`), so a pinch
+ * zooms the picture and never the whole app, and it works the same on every phone. Ctrl and the wheel zoom too, for a trackpad.
+ */
 function Viewer({ title, html, onClose }: { title: string; html: string; onClose: () => void }) {
-  const [step, setStep] = useState(0)
+  const body = useRef<HTMLDivElement>(null)
+  const art = useRef<HTMLDivElement>(null)
+  const [zoom, setZoom] = useState(ZOOM_MIN)
+  const zoomRef = useRef(ZOOM_MIN)
+  const fingers = useRef(new Map<number, Point>())
+  const pinch = useRef<{ from: number; zoom: number; fraction: Point } | null>(null)
+  const drag = useRef<{ moved: number } | null>(null)
+  const lastTap = useRef<{ at: number; point: Point } | null>(null)
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
+
+  /** Zooms to `z`, then scrolls so that the part of the picture at `fraction` (of its width and height) is under `at`, a place on the screen. */
+  const place = (z: number, fraction: Point, at: Point) => {
+    const el = art.current
+    const scroller = body.current
+    if (!el || !scroller) return
+    const next = clampZoom(z)
+    zoomRef.current = next
+    el.style.width = `${next * 100}%`
+    const by = keepUnder(fraction, el.getBoundingClientRect(), at)
+    scroller.scrollLeft += by.x
+    scroller.scrollTop += by.y
+    setZoom(next)
+  }
+  /** Zooms to `z` keeping what is under `at` where it is. */
+  const zoomAt = (z: number, at: Point) => {
+    const el = art.current
+    if (el) place(z, fractionAt(el.getBoundingClientRect(), at), at)
+  }
+  const centre = (): Point => {
+    const r = (body.current as HTMLDivElement).getBoundingClientRect()
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+  }
+
+  // Ctrl and the wheel (a trackpad's pinch is sent this way): a listener that may stop the page from zooming, which React's cannot.
+  const wheel = useRef<(e: WheelEvent) => void>(() => undefined)
+  wheel.current = (e: WheelEvent) => {
+    if (!e.ctrlKey) return
+    e.preventDefault()
+    zoomAt(zoomRef.current * Math.exp(-e.deltaY * 0.01), { x: e.clientX, y: e.clientY })
+  }
+  useEffect(() => {
+    const el = body.current
+    const handler = (e: WheelEvent) => wheel.current(e)
+    el?.addEventListener('wheel', handler, { passive: false })
+    return () => el?.removeEventListener('wheel', handler)
+  }, [])
+
+  const down = (e: React.PointerEvent<HTMLDivElement>) => {
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId)
+    } catch {
+      /* a pointer that is already gone: nothing to hold */
+    }
+    fingers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (fingers.current.size === 2) {
+      const [a, b] = [...fingers.current.values()] as [Point, Point]
+      pinch.current = { from: distance(a, b), zoom: zoomRef.current, fraction: fractionAt((art.current as HTMLDivElement).getBoundingClientRect(), middle(a, b)) }
+      drag.current = null
+    } else if (fingers.current.size === 1) {
+      drag.current = { moved: 0 }
+    }
+  }
+
+  const move = (e: React.PointerEvent<HTMLDivElement>) => {
+    const before = fingers.current.get(e.pointerId)
+    if (!before) return
+    const now = { x: e.clientX, y: e.clientY }
+    fingers.current.set(e.pointerId, now)
+    const p = pinch.current
+    if (p && fingers.current.size >= 2) {
+      const [a, b] = [...fingers.current.values()] as [Point, Point]
+      place(pinchZoom(p.zoom, p.from, distance(a, b)), p.fraction, middle(a, b))
+      return
+    }
+    const d = drag.current
+    const scroller = body.current
+    if (d && scroller && fingers.current.size === 1) {
+      scroller.scrollLeft -= now.x - before.x
+      scroller.scrollTop -= now.y - before.y
+      d.moved += distance(now, before)
+    }
+  }
+
+  const up = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!fingers.current.delete(e.pointerId)) return
+    if (fingers.current.size < 2) pinch.current = null
+    if (fingers.current.size === 1) {
+      // One finger stays after a pinch: it carries on as a drag, and is no tap when it lifts.
+      drag.current = { moved: TAP_SLOP + 1 }
+    } else if (fingers.current.size === 0) {
+      const d = drag.current
+      drag.current = null
+      if (e.type === 'pointerup' && d && d.moved < TAP_SLOP) {
+        const tap = { at: performance.now(), point: { x: e.clientX, y: e.clientY } }
+        if (isDoubleTap(lastTap.current, tap)) {
+          zoomAt(zoomRef.current > ZOOM_MIN + 0.05 ? ZOOM_MIN : ZOOM_DOUBLE_TAP, tap.point)
+          lastTap.current = null
+        } else lastTap.current = tap
+      }
+    }
+  }
+
   return createPortal(
     <div className="pv" role="dialog" aria-modal="true" aria-label={title}>
       <div className="pv-head">
@@ -111,15 +215,15 @@ function Viewer({ title, html, onClose }: { title: string; html: string; onClose
         <h1 className="h-l" style={{ fontSize: 16, flex: 1 }}>
           {title}
         </h1>
-        <button type="button" className="iconbtn" aria-label="Zoom out" disabled={step === 0} onClick={() => setStep((n) => Math.max(0, n - 1))}>
+        <button type="button" className="iconbtn" aria-label="Zoom out" disabled={zoom <= ZOOM_MIN} onClick={() => zoomAt(stepZoom(zoomRef.current, -1), centre())}>
           <Minus size={20} />
         </button>
-        <button type="button" className="iconbtn" aria-label="Zoom in" disabled={step === ZOOMS.length - 1} onClick={() => setStep((n) => Math.min(ZOOMS.length - 1, n + 1))}>
+        <button type="button" className="iconbtn" aria-label="Zoom in" disabled={zoom >= ZOOM_MAX} onClick={() => zoomAt(stepZoom(zoomRef.current, 1), centre())}>
           <Plus size={20} />
         </button>
       </div>
-      <div className="pv-body">
-        <div className="pv-art" style={{ width: `${(ZOOMS[step] as number) * 100}%` }} dangerouslySetInnerHTML={{ __html: html }} />
+      <div ref={body} className="pv-body" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
+        <div ref={art} className="pv-art" style={{ width: `${zoom * 100}%` }} dangerouslySetInnerHTML={{ __html: html }} />
       </div>
     </div>,
     document.body

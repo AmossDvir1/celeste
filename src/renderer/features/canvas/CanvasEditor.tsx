@@ -50,6 +50,18 @@ export default function CanvasEditor({ sceneKey }: { sceneKey: string }) {
   // What the editor starts from: this place's drawing, read again when one is put in from outside (Edit on a drawing in an answer) or cleared.
   const initial = useMemo(() => cleanElements(useCanvas.getState().scenes[sceneKey] ?? []), [sceneKey, revision, clearKey])
   useEffect(() => () => clearTimeout(saveTimer.current), [])
+  // The library's "More tools" menu also offers "Mermaid to Excalidraw", which this build leaves out (it would bring a second copy of Mermaid; Celeste draws
+  // Mermaid in a block of its own). That one entry is hidden, so no button is left that fails. It shares its test id with "Web Embed", so it is found by its
+  // words, which are always English here: the translations are left out too.
+  useEffect(() => {
+    const hide = () => {
+      for (const item of document.querySelectorAll<HTMLElement>('.dropdown-menu-item')) if (item.textContent?.trim() === 'Mermaid to Excalidraw') item.style.display = 'none'
+    }
+    const watch = new MutationObserver(hide)
+    watch.observe(document.body, { childList: true, subtree: true })
+    hide()
+    return () => watch.disconnect()
+  }, [])
 
   const elements = (): SceneElements => api.current?.getSceneElements() ?? ([] as unknown as SceneElements)
   const blank = () => {

@@ -603,6 +603,7 @@ svg.vlogo.sm { width:13px; height:13px; }
 .pic-extras a { color:var(--c-accent-text); display:inline-flex; align-items:center; gap:4px; font-size:13.5px; }
 .pv { position:fixed; inset:0; z-index:85; display:flex; flex-direction:column; background:var(--c-canvas); padding-top:env(safe-area-inset-top, 0px); padding-bottom:env(safe-area-inset-bottom, 0px); animation:fade-up .2s var(--ease) both; }
 .pv-head { height:56px; flex:none; display:flex; align-items:center; gap:2px; padding:0 8px 0 6px; }
-.pv-body { flex:1; min-height:0; overflow:auto; padding:10px; margin:0 8px 8px; border-radius:16px; background:var(--c-panel); border:1px solid var(--c-edge); touch-action:pan-x pan-y; }
+.pv-body { flex:1; min-height:0; overflow:auto; padding:10px; margin:0 8px 8px; border-radius:16px; background:var(--c-panel); border:1px solid var(--c-edge); touch-action:none; overscroll-behavior:contain; }
+.pv-art { user-select:none; -webkit-user-select:none; }
 .pv-art svg { display:block; width:100%; height:auto; max-width:none !important; }
 .iconbtn:disabled { opacity:.35; }

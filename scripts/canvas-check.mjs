@@ -4,7 +4,7 @@
 // writes is placed by Celeste (its arrows join its shapes), shown as a picture with Expand and Edit, a broken or hostile one is a note, and the
 // library is a chunk of its own with its fonts beside the app and no Chinese font.   npm run verify:canvas     (no account, no cost)
 // Claude is real (the real SDK and program); what it says is chosen by a stand-in for Anthropic's API (scripts/lib/stub.mjs).
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { launch, saveSettings } from './lib/app.mjs'
@@ -125,6 +125,14 @@ try {
   const tools = await panel.evaluate((el) => ({ toolbar: el.querySelectorAll('.App-toolbar, .App-toolbar-content').length, library: [...el.querySelectorAll('.sidebar-trigger')].some((b) => b.getBoundingClientRect().width > 0) }))
   check('the toolbar is there, and the library of shapes (a network fetch) is not offered', tools.toolbar > 0 && !tools.library, JSON.stringify(tools))
 
+  // "More tools" has no entry that would fail: Mermaid to Excalidraw (the library's own Mermaid) is left out of the build and out of the menu.
+  await panel.locator('button[title="More tools"]').click()
+  await page.locator('.dropdown-menu-item', { hasText: 'Frame tool' }).waitFor({ timeout: 5000 })
+  const mermaidItem = page.locator('.dropdown-menu-item', { hasText: 'Mermaid to Excalidraw' })
+  await page.waitForTimeout(300)
+  check('the library’s More tools menu keeps its tools, and offers no Mermaid to Excalidraw', (await page.locator('.dropdown-menu-item', { hasText: 'Web Embed' }).isVisible()) && !(await mermaidItem.first().isVisible().catch(() => false)))
+  await page.keyboard.press('Escape')
+
   await panel.getByRole('button', { name: 'Add to message' }).click()
   const chip = (name) => page.getByRole('button', { name: new RegExp(`^Open ${name}`) })
   await chip('drawing.png').waitFor({ timeout: 20_000 })
@@ -228,6 +236,16 @@ try {
   const withLib = js.filter((f) => readFileSync(join(dir, 'assets', f), 'utf8').includes('excalidraw-cdn-is-off'))
   check('the library is a chunk of its own, loaded when a drawing is needed, not part of the main bundle', withLib.length > 0 && !!index && !withLib.includes(index), `${withLib.join(', ')} / ${index}`)
   check('and its CDN address is gone from the code', !js.some((f) => readFileSync(join(dir, 'assets', f), 'utf8').includes('https://esm.sh/')))
+
+  console.log('\n# What the build leaves out (the size of the installer)')
+  const bytes = (f) => statSync(join(dir, 'assets', f)).size
+  const translations = js.filter((f) => /^[a-z]{2,3}-[A-Z]{2}-/.test(f))
+  check('the library’s translations other than English are empty stand-ins, not 1.5 MB of text', translations.length > 20 && translations.every((f) => bytes(f) < 600), `${translations.length} files, largest ${Math.max(...translations.map(bytes))} bytes`)
+  const subsetting = js.filter((f) => f.startsWith('subset-shared'))
+  check('the glyph subsetting program with its WebAssembly is not in the build (about 1.8 MB), only a small helper', subsetting.length === 1 && bytes(subsetting[0]) < 10_000, subsetting.map((f) => `${f} ${bytes(f)}`).join(', '))
+  check('the library’s own Mermaid bridge and second copy of Mermaid are replaced, so one copy of Mermaid is in the build', js.some((f) => readFileSync(join(dir, 'assets', f), 'utf8').includes('Turning Mermaid into a drawing is not part of Celeste')) && js.filter((f) => f.startsWith('swimlanes-')).length === 1)
+  const total = readdirSync(join(dir, 'assets')).reduce((n, f) => n + bytes(f), 0)
+  check(`and the app’s pages and scripts together stay under 21 MB (they were 26.9 MB before this was trimmed): ${(total / 1e6).toFixed(1)} MB`, total < 21_000_000)
 } catch (err) {
   console.error(err)
   failures.push('the script itself failed')
