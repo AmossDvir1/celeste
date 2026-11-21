@@ -40,6 +40,10 @@ const api = new FakeAnthropic((r) => {
     return [{ type: 'tool_use', name: 'AskUserQuestion', input: { questions: [{ question: 'Which colour should the button be?', header: 'Colour', multiSelect: false, options: [{ label: 'Pink', description: 'The accent' }, { label: 'Blue', description: 'Calmer' }] }] } }]
   if (r.last.text.includes('BG SHORT')) return [{ type: 'tool_use', name: 'Bash', input: { command: 'node -e "setTimeout(()=>console.log(\'bg-output-line\'),4000)"', run_in_background: true, description: 'Wait four seconds' } }]
   if (r.last.text.includes('BG LONG')) return [{ type: 'tool_use', name: 'Bash', input: { command: 'node -e "setTimeout(()=>{},60000)"', run_in_background: true, description: 'Wait a minute' } }]
+  // A helper (docs/plans/SUB_AGENTS_PLAN.md): the chat starts one that has to ask before it runs a command.
+  // (The helper's task is asked first: the line Celeste adds to it names the chat that started it, whose name has the words PHONE HELPER in it.)
+  if (r.last.text.includes('TASK PHONE')) return [{ type: 'tool_use', name: 'Bash', input: { command: 'mkdir made-by-helper && echo helper-from-the-phone', description: 'Make a folder' } }]
+  if (r.last.text.includes('PHONE HELPER')) return [{ type: 'tool_use', name: 'mcp__celeste-devices__agent_start', input: { task: 'TASK PHONE please make the folder', title: 'Phoner', wait: true } }]
   if (r.last.text.includes('RUN IT')) return [{ type: 'tool_use', name: 'Bash', input: { command: 'mkdir made-on-approval && echo approved-from-the-phone', description: 'Make a folder' } }]
   // A diagram, a chart, steps and a drawing: the phone draws them too (phone/src/Pictures.tsx), and never shows their source.
   if (r.last.text.includes('DRAW FOR PHONE')) {
@@ -272,6 +276,39 @@ try {
   check('the message box says in a few words what a message does while it works, on one line', working !== null && working.height < 60, JSON.stringify(working))
   await phone.getByText(/Finished: approved-from-the-phone/).waitFor({ timeout: 90_000 })
   check('approved on the phone, the command ran on the computer and the answer came back', true)
+
+  console.log('\n# A helper, answered from the phone')
+  await phone.getByRole('button', { name: 'Back' }).click()
+  await phone.getByRole('button', { name: /New chat/ }).click()
+  await phone.getByPlaceholder('Message Celeste').fill('PHONE HELPER please')
+  await phone.getByRole('button', { name: 'Send', exact: true }).click()
+  await phone.getByRole('button', { name: 'Approve' }).waitFor({ timeout: 90_000 })
+  const startAsk = await phone.locator('.approval.pending').innerText()
+  check('the chat asks on the phone before it starts a helper, saying which one and what it is to do', /Phoner/.test(startAsk) && /TASK PHONE please make the folder/.test(startAsk), startAsk)
+  await phone.getByRole('button', { name: 'Approve' }).click()
+  const helperRow = phone.getByRole('group', { name: 'Helper: Phoner' })
+  await helperRow.getByText(/Waiting for you/).waitFor({ timeout: 90_000 })
+  check('the helper’s card in the chat says it waits for the person (it asks to run a command)', true)
+  await phone.screenshot({ path: join(root, 'scripts', '.output', 'phone-helper-card.png') })
+  await helperRow.getByRole('button', { name: 'Open Phoner' }).click()
+  await phone.getByText(/Helper started by the assistant in/).waitFor({ timeout: 15_000 })
+  check('Open shows the helper as a chat of its own, with a line that says whose helper it is', true)
+  check('its first message is labelled as the chat’s, not the person’s', (await phone.getByText(/^From /).count()) >= 1)
+  await phone.getByRole('button', { name: 'Approve' }).waitFor({ timeout: 30_000 })
+  check('the helper’s question can be answered here', (await phone.locator('.approval.pending').innerText()).includes('mkdir made-by-helper'))
+  await phone.getByRole('button', { name: 'Approve' }).click()
+  await phone.getByText(/Finished: helper-from-the-phone/).first().waitFor({ timeout: 90_000 })
+  await phone.getByRole('button', { name: 'Go there' }).click()
+  await phone.getByText(/Finished: \[Answer from the helper “Phoner”/).first().waitFor({ timeout: 90_000 })
+  check('answered there, the helper finished and the chat’s call got its answer', true)
+  await phone.getByRole('group', { name: 'Helper: Phoner' }).getByText(/Done/).waitFor({ timeout: 15_000 })
+  check('and the card says Done', true)
+  await phone.getByRole('button', { name: 'Back' }).click()
+  await phone.getByRole('button', { name: /PHONE HELPER/ }).first().waitFor({ timeout: 15_000 })
+  check('the list shows the chat, and not the helper among the chats', (await phone.getByRole('button', { name: /^Phoner/ }).count()) === 0)
+  // Back in the chat, where the next scenario starts from.
+  await phone.getByRole('button', { name: /PHONE HELPER/ }).first().click()
+  await phone.getByRole('group', { name: 'Helper: Phoner' }).waitFor({ timeout: 15_000 })
 
   console.log('\n# A Develop session from the phone, in a project used on the computer')
   const project = mkdtempSync(join(tmpdir(), 'celeste-phone-project-'))

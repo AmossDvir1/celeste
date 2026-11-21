@@ -122,15 +122,17 @@ function Chats() {
   const [deleting, setDeleting] = useState<Session | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const glide = useRef<Map<string, number> | null>(null)
-  const list = useMemo(() => {
+  const matching = useMemo(() => {
     const q = query.trim().toLowerCase()
     return Object.values(sessions)
       .filter((s) => !q || s.title.toLowerCase().includes(q))
       .sort((a, b) => b.updatedAt - a.updatedAt)
   }, [sessions, query])
+  // A helper is reached from its chat's card, not listed among the chats. One that waits for the person is still listed under "waiting".
+  const list = useMemo(() => matching.filter((s) => !s.parentId), [matching])
   const pinned = useMemo(() => list.filter((s) => s.pinnedAt != null).sort((a, b) => (b.pinnedAt ?? 0) - (a.pinnedAt ?? 0)), [list])
   const rest = list.filter((s) => s.pinnedAt == null)
-  const waiting = list.filter((s) => s.status === 'waiting')
+  const waiting = matching.filter((s) => s.status === 'waiting')
   const today = new Date().setHours(0, 0, 0, 0)
   const groups: [string, Session[]][] = [
     ['Today', rest.filter((s) => s.updatedAt >= today)],

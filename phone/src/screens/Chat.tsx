@@ -429,6 +429,7 @@ const AssistantText = memo(function AssistantText({ text, sessionId }: { text: s
 const Item = memo(function Item({ it, sessionId, detailed }: { it: TimelineItem; sessionId: string; detailed: boolean }) {
   switch (it.kind) {
     case 'user':
+      if (it.from === 'parent') return <FromParent text={it.text} sessionId={sessionId} />
       return (
         <div className="m-user">
           {it.text}
@@ -473,8 +474,81 @@ const Item = memo(function Item({ it, sessionId, detailed }: { it: TimelineItem;
       return <div className="notice">The folder was put back ({it.restored} restored, {it.removed} removed).</div>
     case 'background':
       return <BackgroundRow it={it} sessionId={sessionId} />
+    case 'helper':
+      return <HelperRow it={it} />
+    case 'spawned':
+      return <SpawnedNotice parentId={it.parentId} parentTitle={it.parentTitle} />
   }
 })
+
+/** In a helper: what the assistant of the chat that started it wrote. Not the person's words, so not drawn as theirs. */
+function FromParent({ text, sessionId }: { text: string; sessionId: string }) {
+  const title = useApp((s) => s.sessions[s.sessions[sessionId]?.parentId ?? '']?.title)
+  return (
+    <div className="m-ai">
+      <div className="small faint">From {title ?? 'the assistant that started this helper'}</div>
+      {text}
+    </div>
+  )
+}
+
+/** The top of a helper's chat: whose helper it is, with a way back. */
+function SpawnedNotice({ parentId, parentTitle }: { parentId: string; parentTitle: string }) {
+  const title = useApp((s) => s.sessions[parentId]?.title)
+  const exists = useApp((s) => s.sessions[parentId] !== undefined)
+  return (
+    <div className="notice">
+      Helper started by the assistant in {title ?? parentTitle}. Its last answer goes back there.
+      {exists && (
+        <button className="btn text sm" onClick={() => void useApp.getState().openChat(parentId)}>
+          Go there
+        </button>
+      )}
+    </div>
+  )
+}
+
+const HELPER_STATE: Record<'working' | 'waiting' | 'done' | 'failed' | 'stopped' | 'abandoned' | 'deleted', string> = {
+  working: 'Working',
+  waiting: 'Waiting for you',
+  done: 'Done',
+  failed: 'Failed',
+  stopped: 'Stopped',
+  abandoned: 'Not finished',
+  deleted: 'Deleted'
+}
+
+/** A helper the assistant started: where it stands (a question it asked shows as waiting for you), a way in, and Stop while it works. */
+function HelperRow({ it }: { it: Extract<TimelineItem, { kind: 'helper' }> }) {
+  const status = useApp((s) => s.sessions[it.childId]?.status)
+  const exists = useApp((s) => s.sessions[it.childId] !== undefined)
+  const state = it.finished ? it.finished.status : !exists ? 'deleted' : status === 'waiting' ? 'waiting' : 'working'
+  const live = state === 'working' || state === 'waiting'
+  const task = (it.tasks[it.tasks.length - 1] ?? '').trim().split('\n')[0] ?? ''
+  return (
+    <div className="m-tool" role="group" aria-label={`Helper: ${it.title}`}>
+      <Bot size={17} />
+      <div className="grow">
+        <div className="l">Helper: {it.title}</div>
+        <div className="d">
+          {HELPER_STATE[state]}
+          {task ? ` · ${task}` : ''}
+          {it.told ? ' · The assistant was told.' : ''}
+        </div>
+      </div>
+      {exists && (
+        <button className="btn text sm" aria-label={`Open ${it.title}`} onClick={() => void useApp.getState().openChat(it.childId)}>
+          Open
+        </button>
+      )}
+      {live && exists && (
+        <button className="btn text sm" aria-label={`Stop ${it.title}`} onClick={() => void useApp.getState().stop(it.childId)}>
+          Stop
+        </button>
+      )}
+    </div>
+  )
+}
 
 function Approval({ it, sessionId }: { it: Extract<TimelineItem, { kind: 'approval' }>; sessionId: string }) {
   const Icon = TOOL_ICON[it.tool] ?? Workflow
