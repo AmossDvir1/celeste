@@ -121,7 +121,9 @@ try {
   await shot(page, 'parent-working')
   await alpha.getByText('Done', { exact: true }).waitFor({ timeout: 60_000 })
   check('the card goes to Done when the helper has answered', true)
-  await page.getByText(/PARENT GOT: \[Answer from the helper “Alpha”/).first().waitFor({ timeout: 60_000 })
+  // The whole answer, not its first words: the chat's answer arrives in pieces.
+  await page.getByText(/PARENT GOT: \[Answer from the helper “Alpha”[\s\S]*HELPER ANSWER ONE/).first().waitFor({ timeout: 60_000 })
+  await idle(page)
   const said = await text(page)
   check('the chat’s assistant got the helper’s answer as the result of its call, framed as another assistant’s words', /another assistant’s work, not the person’s words\.\]\s*HELPER ANSWER ONE/.test(said))
   check('the call itself is not drawn as a tool card', !/agent_start/.test(said))
