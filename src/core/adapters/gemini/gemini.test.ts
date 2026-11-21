@@ -57,6 +57,16 @@ describe('the translator', () => {
     expect(events).toHaveLength(3)
   })
 
+  it('shows no tool card for the assistant’s tools for helpers, and still shows one of the same name from another server', () => {
+    const { events } = run([
+      { sessionUpdate: 'tool_call', toolCallId: 'mcp_celeste-devices_agent_start-1-0', kind: 'other', title: 'agent_start (celeste-devices MCP Server)', status: 'in_progress', rawInput: { task: 'x' } },
+      { sessionUpdate: 'tool_call_update', toolCallId: 'mcp_celeste-devices_agent_start-1-0', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'The answer' } }] },
+      { sessionUpdate: 'tool_call', toolCallId: 'mcp_notes_agent_start-2-0', kind: 'other', title: 'agent_start (notes MCP Server)', status: 'in_progress' }
+    ])
+    expect(events.filter((e) => e.type === 'tool.started').map((e) => (e as { id: string }).id)).toEqual(['mcp_notes_agent_start-2-0'])
+    expect(events.filter((e) => e.type === 'tool.completed')).toEqual([])
+  })
+
   it('shows an edit with a diff, a new file as a write, and says nothing for a call that only thinks', () => {
     const diff = { type: 'diff', path: 'D:\\p\\src\\a.ts', oldText: 'a\nb\nc\n', newText: 'a\nB\nc\n' }
     const { events } = run(

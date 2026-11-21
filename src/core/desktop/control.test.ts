@@ -90,6 +90,7 @@ const make = () =>
     never: () => neverList,
     pendingApprovals: () => pending,
     record: (sessionId, event) => log.push({ sessionId, event }),
+    isHelper: (sessionId) => sessionId.startsWith('helper-'),
     clock: () => 'noon'
   })
 
@@ -988,5 +989,33 @@ describe('how long, and the list of grants', () => {
     control.stop('done')
     expect(control.active()).toBe(false)
     expect(events('desktop.ended')).toHaveLength(1)
+  })
+})
+
+describe('a helper (docs/plans/SUB_AGENTS_PLAN.md, D15)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    host = new FakeHost()
+    enabled = true
+    answer = true
+    chosen = undefined
+    cards = []
+    log = []
+    neverList = []
+    pending = 0
+    control = make()
+  })
+  afterEach(() => vi.useRealTimers())
+
+  it('is told to ask the assistant that started it, for every tool, and no card is shown', async () => {
+    const refusal = { text: 'This is not available to a helper. Ask the assistant that started you to do it.', isError: true }
+    expect(await control.call('helper-1', 'desktop_request_control', { reason: 'Change the default browser' })).toEqual(refusal)
+    expect(await control.call('helper-1', 'desktop_screenshot', {})).toEqual(refusal)
+    expect(await control.call('helper-1', 'desktop_release_control', {})).toEqual(refusal)
+    expect(cards).toEqual([])
+    expect(control.active()).toBe(false)
+    // A chat of the person's still asks.
+    expect((await control.call('s1', 'desktop_request_control', { reason: 'Change the default browser' })).isError).toBe(false)
+    expect(cards).toHaveLength(1)
   })
 })

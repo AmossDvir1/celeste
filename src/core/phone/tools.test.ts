@@ -380,3 +380,15 @@ describe('phone abilities as tools', () => {
     expect(r.files?.[0]?.data).toEqual(Buffer.from('AAAA', 'base64'))
   })
 })
+
+describe('a helper (docs/plans/SUB_AGENTS_PLAN.md, D15)', () => {
+  it('is told to ask the assistant that started it, whatever the tool', async () => {
+    const { bridge, received } = await setup()
+    const tools = new PhoneTools(() => bridge, (id) => `Chat ${id}`, () => received, () => false, undefined, (id) => id.startsWith('helper-'))
+    for (const tool of tools.list().slice(0, 4)) {
+      expect(await tools.call('helper-1', tool.name, {})).toEqual({ text: 'This is not available to a helper. Ask the assistant that started you to do it.', isError: true })
+    }
+    // Another chat gets what it always got (here: the phone is not connected).
+    expect((await tools.call('s1', 'phone_open', { app: 'camera' })).text).not.toContain('not available to a helper')
+  })
+})

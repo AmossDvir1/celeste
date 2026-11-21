@@ -105,6 +105,16 @@ describe('the translator', () => {
     expect(events[4]).toMatchObject({ type: 'tool.completed', ok: true })
   })
 
+  it('shows no tool card for the assistant’s tools for helpers, and still shows one of the same name from another server', () => {
+    const events = run([
+      ['item/started', { item: { type: 'mcpToolCall', id: 'h1', server: 'celeste_devices', tool: 'agent_start', arguments: { task: 'x', title: 'y' } } }],
+      ['item/completed', { item: { type: 'mcpToolCall', id: 'h1', status: 'completed', result: { content: [{ type: 'text', text: 'The answer' }] }, error: null } }],
+      ['item/started', { item: { type: 'mcpToolCall', id: 'n1', server: 'notes', tool: 'agent_start', arguments: {} } }]
+    ])
+    expect(events.filter((e) => e.type === 'tool.started').map((e) => (e as { id: string }).id)).toEqual(['n1'])
+    expect(events.filter((e) => e.type === 'tool.completed')).toEqual([])
+  })
+
   it('shows reasoning as thinking, from the stream or, failing that, the finished item', () => {
     const streamed = run([['item/reasoning/summaryTextDelta', { itemId: 'r', delta: 'Considering' }], ['item/completed', { item: { type: 'reasoning', id: 'r', summary: ['Considering'], content: [] } }]])
     expect(streamed.filter((e) => e.type === 'thinking.delta')).toHaveLength(1)

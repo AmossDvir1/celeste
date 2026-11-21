@@ -10,7 +10,7 @@ export type Block =
   /** chunk and delayMs make the text arrive in small pieces over time, as a model's tokens do. */
   | { type: 'text'; text: string; chunk?: number; delayMs?: number }
   /** A call to one of the agent's own tools (running a command, editing files). `arguments` is what the model passes. */
-  | { type: 'call'; name: string; arguments: Record<string, unknown> | string }
+  | { type: 'call'; name: string; arguments: Record<string, unknown> | string; /** A tool of an MCP server is named in a namespace (`mcp__<server>`), with its own name apart. */ namespace?: string }
   /** Starts an answer and never finishes it, so a test can stop it in the middle. */
   | { type: 'hold' }
   /** Ends the answer with an error, as the API does when a limit is reached. */
@@ -125,7 +125,7 @@ export class FakeOpenAi {
         send('response.output_item.done', { output_index: index, item: { ...item, status: 'completed', content: [part] } })
       } else {
         const args = typeof b.arguments === 'string' ? b.arguments : JSON.stringify(b.arguments)
-        const item = { id: `fc_${id}_${index}`, type: 'function_call', call_id: `call_${id}_${index}`, name: b.name, arguments: '', status: 'in_progress' }
+        const item = { id: `fc_${id}_${index}`, type: 'function_call', call_id: `call_${id}_${index}`, name: b.name, ...(b.namespace ? { namespace: b.namespace } : {}), arguments: '', status: 'in_progress' }
         send('response.output_item.added', { output_index: index, item })
         send('response.function_call_arguments.delta', { item_id: item.id, output_index: index, delta: args })
         send('response.function_call_arguments.done', { item_id: item.id, output_index: index, arguments: args })

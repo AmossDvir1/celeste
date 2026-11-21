@@ -1,6 +1,7 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentError, AgentEvent, DiffLine, FileDiff, ToolKind } from '@shared/agent'
 import { displayPath } from '../copilot/diff'
+import { isOwnAgentTool } from '../../agents/names'
 import { HIDDEN_TOOLS, toolKind } from './permissions'
 
 /*
@@ -263,7 +264,7 @@ export class Translator {
       } else if (block['type'] === 'tool_use') {
         const name = str(block['name']) ?? 'tool'
         const id = str(block['id'])
-        if (!id || HIDDEN_TOOLS.has(name)) continue
+        if (!id || HIDDEN_TOOLS.has(name) || isOwnAgentTool(name)) continue
         const input = obj(block['input'])
         const kind = toolKind(name)
         this.tools.set(id, { name, kind, input })

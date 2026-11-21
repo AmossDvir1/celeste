@@ -39,6 +39,8 @@ const nextId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${(coun
 
 const PLAN_FEEDBACK = 'Plan mode is on: change nothing and run nothing. Describe what you would do instead.'
 const DENIED_FEEDBACK = 'The user denied this.'
+/** How long Copilot waits for one call to Celeste's tool server (ten minutes): a call that waits for a helper, or for a card the person must answer, takes minutes. */
+const DEVICE_TOOL_TIMEOUT_MS = 600_000
 
 /** What the user sees when a vendor session could not be resumed and a new one was started in its place. */
 export const RESUME_NOTICE = '*Copilot no longer had this conversation, so I continued from what was said here.*\n\n'
@@ -148,7 +150,7 @@ export class CopilotAgentSession implements AgentSession {
       onUserInputRequest: (request: { question: string; choices?: string[] }) => this.onUserInput(request),
       // The person's own tools, and Celeste's device server under its reserved name, which no tool of theirs may have.
       ...(device || Object.keys(ownServers).length
-        ? { mcpServers: { ...ownServers, ...(device ? { [DEVICE_SERVER]: { type: 'http' as const, url: device.url, headers: { Authorization: `Bearer ${device.token}` }, tools: ['*'] } } : {}) } }
+        ? { mcpServers: { ...ownServers, ...(device ? { [DEVICE_SERVER]: { type: 'http' as const, url: device.url, headers: { Authorization: `Bearer ${device.token}` }, tools: ['*'], timeout: DEVICE_TOOL_TIMEOUT_MS } } : {}) } }
         : {})
     }
 

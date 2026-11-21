@@ -17,6 +17,7 @@ import {
   type SessionPatch,
   type SessionSummary,
   type SettingsPatch,
+  type StoredEvent,
   type VendorRecord,
   type VendorRecords
 } from '@shared/api'
@@ -25,6 +26,7 @@ import { coalesceEvents } from '@shared/coalesce'
 import { nextStatus } from '@shared/status'
 import { EMPTY_QUEUE, foldQueue, MAX_QUEUED, type QueueAction, type QueueState, type SendMode } from '@shared/queue'
 import { LIMIT_WAIT_MAX_MS } from '@shared/usage'
+import { NOTE_MAX_CHARS, STRICTNESS, type SpawnInfo } from '@shared/subagents'
 import type { AttachmentRow, FileStore, SessionRow, Store } from './store'
 import type { Snapshots } from './snapshots'
 import { cleanTitle, type Titler } from './titles'
@@ -64,6 +66,11 @@ export interface ServiceOptions {
    * in the chat, and the queue is held until the person sends it.
    */
   limit?: (vendor: VendorId) => Promise<{ resetsAt: number; window?: string } | null>
+  /**
+   * A turn ended and the session is idle with nothing sent on from its queue. `type` is how the turn ended. The helpers' bookkeeping
+   * (docs/plans/SUB_AGENTS_PLAN.md) uses it to wake an assistant that has an answer waiting.
+   */
+  onIdle?: (sessionId: string, type: 'turn.completed' | 'turn.interrupted' | 'turn.failed' | 'turn.abandoned') => void
   now?: () => number
   undoMs?: number
 }
@@ -195,7 +202,11 @@ function text(value: unknown, what: string, max: number): string {
   return value
 }
 
-const summaryOf = ({ deletedAt: _deleted, vendorSessionId: _vendorSession, ...summary }: SessionRow): SessionSummary => summary
+const summaryOf = ({ deletedAt: _deleted, vendorSessionId: _vendorSession, spawn: _spawn, ...summary }: SessionRow): SessionSummary => summary
+
+/** Added to the task a helper is given, and not logged with it (like REVERT_NOTE): what the helper is, and what its last message is for. */
+const helperLine = (parentTitle: string): string =>
+  `[Celeste: you are a helper started by another assistant in "${parentTitle}". Your last message is your answer to it: make it complete and self-contained. The person can see this chat and may answer your questions.]`
 
 export class SessionService {
   private readonly store: Store
@@ -229,6 +240,17 @@ export class SessionService {
     // A turn that was running when Celeste closed cannot continue. Say so in the log.
     for (const row of this.store.listSessions()) {
       if (row.status === 'working') this.record(row.id, { type: 'turn.abandoned' }, { text: '' })
+    }
+
+    // A helper's work that was going when Celeste closed is over too: its parent's log says it was not finished. Nothing is woken or restarted.
+    const parents = new Set(this.store.listSessions().flatMap((r) => (r.parentId ? [r.parentId] : [])))
+    for (const parentId of parents) {
+      const open = new Map<string, string>()
+      for (const { event } of this.store.events(parentId)) {
+        if (event.type === 'child.started') open.set(event.childId, event.title)
+        else if (event.type === 'child.finished') open.delete(event.childId)
+      }
+      for (const [childId, title] of open) this.record(parentId, { type: 'child.finished', childId, title, status: 'abandoned', delivered: 'none' }, { text: '' })
     }
 
     // Messages that were waiting when Celeste closed are held, not sent: after a crash the person decides what still makes sense.
@@ -407,7 +429,7 @@ export class SessionService {
   private summary(row: SessionRow): SessionSummary {
     const root = resolve(join(this.opts.dataDir, 'worktrees'))
     const copy = row.cwd !== undefined && (process.platform === 'win32' ? resolve(row.cwd).toLowerCase().startsWith(root.toLowerCase() + sep) : resolve(row.cwd).startsWith(root + sep))
-    return { ...summaryOf(row), ...(copy ? { worktree: true } : {}) }
+    return { ...summaryOf(row), ...(copy ? { worktree: true } : {}), ...(row.spawn ? { ceiling: row.spawn.ceiling } : {}) }
   }
 
   private requireSession(id: string): SessionRow {
@@ -424,7 +446,7 @@ export class SessionService {
     return summary
   }
 
-  private create(input: CreateSessionInput): SessionSummary {
+  private create(input: CreateSessionInput, spawn?: SpawnInfo): SessionSummary {
     const now = this.now()
     const row: SessionRow = {
       id: `s-${crypto.randomUUID()}`,
@@ -440,12 +462,165 @@ export class SessionService {
       createdAt: now,
       updatedAt: now,
       lastSeq: 0,
-      deletedAt: null
+      deletedAt: null,
+      ...(spawn ? { spawn, parentId: spawn.parentId } : {})
     }
     this.store.insertSession(row)
     this.store.index(row.id, 'title', row.title)
     const summary = this.emitSummary(row.id)
     return summary ?? this.summary(row)
+  }
+
+  // --- helpers (docs/plans/SUB_AGENTS_PLAN.md) ---------------------------------------------------------
+
+  /**
+   * Makes a helper: a session of its own that belongs to `spawn.parentId`. It is named by `input.title` and not by the small model, it
+   * starts with the devices attached to its parent, and its log begins with the line that says whose helper it is.
+   */
+  createChild(parentId: string, input: CreateSessionInput, spawn: SpawnInfo): SessionSummary {
+    const parent = this.requireSession(parentId)
+    const made = this.create(input, { ...spawn, parentId })
+    for (const deviceId of this.store.attachedDevices(parentId)) this.store.setAttached(made.id, deviceId, true)
+    this.record(made.id, { type: 'child.spawned', parentId, parentTitle: parent.title }, { text: '' })
+    return this.emitSummary(made.id) ?? made
+  }
+
+  /** The helpers of a session that are not deleted, oldest first. */
+  childrenOf(parentId: string): SessionRow[] {
+    return this.store.listChildren(parentId)
+  }
+
+  /** The row of a session that is not deleted. */
+  sessionRow(id: string): SessionRow | undefined {
+    const row = this.store.getSession(id)
+    return row && row.deletedAt === null ? row : undefined
+  }
+
+  /** Core is running a turn for this session (or one is about to start). */
+  isBusy(id: string): boolean {
+    return this.busy(id)
+  }
+
+  /** Stops the turn a session is running, the same as the person pressing Stop. */
+  stop(id: string): void {
+    this.interrupt(id)
+  }
+
+  /** Writes what a helper did into its parent's conversation. Nothing happens for a conversation that is gone. */
+  recordChild(parentId: string, event: Extract<LogEvent, { type: 'child.started' | 'child.finished' }>): void {
+    const row = this.store.getSession(parentId)
+    if (!row || row.deletedAt !== null) return
+    this.record(parentId, event, this.live.get(parentId) ?? { text: '' })
+  }
+
+  /** The assistant's words in the session's last answer: what it said since the last message that was sent into it. */
+  lastAnswer(id: string): string {
+    this.flushBurst(id)
+    const events = this.store.events(id)
+    let from = 0
+    for (let i = events.length - 1; i >= 0; i--) {
+      if ((events[i] as StoredEvent).event.type === 'user.message') {
+        from = i + 1
+        break
+      }
+    }
+    let text = ''
+    for (const { event } of events.slice(from)) if (event.type === 'message.delta') text += event.text
+    return text.trim()
+  }
+
+  /** How the last turn of a session ended, and the sentence of a failure. Absent when it has had none. */
+  lastTurnEnd(id: string): { type: 'turn.completed' | 'turn.interrupted' | 'turn.failed' | 'turn.abandoned'; error?: string; code?: string } | undefined {
+    this.flushBurst(id)
+    const events = this.store.events(id)
+    for (let i = events.length - 1; i >= 0; i--) {
+      const event = (events[i] as StoredEvent).event
+      if (event.type === 'turn.failed') return { type: event.type, error: event.error.message, code: event.error.code }
+      if (event.type === 'turn.completed' || event.type === 'turn.interrupted' || event.type === 'turn.abandoned') return { type: event.type }
+    }
+    return undefined
+  }
+
+  /**
+   * What an assistant has not been told yet about helpers that ended in the background since the last message sent into it: the
+   * notes of their `child.finished` events. A note is told once, with the next message of any kind, and an answer the assistant
+   * fetched itself with `agent_wait` (a later `child.finished` for the same helper, delivered by the tool) is not told again.
+   */
+  noteFor(id: string): string {
+    return this.pendingNotes(id)
+      .map((n) => n.text)
+      .join('\n\n')
+  }
+
+  pendingNote(id: string): boolean {
+    return this.pendingNotes(id).length > 0
+  }
+
+  /** The helpers whose notes wait for this session's assistant. */
+  pendingNoteList(id: string): { childId: string; title: string }[] {
+    return this.pendingNotes(id).map(({ childId, title }) => ({ childId, title }))
+  }
+
+  private pendingNotes(id: string): { childId: string; title: string; text: string }[] {
+    const events = this.store.events(id)
+    const started = new Map<string, { vendor: VendorId; model: string }>()
+    const notes: { childId: string; title: string; text: string }[] = []
+    let from = 0
+    for (let i = events.length - 1; i >= 0; i--) {
+      if ((events[i] as StoredEvent).event.type === 'user.message') {
+        from = i + 1
+        break
+      }
+    }
+    for (const { event } of events) if (event.type === 'child.started') started.set(event.childId, { vendor: event.vendor, model: event.model })
+    for (const { event } of events.slice(from)) {
+      if (event.type !== 'child.finished') continue
+      // A later line for the same helper that was handed over by a tool call replaces the note.
+      const at = notes.findIndex((n) => n.childId === event.childId)
+      if (at >= 0) notes.splice(at, 1)
+      if (event.delivered !== 'note') continue
+      const who = started.get(event.childId)
+      const label = `The helper “${event.title}” (id ${event.childId}${who ? `, ${who.vendor} ${who.model}` : ''})`
+      const text =
+        event.status === 'done'
+          ? `[${label} finished. It is another assistant’s work, not the person’s words. Its answer:\n${(event.result ?? '').slice(0, NOTE_MAX_CHARS)}]`
+          : event.status === 'failed'
+            ? `[${label} failed: ${event.error ?? 'it did not say why'}]`
+            : event.status === 'deleted'
+              ? `[${label} was deleted by the person before it finished.]`
+              : `[${label} was stopped before it finished.]`
+      notes.push({ childId: event.childId, title: event.title, text })
+    }
+    return notes
+  }
+
+  /** The private folder of a chat, which its helpers share: the chat's own id, or its parent's when the session is a helper. */
+  chatFolderOf(id: string): string {
+    return this.chatDir(id)
+  }
+
+  /**
+   * Whether a note for the assistant of this session may start a turn now: nothing is running, nothing waits in its queue, its last turn
+   * ended well, and its vendor is not at a limit. A turn started now would only fail, or go against what the person just did.
+   */
+  canWake(id: string): boolean {
+    const row = this.sessionRow(id)
+    if (!row || this.busy(id) || this.pendingApprovals(id) > 0) return false
+    const q = this.queueOf(id)
+    if (q.items.length > 0 || q.paused || (q.waitUntil ?? 0) > this.now() || this.limitTimers.has(id)) return false
+    return this.lastTurnEnd(id)?.type === 'turn.completed'
+  }
+
+  /**
+   * Sends a message that a helper's bookkeeping wrote: the task or a follow-up for a helper (`from` 'parent'), or the note that wakes an
+   * assistant ('celeste', whose `text` is empty so that the note is all it is told). `logText` is what the chat shows. Throws when the
+   * session is busy: the caller looks first.
+   */
+  sendFrom(id: string, text: string, from: 'parent' | 'celeste', logText?: string): void {
+    const row = this.requireSession(id)
+    if (this.busy(id)) throw new Error('That session is busy.')
+    const extra = from === 'parent' && row.spawn ? helperLine(this.store.getSession(row.spawn.parentId)?.title ?? 'a chat') : ''
+    this.deliver(id, { text, attachments: [] }, false, { from, ...(logText !== undefined ? { logText } : {}), ...(extra ? { extra } : {}) })
   }
 
   private update(id: string, patch: SessionPatch): SessionSummary {
@@ -457,7 +632,11 @@ export class SessionService {
     }
     if (patch.model !== undefined) next.model = text(patch.model, 'model', 100)
     if (patch.effort !== undefined) next.effort = patch.effort === null ? null : (oneOf(patch.effort, EFFORTS, 'effort') as SessionRow['effort'])
-    if (patch.approval !== undefined) next.approval = oneOf(patch.approval, APPROVALS, 'approval mode')
+    if (patch.approval !== undefined) {
+      next.approval = oneOf(patch.approval, APPROVALS, 'approval mode')
+      // A helper is never looser than the chat that started it, whoever asks: the person's menu included.
+      if (row.spawn && STRICTNESS[next.approval] < STRICTNESS[row.spawn.ceiling]) throw new Error(`A helper cannot be looser than the chat that started it (${row.spawn.ceiling}).`)
+    }
     // Pinning again keeps the first pin time, so the pinned list does not reshuffle.
     if (patch.pinned !== undefined) next.pinnedAt = patch.pinned ? (row.pinnedAt ?? this.now()) : null
     this.store.patchSession(id, next)
@@ -644,22 +823,24 @@ export class SessionService {
   }
 
   /** Hands a message to the agent now. `steer`: into the turn that is running, which is not a new turn. */
-  private deliver(id: string, input: UserInput, steer = false): void {
+  private deliver(id: string, input: UserInput, steer = false, from: { from?: 'parent' | 'celeste'; logText?: string; extra?: string } = {}): void {
     const row = this.requireSession(id)
     const context = this.contextOf(row, input.context)
     // Read before this message is logged, because it is what has happened since the one before.
     const workflows = this.workflowNote(id)
+    const helpers = this.noteFor(id)
     const live = this.runtime(id)
     live.active = true
     this.store.linkAttachments(input.attachments.map((a) => a.id), id)
-    this.record(id, { type: 'user.message', text: input.text, attachments: input.attachments, ...(context.length ? { context } : {}) }, live)
+    this.record(id, { type: 'user.message', text: from.logText ?? input.text, attachments: input.attachments, ...(context.length ? { context } : {}), ...(from.from ? { from: from.from } : {}) }, live)
 
-    // The first message names the session: the sidebar shows a short title in place of its first words, a moment later.
-    if (row.lastSeq === 0 && this.opts.titler && input.text.trim().length >= 3 ) void this.autoTitle(id, row.vendor, row.title, input.text)
+    // The first message names the session: the sidebar shows a short title in place of its first words, a moment later. A helper is named by its parent.
+    if (row.lastSeq === 0 && !row.spawn && this.opts.titler && input.text.trim().length >= 3 ) void this.autoTitle(id, row.vendor, row.title, input.text)
 
-    // What the agent is told: the person's words, then (if the folder was reverted) a note about that, then the files they added.
+    // What the agent is told: the person's words, then (if the folder was reverted) a note about that, then the answers of helpers that ended,
+    // then the files they added, and for a helper the line that says what it is.
     // The agent's adapter gets only text and attachments; the files are already in the text.
-    const extra = [live.reverted ? REVERT_NOTE : '', workflows, row.cwd && context.length ? contextText(row.cwd, context) : ''].filter(Boolean)
+    const extra = [live.reverted ? REVERT_NOTE : '', workflows, helpers, row.cwd && context.length ? contextText(row.cwd, context) : '', from.extra ?? ''].filter(Boolean)
     const outgoing: UserInput = { text: [input.text, ...extra].filter(Boolean).join('\n\n'), attachments: input.attachments }
     live.reverted = false
 
@@ -668,7 +849,8 @@ export class SessionService {
 
     const cwd = row.cwd
     const hand = () => (steer && live.session.steer ? live.session.steer(outgoing) : live.session.send(outgoing))
-    if (!this.opts.snapshots || row.mode !== 'develop' || !cwd) {
+    // A helper that works in its parent's folder is saved with the parent's checkpoints: two chains of saves on one folder would fight.
+    if (!this.opts.snapshots || row.mode !== 'develop' || !cwd || row.spawn?.folder === 'same') {
       hand()
       return
     }
@@ -769,6 +951,12 @@ export class SessionService {
       } finally {
         // After the queue has been paused above, so a wait for the limit replaces that pause and not the other way round.
         if (limited) void this.noteLimit(id)
+        // Idle, with nothing sent on from the queue: whoever keeps an answer for this session may tell it now.
+        try {
+          if (this.opts.onIdle && !this.busy(id)) this.opts.onIdle(id, type)
+        } catch (err) {
+          console.error('[core] could not tell that a session is idle', err)
+        }
       }
     })
   }
@@ -1050,12 +1238,20 @@ export class SessionService {
     const { cwd, snapshots, checkpoint, row } = this.checkpointTarget(id, checkpointId)
     const live = this.live.get(id)
     if (live?.open || row.status !== 'idle') throw new Error('Wait for the answer to finish, or stop it, before discarding changes.')
+    this.requireNoHelperWorking(id)
     await live?.chain
     const result = await snapshots.discard(id, cwd, checkpoint, paths)
     // Logged as a revert: the timeline says what was put back, offers to undo it, and the agent is told its files moved.
     this.record(id, { type: 'checkpoint.reverted', id: checkpoint, ...result }, live ?? { text: '' })
     if (live) live.reverted = true
     return result
+  }
+
+  /** A helper that shares the folder is part of what a revert puts back, so none may be writing to it while that happens. */
+  private requireNoHelperWorking(id: string): void {
+    for (const child of this.store.listChildren(id)) {
+      if (child.spawn?.folder === 'same' && this.busy(child.id)) throw new Error('A helper is working in this folder. Stop it first.')
+    }
   }
 
   private async revertPreview(id: string, checkpointId: string): Promise<CheckpointChanges> {
@@ -1067,6 +1263,7 @@ export class SessionService {
     const { cwd, snapshots, checkpoint, row } = this.checkpointTarget(id, checkpointId)
     const live = this.live.get(id)
     if (live?.open || row.status !== 'idle') throw new Error('Wait for the answer to finish, or stop it, before reverting.')
+    this.requireNoHelperWorking(id)
     // A summary that is still being worked out must not run against the folder as it is being put back.
     await live?.chain
     const result = await snapshots.restore(id, cwd, checkpoint)
@@ -1101,7 +1298,9 @@ export class SessionService {
     const live = this.live.get(id)
     this.record(id, { type: 'approval.resolved', requestId, allow: answer.allow === true }, live ?? { text: '' })
     if (answer.allow && answer.always) {
-      this.store.patchSession(id, { approval: 'auto' })
+      // "Don't ask again" in a helper goes as far as the chat that started it allows, and no further.
+      const spawn = this.store.getSession(id)?.spawn
+      this.store.patchSession(id, { approval: spawn ? spawn.ceiling : 'auto' })
       this.emitSummary(id)
     }
     if (live?.pending.delete(requestId)) live.session.respond(requestId, { allow: answer.allow === true, always: answer.always === true })
@@ -1228,14 +1427,17 @@ export class SessionService {
     this.live.delete(id)
   }
 
-  private remove(id: string): void {
+  /** `at`: the moment of the delete. A chat's helpers are deleted with it at the same moment, so Undo knows which ones to bring back. */
+  private remove(id: string, at = this.now()): void {
     this.requireSession(id)
     clearTimeout(this.limitTimers.get(id))
     this.limitTimers.delete(id)
     this.declineToolApprovals(id)
+    // Stops the helpers that are working for it, and says in its log that they were stopped (while the log can still be written).
     this.opts.onSessionStopped?.(id)
+    for (const child of this.store.listChildren(id)) this.remove(child.id, at)
     this.stopRuntime(id)
-    this.store.patchSession(id, { deletedAt: this.now() })
+    this.store.patchSession(id, { deletedAt: at })
     this.opts.push({ type: 'removed', id })
     this.undoTimers.set(
       id,
@@ -1252,7 +1454,12 @@ export class SessionService {
     clearTimeout(this.undoTimers.get(id))
     this.undoTimers.delete(id)
     this.store.patchSession(id, { deletedAt: null })
-    return this.emitSummary(id) ?? null
+    // A turn that was running when it was deleted ended with it, and its end was dropped: say so, or it would show as working for ever.
+    if (row.status !== 'idle') this.record(id, { type: 'turn.abandoned' }, { text: '' })
+    const summary = this.emitSummary(id) ?? null
+    // The helpers that went with it come back with it; one the person deleted on its own earlier stays deleted.
+    for (const child of this.store.listChildren(id, true)) if (child.deletedAt === row.deletedAt) this.restore(child.id)
+    return summary
   }
 
   /**
@@ -1260,7 +1467,8 @@ export class SessionService {
    * lands there and not in whatever folder Celeste was started from. It is made when first needed and removed with the session.
    */
   private chatDir(id: string): string {
-    return join(this.opts.dataDir, 'chats', id)
+    // A chat's helpers work in its folder: a file one writes is where the assistant and the person look for it.
+    return join(this.opts.dataDir, 'chats', this.store.getSession(id)?.spawn?.parentId ?? id)
   }
 
   private scratchDir(id: string): string {

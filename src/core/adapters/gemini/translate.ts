@@ -1,4 +1,5 @@
 import type { AgentError, AgentEvent, DiffLine, FileDiff, ToolKind } from '@shared/agent'
+import { isOwnAgentTool } from '../../agents/names'
 import { displayPath } from '../copilot/diff'
 
 /*
@@ -181,6 +182,8 @@ export class Translator {
     // A call the agent makes only to think or to switch its own mode is not something the person did anything about.
     if (update['kind'] === 'think' || update['kind'] === 'switch_mode') return []
     const title = str(update['title']) ?? 'Tool'
+    // The assistant's own tools for helpers are drawn as helper cards, so they get no tool card.
+    if (isOwnAgentTool(id, title)) return []
     this.tools.set(id, { kind, title })
     const raw = update['rawInput']
     return [{ type: 'tool.started', id, kind, title, ...(raw !== undefined ? { input: raw } : {}) }]

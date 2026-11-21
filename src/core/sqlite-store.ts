@@ -7,6 +7,7 @@ import { movesSession } from '@shared/status'
 import { MIGRATIONS } from './migrations'
 import type { RunEvent, RunSummary, StoredRunEvent, WorkflowDefinition } from '@shared/workflow'
 import type { ScheduleLogEntry, ScheduleLogKind, ScheduleRow } from '@shared/schedule'
+import type { SpawnInfo } from '@shared/subagents'
 import { toMatchQuery, type AttachmentRow, type IndexKind, type SessionRow, type StoredFolder, type Store, type WorkflowRow } from './store'
 
 type Row = Record<string, unknown>
@@ -44,7 +45,9 @@ function sessionFrom(r: Row): SessionRow {
     updatedAt: r.updated_at as number,
     lastSeq: r.last_seq as number,
     deletedAt: (r.deleted_at ?? null) as number | null,
-    pinnedAt: (r.pinned_at ?? null) as number | null
+    pinnedAt: (r.pinned_at ?? null) as number | null,
+    ...(r.parent_id != null ? { parentId: r.parent_id as string } : {}),
+    ...(r.spawn != null ? { spawn: JSON.parse(r.spawn as string) as SpawnInfo } : {})
   }
 }
 
@@ -242,10 +245,10 @@ export class SqliteStore implements Store {
 
   insertSession(s: SessionRow): void {
     this.run(
-      `INSERT INTO sessions (id, vendor, vendor_session_id, mode, title, model, effort, approval, cwd, branch, status, created_at, updated_at, last_seq, deleted_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO sessions (id, vendor, vendor_session_id, mode, title, model, effort, approval, cwd, branch, status, created_at, updated_at, last_seq, deleted_at, spawn, parent_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       s.id, s.vendor, s.vendorSessionId ?? null, s.mode, s.title, s.model, s.effort, s.approval, s.cwd ?? null, s.branch ?? null,
-      s.status, s.createdAt, s.updatedAt, s.lastSeq, s.deletedAt
+      s.status, s.createdAt, s.updatedAt, s.lastSeq, s.deletedAt, s.spawn ? JSON.stringify(s.spawn) : null, s.spawn?.parentId ?? s.parentId ?? null
     )
   }
 
@@ -258,10 +261,19 @@ export class SqliteStore implements Store {
     return this.all('SELECT * FROM sessions WHERE deleted_at IS NULL ORDER BY updated_at DESC').map(sessionFrom)
   }
 
+  listChildren(parentId: string, withDeleted = false): SessionRow[] {
+    return this.all(`SELECT * FROM sessions WHERE parent_id = ? ${withDeleted ? '' : 'AND deleted_at IS NULL'} ORDER BY created_at, rowid`, parentId).map(sessionFrom)
+  }
+
   patchSession(id: string, patch: Partial<Omit<SessionRow, 'id' | 'lastSeq'>>): SessionRow | undefined {
     const sets: string[] = []
     const values: unknown[] = []
     for (const [key, value] of Object.entries(patch)) {
+      if (key === 'spawn' && value !== undefined) {
+        sets.push('spawn = ?', 'parent_id = ?')
+        values.push(JSON.stringify(value), (value as SpawnInfo).parentId)
+        continue
+      }
       const column = SESSION_COLUMNS[key]
       if (!column || value === undefined) continue
       sets.push(`${column} = ?`)

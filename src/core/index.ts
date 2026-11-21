@@ -34,6 +34,8 @@ import { claudeUsageFrom, copilotUsageFrom, UsageService, type ClaudeUsageAnswer
 import { limitReset } from '@shared/usage'
 import type { VendorUsage } from '@shared/usage'
 import { AppTools } from './app/tools'
+import { SubAgents } from './agents/subagents'
+import { AgentTools } from './agents/tools'
 import { createAgentStepRunner } from './workflows/agent-step'
 import { draftWorkflow } from './workflows/draft'
 import { WorkflowRunner } from './workflows/runner'
@@ -101,10 +103,13 @@ let usageRef: UsageService | undefined
 let schedulerRef: Scheduler | undefined
 let schedulesRef: ScheduleService | undefined
 let tellSchedulesRef: (() => void) | undefined
+let subAgentsRef: SubAgents | undefined
 const push = (p: CorePush) => {
   ports.forEach((port) => send(port, { kind: 'push', push: p }))
   phoneRef?.broadcast(p)
   attention?.observe(p)
+  // A helper's turn ended, or a helper was deleted: whoever waits for its answer is told.
+  subAgentsRef?.observe(p)
   // A turn ended: that vendor's usage has changed.
   if (p.type === 'event' && p.stored.event.type === 'turn.completed') {
     const vendor = store?.listSessions().find((s) => s.id === p.sessionId)?.vendor
@@ -264,6 +269,7 @@ async function start(): Promise<void> {
           : ctx.vendor === 'gemini'
             ? createGeminiSession(geminiHost, ctx, (id) => servers.info(id), () => mcp.resolved(), process.env['CELESTE_VERSION'])
             : createUnavailableSession(ctx.vendor)
+  const vendorApi = new VendorService({ copilot: host, claude: claudeHost, openai: openaiHost, gemini: geminiHost }, push, ownPrograms).api
   const claudeTitle = createClaudeTitler(claudeHost)
   const copilotTitle = createCopilotTitler(host)
 
@@ -290,7 +296,11 @@ async function start(): Promise<void> {
       desktopRef?.sessionGone(id)
       browserToolsRef?.sessionGone(id)
       phoneRef?.cancel(id)
+      // The helpers a chat was running or waiting on stop with it.
+      subAgentsRef?.parentStopped(id)
     },
+    // A turn ended and nothing follows from the queue: an assistant with a helper's answer waiting is told now.
+    onIdle: (id, type) => subAgentsRef?.onIdle(id, type),
     push,
     defaults: {
       ...DEFAULT_SETTINGS,
@@ -431,7 +441,9 @@ async function start(): Promise<void> {
     never: () => (db.settings().desktopNeverApps as string[] | undefined) ?? [],
     logGrant: (entry) => db.setSetting('desktopGrants', [...((db.settings().desktopGrants as unknown[] | undefined) ?? []), entry].slice(-20)),
     pendingApprovals: (sessionId) => (service as SessionService).pendingApprovals(sessionId),
-    record: (sessionId, event) => (service as SessionService).recordDesktop(sessionId, event)
+    record: (sessionId, event) => (service as SessionService).recordDesktop(sessionId, event),
+    // One mouse and keyboard for the whole computer: a helper asks the assistant that started it.
+    isHelper: (sessionId) => !!db.getSession(sessionId)?.spawn
   })
   desktopRef = desktopControl
   // The phone's abilities, listed only while a phone is paired; each asks on the phone (src/core/phone/tools.ts).
@@ -442,7 +454,9 @@ async function start(): Promise<void> {
     // Only a workflow step's session is remembered: a chat's requests end with Stop, not with the step.
     (sessionId) => stepAsk.has(sessionId),
     // Phone control is written into the chat as the same card desktop control uses, marked as the phone's.
-    (sessionId, event) => (service as SessionService).recordDesktop(sessionId, event)
+    (sessionId, event) => (service as SessionService).recordDesktop(sessionId, event),
+    // One phone for the whole computer: a helper asks the assistant that started it.
+    (sessionId) => !!db.getSession(sessionId)?.spawn
   )
   // The assistant's use of Celeste's browser: Playwright, connected to the browser's own DevTools endpoint (docs/BROWSER_PLAN.md).
   const browserTools = new BrowserTools({
@@ -464,10 +478,11 @@ async function start(): Promise<void> {
     askFile: (sessionId, request) => (service as SessionService).requestApproval(sessionId, { kind: 'read', title: request.title, detail: request.detail })
   })
   browserToolsRef = browserTools
+  // Nobody can answer a card in a workflow step, so the tools that need one are refused there.
+  const where = { step: (sessionId: string) => sessionId.startsWith('wf-') || stepAsk.has(sessionId) }
   // The assistant's tools for operating Celeste itself (docs/plans/INNER_TOOLS_PLAN.md): four that read, two that propose on a card.
   const appTools = new AppTools({
-    // Nobody can answer a card in a workflow step, so the tools that need one are refused there.
-    where: { step: (sessionId) => sessionId.startsWith('wf-') || stepAsk.has(sessionId) },
+    where,
     plugins: () => mcp.api['mcp.list'](),
     settings: () => (service as SessionService).api['settings.get'](),
     workflows: () => workflows.api['workflows.list'](),
@@ -504,7 +519,20 @@ async function start(): Promise<void> {
       removeSecret: async (name) => void (await removeSecret(name))
     }
   })
-  servers.setExtraTools(new CombinedTools([new WorkflowTools(db, runner, (sessionId) => (service as SessionService).workFolder(sessionId)), appTools, desktopControl, phoneTools, browserTools]))
+  // Helpers (docs/plans/SUB_AGENTS_PLAN.md): the assistant of a chat starts other sessions for pieces of work, and gets their answers back.
+  const subAgents = new SubAgents({
+    service: service as SessionService,
+    store: db,
+    vendors: {
+      ready: async (vendor) => (await vendorApi['vendor.status'](vendor).catch(() => undefined))?.state === 'signed-in',
+      models: (vendor) => vendorApi['vendor.models'](vendor)
+    },
+    defaultModel: () => (service as SessionService).api['settings.get']().defaults.model,
+    worktrees
+  })
+  subAgentsRef = subAgents
+  const agentTools = new AgentTools({ where, agents: subAgents })
+  servers.setExtraTools(new CombinedTools([new WorkflowTools(db, runner, (sessionId) => (service as SessionService).workFolder(sessionId)), appTools, agentTools, desktopControl, phoneTools, browserTools]))
   const workflows = new WorkflowService(db, runner, undefined, () => push({ type: 'workflows' }), dataDir, async () => (await mcp.resolved()).map((s) => s.key), (sessionId) => (service as SessionService).workFolder(sessionId), (source) =>
     // The assistant only has to write; it is in plan mode, so anything it asks to do is refused, and it has three minutes.
     draftWorkflow(source.kind === 'conversation' ? { kind: 'conversation', transcript: (service as SessionService).transcriptOf(source.sessionId) } : source, {
@@ -600,6 +628,7 @@ async function start(): Promise<void> {
     // A removed session takes its shell with it.
     'sessions.remove': (id) => {
       terminalsRef?.close(id)
+      for (const child of db.listChildren(id)) terminalsRef?.close(child.id)
       return (service as SessionService).api['sessions.remove'](id)
     },
     'sessions.removeAll': () => {
@@ -607,7 +636,7 @@ async function start(): Promise<void> {
       return (service as SessionService).api['sessions.removeAll']()
     },
     ...devices.api,
-    ...new VendorService({ copilot: host, claude: claudeHost, openai: openaiHost, gemini: geminiHost }, push, ownPrograms).api,
+    ...vendorApi,
     ...mcp.api,
     ...workflows.api,
     // A change to a workflow's steps pauses the schedules that were approved for the old ones, at once and not at their next time.
@@ -690,6 +719,7 @@ parent.on('message', (event) => {
   } else if (message?.type === 'shutdown') {
     desktopRef?.stop('Celeste closed.')
     schedulerRef?.stop()
+    subAgentsRef?.close()
     service?.close()
     void (async () => {
       await browserToolsRef?.close().catch(() => undefined)

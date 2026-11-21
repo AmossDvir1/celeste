@@ -142,6 +142,20 @@ describe('the translator', () => {
     expect(types(events)).toEqual(['turn.started', 'usage.updated', 'turn.completed'])
   })
 
+  it('shows no tool card for the assistant’s tools for helpers, and still shows a tool of the same name from another server', () => {
+    const events = run([
+      toolUse('h1', 'mcp__celeste-devices__agent_start', { task: 'x', title: 'y' }),
+      toolResult('h1', 'The answer'),
+      toolUse('h2', 'mcp__celeste-devices__agent_wait', {}),
+      toolResult('h2', 'Waited'),
+      toolUse('n1', 'mcp__notes__agent_start', {}),
+      toolResult('n1', 'from the person’s own server'),
+      done()
+    ])
+    expect(types(events)).toEqual(['turn.started', 'tool.started', 'tool.completed', 'usage.updated', 'turn.completed'])
+    expect(events[1]).toMatchObject({ type: 'tool.started', id: 'n1' })
+  })
+
   it('ends a turn once, whatever arrives after', () => {
     const t = new Translator(CWD)
     t.begin('t1')

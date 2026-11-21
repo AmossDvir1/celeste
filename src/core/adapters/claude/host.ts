@@ -103,6 +103,9 @@ export class ClaudeHost {
       // Celeste's own tools can wait for the person (a card on the phone, a device command to approve), longer than the
       // minute Claude Code gives a tool by default. Celeste's tools end their own waits (three minutes for a phone card).
       MCP_TOOL_TIMEOUT: this.deps.baseEnv['MCP_TOOL_TIMEOUT'] ?? '600000',
+      // A call that sends nothing for five minutes is ended by Claude Code whatever MCP_TOOL_TIMEOUT says (measured 21 Nov 2026), so a call
+      // that waits for a helper would be cut off at five minutes. The same ten minutes lets the longer limit apply.
+      CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT: this.deps.baseEnv['CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT'] ?? '600000',
       CLAUDE_AGENT_SDK_CLIENT_APP: 'celeste'
     }
   }

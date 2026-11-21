@@ -82,6 +82,10 @@ export interface SessionSummary {
   worktree?: boolean
   /** When the session was pinned to the top of the list. Null or absent when it is not pinned. */
   pinnedAt?: number | null
+  /** Set when this session is a helper: the session whose assistant started it (docs/plans/SUB_AGENTS_PLAN.md). */
+  parentId?: string
+  /** A helper: the loosest approval mode it may be set to (its parent's mode when it started). The mode menu disables the looser ones. */
+  ceiling?: ApprovalMode
   status: SessionStatus
   createdAt: number
   updatedAt: number
@@ -164,7 +168,8 @@ export interface SessionPatch {
  */
 export type LogEvent =
   | AgentEvent
-  | { type: 'user.message'; text: string; attachments: AttachmentInfo[]; context?: ContextRef[] }
+  /** `from`: absent when the person wrote it; 'parent' for a task or follow-up the assistant of the parent chat gave a helper; 'celeste' for a note that wakes an assistant. */
+  | { type: 'user.message'; text: string; attachments: AttachmentInfo[]; context?: ContextRef[]; from?: 'parent' | 'celeste' }
   /** `again`: the person pressed a proposal's "Try again" (allow is false, and the card is not a refusal). */
   | { type: 'approval.resolved'; requestId: string; allow: boolean; again?: boolean }
   | { type: 'ask.answered'; requestId: string; answers: AskAnswers }
@@ -205,6 +210,15 @@ export type LogEvent =
   | { type: 'queue.waiting'; until: number }
   /** A turn ended because the vendor is at its limit. `resetsAt` is when it comes back, when that is known; `window` is which allowance ran out ("5-hour session"). */
   | { type: 'limit.hit'; vendor: VendorId; resetsAt?: number; window?: string }
+  /** In the parent's log: the assistant started a helper, or gave an idle helper more work (`again`). `task` is cut to 2,000 characters. */
+  | { type: 'child.started'; childId: string; title: string; vendor: VendorId; model: string; task: string; folder: 'same' | 'copy'; wait: boolean; again?: true }
+  /**
+   * In the parent's log: that assignment ended. `delivered` says how the parent hears of it: 'tool' (the waiting call returned it), 'note' (with a turn
+   * Celeste starts, or with the person's next message), or 'none' (the parent was stopped or is gone, so nobody is told). `result` is cut to 12,000 characters.
+   */
+  | { type: 'child.finished'; childId: string; title: string; status: 'done' | 'failed' | 'stopped' | 'abandoned' | 'deleted'; result?: string; error?: string; delivered: 'tool' | 'note' | 'none' }
+  /** In a helper's log, before its first message: this session is a helper, drawn as a banner at the top. */
+  | { type: 'child.spawned'; parentId: string; parentTitle: string }
 
 /** One file that a turn changed, or that a revert would change. */
 export interface CheckpointFile {

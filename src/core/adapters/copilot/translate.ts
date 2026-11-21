@@ -1,5 +1,6 @@
 import type { SessionEvent } from '@github/copilot-sdk'
 import type { AgentError, AgentEvent, FileDiff, ToolKind, Usage } from '@shared/agent'
+import { isOwnAgentTool } from '../../agents/names'
 import { displayPath, parseUnifiedDiff } from './diff'
 
 /*
@@ -208,7 +209,7 @@ export class Translator {
   private toolStarted(d: Record<string, unknown>): AgentEvent[] {
     const id = str(d.toolCallId)
     const name = str(d.toolName) ?? 'tool'
-    if (!id || this.ended || HIDDEN_TOOLS.has(name)) return []
+    if (!id || this.ended || HIDDEN_TOOLS.has(name) || isOwnAgentTool(name, str(d.mcpServerName), str(d.mcpToolName))) return []
     const args = (d.arguments && typeof d.arguments === 'object' ? d.arguments : {}) as Record<string, unknown>
     const mcp = str(d.mcpServerName)
     const kind = toolKind(name, !!mcp)

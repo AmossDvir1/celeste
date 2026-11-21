@@ -1,4 +1,5 @@
 import type { AgentError, AgentEvent, DiffLine, FileDiff, ToolKind } from '@shared/agent'
+import { isOwnAgentTool } from '../../agents/names'
 import { displayPath, parseUnifiedDiff } from '../copilot/diff'
 
 /*
@@ -186,6 +187,8 @@ export class Translator {
         return { kind: adds ? 'write' : 'edit', title }
       }
       case 'mcpToolCall':
+        // The assistant's own tools for helpers are drawn as helper cards, so they get no tool card.
+        if (isOwnAgentTool(str(item['server']), str(item['tool']))) return undefined
         return { kind: 'mcp', title: `${str(item['server']) ?? 'tool'}: ${str(item['tool']) ?? 'call'}`, input: item['arguments'] }
       case 'dynamicToolCall':
         return { kind: 'other', title: str(item['tool']) ?? 'Tool', input: item['arguments'] }

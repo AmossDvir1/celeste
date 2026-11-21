@@ -154,6 +154,13 @@ export class MemoryStore implements Store {
       .map((s) => structuredClone(s))
   }
 
+  listChildren(parentId: string, withDeleted = false): SessionRow[] {
+    return [...this.sessions.values()]
+      .filter((s) => (s.spawn?.parentId ?? s.parentId) === parentId && (withDeleted || s.deletedAt === null))
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .map((s) => structuredClone(s))
+  }
+
   patchSession(id: string, patch: Partial<Omit<SessionRow, 'id' | 'lastSeq'>>): SessionRow | undefined {
     const s = this.sessions.get(id)
     if (!s) return undefined

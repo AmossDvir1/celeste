@@ -2,12 +2,15 @@ import type { DraftState, LogEvent, SearchHit, SessionSummary, StoredEvent } fro
 import type { DeviceActivity, DeviceFolder, DeviceRecord } from '@shared/devices'
 import type { RunSummary, StoredRunEvent, RunEvent, WorkflowDefinition } from '@shared/workflow'
 import type { ScheduleLogEntry, ScheduleLogKind, ScheduleRow } from '@shared/schedule'
+import type { SpawnInfo } from '@shared/subagents'
 
 /** A session as stored. `deletedAt` is set between Delete and the end of the undo window. */
 export interface SessionRow extends SessionSummary {
   deletedAt: number | null
   /** The vendor's own id for this conversation, used to resume it. The window never sees it. */
   vendorSessionId?: string
+  /** How this session was started when it is a helper. Core only: the window sees `parentId`. */
+  spawn?: SpawnInfo
 }
 
 export interface AttachmentRow {
@@ -36,6 +39,8 @@ export interface Store {
   getSession(id: string): SessionRow | undefined
   /** Sessions that are not deleted. */
   listSessions(): SessionRow[]
+  /** The helpers of a session, oldest first. Those waiting out their undo window are left out unless `withDeleted` is true. */
+  listChildren(parentId: string, withDeleted?: boolean): SessionRow[]
   patchSession(id: string, patch: Partial<Omit<SessionRow, 'id' | 'lastSeq'>>): SessionRow | undefined
   listDeleted(): { id: string; deletedAt: number }[]
   /** Removes the session, its log, its search entries and its attachment rows. Returns the rows so files can go too. */

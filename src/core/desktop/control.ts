@@ -1,3 +1,4 @@
+import { HELPER_REFUSAL } from '@shared/subagents'
 import { z } from 'zod'
 import type { ApprovalSlider } from '@shared/agent'
 import type { DesktopGrantRecord } from '@shared/api'
@@ -74,6 +75,8 @@ export interface DesktopDeps {
   /** How many questions are waiting for the person in this chat (an approval of a command, say). Control waits while there are any. */
   pendingApprovals(sessionId: string): number
   record(sessionId: string, event: DesktopLogEvent): void
+  /** True for a session that is a helper: one mouse and keyboard for the whole computer, so a helper asks the assistant that started it. */
+  isHelper?: (sessionId: string) => boolean
   now?: () => number
   /** Where the assistant is told the control ends, as a clock time. */
   clock?: (ms: number) => string
@@ -311,6 +314,7 @@ export class DesktopControl implements ExtraTools {
 
   async call(sessionId: string, name: string, args: unknown): Promise<ToolResult> {
     if (!TOOLS.some((t) => t.name === name)) return fail(`There is no tool called ${name}.`)
+    if (this.deps.isHelper?.(sessionId)) return fail(HELPER_REFUSAL)
     if (name === 'desktop_request_control') return this.request(sessionId, args)
     if (name === 'desktop_release_control') {
       if (!this.active(sessionId)) return ok('You did not have control.')

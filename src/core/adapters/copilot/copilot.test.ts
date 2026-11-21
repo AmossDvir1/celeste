@@ -150,6 +150,16 @@ describe('translating other turns', () => {
     expect(events[1]).toMatchObject({ type: 'tool.started', kind: 'mcp', title: 'Celeste devices: devices_list' })
   })
 
+  it('shows no tool card for the assistant’s tools for helpers, and still shows one of the same name from another server', () => {
+    const events = translate([
+      ev('tool.execution_start', { toolCallId: 'h1', toolName: 'agent_start', mcpServerName: DEVICE_SERVER, mcpToolName: 'agent_start', arguments: { task: 'x', title: 'y' } }),
+      ev('tool.execution_complete', { toolCallId: 'h1', success: true, result: { content: 'The answer' } }),
+      ev('tool.execution_start', { toolCallId: 'n1', toolName: 'agent_start', mcpServerName: 'notes', mcpToolName: 'agent_start', arguments: {} })
+    ])
+    expect(events.filter((e) => e.type === 'tool.started').map((e) => (e as { id: string }).id)).toEqual(['n1'])
+    expect(events.filter((e) => e.type === 'tool.completed')).toEqual([])
+  })
+
   it('ends a stopped turn as interrupted', () => {
     const events = translate([ev('abort', { reason: 'user_initiated' }), ev('session.idle', { aborted: true })])
     expect(types(events)).toEqual(['turn.started', 'turn.interrupted'])
@@ -408,7 +418,7 @@ describe('a Copilot session', () => {
     const t = setup(fixture('basic').events)
     await run(t.session, 'hi')
     expect(t.sdk.created[0]?.config.mcpServers).toEqual({
-      [DEVICE_SERVER]: { type: 'http', url: 'http://127.0.0.1:5555/mcp', headers: { Authorization: 'Bearer tok' }, tools: ['*'] }
+      [DEVICE_SERVER]: { type: 'http', url: 'http://127.0.0.1:5555/mcp', headers: { Authorization: 'Bearer tok' }, tools: ['*'], timeout: 600_000 }
     })
   })
 
@@ -422,7 +432,7 @@ describe('a Copilot session', () => {
     expect(t.sdk.created[0]?.config.mcpServers).toEqual({
       notes: { type: 'stdio', command: 'node', args: ['notes.js'], env: { TOKEN: 'abc' }, tools: ['*'] },
       wiki: { type: 'http', url: 'https://wiki.example.com/mcp', headers: { Authorization: 'Bearer xyz' }, tools: ['*'] },
-      [DEVICE_SERVER]: { type: 'http', url: 'http://127.0.0.1:5555/mcp', headers: { Authorization: 'Bearer tok' }, tools: ['*'] }
+      [DEVICE_SERVER]: { type: 'http', url: 'http://127.0.0.1:5555/mcp', headers: { Authorization: 'Bearer tok' }, tools: ['*'], timeout: 600_000 }
     })
   })
 

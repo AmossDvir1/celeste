@@ -7,6 +7,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { extname, join } from 'node:path'
 import { z } from 'zod'
 import type { LogEvent } from '@shared/api'
+import { HELPER_REFUSAL } from '@shared/subagents'
 import { PHONE_ATTACH_MAX_BYTES, PHONE_ATTACH_MAX_FILES, type PhoneAbility, type PhoneControlReport } from '@shared/phone'
 import type { ExtraTool, ExtraTools, ToolResult } from '../workflows/tools'
 import type { PhoneBridge, PhoneFile } from './bridge'
@@ -257,7 +258,9 @@ export class PhoneTools implements ExtraTools {
     /** Whether a session is a workflow step's (only those are remembered, to end what they left on the phone). */
     private readonly isStep: (sessionId: string) => boolean = () => true,
     /** Writes phone control into the chat, as the card desktop control uses (marked as the phone's). */
-    private readonly record?: (sessionId: string, event: ControlEvent) => void
+    private readonly record?: (sessionId: string, event: ControlEvent) => void,
+    /** True for a session that is a helper: one phone for the whole computer, so a helper asks the assistant that started it. */
+    private readonly isHelper: (sessionId: string) => boolean = () => false
   ) {}
 
   /** The phone control that is on now, and the chat it is for. */
@@ -317,6 +320,7 @@ export class PhoneTools implements ExtraTools {
     const tool = TOOLS.find((t) => t.name === name)
     const b = this.bridge()
     if (!tool || !b) return { text: `There is no tool called ${name}.`, isError: true }
+    if (this.isHelper(sessionId)) return { text: HELPER_REFUSAL, isError: true }
     const parsed = z.object(tool.shape).strict().safeParse(args ?? {})
     if (!parsed.success) return { text: `That is not right for ${name}: ${parsed.error.issues.map((i) => i.message).join('; ')}`, isError: true }
     const a = parsed.data as Record<string, unknown>

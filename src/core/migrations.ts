@@ -214,5 +214,13 @@ export const MIGRATIONS: string[] = [
 
   ALTER TABLE workflow_runs ADD COLUMN schedule_id TEXT;
   CREATE INDEX workflow_runs_by_schedule ON workflow_runs (schedule_id, started_at DESC);
+  `,
+
+  // 7: helpers (docs/plans/SUB_AGENTS_PLAN.md): a session the assistant of another session started. `spawn` is how it was started (JSON),
+  // `parent_id` the same parent for the index and for deleting a parent's helpers with it
+  `
+  ALTER TABLE sessions ADD COLUMN spawn TEXT;
+  ALTER TABLE sessions ADD COLUMN parent_id TEXT;
+  CREATE INDEX sessions_parent ON sessions (parent_id);
   `
 ]

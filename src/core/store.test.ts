@@ -81,6 +81,26 @@ describe.each(factories)('%s', (_name, make) => {
     expect(s.patchSession('missing', { title: 'x' })).toBeUndefined()
   })
 
+  it('keeps how a helper was started, and lists the helpers of a session oldest first', () => {
+    const s = make()
+    s.insertSession(session({ id: 'parent' }))
+    const spawn = { parentId: 'parent', folder: 'same' as const, ceiling: 'edits' as const }
+    s.insertSession(session({ id: 'h2', createdAt: 20, parentId: 'parent', spawn }))
+    s.insertSession(session({ id: 'h1', createdAt: 10, parentId: 'parent', spawn: { ...spawn, folder: 'copy' } }))
+    s.insertSession(session({ id: 'other', createdAt: 5 }))
+    expect(s.getSession('h1')).toMatchObject({ parentId: 'parent', spawn: { parentId: 'parent', folder: 'copy', ceiling: 'edits' } })
+    expect(s.getSession('other')).not.toHaveProperty('spawn')
+    expect(s.getSession('other')).not.toHaveProperty('parentId')
+    expect(s.listChildren('parent').map((x) => x.id)).toEqual(['h1', 'h2'])
+    expect(s.listChildren('other')).toEqual([])
+
+    // A helper waiting out its undo window is left out, unless asked for.
+    s.patchSession('h1', { deletedAt: 99 })
+    expect(s.listChildren('parent').map((x) => x.id)).toEqual(['h2'])
+    expect(s.listChildren('parent', true).map((x) => x.id)).toEqual(['h1', 'h2'])
+    expect(s.getSession('h1')?.spawn?.folder).toBe('copy')
+  })
+
   it('appends events with increasing numbers and returns them in order', () => {
     const s = make()
     s.insertSession(session())
