@@ -186,7 +186,10 @@ describe('the status Core keeps for the sidebar', () => {
     { type: 'turn.completed', turnId: 't' },
     { type: 'turn.interrupted', turnId: 't' },
     { type: 'turn.failed', turnId: 't', error: { code: 'unknown', message: 'x', retryable: false } },
-    { type: 'turn.abandoned' }
+    { type: 'turn.abandoned' },
+    { type: 'child.started', childId: 'c', title: 'T', vendor: 'claude', model: 'm', task: 't', folder: 'same', wait: true },
+    { type: 'child.finished', childId: 'c', title: 'T', status: 'done', delivered: 'tool' },
+    { type: 'child.spawned', parentId: 'p', parentTitle: 'P' }
   ]
 
   it('agrees with the window for every kind of event, from every starting status', () => {
@@ -424,5 +427,65 @@ describe('commands that go on after the turn', () => {
   it('makes a card from the end alone when the start was not seen', () => {
     const s = reduceEvent(blank(), { type: 'background.finished', taskId: 'z', status: 'failed', summary: 'Failed with exit code 1' }, 5)
     expect(s.items[0]).toMatchObject({ kind: 'background', taskId: 'z', status: 'failed', title: 'Failed with exit code 1' })
+  })
+})
+
+describe('helpers (docs/plans/SUB_AGENTS_PLAN.md)', () => {
+  const started = (over: Partial<Extract<LogEvent, { type: 'child.started' }>> = {}): LogEvent => ({ type: 'child.started', childId: 'c1', title: 'Reader', vendor: 'claude', model: 'claude:sonnet', task: 'Read the logs', folder: 'same', wait: true, ...over })
+  const finished = (over: Partial<Extract<LogEvent, { type: 'child.finished' }>> = {}): LogEvent => ({ type: 'child.finished', childId: 'c1', title: 'Reader', status: 'done', result: 'Found it.', delivered: 'tool', ...over })
+
+  it('shows one card for a helper, which the end of its work fills in, and a status that does not move', () => {
+    const s = foldEvents(blank({ status: 'working' }), log([1000, started()], [2000, finished()]))
+    expect(s.items).toHaveLength(1)
+    expect(s.items[0]).toMatchObject({ kind: 'helper', childId: 'c1', title: 'Reader', vendor: 'claude', model: 'claude:sonnet', folder: 'same', tasks: ['Read the logs'], wait: true, startedAt: 1000, finished: { status: 'done', result: 'Found it.', delivered: 'tool', endedAt: 2000 } })
+    expect(s.status).toBe('working')
+    expect(s.activity).toBeNull()
+  })
+
+  it('gives a helper that is asked for more work a line on the same card, open again', () => {
+    const s = foldEvents(blank(), log([1000, started()], [2000, finished()], [3000, started({ task: 'And the cache', again: true, wait: false })]))
+    expect(s.items).toHaveLength(1)
+    const card = s.items[0] as Extract<Session['items'][number], { kind: 'helper' }>
+    expect(card.tasks).toEqual(['Read the logs', 'And the cache'])
+    expect(card.finished).toBeUndefined()
+    expect(card).toMatchObject({ wait: false, startedAt: 3000 })
+    // Two helpers are two cards.
+    const two = foldEvents(s, log([4000, started({ childId: 'c2', title: 'Writer' })]).map((e) => ({ ...e, seq: 10 })))
+    expect(two.items.map((i) => i.kind)).toEqual(['helper', 'helper'])
+  })
+
+  it('says the assistant was told once a message follows an answer that came as a note, and not before', () => {
+    const before = foldEvents(blank(), log([1000, started({ wait: false })], [2000, finished({ delivered: 'note' })]))
+    expect((before.items[0] as { told?: boolean }).told).toBeUndefined()
+    const woken = foldEvents(before, [{ seq: 3, at: 3000, event: { type: 'user.message', text: 'Helpers finished: “Reader”.', attachments: [], from: 'celeste' } }])
+    expect((woken.items[0] as { told?: boolean }).told).toBe(true)
+    // The wake is one quiet line, not a message of the person's.
+    expect(woken.items.map((i) => i.kind)).toEqual(['helper', 'notice'])
+    expect((woken.items[1] as { text: string }).text).toBe('Helpers finished: “Reader”. The assistant was told.')
+    // An answer the tool call returned needs no such line.
+    const byTool = foldEvents(blank(), log([1000, started()], [2000, finished()], [3000, { type: 'user.message', text: 'Thanks', attachments: [] }]))
+    expect((byTool.items[0] as { told?: boolean }).told).toBeUndefined()
+    // A person's message tells it too, and an answer handed over later by the tool takes the note's place.
+    const person = foldEvents(before, [{ seq: 3, at: 3000, event: { type: 'user.message', text: 'And now?', attachments: [] } }])
+    expect((person.items[0] as { told?: boolean }).told).toBe(true)
+    const replaced = foldEvents(before, [{ seq: 3, at: 3000, event: finished({ delivered: 'tool' }) }])
+    expect((replaced.items[0] as { finished: { delivered: string } }).finished.delivered).toBe('tool')
+  })
+
+  it('draws a helper’s first message as the parent’s, and its top as a banner', () => {
+    const s = foldEvents(
+      blank(),
+      log([1000, { type: 'child.spawned', parentId: 'p1', parentTitle: 'Plan the launch' }], [1010, { type: 'user.message', text: 'Read the logs', attachments: [], from: 'parent' }], [1020, { type: 'user.message', text: 'Also the cache', attachments: [] }])
+    )
+    expect(s.items.map((i) => i.kind)).toEqual(['spawned', 'user', 'user'])
+    expect(s.items[0]).toMatchObject({ kind: 'spawned', parentId: 'p1', parentTitle: 'Plan the launch' })
+    expect(s.items[1]).toMatchObject({ kind: 'user', from: 'parent', text: 'Read the logs' })
+    expect(s.items[2]).not.toHaveProperty('from')
+  })
+
+  it('a card for a helper that ended without being seen start is not made from the end alone', () => {
+    // The end of work for a helper whose start was never seen changes nothing: there is no card to fill in.
+    const s = foldEvents(blank(), log([1000, finished({ childId: 'ghost' })]))
+    expect(s.items).toEqual([])
   })
 })

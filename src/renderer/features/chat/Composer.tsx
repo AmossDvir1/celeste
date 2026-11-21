@@ -1,6 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { ListPlus, Navigation, Paperclip, PencilRuler, Plus, Send, Square, TriangleAlert, X, Zap } from 'lucide-react'
-import type { ContextRef, SessionMode, UserInput } from '@shared/agent'
+import type { ApprovalMode, ContextRef, SessionMode, UserInput } from '@shared/agent'
 import type { SendMode } from '@shared/queue'
 import { cn } from '@/lib/cn'
 import { Menu } from '@/components/menu'
@@ -73,6 +73,8 @@ export interface ComposerProps {
   placeholder?: string
   /** The small side window: the controls under the box are shortened to fit. */
   compact?: boolean
+  /** A helper: the loosest approval mode it may have. The looser ones are in the menu but cannot be chosen. */
+  ceiling?: ApprovalMode
 }
 
 export function Composer({
@@ -94,7 +96,8 @@ export function Composer({
   history = NO_HISTORY,
   autoFocus,
   placeholder =  'Message Celeste...',
-  compact = false
+  compact = false,
+  ceiling
 }: ComposerProps) {
   const areaRef = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -410,7 +413,7 @@ export function Composer({
           </Menu.Root>
         )}
         <ModelControls prefs={prefs} onPrefs={onPrefs} compact={compact} />
-        <ApprovalPicker value={prefs.approval} onChange={(approval) => onPrefs({ approval })} mode={mode} compact={compact} />
+        <ApprovalPicker value={prefs.approval} onChange={(approval) => onPrefs({ approval })} mode={mode} compact={compact} ceiling={ceiling} />
         {!home && sendButton}
       </div>
       {home && sendButton}

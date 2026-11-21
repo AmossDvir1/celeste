@@ -1,6 +1,8 @@
-import { memo, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
+import { Fragment, memo, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import {
+  Bot,
   ChevronDown,
+  ChevronRight,
   Code,
   Folder,
   MessageSquare,
@@ -69,7 +71,7 @@ function togglePin(id: string, pinned: boolean) {
   useSessions.getState().pin(id, pinned)
 }
 
-const SessionRow = memo(function SessionRow({ session, active }: { session: Session; active: boolean }) {
+const SessionRow = memo(function SessionRow({ session, active, nested = false }: { session: Session; active: boolean; /** A helper, listed under the chat that started it: indented and smaller, and it can only be deleted. */ nested?: boolean }) {
   const open = useSessions((s) => s.open)
   const setMode = useUi((s) => s.setMode)
   const remove = useSessions((s) => s.remove)
@@ -84,7 +86,7 @@ const SessionRow = memo(function SessionRow({ session, active }: { session: Sess
   const stamp = sameDay(session.updatedAt, Date.now()) ? formatTime(session.updatedAt) : formatDay(session.updatedAt)
 
   return (
-    <div data-session-row={session.id} className="group relative">
+    <div data-session-row={session.id} data-helper-row={nested ? '' : undefined} className={cn('group relative', nested && 'ml-5')}>
       {editing ? (
         <form
           className="px-1 py-0.5"
@@ -121,15 +123,16 @@ const SessionRow = memo(function SessionRow({ session, active }: { session: Sess
         >
           <span
             className={cn(
-              'flex h-7 w-7 shrink-0 items-center justify-center rounded-md border',
+              'flex shrink-0 items-center justify-center rounded-md border',
+              nested ? 'h-6 w-6' : 'h-7 w-7',
               active ? 'border-accent-edge bg-accent-soft text-accent-text' : 'border-edge text-ink-muted'
             )}
           >
-            <Icon className="h-3.5 w-3.5" />
+            {nested ? <Bot className="h-3 w-3" /> : <Icon className="h-3.5 w-3.5" />}
           </span>
           <span className="min-w-0 flex-1 leading-tight">
             <span className="flex min-w-0 items-center gap-1.5">
-              <span className="min-w-0 truncate text-[13px] text-ink">{session.title}</span>
+              <span className={cn('min-w-0 truncate text-ink', nested ? 'text-[12px]' : 'text-[13px]')}>{session.title}</span>
               {pinned && <Pin role="img" aria-label="Pinned" className="h-3 w-3 shrink-0 text-ink-faint" />}
             </span>
             <span className="block text-[11px] text-ink-faint">
@@ -153,18 +156,23 @@ const SessionRow = memo(function SessionRow({ session, active }: { session: Sess
             </button>
           </Menu.Trigger>
           <Menu.Content align="start" className="w-[170px]">
-            <Menu.Item onSelect={() => togglePin(session.id, !pinned)}>
-              {pinned ? <PinOff className="h-4 w-4 text-ink-muted" /> : <Pin className="h-4 w-4 text-ink-muted" />}
-              {pinned ? 'Unpin' : 'Pin'}
-            </Menu.Item>
-            <Menu.Item
-              onSelect={() => {
-                setDraft(session.title)
-                setEditing(true)
-              }}
-            >
-              <Pencil className="h-4 w-4 text-ink-muted" /> Rename
-            </Menu.Item>
+            {/* A helper is pinned with its chat, and named by the assistant that started it. */}
+            {!nested && (
+              <>
+                <Menu.Item onSelect={() => togglePin(session.id, !pinned)}>
+                  {pinned ? <PinOff className="h-4 w-4 text-ink-muted" /> : <Pin className="h-4 w-4 text-ink-muted" />}
+                  {pinned ? 'Unpin' : 'Pin'}
+                </Menu.Item>
+                <Menu.Item
+                  onSelect={() => {
+                    setDraft(session.title)
+                    setEditing(true)
+                  }}
+                >
+                  <Pencil className="h-4 w-4 text-ink-muted" /> Rename
+                </Menu.Item>
+              </>
+            )}
             <Menu.Item onSelect={() => setConfirming(true)} className="text-danger">
               <Trash2 className="h-4 w-4" /> Delete
             </Menu.Item>
@@ -202,6 +210,27 @@ function ShowMore({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   )
 }
 
+/** Under a chat: its helpers, folded behind "N helpers" unless one is working or waiting. */
+function HelperRows({ helpers, activeId, open, onToggle }: { helpers: Session[] | undefined; activeId: string | null | undefined; open: boolean; onToggle: (open: boolean) => void }) {
+  if (!helpers?.length) return null
+  const busy = helpers.filter((h) => h.status !== 'idle').length
+  return (
+    <div className="mb-0.5">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => onToggle(!open)}
+        className="ml-5 flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] text-ink-faint hover:bg-hover hover:text-ink-muted"
+      >
+        <ChevronRight className={cn('h-3 w-3 transition-transform', open && 'rotate-90')} />
+        {helpers.length} {helpers.length === 1 ? 'helper' : 'helpers'}
+        {busy > 0 && <span className="text-accent-text">· {busy} working</span>}
+      </button>
+      {open && helpers.map((h) => <SessionRow key={h.id} session={h} active={h.id === activeId} nested />)}
+    </div>
+  )
+}
+
 function ChatList({ mode, query, limit }: { mode: SessionMode; query: string; limit: number }) {
   const sessions = useSessions((s) => s.sessions)
   const activeId = useSessions((s) => s.active[mode])
@@ -209,12 +238,41 @@ function ChatList({ mode, query, limit }: { mode: SessionMode; query: string; li
   const pinnedLabel = useRef<HTMLDivElement>(null)
   const hadPinned = useRef<boolean | null>(null)
 
-  const list = useMemo(() => {
+  const matching = useMemo(() => {
     const q = query.trim().toLowerCase()
     return Object.values(sessions)
       .filter((s) => s.mode === mode && (!q || s.title.toLowerCase().includes(q)))
       .sort((a, b) => b.updatedAt - a.updatedAt)
   }, [sessions, mode, query])
+
+  // A helper is listed under the chat that started it, not among the chats. One whose chat is not in the list (not found, or hidden by the
+  // search) is listed on its own.
+  const { list, helpersOf } = useMemo(() => {
+    const here = new Set(matching.map((s) => s.id))
+    const by = new Map<string, Session[]>()
+    const top: Session[] = []
+    for (const s of matching) {
+      if (s.parentId && here.has(s.parentId)) by.set(s.parentId, [...(by.get(s.parentId) ?? []), s])
+      else top.push(s)
+    }
+    for (const group of by.values()) group.sort((a, b) => a.createdAt - b.createdAt)
+    return { list: top, helpersOf: by }
+  }, [matching])
+  // The helpers a chat has are folded behind a line, open by themselves while one works or waits (or is the one being read), and remembered
+  // for each chat while the window is open.
+  const [folds, setFolds] = useState<Record<string, boolean>>({})
+  const activeParent = useSessions((s) => (activeId ? s.sessions[activeId]?.parentId : undefined))
+  const row = (s: Session) => (
+    <Fragment key={s.id}>
+      <SessionRow session={s} active={s.id === activeId} />
+      <HelperRows
+        helpers={helpersOf.get(s.id)}
+        activeId={activeId}
+        open={folds[s.id] ?? (activeParent === s.id || (helpersOf.get(s.id) ?? []).some((h) => h.status !== 'idle'))}
+        onToggle={(open) => setFolds((f) => ({ ...f, [s.id]: open }))}
+      />
+    </Fragment>
+  )
 
   // Pinned sessions float above the rest, newest pin first. They are never cut off by the show-more limit.
   const pinned = useMemo(
@@ -256,9 +314,7 @@ function ChatList({ mode, query, limit }: { mode: SessionMode; query: string; li
       <div ref={pinnedLabel}>
         <SectionLabel className="pt-2 pb-1">Pinned</SectionLabel>
       </div>
-      {pinned.map((s) => (
-        <SessionRow key={s.id} session={s} active={s.id === activeId} />
-      ))}
+      {pinned.map(row)}
     </section>
   )
 
@@ -278,9 +334,7 @@ function ChatList({ mode, query, limit }: { mode: SessionMode; query: string; li
               <Folder className="h-4 w-4 shrink-0" />
               <span className="truncate">{basename(cwd)}</span>
             </div>
-            {items.map((s) => (
-              <SessionRow key={s.id} session={s} active={s.id === activeId} />
-            ))}
+            {items.map(row)}
           </section>
         ))}
         {showMore}
@@ -294,9 +348,7 @@ function ChatList({ mode, query, limit }: { mode: SessionMode; query: string; li
       {groupByDay(visible).map((g) => (
         <section key={g.label} className="mb-2">
           <SectionLabel className="pt-2 pb-1">{g.label}</SectionLabel>
-          {g.items.map((s) => (
-            <SessionRow key={s.id} session={s} active={s.id === activeId} />
-          ))}
+          {g.items.map(row)}
         </section>
       ))}
       {showMore}

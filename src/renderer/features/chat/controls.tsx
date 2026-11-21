@@ -12,6 +12,7 @@ import {
   FilePen
 } from 'lucide-react'
 import type { ApprovalMode, Effort, ModelInfo, SessionMode } from '@shared/agent'
+import { STRICTNESS } from '@shared/subagents'
 import { cn } from '@/lib/cn'
 import { Menu, Popover } from '@/components/menu'
 import { IconButton, Tip } from '@/components/ui'
@@ -172,13 +173,16 @@ export function ApprovalPicker({
   value,
   onChange,
   mode,
-  compact = false
+  compact = false,
+  ceiling
 }: {
   value: ApprovalMode
   onChange: (v: ApprovalMode) => void
   mode: SessionMode
   /** Only the icon shows, for the small side window. The name is still said to a screen reader and in the menu. */
   compact?: boolean
+  /** A helper: modes looser than this one cannot be chosen (a helper is never looser than the chat that started it). */
+  ceiling?: ApprovalMode
 }) {
   const options = APPROVAL_OPTIONS.filter((o) => !o.developOnly || mode === 'develop')
   const current = options.find((o) => o.value === value) ?? options[0]
@@ -195,12 +199,15 @@ export function ApprovalPicker({
       <Menu.Content className="w-[270px]">
         <Menu.Label>When the agent wants to act</Menu.Label>
         <Menu.RadioGroup value={value} onValueChange={(v) => onChange(v as ApprovalMode)}>
-          {options.map((o) => (
-            <Menu.RadioItem key={o.value} value={o.value} description={o.description}>
-              {o.label}
-              {o.value === 'auto' && <span className="ml-1.5 text-[10.5px] text-ink-faint">default</span>}
-            </Menu.RadioItem>
-          ))}
+          {options.map((o) => {
+            const tooLoose = ceiling !== undefined && STRICTNESS[o.value] < STRICTNESS[ceiling]
+            return (
+              <Menu.RadioItem key={o.value} value={o.value} description={o.description} disabled={tooLoose} title={tooLoose ? `A helper cannot be looser than the chat that started it (${ceiling}).` : undefined}>
+                {o.label}
+                {o.value === 'auto' && !ceiling && <span className="ml-1.5 text-[10.5px] text-ink-faint">default</span>}
+              </Menu.RadioItem>
+            )
+          })}
         </Menu.RadioGroup>
       </Menu.Content>
     </Menu.Root>

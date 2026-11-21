@@ -46,6 +46,7 @@
     "verify:workflows": "electron-vite build && node scripts/workflows-check.mjs",
     "verify:workflows-chat": "electron-vite build && node scripts/workflows-chat-check.mjs",
     "verify:inner-tools": "electron-vite build && node scripts/inner-tools-check.mjs",
+    "verify:subagents": "electron-vite build && node scripts/subagents-check.mjs",
     "verify:queue": "electron-vite build && node scripts/queue-check.mjs",
     "verify:usage": "electron-vite build && node scripts/usage-check.mjs",
     "verify:schedules": "electron-vite build && node scripts/schedules-check.mjs",

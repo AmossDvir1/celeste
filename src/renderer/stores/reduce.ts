@@ -36,6 +36,12 @@ export function activityLabel(kind: ToolKind, title: string): string {
 
 const THINKING: Activity = { label: 'Thinking', working: true }
 
+/** A message was sent into the chat: the assistant has now been told of the helpers that ended before it. */
+function tellHelpers(s: Session): Session {
+  if (!s.items.some((it) => it.kind === 'helper' && it.finished?.delivered === 'note' && !it.told)) return s
+  return { ...s, items: s.items.map((it) => (it.kind === 'helper' && it.finished?.delivered === 'note' && !it.told ? { ...it, told: true } : it)) }
+}
+
 function closeThinking(items: TimelineItem[], now: number): TimelineItem[] {
   const last = items[items.length - 1]
   if (last?.kind === 'thinking' && last.endedAt === undefined) {
@@ -52,8 +58,43 @@ function failRunningTools(items: TimelineItem[], now: number): TimelineItem[] {
 export function reduceEvent(s: Session, e: LogEvent, at: number): Session {
   const now = at
   switch (e.type) {
-    case 'user.message':
-      return { ...s, items: [...s.items, { kind: 'user', id: itemId(), text: e.text, attachments: e.attachments, ...(e.context?.length ? { context: e.context } : {}), at: now }] }
+    case 'user.message': {
+      // A note from Celeste that woke the assistant is one quiet line, not a message of the person's.
+      if (e.from === 'celeste') {
+        return { ...tellHelpers(s), items: [...tellHelpers(s).items, { kind: 'notice', id: itemId(), text: `${e.text} The assistant was told.` }] }
+      }
+      const base = tellHelpers(s)
+      return { ...base, items: [...base.items, { kind: 'user', id: itemId(), text: e.text, attachments: e.attachments, ...(e.context?.length ? { context: e.context } : {}), ...(e.from === 'parent' ? { from: 'parent' as const } : {}), at: now }] }
+    }
+
+    case 'child.spawned':
+      return { ...s, items: [...s.items, { kind: 'spawned', id: itemId(), parentId: e.parentId, parentTitle: e.parentTitle }] }
+
+    case 'child.started': {
+      const known = s.items.some((it) => it.kind === 'helper' && it.childId === e.childId)
+      // More work for a helper the card is already there for: the card gets a line and is open again.
+      if (known) {
+        return {
+          ...s,
+          items: s.items.map((it) => {
+            if (it.kind !== 'helper' || it.childId !== e.childId) return it
+            const { finished: _finished, told: _told, ...rest } = it
+            return { ...rest, tasks: [...it.tasks, e.task], wait: e.wait, startedAt: now }
+          })
+        }
+      }
+      return { ...s, items: [...s.items, { kind: 'helper', id: itemId(), childId: e.childId, title: e.title, vendor: e.vendor, model: e.model, folder: e.folder, tasks: [e.task], wait: e.wait, startedAt: now }] }
+    }
+
+    case 'child.finished':
+      return {
+        ...s,
+        items: s.items.map((it) =>
+          it.kind === 'helper' && it.childId === e.childId
+            ? { ...it, title: e.title, finished: { status: e.status, ...(e.result !== undefined ? { result: e.result } : {}), ...(e.error !== undefined ? { error: e.error } : {}), delivered: e.delivered, endedAt: now } }
+            : it
+        )
+      }
 
     case 'checkpoint.created': {
       // It is written right after the message it belongs to.

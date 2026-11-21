@@ -8,7 +8,8 @@ import type {
   ContextRef,
   FileDiff,
   Question,
-  ToolKind
+  ToolKind,
+  VendorId
 } from '@shared/agent'
 import type { CheckpointFile, SessionStatus, SessionSummary } from '@shared/api'
 import type { QueueState } from '@shared/queue'
@@ -28,6 +29,8 @@ export type TimelineItem =
       at: number
       /** Develop: the folder was saved just before this message. `files` is what the turn changed, known once it ends. */
       checkpoint?: { id: string; files?: CheckpointFile[]; more?: number }
+      /** Written by the assistant that started this helper (the task or a follow-up), not by the person. */
+      from?: 'parent'
     }
   | { kind: 'assistant'; id: string; text: string }
   | { kind: 'thinking'; id: string; text: string; startedAt: number; endedAt?: number }
@@ -70,6 +73,27 @@ export type TimelineItem =
   | { kind: 'files'; id: string; files: ProducedFile[]; more: number }
   /** The assistant was allowed to use this computer's mouse and keyboard: what it did, and how it ended. */
   | { kind: 'desktop'; id: string; grantId: string; reason: string; until: number; /** The paired phone, not this computer. */ where?: 'phone'; actions: { text: string; ok: boolean; note?: boolean }[]; ended?: { why: string; actions: number } }
+  /**
+   * The assistant started a helper (one card for each helper; more work for it adds a line, not a card). `finished` is how the current assignment
+   * ended. `told`: the assistant has since been told of it with a message, which the card says in a quiet line.
+   */
+  | {
+      kind: 'helper'
+      id: string
+      childId: string
+      title: string
+      vendor: VendorId
+      model: string
+      folder: 'same' | 'copy'
+      /** The task, then the follow-ups. */
+      tasks: string[]
+      wait: boolean
+      startedAt: number
+      finished?: { status: 'done' | 'failed' | 'stopped' | 'abandoned' | 'deleted'; result?: string; error?: string; delivered: 'tool' | 'note' | 'none'; endedAt: number }
+      told?: boolean
+    }
+  /** In a helper: the line at the top that says whose helper it is. */
+  | { kind: 'spawned'; id: string; parentId: string; parentTitle: string }
   /** The folder was put back to a checkpoint. `undoId` goes back to how it was just before. */
   | { kind: 'reverted'; id: string; restored: number; removed: number; undoId: string }
 

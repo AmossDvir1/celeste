@@ -1,6 +1,6 @@
 import { canSteer } from '@shared/queue'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDown, ChevronLeft, FileDiff, Folder, FolderTree, GitBranch, Globe, Plug, SquareTerminal, Workflow } from 'lucide-react'
+import { ArrowDown, ChevronLeft, ChevronRight, FileDiff, Folder, FolderTree, GitBranch, Globe, Plug, SquareTerminal, Workflow } from 'lucide-react'
 import type { ContextRef, UserInput } from '@shared/agent'
 import { cn } from '@/lib/cn'
 import { basename } from '@/lib/format'
@@ -56,6 +56,21 @@ function PanelToggle({ panel, label, icon: Icon, badge }: { panel: Exclude<Right
         </span>
       ) : null}
     </span>
+  )
+}
+
+/** In a helper's title: the chat that started it, as a link back, with a mark between it and the helper's own name. */
+function ParentCrumb({ parentId }: { parentId: string }) {
+  const title = useSessions((s) => s.sessions[parentId]?.title)
+  const open = useSessions((s) => s.open)
+  if (title === undefined) return null
+  return (
+    <>
+      <button type="button" onClick={() => open(parentId)} className="max-w-[240px] shrink-0 truncate text-ink-muted hover:text-ink hover:underline">
+        {title}
+      </button>
+      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-ink-faint" aria-label="then" />
+    </>
   )
 }
 
@@ -163,7 +178,10 @@ export function ConversationView({ sessionId, compact = false }: { sessionId: st
           </header>
         )}
         <header className={cn('relative z-10 flex h-14 shrink-0 items-center gap-3 border-b border-edge/70 px-5', compact && 'hidden')}>
-          <h1 className="min-w-0 truncate text-[15px] font-medium text-ink">{session.title}</h1>
+          <h1 className="flex min-w-0 items-center gap-1.5 truncate text-[15px] font-medium text-ink">
+            {session.parentId && <ParentCrumb parentId={session.parentId} />}
+            <span className="truncate">{session.title}</span>
+          </h1>
           {model && <Badge className="shrink-0">{model.label}</Badge>}
           {session.worktree && (
             <span className="shrink-0" title={`A separate copy of the project, made for this session: ${session.cwd}`}>
@@ -252,6 +270,7 @@ export function ConversationView({ sessionId, compact = false }: { sessionId: st
               text={text}
               onText={setText}
               prefs={{ model: session.model, effort: session.effort, approval: session.approval }}
+              ceiling={session.ceiling}
               onPrefs={(p) => setPrefs(sessionId, p)}
               attachments={attachments}
               sessionId={sessionId}

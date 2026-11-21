@@ -35,6 +35,7 @@ import { ProposalCard } from './ProposalCard'
 import { DesktopCard } from './DesktopCard'
 import { FileCards } from './FileCards'
 import { WorkflowRunCard } from './WorkflowRunCard'
+import { HelperCard } from './HelperCard'
 import type { Session, TimelineItem } from '@/stores/types'
 
 import { toBlocks, summarize, type Block, type ThinkingItem, type ToolItem } from './blocks'
@@ -59,17 +60,29 @@ const UserMessage = memo(function UserMessage({
   item,
   canRevert,
   onRevert,
-  onReview
+  onReview,
+  parentTitle
 }: {
   item: Extract<TimelineItem, { kind: 'user' }>
   canRevert: boolean
   onRevert: (checkpointId: string) => void
   onReview: (checkpointId: string) => void
+  /** In a helper: the chat that started it, for the label on what that chat's assistant wrote. */
+  parentTitle?: string
 }) {
   const checkpoint = item.checkpoint
   const files = checkpoint?.files
   const added = files?.reduce((n, f) => n + f.added, 0) ?? 0
   const removed = files?.reduce((n, f) => n + f.removed, 0) ?? 0
+  // The task or a follow-up that the assistant of the parent chat wrote: not the person's words, so it is not drawn as theirs.
+  if (item.from === 'parent') {
+    return (
+      <div className="animate-fade-up flex flex-col items-start gap-1">
+        <div className="text-xs text-ink-faint">From {parentTitle ?? 'the assistant that started this helper'}</div>
+        <div className="selectable max-w-[78%] rounded-2xl rounded-bl-md border border-accent-edge/60 bg-accent-soft/40 px-4 py-2.5 text-[15px] leading-[1.6] whitespace-pre-wrap text-ink">{item.text}</div>
+      </div>
+    )
+  }
   return (
     <div className="animate-fade-up flex flex-col items-end gap-2">
       {item.context && <ContextStrip items={item.context} className="max-w-[78%] justify-end" />}
@@ -111,6 +124,26 @@ const UserMessage = memo(function UserMessage({
     </div>
   )
 })
+
+/** The top of a helper: whose helper it is, with a way back. */
+function HelperBanner({ parentId, parentTitle, develop }: { parentId: string; parentTitle: string; develop: boolean }) {
+  const open = useSessions((s) => s.open)
+  const exists = useSessions((s) => s.sessions[parentId] !== undefined)
+  return (
+    <div role="note" aria-label="Helper" className="rounded-xl border border-edge bg-field/50 px-3.5 py-2.5 text-[13px] text-ink-muted">
+      Helper started by the assistant in{' '}
+      {exists ? (
+        <button type="button" onClick={() => open(parentId)} className="font-medium text-ink underline decoration-edge-strong underline-offset-2 hover:text-accent-text">
+          {parentTitle}
+        </button>
+      ) : (
+        <span className="font-medium text-ink">{parentTitle}</span>
+      )}
+      . Its last answer goes back there.
+      {develop && <span className="block text-ink-faint">Changes are saved with {parentTitle}’s checkpoints.</span>}
+    </div>
+  )
+}
 
 const RevertedNotice = memo(function RevertedNotice({ item, canUndo, onUndo }: { item: Extract<TimelineItem, { kind: 'reverted' }>; canUndo: boolean; onUndo: () => void }) {
   const parts = [item.restored > 0 && `${item.restored} ${item.restored === 1 ? 'file' : 'files'} put back`, item.removed > 0 && `${item.removed} removed`].filter(Boolean)
@@ -356,7 +389,7 @@ const ApprovalCard = memo(function ApprovalCard({
     <div role="group" aria-label="Approval needed" className="animate-fade-up max-w-[760px] rounded-xl border border-accent-edge bg-accent-soft/50 p-4">
       <div className="flex items-center gap-2 text-[14px] font-medium text-ink">
         <ShieldQuestion className="h-[18px] w-[18px] text-accent-text" />
-        {onDevice ? `${item.title}?` : (APPROVAL_TITLE[item.tool] ?? 'Allow this action?')}
+        {onDevice ? (item.title.endsWith('?') ? item.title : `${item.title}?`) : (APPROVAL_TITLE[item.tool] ?? 'Allow this action?')}
       </div>
       <div className="mt-2.5 flex items-start gap-2.5 rounded-lg bg-field px-3 py-2.5">
         <Icon className="mt-0.5 h-4 w-4 shrink-0 text-ink-muted" />
@@ -522,6 +555,9 @@ export function Timeline({
     return last >= 0 && !session.items.slice(last).some((it) => it.kind === 'user') ? session.items[last]?.id : undefined
   }, [session.items])
   const idle = session.status === 'idle'
+  // In a helper: the chat that started it, by its name now (it may have been renamed), else as the helper's log first said it.
+  const parentName = useSessions((s) => (session.parentId ? s.sessions[session.parentId]?.title : undefined))
+  const parentTitle = parentName ?? (session.items.find((it) => it.kind === 'spawned') as Extract<TimelineItem, { kind: 'spawned' }> | undefined)?.parentTitle
 
   // The callbacks the cards get never change, so a card is drawn again only when it itself changes.
   const latest = useRef({ onApproval, onAsk, onRetry })
@@ -584,7 +620,11 @@ export function Timeline({
     const it = b.item
     switch (it.kind) {
       case 'user':
-        return <UserMessage item={it} canRevert={idle && !!it.checkpoint} onRevert={setTarget} onReview={setReviewing} />
+        return <UserMessage item={it} canRevert={idle && !!it.checkpoint} onRevert={setTarget} onReview={setReviewing} parentTitle={parentTitle} />
+      case 'helper':
+        return <HelperCard item={it} />
+      case 'spawned':
+        return <HelperBanner parentId={it.parentId} parentTitle={parentTitle ?? it.parentTitle} develop={session.mode === 'develop' && !session.worktree} />
       case 'workflow':
         return <MemoWorkflowRunCard runId={it.runId} name={it.name} workflowId={it.workflowId} />
       case 'desktop':

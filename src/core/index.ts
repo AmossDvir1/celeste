@@ -257,6 +257,13 @@ async function start(): Promise<void> {
   gemini = geminiHost
 
   const worktrees = new Worktrees(join(dataDir, 'worktrees'))
+  // What a notification calls a chat. A helper names the chat that started it, so "Reviewer" is not mistaken for a chat of the person's.
+  const chatLabel = (sessionId: string): string | undefined => {
+    const row = db.getSession(sessionId)
+    if (!row) return undefined
+    const parentTitle = row.spawn ? db.getSession(row.spawn.parentId)?.title : undefined
+    return parentTitle ? `${row.title} (helper in ${parentTitle})` : row.title
+  }
   const mcp = new McpService(db, getSecret, undefined, () => push({ type: 'mcp' }))
   // The same adapters serve chats and the agent steps of workflows.
   const adapterFor: AdapterFactory = (ctx) =>
@@ -567,7 +574,7 @@ async function start(): Promise<void> {
       },
       stop: (phoneId) => desktopHost.watchStop(phoneId)
     },
-    chatTitle: (sessionId) => db.listSessions().find((x) => x.id === sessionId)?.title ?? 'Celeste'
+    chatTitle: (sessionId) => chatLabel(sessionId) ?? 'Celeste'
   })
   phoneRef = phone
   // A released Celeste has no APK of its own until the first time phones are switched on: it is fetched then, from the
@@ -655,7 +662,7 @@ async function start(): Promise<void> {
   }
   void phone.start().then(() => push({ type: 'phone' }))
   // The main process shows the tray, and notifications while no window is open, from these two kinds of message.
-  attention = new Attention((message) => parent.postMessage(message), (sessionId) => db.listSessions().find((x) => x.id === sessionId)?.title)
+  attention = new Attention((message) => parent.postMessage(message), (sessionId) => chatLabel(sessionId))
   parent.postMessage({ type: 'app-settings', closeToTray: (service as SessionService).api['settings.get']().closeToTray })
   tellSchedulesRef?.()
   parent.postMessage({ type: 'ready' })

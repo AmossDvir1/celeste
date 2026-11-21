@@ -101,7 +101,8 @@ export function CompactHome({ mode }: { mode: SessionMode }) {
   const mine = useMemo(
     () =>
       Object.values(sessions)
-        .filter((s) => s.mode === mode)
+        // A helper is not listed here: its chat is (a helper that needs you still shows under "Needs you").
+        .filter((s) => s.mode === mode && !s.parentId)
         .sort((a, b) => (b.pinnedAt ?? 0) - (a.pinnedAt ?? 0) || b.updatedAt - a.updatedAt),
     [sessions, mode]
   )
