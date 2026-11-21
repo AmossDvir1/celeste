@@ -365,11 +365,12 @@ describe.skipIf(!program)('the Claude adapter with the real Claude Code', () => 
       expect(types.filter((x) => x === 'turn.completed')).toHaveLength(1)
       expect(said(events)).toBe('The slow command is done.')
       // The model's next request has the command's answer first and the steering message after it, in the same conversation.
+      // Claude Code puts the steering text either in a message of its own or in the same message as the
+      // tool result, after it (seen on Linux), so the check is on the order in the whole conversation.
       const second = api.main.slice(before)[1]
-      const list = roles(second?.body ?? {})
-      const at = (needle: string) => list.findIndex((m) => m.includes(needle))
-      expect(at('tool_result')).toBeGreaterThan(-1)
-      expect(at('STEER: use tabs')).toBeGreaterThan(at('tool_result'))
+      const all = roles(second?.body ?? {}).join('\n')
+      expect(all.indexOf('tool_result')).toBeGreaterThan(-1)
+      expect(all.indexOf('STEER: use tabs')).toBeGreaterThan(all.indexOf('tool_result'))
       expect(JSON.stringify(second?.body['messages'])).toContain('The user sent a new message while you were working')
       await t.session.close()
     }, 120_000)
