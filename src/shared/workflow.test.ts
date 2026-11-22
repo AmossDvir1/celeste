@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkInputs, nodeIdFrom, referencesIn, renderTemplate, runOrder, slugify, validateWorkflow, type WorkflowDefinition, type WorkflowNode } from './workflow'
+import { checkInputs, missingFields, nodeIdFrom, referencesIn, renderTemplate, runOrder, slugify, validateWorkflow, type WorkflowDefinition, type WorkflowNode } from './workflow'
 
 const start: WorkflowNode = { id: 'start', type: 'start', name: 'Start', inputs: [{ name: 'days', type: 'number', default: 30 }] }
 const end: WorkflowNode = { id: 'end', type: 'end', name: 'End' }
@@ -102,6 +102,30 @@ describe('templates', () => {
   })
   it('lists the references in a text', () => {
     expect(referencesIn('a {{ inputs.x }} b {{nodes.y.output}} {not}')).toEqual(['inputs.x', 'nodes.y.output'])
+  })
+})
+
+describe('assistant answers with named fields', () => {
+  const asked = (fields: string[] | undefined, outputFormat: 'json' | 'text' = 'json'): WorkflowNode => ({ id: 'check', type: 'agent', name: 'Check', prompt: 'p', outputFormat, outputFields: fields })
+  const reads = (text: string): WorkflowNode => shell('mail', text)
+
+  it('accepts fields that a later step reads', () => {
+    expect(validateWorkflow(chain(start, asked(['has_new', 'count']), reads('{{nodes.check.output.has_new}} {{nodes.check.output.count}}'), end))).toEqual([])
+  })
+  it('rejects a later step that reads a field the answer does not have', () => {
+    const problem = validateWorkflow(chain(start, asked(['has_new_messages']), reads('{{nodes.check.output.has_new}}'), end))[0]
+    expect(problem).toContain('“Check” does not have a field called “has_new”')
+    expect(problem).toContain('has_new_messages')
+  })
+  it('only allows fields on a JSON answer, with valid and unique names', () => {
+    expect(validateWorkflow(chain(start, asked(['a'], 'text'), end))[0]).toContain('need the answer format json')
+    expect(validateWorkflow(chain(start, asked(['1bad']), end))[0]).toContain('must be letters, digits or underscores')
+    expect(validateWorkflow(chain(start, asked(['a', 'a']), end))[0]).toContain('listed twice')
+  })
+  it('finds the fields an answer is missing', () => {
+    expect(missingFields({ a: 1, b: null }, ['a', 'b'])).toEqual([])
+    expect(missingFields({ a: 1 }, ['a', 'b'])).toEqual(['b'])
+    expect(missingFields(['x'], ['a'])).toEqual(['a'])
   })
 })
 

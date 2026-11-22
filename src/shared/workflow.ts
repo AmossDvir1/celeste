@@ -73,6 +73,11 @@ export interface AgentNode extends NodeBase, StepOptions {
   /** `json`: the answer must be one JSON value, which later steps can read field by field. */
   outputFormat?: 'text' | 'json'
   /**
+   * With `json`: the keys the answer must have. Later steps may only read these, and the run fails when one is missing, so a wrong
+   * field name is caught when the workflow is saved, not in the middle of a run.
+   */
+  outputFields?: string[]
+  /**
    * The step may use this computer's screen, mouse and keyboard (desktop control). The person is asked when the step reaches it, on the
    * run's own card, and it is refused if the switch in Settings is off. `app` or `window` limits it to one program or one window.
    */
@@ -127,7 +132,14 @@ export function slugify(name: string): string {
 
 const ID = /^[a-z][a-z0-9_]{0,39}$/
 const INPUT_NAME = /^[a-z][a-z0-9_]{0,39}$/i
+const FIELD_NAME = /^[a-zA-Z][a-zA-Z0-9_]{0,39}$/
 const TEMPLATE = /\{\{\s*([^{}]*?)\s*\}\}/g
+
+/** The names in `fields` that a JSON answer does not have. */
+export function missingFields(answer: unknown, fields: string[]): string[] {
+  if (!isObject(answer)) return fields
+  return fields.filter((f) => !(f in answer))
+}
 
 /** Every `{{ reference }}` in a text, as written inside the braces. */
 export function referencesIn(text: string): string[] {
@@ -257,6 +269,12 @@ export function validateWorkflow(input: unknown): string[] {
       case 'agent':
         if (!str(raw.prompt) || !raw.prompt.trim()) problems.push(`${label}: the prompt is empty.`)
         if (raw.outputFormat !== undefined && !['text', 'json'].includes(raw.outputFormat as string)) problems.push(`${label}: the answer format must be text or json.`)
+        if (raw.outputFields !== undefined) {
+          const f = raw.outputFields
+          if (raw.outputFormat !== 'json') problems.push(`${label}: field names need the answer format json.`)
+          else if (!Array.isArray(f) || f.some((x) => !str(x) || !FIELD_NAME.test(x))) problems.push(`${label}: each field name must be letters, digits or underscores, starting with a letter.`)
+          else if (new Set(f).size !== f.length) problems.push(`${label}: a field name is listed twice.`)
+        }
         if (raw.computer !== undefined) {
           const c = raw.computer
           if (!isObject(c)) problems.push(`${label}: the computer setting is not valid.`)
@@ -293,20 +311,29 @@ export function validateWorkflow(input: unknown): string[] {
   const start = ordered.order[0] as StartNode
   const inputNames = new Set(start.type === 'start' ? start.inputs.map((i) => i.name) : [])
   const before = new Set<string>()
+  const producers = new Map<string, WorkflowNode>()
   for (const node of ordered.order) {
     for (const text of templatesOf(node)) {
       for (const ref of referencesIn(text)) {
-        const [root, name] = ref.split('.')
+        const parts = ref.split('.')
+        const [root, name] = parts
         if (root === 'inputs') {
           if (!name || !inputNames.has(name)) problems.push(`“${node.name}” uses {{${ref}}}, but there is no input called “${name ?? ''}”.`)
         } else if (root === 'nodes') {
           if (!name || !before.has(name)) problems.push(`“${node.name}” uses {{${ref}}}, but that step does not run before it.`)
+          else {
+            const producer = producers.get(name)
+            const field = parts[3]
+            if (producer?.type === 'agent' && producer.outputFields && parts[2] === 'output' && field && !producer.outputFields.includes(field))
+              problems.push(`“${node.name}” uses {{${ref}}}, but “${producer.name}” does not have a field called “${field}”. Its fields are ${producer.outputFields.join(', ')}.`)
+          }
         } else if (root === 'run') {
           if (!(name === 'folder' || name === 'date' || name === 'time') || ref.split('.').length > 2) problems.push(`“${node.name}” uses {{${ref}}}, which is not something a step can use. Use {{run.folder}}, {{run.date}} or {{run.time}}.`)
         } else problems.push(`“${node.name}” uses {{${ref}}}, which is not something a step can use.`)
       }
     }
     before.add(node.id)
+    producers.set(node.id, node)
   }
   return problems
 }

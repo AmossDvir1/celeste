@@ -6,6 +6,7 @@ import type { CorePush } from '@shared/api'
 import type { DeviceRecord } from '@shared/devices'
 import {
   checkInputs,
+  missingFields,
   renderTemplate,
   runOrder,
   validateWorkflow,
@@ -572,7 +573,9 @@ export class WorkflowRunner {
       (node.computer ? `${computerNote(node.computer)}\n\n` : '') +
       (node.phone ? `${PHONE_NOTE}\n\n` : '') +
       renderTemplate(node.prompt, ctx) +
-      (node.outputFormat === 'json' ? '\n\nAnswer with one JSON value and nothing else.' : '')
+      (node.outputFormat === 'json'
+        ? `\n\nAnswer with one JSON value and nothing else.${node.outputFields?.length ? ` The JSON object must have exactly these keys: ${node.outputFields.join(', ')}.` : ''}`
+        : '')
     const text = await this.deps.agent.run({
       prompt,
       label: `${a.run.workflowName}: ${node.name}`,
@@ -600,11 +603,14 @@ export class WorkflowRunner {
     })
     if (node.outputFormat === 'json') {
       const cleaned = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')
+      let answer: unknown
       try {
-        JSON.parse(cleaned)
+        answer = JSON.parse(cleaned)
       } catch {
         throw new Error('The assistant did not answer with JSON.')
       }
+      const missing = node.outputFields ? missingFields(answer, node.outputFields) : []
+      if (missing.length) throw new Error(`The assistant's answer is missing the field${missing.length > 1 ? 's' : ''} ${missing.join(', ')}.`)
       return cleaned
     }
     return text.trim()

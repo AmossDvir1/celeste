@@ -36,7 +36,7 @@ Each step has a unique "id" (lowercase letters, digits and underscores, starting
 - "web": a web request. Fields: "method" (GET, POST, PUT, PATCH, DELETE), "url", optional "headers" (an object) and "body".
 - "file": "op" is "read", "write" or "append"; "path" is inside the folder the workflow works in; "content" for write and append.
 - "tool": a tool the user has added. Fields: "server", "tool", "args" (an object).
-- "assistant": asks an AI assistant. Fields: "prompt", and "json": true when the answer must be JSON.
+- "assistant": asks an AI assistant. Fields: "prompt", "json": true when the answer must be JSON, and with "json", "fields": the keys that JSON answer must have (letters, digits and underscores). Later steps may read only the listed fields.
 A step may also have "description" and "onError": "stop" (the default), "retry" or "continue".
 
 In any text, {{inputs.name}} is an answer to an input, {{nodes.step_id.output}} is what an EARLIER step produced (add .field to read a field of JSON), and {{run.folder}} is the folder the workflow works in.
@@ -84,7 +84,7 @@ export function definitionFromSpec(spec: unknown): { name: string; description: 
       const args = isObject(raw['args']) ? Object.fromEntries(Object.entries(raw['args']).filter(([, v]) => ['string', 'number', 'boolean'].includes(typeof v))) : {}
       nodes.push({ ...base, ...onError, type: 'tool', tool: { kind: 'mcp', server: text(raw['server']) ?? '', tool: text(raw['tool']) ?? '', args: args as Record<string, string | number | boolean> } })
     } else if (kind === 'assistant') {
-      nodes.push({ ...base, ...onError, type: 'agent', prompt: text(raw['prompt']) ?? '', ...(raw['json'] === true ? { outputFormat: 'json' as const } : {}) })
+      nodes.push({ ...base, ...onError, type: 'agent', prompt: text(raw['prompt']) ?? '', ...(raw['json'] === true ? { outputFormat: 'json' as const } : {}), ...(raw['json'] === true && Array.isArray(raw['fields']) ? { outputFields: (raw['fields'] as unknown[]).filter((f): f is string => typeof f === 'string' && f.trim() !== '').map((f) => f.trim()) } : {}) })
     } else throw new Error(`The step “${name}” says to do “${String(kind)}”, which is not command, web, file, tool or assistant.`)
   }
   nodes.push({ id: 'end', type: 'end', name: 'End', ...(text(spec['result']) ? { output: spec['result'] as string } : {}) })
@@ -103,7 +103,7 @@ export function specFromDefinition(name: string, description: string, def: Workf
   for (const n of def.nodes) {
     if (n.type === 'start' || n.type === 'end') continue
     const base = { id: n.id, name: n.name, ...(n.description ? { description: n.description } : {}), ...(n.onError ? { onError: n.onError } : {}) }
-    if (n.type === 'agent') steps.push({ ...base, do: 'assistant', prompt: n.prompt, ...(n.outputFormat === 'json' ? { json: true } : {}) })
+    if (n.type === 'agent') steps.push({ ...base, do: 'assistant', prompt: n.prompt, ...(n.outputFormat === 'json' ? { json: true } : {}), ...(n.outputFields ? { fields: n.outputFields } : {}) })
     else {
       const t = n.tool
       if (t.kind === 'shell') steps.push({ ...base, do: 'command', command: t.command, ...(t.cwd ? { cwd: t.cwd } : {}) })

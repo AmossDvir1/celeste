@@ -43,6 +43,16 @@ describe('reading an assistant’s description of a workflow', () => {
     expect(made.definition.nodes[6]).toMatchObject({ output: '{{nodes.summary.output}}' })
   })
 
+  it('keeps the fields an assistant step must answer with, and writes them back', () => {
+    const made = definitionFromSpec({
+      steps: [{ id: 'check', name: 'Check', do: 'assistant', prompt: 'p', json: true, fields: ['has_new', ' count ', 3] }, { id: 'mail', name: 'Mail', do: 'command', command: 'echo {{nodes.check.output.has_new}}' }]
+    })
+    expect(made.definition.nodes[1]).toMatchObject({ outputFields: ['has_new', 'count'] })
+    const spec = specFromDefinition('x', '', made.definition)
+    expect((spec.steps as Record<string, unknown>[])[0]).toMatchObject({ do: 'assistant', json: true, fields: ['has_new', 'count'] })
+    expect(validateWorkflow(made.definition)).toEqual([])
+  })
+
   it('gives a step an id of its own when the one it came with is missing, used already or not valid', () => {
     const made = definitionFromSpec({ steps: [{ id: 'a', name: 'First', do: 'command', command: 'x' }, { id: 'a', name: 'Second', do: 'command', command: 'y' }, { id: 'Bad Id', name: 'Third', do: 'command', command: 'z' }, { name: 'Fourth', do: 'command', command: 'w' }] })
     expect(made.definition.nodes.map((n) => n.id)).toEqual(['start', 'a', 'second', 'third', 'fourth', 'end'])
