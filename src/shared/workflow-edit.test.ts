@@ -72,6 +72,12 @@ describe('editing the line of steps', () => {
     expect(referencesAvailable(def, 'a')).toEqual(['{{inputs.days}}', '{{run.folder}}'])
   })
 
+  it('lists the fields an assistant step promises in its JSON answer', () => {
+    let def = insertStep(emptyDefinition(), { id: 'check', type: 'agent', name: 'Check', prompt: 'p', outputFormat: 'json', outputFields: ['has_new', 'count'] })
+    def = insertStep(def, shell('b'))
+    expect(referencesAvailable(def, 'b')).toEqual(['{{nodes.check.output}}', '{{nodes.check.output.has_new}}', '{{nodes.check.output.count}}', '{{run.folder}}'])
+  })
+
   it('renames a step, and the id follows along with every reference to it, so nothing breaks', () => {
     let def = insertStep(emptyDefinition(), { id: 'run_a_command', type: 'tool', name: 'Run a command', tool: { kind: 'shell', command: 'find' } })
     def = insertStep(def, { id: 'ask', type: 'agent', name: 'Ask', prompt: 'See {{nodes.run_a_command.output}} and {{ nodes.run_a_command.output.count }} but not {{nodes.run_a_command_2.output}}' })

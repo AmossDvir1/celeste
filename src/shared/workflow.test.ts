@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkInputs, missingFields, nodeIdFrom, referencesIn, renderTemplate, runOrder, slugify, validateWorkflow, type WorkflowDefinition, type WorkflowNode } from './workflow'
+import { checkInputs, cleanFields, missingFields, nodeIdFrom, referencesIn, renderTemplate, runOrder, slugify, validateWorkflow, type WorkflowDefinition, type WorkflowNode } from './workflow'
 
 const start: WorkflowNode = { id: 'start', type: 'start', name: 'Start', inputs: [{ name: 'days', type: 'number', default: 30 }] }
 const end: WorkflowNode = { id: 'end', type: 'end', name: 'End' }
@@ -126,6 +126,16 @@ describe('assistant answers with named fields', () => {
     expect(missingFields({ a: 1, b: null }, ['a', 'b'])).toEqual([])
     expect(missingFields({ a: 1 }, ['a', 'b'])).toEqual(['b'])
     expect(missingFields(['x'], ['a'])).toEqual(['a'])
+    // Only the answer's own keys count, not what every object inherits.
+    expect(missingFields({}, ['constructor', 'toString'])).toEqual(['constructor', 'toString'])
+  })
+  it('treats an empty list as no fields, so every field can still be read', () => {
+    expect(validateWorkflow(chain(start, asked([]), reads('{{nodes.check.output.anything}}'), end))).toEqual([])
+  })
+  it('cleans a typed list: trimmed, no blanks or repeats, none at all is nothing', () => {
+    expect(cleanFields([' a', 'b ', '', 'a', 3])).toEqual(['a', 'b'])
+    expect(cleanFields(['', ' '])).toBeUndefined()
+    expect(cleanFields('a,b')).toBeUndefined()
   })
 })
 

@@ -446,6 +446,28 @@ describe('an agent step', () => {
     expect((await bad.until(r2.id, 'failed')).error).toContain('did not answer with JSON')
   })
 
+  it('asks for the fields a JSON answer must have, and fails the run when the answer leaves one out', async () => {
+    const def = chain(start(), agent({ prompt: 'List', outputFormat: 'json', outputFields: ['count', 'names'] }), end('count={{nodes.summarize.output.count}}'))
+    let asked = ''
+    const short = setup(def, {
+      agent: async (r) => {
+        asked = r.prompt
+        return '{"count": 4}'
+      }
+    })
+    const run = await short.begin()
+    await short.until(run.id, 'waiting')
+    short.approve(run.id)
+    expect((await short.until(run.id, 'failed')).error).toContain('missing the field names')
+    expect(asked).toContain('these keys: count, names')
+
+    const full = setup(def, { agent: async () => '{"count": 4, "names": []}' })
+    const r2 = await full.begin()
+    await full.until(r2.id, 'waiting')
+    full.approve(r2.id)
+    expect((await full.until(r2.id, 'completed')).output).toBe('count=4')
+  })
+
   it('pauses the run for a question and carries on with the answer', async () => {
     const { begin, until, approve, runner, events, waitForCard, store } = setup(chain(start(), agent({ prompt: 'Which?' }), end()), {
       agent: async (r) => {

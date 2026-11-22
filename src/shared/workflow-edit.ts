@@ -120,7 +120,12 @@ export function referencesAvailable(def: WorkflowDefinition, id: string): string
   const start = order[0]
   const refs: string[] = []
   if (start?.type === 'start') for (const i of start.inputs) refs.push(`{{inputs.${i.name}}}`)
-  for (const n of order.slice(1, Math.max(index, 1))) if (n.type === 'tool' || n.type === 'agent') refs.push(`{{nodes.${n.id}.output}}`)
+  for (const n of order.slice(1, Math.max(index, 1))) {
+    if (n.type !== 'tool' && n.type !== 'agent') continue
+    refs.push(`{{nodes.${n.id}.output}}`)
+    // The fields a JSON answer promises are the ones a later step can read, so they are worth showing by name.
+    if (n.type === 'agent' && n.outputFormat === 'json') for (const f of n.outputFields ?? []) refs.push(`{{nodes.${n.id}.output.${f}}}`)
+  }
   refs.push('{{run.folder}}')
   return refs
 }

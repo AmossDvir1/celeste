@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { validateWorkflow, type WorkflowDefinition } from './workflow'
+import { validateWorkflow, type AgentNode, type WorkflowDefinition } from './workflow'
 import { FILE_EXTENSION, fromFile, toFile } from './workflow-file'
 
 const def = (): WorkflowDefinition => ({
@@ -49,6 +49,16 @@ describe('sharing a workflow as a file', () => {
 
 describe('opening a shared file', () => {
   const shared = () => toFile('Update old KBs', 'Does it.', def()).text
+
+  it('keeps the fields an assistant step must answer with, both ways', () => {
+    const d = def()
+    const think = d.nodes[4] as AgentNode
+    think.outputFields = ['summary', 'count']
+    d.nodes[5] = { id: 'end', type: 'end', name: 'End', output: '{{nodes.think.output.count}}' }
+    const r = fromFile(toFile('W', '', d).text)
+    expect(r.definition.nodes[4]).toMatchObject({ type: 'agent', outputFields: ['summary', 'count'] })
+    expect(validateWorkflow(r.definition)).toEqual([])
+  })
 
   it('gives back a valid workflow laid out in a row, ready to open as a draft', () => {
     const r = fromFile(shared())

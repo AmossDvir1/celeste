@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { ArrowLeft, ArrowRight, ChevronDown, Plus, Trash2 } from 'lucide-react'
 import type { ApprovalMode, VendorId } from '@shared/agent'
-import type { AgentNode, InputDef, InputType, OnError, StartNode, ToolNode, ToolSpec, WorkflowDefinition, WorkflowNode } from '@shared/workflow'
+import { cleanFields, type AgentNode, type InputDef, type InputType, type OnError, type StartNode, type ToolNode, type ToolSpec, type WorkflowDefinition, type WorkflowNode } from '@shared/workflow'
 import { blankTool, moveStep, orderedNodes, referencesAvailable, removeStep, renameStep, updateStep } from '@shared/workflow-edit'
 import { cn } from '@/lib/cn'
 import { Field, SelectField, TextArea } from '@/components/form'
@@ -287,6 +287,26 @@ function PhoneStepSettings({ node, patch }: { node: AgentNode; patch: (change: P
   )
 }
 
+/** The fields a JSON answer must have, typed as a list with commas. The text is kept as typed, so a comma at the end stays put. */
+function FieldsInput({ node, patch }: { node: AgentNode; patch: (change: Partial<AgentNode>) => void }) {
+  const [text, setText] = useState((node.outputFields ?? []).join(', '))
+  return (
+    <Field label="Fields" hint="Optional. The names the JSON answer must have, separated by commas. Later steps can then read only these, and the run stops when the answer leaves one out.">
+      {(id) => (
+        <TextInput
+          id={id}
+          value={text}
+          placeholder="has_new, count"
+          onChange={(e) => {
+            setText(e.target.value)
+            patch({ outputFields: cleanFields(e.target.value.split(',')) })
+          }}
+        />
+      )}
+    </Field>
+  )
+}
+
 function AgentForm({ node, def, patch }: { node: AgentNode; def: WorkflowDefinition; patch: (change: Partial<AgentNode>) => void }) {
   const vendors = useVendors((s) => s.vendors)
   const models = useModels((s) => s.list)
@@ -339,12 +359,18 @@ function AgentForm({ node, def, patch }: { node: AgentNode; def: WorkflowDefinit
       </Field>
       <Field label="Answer">
         {(id) => (
-          <SelectField id={id} value={node.outputFormat ?? 'text'} onChange={(e) => patch({ outputFormat: e.target.value as 'text' | 'json' })}>
+          <SelectField
+            id={id}
+            value={node.outputFormat ?? 'text'}
+            // Fields belong to a JSON answer: a text answer with fields left over could not be saved.
+            onChange={(e) => patch({ outputFormat: e.target.value as 'text' | 'json', ...(e.target.value === 'json' ? {} : { outputFields: undefined }) })}
+          >
             <option value="text">Text</option>
             <option value="json">JSON, so later steps can use its fields</option>
           </SelectField>
         )}
       </Field>
+      {node.outputFormat === 'json' && <FieldsInput key={node.id} node={node} patch={patch} />}
     </>
   )
 }

@@ -23,7 +23,8 @@ const spec = (name) =>
     inputs: [{ name: 'who', label: 'Who to greet', type: 'text', default: 'world' }],
     steps: [
       { id: 'note', name: 'Write the note', do: 'file', op: 'write', path: 'hello.txt', content: 'Hello {{inputs.who}}' },
-      { id: 'say', name: 'Say hello', do: 'command', command: 'echo hello-from-a-draft' }
+      { id: 'check', name: 'Check the note', do: 'assistant', prompt: 'Is hello.txt friendly?', json: true, fields: ['friendly', 'reason'] },
+      { id: 'say', name: 'Say hello', do: 'command', command: 'echo hello-from-a-draft {{nodes.check.output.friendly}}' }
     ],
     result: '{{nodes.say.output}}'
   })
@@ -67,7 +68,20 @@ try {
   await dialog.getByRole('textbox', { name: 'What should the workflow do?' }).fill('Greet someone by name and keep a note of it')
   await draft.click()
   await page.getByRole('textbox', { name: 'Workflow name' }).waitFor({ timeout: 90_000 })
-  check('the draft opens on the canvas, named, with Start, its steps and End', (await page.getByRole('textbox', { name: 'Workflow name' }).inputValue()) === 'Greet people' && (await nodes.count()) === 4, `name ${await page.getByRole('textbox', { name: 'Workflow name' }).inputValue()}, steps ${await nodes.count()}`)
+  check('the draft opens on the canvas, named, with Start, its steps and End', (await page.getByRole('textbox', { name: 'Workflow name' }).inputValue()) === 'Greet people' && (await nodes.count()) === 5, `name ${await page.getByRole('textbox', { name: 'Workflow name' }).inputValue()}, steps ${await nodes.count()}`)
+  const details = page.getByRole('region', { name: 'Step details' })
+  await nodes.filter({ hasText: 'Check the note' }).first().click()
+  const fields = details.getByRole('textbox', { name: 'Fields' })
+  check('an assistant step shows the fields its JSON answer must have', (await fields.inputValue()) === 'friendly, reason', await fields.inputValue())
+  await nodes.filter({ hasText: 'Say hello' }).first().click()
+  const hint = await details.innerText()
+  check('and a later step is told it can read them by name', hint.includes('{{nodes.check.output.friendly}}') && hint.includes('{{nodes.check.output.reason}}'), hint.slice(0, 300))
+  await nodes.filter({ hasText: 'Check the note' }).first().click()
+  await details.getByRole('combobox', { name: 'Answer' }).selectOption('text')
+  check('a text answer has no fields to fill in', (await fields.count()) === 0)
+  await details.getByRole('combobox', { name: 'Answer' }).selectOption('json')
+  check('and back to JSON, the fields start empty again', (await fields.inputValue()) === '')
+  await fields.fill('friendly, reason')
   check('and it is not saved: nothing is kept or run until the person says so', (await page.getByText('Unsaved changes').count()) === 1 && (await page.getByRole('list', { name: 'Your workflows' }).count()) === 0)
   const asked = stub.requests.map((r) => (r.last.kind === 'text' ? r.last.text : '')).find((t) => /Make a workflow for this/.test(t)) ?? ''
   check('the assistant was told the format, and what the person wants', /Greet someone by name/.test(asked) && /{{nodes.step_id.output}}/.test(asked), `${stub.requests.length} requests; last texts: ${stub.requests.map((r) => (r.last.kind === 'text' ? r.last.text.slice(0, 60) : r.last.kind)).join(' | ')}`)

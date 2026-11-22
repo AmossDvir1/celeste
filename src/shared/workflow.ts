@@ -135,10 +135,17 @@ const INPUT_NAME = /^[a-z][a-z0-9_]{0,39}$/i
 const FIELD_NAME = /^[a-zA-Z][a-zA-Z0-9_]{0,39}$/
 const TEMPLATE = /\{\{\s*([^{}]*?)\s*\}\}/g
 
-/** The names in `fields` that a JSON answer does not have. */
+/** The names in `fields` that a JSON answer does not have (its own keys only, so "constructor" is not found on every object). */
 export function missingFields(answer: unknown, fields: string[]): string[] {
   if (!isObject(answer)) return fields
-  return fields.filter((f) => !(f in answer))
+  return fields.filter((f) => !Object.hasOwn(answer, f))
+}
+
+/** Field names as a person or an assistant wrote them: trimmed, without blanks or repeats; none at all is `undefined`. */
+export function cleanFields(list: unknown): string[] | undefined {
+  if (!Array.isArray(list)) return undefined
+  const fields = [...new Set(list.filter((f): f is string => typeof f === 'string').map((f) => f.trim()).filter(Boolean))]
+  return fields.length ? fields : undefined
 }
 
 /** Every `{{ reference }}` in a text, as written inside the braces. */
@@ -324,7 +331,7 @@ export function validateWorkflow(input: unknown): string[] {
           else {
             const producer = producers.get(name)
             const field = parts[3]
-            if (producer?.type === 'agent' && producer.outputFields && parts[2] === 'output' && field && !producer.outputFields.includes(field))
+            if (producer?.type === 'agent' && producer.outputFields?.length && parts[2] === 'output' && field && !producer.outputFields.includes(field))
               problems.push(`“${node.name}” uses {{${ref}}}, but “${producer.name}” does not have a field called “${field}”. Its fields are ${producer.outputFields.join(', ')}.`)
           }
         } else if (root === 'run') {

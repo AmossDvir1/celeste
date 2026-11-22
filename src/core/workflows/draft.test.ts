@@ -53,6 +53,20 @@ describe('reading an assistant’s description of a workflow', () => {
     expect(validateWorkflow(made.definition)).toEqual([])
   })
 
+  it('drops a repeated field, an empty list, and fields on an answer that is not JSON', () => {
+    const made = definitionFromSpec({
+      steps: [
+        { id: 'a', name: 'A', do: 'assistant', prompt: 'p', json: true, fields: ['x', 'x', ' '] },
+        { id: 'b', name: 'B', do: 'assistant', prompt: 'p', json: true, fields: [] },
+        { id: 'c', name: 'C', do: 'assistant', prompt: 'p', fields: ['x'] }
+      ]
+    })
+    expect(made.definition.nodes[1]).toMatchObject({ outputFields: ['x'] })
+    expect(made.definition.nodes[2]).not.toHaveProperty('outputFields')
+    expect(made.definition.nodes[3]).not.toHaveProperty('outputFields')
+    expect(validateWorkflow(made.definition)).toEqual([])
+  })
+
   it('gives a step an id of its own when the one it came with is missing, used already or not valid', () => {
     const made = definitionFromSpec({ steps: [{ id: 'a', name: 'First', do: 'command', command: 'x' }, { id: 'a', name: 'Second', do: 'command', command: 'y' }, { id: 'Bad Id', name: 'Third', do: 'command', command: 'z' }, { name: 'Fourth', do: 'command', command: 'w' }] })
     expect(made.definition.nodes.map((n) => n.id)).toEqual(['start', 'a', 'second', 'third', 'fourth', 'end'])

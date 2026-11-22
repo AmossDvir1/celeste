@@ -1,4 +1,4 @@
-import { nodeIdFrom, validateWorkflow, type InputDef, type WorkflowDefinition, type WorkflowNode } from '@shared/workflow'
+import { cleanFields, nodeIdFrom, validateWorkflow, type InputDef, type WorkflowDefinition, type WorkflowNode } from '@shared/workflow'
 import { fromFile, SECRET_HEADER, toFile } from '@shared/workflow-file'
 
 /*
@@ -84,7 +84,7 @@ export function definitionFromSpec(spec: unknown): { name: string; description: 
       const args = isObject(raw['args']) ? Object.fromEntries(Object.entries(raw['args']).filter(([, v]) => ['string', 'number', 'boolean'].includes(typeof v))) : {}
       nodes.push({ ...base, ...onError, type: 'tool', tool: { kind: 'mcp', server: text(raw['server']) ?? '', tool: text(raw['tool']) ?? '', args: args as Record<string, string | number | boolean> } })
     } else if (kind === 'assistant') {
-      nodes.push({ ...base, ...onError, type: 'agent', prompt: text(raw['prompt']) ?? '', ...(raw['json'] === true ? { outputFormat: 'json' as const } : {}), ...(raw['json'] === true && Array.isArray(raw['fields']) ? { outputFields: (raw['fields'] as unknown[]).filter((f): f is string => typeof f === 'string' && f.trim() !== '').map((f) => f.trim()) } : {}) })
+      nodes.push({ ...base, ...onError, type: 'agent', prompt: text(raw['prompt']) ?? '', ...(raw['json'] === true ? { outputFormat: 'json' as const } : {}), ...(raw['json'] === true && cleanFields(raw['fields']) ? { outputFields: cleanFields(raw['fields']) } : {}) })
     } else throw new Error(`The step “${name}” says to do “${String(kind)}”, which is not command, web, file, tool or assistant.`)
   }
   nodes.push({ id: 'end', type: 'end', name: 'End', ...(text(spec['result']) ? { output: spec['result'] as string } : {}) })
@@ -103,7 +103,7 @@ export function specFromDefinition(name: string, description: string, def: Workf
   for (const n of def.nodes) {
     if (n.type === 'start' || n.type === 'end') continue
     const base = { id: n.id, name: n.name, ...(n.description ? { description: n.description } : {}), ...(n.onError ? { onError: n.onError } : {}) }
-    if (n.type === 'agent') steps.push({ ...base, do: 'assistant', prompt: n.prompt, ...(n.outputFormat === 'json' ? { json: true } : {}), ...(n.outputFields ? { fields: n.outputFields } : {}) })
+    if (n.type === 'agent') steps.push({ ...base, do: 'assistant', prompt: n.prompt, ...(n.outputFormat === 'json' ? { json: true } : {}), ...(n.outputFormat === 'json' && n.outputFields?.length ? { fields: n.outputFields } : {}) })
     else {
       const t = n.tool
       if (t.kind === 'shell') steps.push({ ...base, do: 'command', command: t.command, ...(t.cwd ? { cwd: t.cwd } : {}) })

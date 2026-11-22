@@ -41,6 +41,7 @@ function clean(node: WorkflowNode): WorkflowNode {
         ...(node.effort ? { effort: node.effort } : {}),
         ...(node.approval ? { approval: node.approval } : {}),
         ...(node.outputFormat ? { outputFormat: node.outputFormat } : {}),
+        ...(node.outputFormat === 'json' && node.outputFields?.length ? { outputFields: [...node.outputFields] } : {}),
         ...(node.computer ? { computer: { ...(node.computer.app?.trim() ? { app: node.computer.app.trim() } : {}), ...(node.computer.window?.trim() ? { window: node.computer.window.trim() } : {}) } } : {}),
         ...(node.phone ? { phone: {} } : {}),
         ...options(node)
