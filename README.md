@@ -80,10 +80,12 @@ Download the newest version from the [Releases page](https://github.com/AmossDvi
 
 Every release lists a checksum for each file (`SHA256SUMS.txt`). To check one on Windows: `certutil -hashfile <file> SHA256`; on a Mac: `shasum -a 256 <file>`.
 
-**The first time you open it, your system may warn you.** The installers are not signed with a paid certificate yet, so
-Windows and macOS do not know who made them. This is expected; the program is the one built from this repository's code.
+**The first time you open it, your system may warn you.** The installers are not signed yet, so Windows and macOS do not
+know who made them. This is expected; the program is the one built from this repository's code. Free signing is being applied
+for (see the [code signing policy](CODE_SIGNING_POLICY.md)).
 
 - **Windows:** SmartScreen may say "Windows protected your PC". Choose **More info**, then **Run anyway**.
+- **Windows with Smart App Control on** (some new Windows 11 computers have it): it says "Smart App Control blocked an app that may be unsafe" and **offers no way past**, because it only runs signed apps. Until Celeste is signed, you can switch it off in **Windows Security → App & browser control → Smart App Control settings**, or use Celeste on another computer. On most versions of Windows, once it is off it cannot be switched on again without resetting Windows, so think about it first.
 - **macOS:** it may say Celeste "cannot be opened" or "is damaged". Open **System Settings → Privacy & Security**, scroll to Security, and choose **Open Anyway** next to Celeste. If it still says "damaged", run `xattr -dr com.apple.quarantine /Applications/Celeste.app` in Terminal once.
 
 ### Getting started
@@ -97,6 +99,12 @@ Windows and macOS do not know who made them. This is expected; the program is th
    - **Claude:** connect through the Claude Console in your browser, or paste an API key. The first time, Celeste downloads
      Claude Code's program (about 330 MB unpacked) from npm. A Claude subscription login is not offered, because
      Anthropic does not allow other apps to use one.
+   - **OpenAI:** choose **Continue with ChatGPT** to use your own paid ChatGPT plan (the Free plan cannot be used by other
+     apps), or open the arrow beside it and paste an OpenAI API key. The first time, Celeste downloads OpenAI's Codex program
+     (about 180 MB) from npm.
+   - **Gemini:** choose **Get a free key**, which opens Google AI Studio; create a key there and paste it into Celeste. The
+     first time, Celeste downloads the Gemini CLI (about 19 MB) from npm. There is no Google sign-in: Google ended it in the
+     Gemini CLI for personal accounts in June 2026.
 3. **Start a chat** with Ctrl N, pick a model under the message box, and write.
 
 **Updating:** Settings → About → *Check for updates* tells you whether a newer version exists and opens the download page.
@@ -187,6 +195,12 @@ phone's in [docs/PHONE_PLAN.md](docs/PHONE_PLAN.md), the browser's in [docs/BROW
 - A security problem: please do not open a public issue; see [SECURITY.md](SECURITY.md).
 - What changed in each version: [CHANGELOG.md](CHANGELOG.md).
 - Building it yourself or helping: [CONTRIBUTING.md](CONTRIBUTING.md) has how to run Celeste from source, the checks, and how it is put together.
+
+## Code signing policy
+
+Celeste's Windows installers are not signed yet; free signing from the SignPath Foundation is being applied for. How signing
+will work, who approves a release, and what is and is not signed is in [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md). What
+leaves your computer is in [PRIVACY.md](PRIVACY.md).
 
 ## License
 

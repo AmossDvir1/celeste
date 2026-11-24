@@ -51,6 +51,16 @@ Without signing, Windows SmartScreen and macOS Gatekeeper warn the first time (t
 | Android | `ANDROID_KEYSTORE_BASE64` (the keystore file, base64), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` | Free: make it once with `keytool -genkeypair -v -keystore celeste.jks -keyalg RSA -keysize 4096 -validity 10000 -alias celeste`, then `base64 -w0 celeste.jks` for the first secret. **Keep the file and its passwords safe for good**: a new app signed with another key will not install over the old one, so everyone would have to uninstall first. Without these secrets the release has no APK (an unsigned one cannot be installed), and computers fall back to an APK built from source. |
 | macOS | `MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD` (a *Developer ID Application* certificate), `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` | An Apple Developer Program membership (US$99 a year). With these the app is signed and notarized, and the Gatekeeper warning goes away. |
 
+### Applying to the SignPath Foundation (Windows)
+
+[CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md), the README's "Code signing policy" section and the footer of every release page are the policy pages the Foundation asks for. To apply, an owner of the repository fills in the form at <https://signpath.org/apply> (it needs a GitHub account with multi-factor authentication). The conditions are on <https://signpath.org/terms>: an open-source license for every component, a fully automated build from the repository, one team that develops and signs, and a policy page. Once approved:
+
+1. Add their attribution line to the README's home section (it is already written on the policy page).
+2. Change the Windows job of `release.yml`: build the unpacked app, send `Celeste.exe` for signing, build the installers around the signed file, then send the `.exe` and `.msi` for signing (SignPath's GitHub action takes an uploaded artifact and gives back a signed one). Only Celeste's own files are signed, never the upstream libraries inside them.
+3. Try a signed build on a computer with Smart App Control **on**: it needs the certificate chain to be one Microsoft trusts, and it does not support signatures made with elliptic-curve keys.
+
+Until then the installers are unsigned, and the README tells people about SmartScreen and Smart App Control.
+
 ## Before the first public release
 
 - The installers have been run on **Windows** here, by the build. They have not been opened by a person on a **Mac**; the build starts the app there but cannot judge how it looks or how the system treats it. Someone with a Mac should try the draft before it is published.

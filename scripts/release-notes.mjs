@@ -17,4 +17,7 @@ if (at < 0) {
   process.exit(1)
 }
 const next = lines.findIndex((line, i) => i > at && heading(line))
-process.stdout.write(`${lines.slice(at + 1, next < 0 ? undefined : next).join('\n').trim()}\n`)
+const notes = lines.slice(at + 1, next < 0 ? undefined : next).join('\n').trim()
+// Every release page points to the code signing policy and the privacy notes (the SignPath Foundation asks for both on the download page).
+const repo = 'https://github.com/AmossDvir1/celeste/blob/main'
+process.stdout.write(`${notes}\n\n---\n\n[Code signing policy](${repo}/CODE_SIGNING_POLICY.md) · [Privacy](${repo}/PRIVACY.md) · A checksum for every file is in \`SHA256SUMS.txt\`.\n`)

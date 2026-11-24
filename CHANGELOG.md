@@ -6,6 +6,7 @@ All notable changes to Celeste. The format follows [Keep a Changelog](https://ke
 
 ### Added
 
+- A **code signing policy** ([CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md)): what will be signed, who approves a release, and how, ready for the application to the SignPath Foundation. Every release page now links to it and to the privacy notes. The installers are still unsigned.
 - **Celeste stays in the tray** (Windows). Closing the window hides it and Celeste keeps running, so chats, workflow runs and the phone connection carry on. Click the tray icon to open it, right-click to quit (it asks first if something is still going). While the window is hidden, a notification tells you when a chat or a workflow needs you, and clicking it opens that chat. Hiding the window ends any desktop control. One choice, in Settings, General, turns it off.
 - A **compact window**. A button in the top bar (next to the window buttons, or Ctrl+Shift+M, or the tray menu) turns Celeste into a small side window at the bottom right of the screen, kept above other windows (a pin turns that off). It shows the chat folded to one line per step, with the message box under it; with no chat chosen it shows what needs you, a box to type in, and your recent chats; the Workflows tab lists your workflows with a Run button and what is running. Settings and the setup wizard open in the full window, and Celeste always starts as the full window (the small one remembers where you left it, and its pin). The change between the two is animated.
 - **The assistant can look at Celeste itself.** Four tools that only read: the plugins you added and how their last test went, a few settings (never a key or a password), the latest workflow runs, and one run's details, so "why did my backup fail?" gets a real answer from the run's own error. They work in plan mode, and take about 470 tokens from each message.
@@ -35,6 +36,10 @@ All notable changes to Celeste. The format follows [Keep a Changelog](https://ke
 - **Typing a new message while the assistant waits for your answer lets go of the question.** The message used to wait in the queue behind a question that was never going to finish, and the question stayed on screen (also after Stop). Now the turn is stopped, the question reads "You skipped" and your message goes at once. The same goes for an approval card.
 - **A message sent while the assistant worked, after you had skipped its question, no longer stopped the work.** A skipped question stayed on a list of things Celeste waits for, so every later message was sent as "stop and send".
 - **A command Claude starts in the background no longer loses its answer.** When a command ended after the turn, Claude Code carried on by itself and said something about the result, but Celeste threw that away, so the chat looked finished and silent. Now a one-line card follows the command ("Running in the background: …", then how it ended), and what Claude says when it ends is shown, as a turn of its own. Each card has a **Stop** for that one command (the chat's own Stop leaves it running), the tray's tooltip and the question before quitting count such commands, a notification says when one ends while the window is hidden, and the phone can stop one too. **Show output** on the card shows the end of what the command has written, also while it runs, and the phone has the same Show output and Stop.
+
+### Changed
+
+- The README says what Windows's **Smart App Control** does with an unsigned installer (it blocks it, with no way past, unlike SmartScreen), and how to connect OpenAI and Gemini.
 
 ## [1.3.0] - 2026-11-14
 
