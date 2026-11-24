@@ -47,4 +47,13 @@ describe('what the viewer scheme answers', () => {
     expect(route('celeste-file://app/viewer.html')).toEqual({ kind: 'none' })
     expect(route('not a url')).toEqual({ kind: 'none' })
   })
+
+  it('lets the development server answer the viewer’s own page and modules, but still refuses backslashes, other hosts, and unknown tokens', () => {
+    const dev = (url: string) => routeViewerRequest(url, APP, (t) => files[t] ?? null, true)
+    expect(dev('celeste-view://app/viewer.html?t=1')).toEqual({ kind: 'dev', pathname: '/viewer.html' })
+    expect(dev('celeste-view://app/viewer/main.tsx')).toEqual({ kind: 'dev', pathname: '/viewer/main.tsx' })
+    expect(dev(`celeste-view://app/__file/${TOKEN}/report.docx`)).toEqual({ kind: 'file', path: '/data/report.docx' })
+    expect(dev('celeste-view://app/assets\\x.js')).toEqual({ kind: 'none' })
+    expect(dev('celeste-view://other/viewer.html')).toEqual({ kind: 'none' })
+  })
 })

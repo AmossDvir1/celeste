@@ -23,7 +23,7 @@ import { formatDuration } from '@/lib/format'
 import { Markdown } from '@/components/Markdown'
 import { ShimmerText } from '@/components/ShimmerText'
 import { Button, Spinner } from '@/components/ui'
-import { DiffList } from '@/features/develop/DiffView'
+import { DiffCwdContext, DiffList } from '@/features/develop/DiffView'
 import { RevertDialog } from '@/features/develop/RevertDialog'
 import { ReviewDialog } from '@/features/develop/ReviewDialog'
 import { useSessions } from '@/stores/sessions'
@@ -596,6 +596,7 @@ export function Timeline({
   }, [from, scroller])
 
   return (
+    <DiffCwdContext.Provider value={session.cwd ?? undefined}>
     <div className="space-y-4">
       {target && <RevertDialog sessionId={session.id} checkpointId={target} onClose={() => setTarget(null)} />}
       {reviewing && <ReviewDialog sessionId={session.id} scope={reviewing} onClose={() => setReviewing(null)} />}
@@ -613,6 +614,7 @@ export function Timeline({
       })}
       {session.activity && <ActivityLine activity={session.activity} />}
     </div>
+    </DiffCwdContext.Provider>
   )
 
   function renderBlock(b: Block) {

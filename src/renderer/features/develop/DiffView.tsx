@@ -1,13 +1,20 @@
-import { useState } from 'react'
-import { ChevronRight, FilePlus, FileText, FileX } from 'lucide-react'
+import { createContext, useContext, useState } from 'react'
+import { ChevronRight, Eye, FilePlus, FileText, FileX } from 'lucide-react'
 import type { FileDiff } from '@shared/agent'
 import { cn } from '@/lib/cn'
 import { basename } from '@/lib/format'
+import { openFileInPane } from '@/lib/links'
+import { IconButton } from '@/components/ui'
+import { MdIcon, isMarkdownName } from '@/components/MdIcon'
 
-function FileIcon({ status }: { status: FileDiff['status'] }) {
+/** The folder a session works in, so a changed file's path can be opened. Provided by the chat timeline. */
+export const DiffCwdContext = createContext<string | undefined>(undefined)
+
+function FileIcon({ status, path }: { status: FileDiff['status']; path: string }) {
   const cls = 'h-4 w-4 shrink-0'
-  if (status === 'added') return <FilePlus className={cn(cls, 'text-success')} />
-  if (status === 'deleted') return <FileX className={cn(cls, 'text-danger')} />
+  if (status === 'added') return isMarkdownName(path) ? <MdIcon className={cn(cls, 'text-success')} /> : <FilePlus className={cn(cls, 'text-success')} />
+  if (status === 'deleted') return isMarkdownName(path) ? <MdIcon className={cn(cls, 'text-danger')} /> : <FileX className={cn(cls, 'text-danger')} />
+  if (isMarkdownName(path)) return <MdIcon className={cn(cls, 'text-ink-muted')} />
   return <FileText className={cn(cls, 'text-ink-muted')} />
 }
 
@@ -40,7 +47,11 @@ export function DiffLines({ diff, className }: { diff: FileDiff; className?: str
 
 export function DiffFile({ diff, defaultOpen = true, actions }: { diff: FileDiff; defaultOpen?: boolean; /** Buttons at the end of the file's title bar. */ actions?: React.ReactNode }) {
   const [open, setOpen] = useState(defaultOpen)
+  const cwd = useContext(DiffCwdContext)
   const dir = diff.path.slice(0, diff.path.length - basename(diff.path).length)
+  // A Markdown file that still exists opens in the viewer, as in the Files panel.
+  const canOpen = !!cwd && diff.status !== 'deleted' && isMarkdownName(diff.path)
+  const openIt = () => void openFileInPane(`${cwd}${cwd?.includes('\\') ? '\\' : '/'}${diff.path}`)
   return (
     <div className="overflow-hidden rounded-xl border border-edge bg-field">
       <div className="flex items-center">
@@ -51,7 +62,7 @@ export function DiffFile({ diff, defaultOpen = true, actions }: { diff: FileDiff
         className="flex h-10 min-w-0 flex-1 items-center gap-2.5 px-3 text-left hover:bg-hover"
       >
         <ChevronRight className={cn('h-4 w-4 shrink-0 text-ink-faint transition-transform', open && 'rotate-90')} />
-        <FileIcon status={diff.status} />
+        <FileIcon status={diff.status} path={diff.path} />
         <span className="min-w-0 flex-1 truncate font-mono text-[12.5px]">
           <span className="text-ink-faint">{dir}</span>
           <span className="text-ink">{basename(diff.path)}</span>
@@ -61,7 +72,16 @@ export function DiffFile({ diff, defaultOpen = true, actions }: { diff: FileDiff
           <span className="text-success">+{diff.added}</span> <span className="text-danger">−{diff.removed}</span>
         </span>
       </button>
-      {actions && <div className="flex shrink-0 items-center gap-1 pr-2">{actions}</div>}
+      {(canOpen || actions) && (
+        <div className="flex shrink-0 items-center gap-1 pr-2">
+          {canOpen && (
+            <IconButton label="View" size="sm" onClick={openIt}>
+              <Eye className="h-4 w-4" />
+            </IconButton>
+          )}
+          {actions}
+        </div>
+      )}
       </div>
       {open && <DiffLines diff={diff} className="border-t border-edge/70" />}
     </div>

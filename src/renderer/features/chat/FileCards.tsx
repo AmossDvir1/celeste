@@ -1,6 +1,8 @@
+import type { ComponentType } from 'react'
 import { Archive, ExternalLink, FileCode2, FileImage, FileSpreadsheet, FileText, File as FileIcon, FolderOpen, Globe, Save } from 'lucide-react'
 import { canOpenFile, fileKind, formatBytes, type FileKind, type ProducedFile } from '@shared/produced'
 import { Button, IconButton } from '@/components/ui'
+import { MdIcon, isMarkdownName } from '@/components/MdIcon'
 import { useUi } from '@/stores/ui'
 
 const ICON: Record<FileKind, typeof FileText> = {
@@ -43,7 +45,11 @@ export function FileCards({ sessionId, files, more }: { sessionId: string; files
         {files.map((f) => {
           const name = nameOf(f.path)
           const kind = fileKind(name)
-          const Icon = kind === 'other' && /\.(py|js|ts|sh|ps1|bat|cmd)$/i.test(name) ? FileCode2 : ICON[kind]
+          const Icon: ComponentType<{ className?: string }> = isMarkdownName(name)
+            ? MdIcon
+            : kind === 'other' && /\.(py|js|ts|sh|ps1|bat|cmd)$/i.test(name)
+              ? FileCode2
+              : ICON[kind]
           const folder = folderOf(f.path)
           return (
             <li key={f.path} className="flex items-center gap-3 px-3.5 py-2.5">

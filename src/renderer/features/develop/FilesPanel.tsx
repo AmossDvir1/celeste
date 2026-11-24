@@ -1,6 +1,8 @@
 import { openFileInPane } from '@/lib/links'
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { ArrowLeft, ChevronRight, FileText, Folder, FolderOpen, Plus, RefreshCw } from 'lucide-react'
+import type { ComponentType } from 'react'
+import { MdIcon, isMarkdownName } from '@/components/MdIcon'
 import type { ContextRef } from '@shared/agent'
 import type { FileListing, FilePreview } from '@shared/api'
 import { CONTEXT_MIME } from '@/features/chat/context'
@@ -139,7 +141,7 @@ export function FilesPanel() {
       const expanded = isDir && open.has(path)
       const change = isDir ? undefined : changes.get(path)
       const inside = isDir && [...changes.keys()].some((p) => p.startsWith(`${path}/`))
-      const Icon = isDir ? (expanded ? FolderOpen : Folder) : FileText
+      const Icon: ComponentType<{ className?: string }> = isDir ? (expanded ? FolderOpen : Folder) : isMarkdownName(entry.name) ? MdIcon : FileText
       out.push(
         <div
           key={path}

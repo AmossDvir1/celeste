@@ -12,14 +12,19 @@ import { VIEWER_MAX_BYTES } from '@shared/preview'
 export const VIEW_SCHEME = 'celeste-view'
 
 /** What a request is for. */
-export type ViewerTarget = { kind: 'file'; path: string } | { kind: 'app'; path: string } | { kind: 'none' }
+export type ViewerTarget = { kind: 'file'; path: string } | { kind: 'app'; path: string } | { kind: 'dev'; pathname: string } | { kind: 'none' }
 
 /** What of the built app the viewer may fetch. */
 const APP_FILES = /^(viewer\.html|assets\/[\w.\-@]+\.(js|css|woff2?|svg|png|wasm|json))$/i
 const TOKEN = /^[0-9a-f]{32}$/
 
 /** Decides what a request is for, without touching the disk. `fileOf` gives the file a token was made for, or null. */
-export function routeViewerRequest(rawUrl: string, appDir: string, fileOf: (token: string) => string | null): ViewerTarget {
+export function routeViewerRequest(
+  rawUrl: string,
+  appDir: string,
+  fileOf: (token: string) => string | null,
+  devServer = false
+): ViewerTarget {
   let url: URL
   try {
     url = new URL(rawUrl)
@@ -41,6 +46,8 @@ export function routeViewerRequest(rawUrl: string, appDir: string, fileOf: (toke
     const file = fileOf(token)
     return file ? { kind: 'file', path: file } : { kind: 'none' }
   }
+  // In development the page and its modules come from the dev server, which the viewer's own page is served by, so they are not in the built app.
+  if (devServer) return { kind: 'dev', pathname: path }
   const relative = path.replace(/^\//, '')
   if (!APP_FILES.test(relative)) return { kind: 'none' }
   const target = resolve(appDir, relative)
@@ -78,15 +85,15 @@ const notFound = () => new Response('Not found', { status: 404 })
 /** Starts answering `celeste-view://` in a session. */
 export function serveViewer(ses: Session, options: ViewerProtocolOptions): void {
   ses.protocol.handle(VIEW_SCHEME, async (request) => {
-    const target = routeViewerRequest(request.url, options.appDir, options.fileOf)
+    const target = routeViewerRequest(request.url, options.appDir, options.fileOf, Boolean(options.devUrl))
     try {
       if (target.kind === 'file') {
         const info = await stat(target.path)
         if (!info.isFile() || info.size > VIEWER_MAX_BYTES) return new Response('Too large', { status: 413 })
         return await net.fetch(pathToFileURL(target.path).toString())
       }
+      if (target.kind === 'dev' && options.devUrl) return await net.fetch(new URL(new URL(request.url).pathname + new URL(request.url).search, options.devUrl).toString())
       if (target.kind === 'app') {
-        if (options.devUrl) return await net.fetch(new URL(new URL(request.url).pathname, options.devUrl).toString())
         const body = await readFile(target.path)
         const headers: Record<string, string> = { 'content-type': TYPES[extname(target.path).toLowerCase()] ?? 'application/octet-stream' }
         if (target.path.toLowerCase().endsWith('.html')) headers['content-security-policy'] = VIEWER_CSP
