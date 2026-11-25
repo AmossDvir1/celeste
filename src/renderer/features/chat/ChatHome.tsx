@@ -3,6 +3,7 @@ import { ArrowRight, Code, FileText, Lightbulb, MessageSquare, TestTube } from '
 import type { SessionMode, UserInput } from '@shared/agent'
 import { greetingFor } from '@/lib/format'
 import { GlowArc } from '@/glow/GlowArc'
+import { MoonsPicker } from '@/features/moons/MoonsPicker'
 import { useDrafts } from '@/stores/drafts'
 import { useSettings } from '@/stores/settings'
 import { useUi } from '@/stores/ui'
@@ -78,6 +79,7 @@ export function ChatHome({
               onSend={(input) => onSend(input)}
               autoFocus
             />
+            <MoonsPicker />
           </div>
 
           <div className="mt-[41px] flex flex-wrap items-center justify-center gap-5">

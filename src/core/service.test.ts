@@ -1799,3 +1799,209 @@ describe('the prompt queue', () => {
     expect(pushedEvents(pushes, id).map((e) => e.event.type)).toContain('queue.added')
   })
 })
+
+describe('the places where a chat with two moons is asked about (docs/plans/TWO_MOONS_PLAN.md)', () => {
+  const msg = (text: string): UserInput => ({ text, attachments: [] })
+  const done = { type: 'turn.completed', turnId: 't' } as const
+  const heard = (a: FakeAgent | undefined) => a?.sent.map((m) => m.text)
+  const withMoons = (over: Partial<{ takes: (id: string, input: UserInput) => boolean; lineFor: (id: string) => string; penDone: (id: string) => boolean }> = {}, stopped?: (id: string) => void) => {
+    const hooks = { takes: vi.fn(over.takes ?? ((_id: string, _input: UserInput) => false)), lineFor: vi.fn(over.lineFor ?? ((_id: string) => '')), penDone: vi.fn(over.penDone ?? ((_id: string) => false)), notSent: vi.fn((_id: string) => undefined) }
+    const world = setup(new MemoryStore(), '/data', { moons: hooks, onSessionStopped: (id) => stopped?.(id) })
+    return { ...world, hooks }
+  }
+  const two = { ...input, moons: { pattern: 'build' as const, vendor: 'claude' as const, model: 'claude-sonnet', effort: null } }
+
+  it('asks the engine before a message goes to the agent, and hands it over as it is when the engine does not take it', () => {
+    const { api, agents, hooks } = withMoons()
+    const { id } = api['sessions.create'](input)
+    api['sessions.send'](id, msg('hello'))
+    expect(hooks.takes).toHaveBeenCalledWith(id, { text: 'hello', attachments: [] })
+    expect(heard(agents[0])).toEqual(['hello'])
+  })
+
+  it('does not hand the message to the agent when the engine took it, and does not log it either (the engine does)', () => {
+    const { api, agents, hooks } = withMoons({ takes: () => true })
+    const { id } = api['sessions.create'](input)
+    api['sessions.send'](id, msg('hello'))
+    expect(hooks.takes).toHaveBeenCalledTimes(1)
+    expect(agents).toHaveLength(0)
+    expect(typesOf(api, id)).not.toContain('user.message')
+  })
+
+  it('adds what the engine says the pen is to be told, to what the agent hears and not to what the chat shows', () => {
+    const { api, agents } = withMoons({ lineFor: () => '[Celeste: you are the Builder.]' })
+    const { id } = api['sessions.create'](input)
+    api['sessions.send'](id, msg('hello'))
+    expect(heard(agents[0])).toEqual(['hello\n\n[Celeste: you are the Builder.]'])
+    expect((api['sessions.get'](id)?.events ?? []).find((e) => e.event.type === 'user.message')?.event).toMatchObject({ text: 'hello' })
+  })
+
+  it('asks the engine about a waiting message too, when it is sent from the queue', async () => {
+    const taken: string[] = []
+    const { api, agents } = withMoons({ takes: (_id, i) => (taken.push(i.text), i.text === 'second') })
+    const { id } = api['sessions.create'](input)
+    api['sessions.send'](id, msg('first'))
+    api['sessions.send'](id, msg('second'), 'queue')
+    agents[0]?.emit(done)
+    await flush()
+    expect(taken).toEqual(['first', 'second'])
+    expect(heard(agents[0])).toEqual(['first'])
+    expect(typesOf(api, id)).toContain('queue.sent')
+  })
+
+  it('does not send what waits when the engine says the run goes on after the pen’s turn, and sends it when it does not', async () => {
+    const goOn = { value: true }
+    const { api, agents, hooks } = withMoons({ penDone: () => goOn.value })
+    const { id } = api['sessions.create'](input)
+    api['sessions.send'](id, msg('first'))
+    api['sessions.send'](id, msg('second'), 'queue')
+    agents[0]?.emit(done)
+    await flush()
+    expect(hooks.penDone).toHaveBeenCalledWith(id)
+    expect(heard(agents[0])).toEqual(['first'])
+    // A turn that was stopped is not asked about, and the queue is held as ever.
+    api['sessions.send'](id, msg('third'))
+    agents[0]?.emit({ type: 'turn.started', turnId: 't2' })
+    agents[0]?.emit({ type: 'turn.interrupted', turnId: 't2' })
+    await flush()
+    expect(hooks.penDone).toHaveBeenCalledTimes(1)
+    goOn.value = false
+    api['sessions.queue'](id, { type: 'resume' })
+    expect(heard(agents[0])).toEqual(['first', 'third', 'second'])
+  })
+
+  it('lets the engine tell the pen something as a message from Celeste, and refuses while the pen runs a turn', () => {
+    const { api, agents, service } = withMoons()
+    const { id } = api['sessions.create'](input)
+    service.tellPen(id, 'The Reviewer found two things.')
+    expect(heard(agents[0])).toEqual(['The Reviewer found two things.'])
+    expect((api['sessions.get'](id)?.events ?? []).find((e) => e.event.type === 'user.message')?.event).toMatchObject({ from: 'moon', text: 'The Reviewer found two things.' })
+    expect(() => service.tellPen(id, 'Again')).toThrow('The pen is still working.')
+  })
+
+  it('logs the person’s words for the engine with no agent, and keeps the files that came with them', () => {
+    const { api, agents, service, store } = withMoons()
+    const { id } = api['sessions.create'](input)
+    const file = api['attachments.save']({ name: 'a.txt', mime: 'text/plain', data: new TextEncoder().encode('hi').buffer as ArrayBuffer })
+    service.personSaid(id, { text: 'Look at this', attachments: [file] })
+    expect(agents).toHaveLength(0)
+    expect((api['sessions.get'](id)?.events ?? []).find((e) => e.event.type === 'user.message')?.event).toMatchObject({ text: 'Look at this', attachments: [{ id: file.id }] })
+    expect(store.attachment(file.id)?.sessionId).toBe(id)
+    expect(typesOf(api, id)).not.toContain('turn.started')
+  })
+
+  it('writes the engine’s events, and its first and last decide whether the chat is at work', () => {
+    const { api, service } = withMoons()
+    const { id } = api['sessions.create'](input)
+    service.recordMoons(id, { type: 'moons.turn', seat: 1, step: 'review' })
+    expect(api['sessions.get'](id)?.summary.status).toBe('working')
+    service.recordMoons(id, { type: 'moons.ended', why: 'agreed' })
+    expect(api['sessions.get'](id)?.summary.status).toBe('idle')
+    service.recordMoons('s-gone', { type: 'moons.ended', why: 'agreed' })
+    expect(typesOf(api, id)).toEqual(['moons.turn', 'moons.ended'])
+  })
+
+  it('counts a chat with two moons as busy while it is at work, and any other chat only while its agent runs', () => {
+    const { api, service } = withMoons()
+    const plain = api['sessions.create'](input)
+    const pair = api['sessions.create'](two)
+    expect(service.isBusy(pair.id)).toBe(false)
+    service.recordMoons(plain.id, { type: 'moons.turn', seat: 1, step: 'review' })
+    service.recordMoons(pair.id, { type: 'moons.turn', seat: 1, step: 'review' })
+    expect(api['sessions.get'](plain.id)?.summary.status).toBe('working')
+    expect(service.isBusy(plain.id)).toBe(false)
+    expect(service.isBusy(pair.id)).toBe(true)
+    service.recordMoons(pair.id, { type: 'moons.ended', why: 'agreed' })
+    expect(service.isBusy(pair.id)).toBe(false)
+  })
+
+  it('makes steering wait its turn while the other moon works and the pen’s own agent does not, and still steers a turn that runs', async () => {
+    const { api, agents, service } = withMoons()
+    const pair = api['sessions.create'](two)
+    api['sessions.send'](pair.id, msg('go'))
+    api['sessions.send'](pair.id, msg('use tabs'), 'steer')
+    expect(agents[0]?.steered.map((m) => m.text)).toEqual(['use tabs'])
+    agents[0]?.emit(done)
+    await flush()
+    service.recordMoons(pair.id, { type: 'moons.turn', seat: 1, step: 'review' })
+    api['sessions.send'](pair.id, msg('and spaces'), 'steer')
+    expect(agents[0]?.steered).toHaveLength(1)
+    expect(typesOf(api, pair.id)).toContain('queue.added')
+  })
+
+  it('stops the run and sends a message now, when the other moon works and the pen’s agent does not', async () => {
+    const stops: string[] = []
+    const { api, agents, service } = withMoons({}, (id) => stops.push(id))
+    const pair = api['sessions.create'](two)
+    api['sessions.send'](pair.id, msg('go'))
+    agents[0]?.emit(done)
+    await flush()
+    service.recordMoons(pair.id, { type: 'moons.turn', seat: 1, step: 'review' })
+    api['sessions.send'](pair.id, msg('never mind'), 'stop')
+    expect(stops).toEqual([pair.id])
+    expect(heard(agents[0])).toEqual(['go', 'never mind'])
+  })
+
+  it('sends it at once even when the pen has never run at all', () => {
+    const stops: string[] = []
+    const { api, agents, service } = withMoons({}, (id) => stops.push(id))
+    const pair = api['sessions.create'](two)
+    service.recordMoons(pair.id, { type: 'moons.turn', seat: 0, step: 'plan' })
+    api['sessions.send'](pair.id, msg('never mind'), 'stop')
+    expect(stops).toEqual([pair.id])
+    expect(heard(agents[0])).toEqual(['never mind'])
+  })
+
+  it('stops and sends a plain chat’s message as it always did', async () => {
+    const stops: string[] = []
+    const { api, agents } = withMoons({}, (id) => stops.push(id))
+    const { id } = api['sessions.create'](input)
+    api['sessions.send'](id, msg('first'))
+    api['sessions.send'](id, msg('second'), 'stop')
+    expect(agents[0]?.interrupted).toBe(1)
+    expect(heard(agents[0])).toEqual(['first'])
+    agents[0]?.emit({ type: 'turn.interrupted', turnId: 't' })
+    await flush()
+    expect(heard(agents[0])).toEqual(['first', 'second'])
+  })
+
+  it('goes on with the queue when the engine asks, holds it when told to, and does nothing when it is held already or empty', async () => {
+    const { api, agents, service } = withMoons()
+    const { id } = api['sessions.create'](input)
+    service.continueQueue(id)
+    api['sessions.send'](id, msg('first'))
+    api['sessions.send'](id, msg('second'), 'queue')
+    service.continueQueue(id, true)
+    expect(typesOf(api, id).filter((t) => t === 'queue.paused')).toHaveLength(1)
+    service.continueQueue(id, true)
+    service.continueQueue(id)
+    expect(typesOf(api, id).filter((t) => t === 'queue.paused')).toHaveLength(1)
+    expect(heard(agents[0])).toEqual(['first'])
+    agents[0]?.emit(done)
+    await flush()
+    api['sessions.queue'](id, { type: 'resume' })
+    expect(heard(agents[0])).toEqual(['first', 'second'])
+  })
+
+  it('writes a turn.abandoned for a chat with two moons that was waiting for a plan, and not for any other chat that waited', () => {
+    const store = new MemoryStore()
+    const first = setup(store)
+    const plain = first.api['sessions.create'](input)
+    const pair = first.api['sessions.create'](two)
+    first.api['sessions.send'](plain.id, msg('go'))
+    void first.service.requestApproval(plain.id, { kind: 'other', title: 'Use the screen' })
+    void first.service.requestApproval(pair.id, { kind: 'other', title: 'Build it this way' })
+    expect(first.api['sessions.get'](plain.id)?.summary.status).toBe('waiting')
+    expect(first.api['sessions.get'](pair.id)?.summary.status).toBe('waiting')
+    first.service.close()
+    const second = setup(store)
+    expect(second.api['sessions.get'](pair.id)?.summary.status).toBe('idle')
+    expect(second.api['sessions.get'](plain.id)?.summary.status).toBe('waiting')
+  })
+
+  it('refuses a pattern that is not one of the four, and stores nothing', () => {
+    const { api, store } = withMoons()
+    expect(() => api['sessions.create']({ ...input, moons: { pattern: 'nope' as 'build', vendor: 'claude', model: 'm', effort: null } })).toThrow('Invalid pattern')
+    expect(store.listSessions()).toEqual([])
+  })
+})

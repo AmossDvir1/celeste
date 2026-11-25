@@ -222,5 +222,10 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE sessions ADD COLUMN spawn TEXT;
   ALTER TABLE sessions ADD COLUMN parent_id TEXT;
   CREATE INDEX sessions_parent ON sessions (parent_id);
+  `,
+
+  // 8: Two Moons (docs/plans/TWO_MOONS_PLAN.md): `moons` says that a chat has two agents, as JSON: the pattern and the id of the second one's session
+  `
+  ALTER TABLE sessions ADD COLUMN moons TEXT;
   `
 ]

@@ -39,6 +39,7 @@ import { clockText } from '@shared/usage'
 import { describeDuration } from '@shared/desktop'
 import type { PhoneModelChoice, PhoneNewSession, PhoneProject } from '@shared/phone'
 import type { TimelineItem } from '@/stores/types'
+import { moonName, withoutBlock, type MoonPattern } from '@shared/moons'
 import { formatDuration } from '@/lib/format'
 import { groupLabel, toBlocks, type ThinkingItem, type ToolItem } from '@/features/chat/blocks'
 import { useApp } from '../store'
@@ -439,11 +440,7 @@ const Item = memo(function Item({ it, sessionId, detailed }: { it: TimelineItem;
         </div>
       )
     case 'assistant':
-      return (
-        <div className="m-ai">
-          <AssistantText text={it.text} sessionId={sessionId} />
-        </div>
-      )
+      return <AssistantRow text={it.text} sessionId={sessionId} />
     case 'thinking':
       return <ThinkingRow it={it} />
     case 'tool':
@@ -478,8 +475,101 @@ const Item = memo(function Item({ it, sessionId, detailed }: { it: TimelineItem;
       return <HelperRow it={it} />
     case 'spawned':
       return <SpawnedNotice parentId={it.parentId} parentTitle={it.parentTitle} />
+    case 'moonsHand':
+    case 'moonsTalk':
+    case 'moonsPlan':
+    case 'moonsCompare':
+    case 'moonsEnded':
+      return <MoonsRow it={it} sessionId={sessionId} />
   }
 })
+
+/** An answer. In a Two Moons chat (or the second moon's own chat) the block that only Celeste reads is taken away, and an answer with nothing left draws nothing. */
+function AssistantRow({ text, sessionId }: { text: string; sessionId: string }) {
+  const moons = useApp((s) => s.sessions[sessionId]?.moons ?? s.sessions[s.sessions[sessionId]?.parentId ?? '']?.moons)
+  const shown = moons ? withoutBlock(text) : text
+  if (moons && !shown.trim()) return null
+  return (
+    <div className="m-ai">
+      <AssistantText text={shown} sessionId={sessionId} />
+    </div>
+  )
+}
+
+const findingLine = (f: { text: string; file?: string; line?: number }): string => `${f.file ? `${f.file}${f.line !== undefined ? `:${f.line}` : ''}: ` : ''}${f.text}`
+
+/** Two Moons in the thread, as plain rows: a line for a hand-over or an end, the talk as lines with the name, the plan and the comparison as lists. */
+function MoonsRow({ it, sessionId }: { it: Extract<TimelineItem, { kind: 'moonsHand' | 'moonsTalk' | 'moonsPlan' | 'moonsCompare' | 'moonsEnded' }>; sessionId: string }) {
+  const pattern: MoonPattern = useApp((s) => s.sessions[sessionId]?.moons?.pattern ?? 'build')
+  if (it.kind === 'moonsHand') return <div className="notice">{moonName(pattern, it.from)} hands {it.what} to {moonName(pattern, it.to)}.</div>
+  if (it.kind === 'moonsTalk') {
+    return (
+      <div className="m-ai">
+        {it.messages.map((m) => (
+          <p key={m.id}>
+            <b>{moonName(pattern, m.seat)}</b>
+            {m.file ? ` (${m.file}${m.line !== undefined ? `:${m.line}` : ''})` : ''}: {m.text}
+            {m.fixed ? ' Fixed.' : ''}
+          </p>
+        ))}
+      </div>
+    )
+  }
+  if (it.kind === 'moonsPlan') {
+    return (
+      <div className="m-ai">
+        <p>{it.say}</p>
+        <ol>
+          {it.steps.map((step, i) => (
+            <li key={i}>{step}</li>
+          ))}
+        </ol>
+        {it.agreed && <p className="small faint">You agreed.</p>}
+      </div>
+    )
+  }
+  if (it.kind === 'moonsCompare') {
+    const one = moonName(pattern, 0)
+    const two = moonName(pattern, 1)
+    return (
+      <div className="m-ai">
+        {it.both.length + it.first.length + it.second.length === 0 && <p>Neither found anything.</p>}
+        {it.both.length > 0 && <p><b>Found by both</b></p>}
+        <ul>
+          {it.both.map((f, i) => (
+            <li key={`b${i}`}>{findingLine(f)}</li>
+          ))}
+        </ul>
+        {it.first.length > 0 && <p><b>Only {one}</b></p>}
+        <ul>
+          {it.first.map((f, i) => (
+            <li key={`f${i}`}>{findingLine(f)}</li>
+          ))}
+        </ul>
+        {it.second.length > 0 && <p><b>Only {two}</b></p>}
+        <ul>
+          {it.second.map((f, i) => (
+            <li key={`s${i}`}>{findingLine(f)}</li>
+          ))}
+        </ul>
+      </div>
+    )
+  }
+  const left = it.left ?? 0
+  const text =
+    it.why === 'rounds'
+      ? `Two rounds are done, and ${left} ${left === 1 ? 'note is' : 'notes are'} left. Say what you want to do.`
+      : it.why === 'declined'
+        ? 'The plan was not agreed. Say what to change.'
+        : it.why === 'stopped'
+          ? 'You stopped this run.'
+          : it.why === 'failed'
+            ? `The run could not go on.${it.note ? ` ${it.note}` : ''}`
+            : it.why === 'unread'
+              ? 'The answer could not be read as notes, so it is shown as it is.'
+              : (it.note ?? '')
+  return <div className="notice">{text}</div>
+}
 
 /** In a helper: what the assistant of the chat that started it wrote. Not the person's words, so not drawn as theirs. */
 function FromParent({ text, sessionId }: { text: string; sessionId: string }) {

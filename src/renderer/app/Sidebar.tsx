@@ -210,9 +210,12 @@ function ShowMore({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   )
 }
 
-/** Under a chat: its helpers, folded behind "N helpers" unless one is working or waiting. */
-function HelperRows({ helpers, activeId, open, onToggle }: { helpers: Session[] | undefined; activeId: string | null | undefined; open: boolean; onToggle: (open: boolean) => void }) {
+/** Under a chat: its helpers (and its second moon), folded behind "N helpers" unless one is working or waiting. */
+function HelperRows({ helpers, moonId, activeId, open, onToggle }: { helpers: Session[] | undefined; moonId: string | undefined; activeId: string | null | undefined; open: boolean; onToggle: (open: boolean) => void }) {
   if (!helpers?.length) return null
+  const moon = helpers.some((h) => h.id === moonId)
+  const others = helpers.length - (moon ? 1 : 0)
+  const label = [moon ? 'Second moon' : '', others ? `${others} ${others === 1 ? 'helper' : 'helpers'}` : ''].filter(Boolean).join(', ')
   const busy = helpers.filter((h) => h.status !== 'idle').length
   return (
     <div className="mb-0.5">
@@ -223,7 +226,7 @@ function HelperRows({ helpers, activeId, open, onToggle }: { helpers: Session[] 
         className="ml-5 flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] text-ink-faint hover:bg-hover hover:text-ink-muted"
       >
         <ChevronRight className={cn('h-3 w-3 transition-transform', open && 'rotate-90')} />
-        {helpers.length} {helpers.length === 1 ? 'helper' : 'helpers'}
+        {label}
         {busy > 0 && <span className="text-accent-text">· {busy} working</span>}
       </button>
       {open && helpers.map((h) => <SessionRow key={h.id} session={h} active={h.id === activeId} nested />)}
@@ -267,6 +270,7 @@ function ChatList({ mode, query, limit }: { mode: SessionMode; query: string; li
       <SessionRow session={s} active={s.id === activeId} />
       <HelperRows
         helpers={helpersOf.get(s.id)}
+        moonId={s.moons?.childId}
         activeId={activeId}
         open={folds[s.id] ?? (activeParent === s.id || (helpersOf.get(s.id) ?? []).some((h) => h.status !== 'idle'))}
         onToggle={(open) => setFolds((f) => ({ ...f, [s.id]: open }))}

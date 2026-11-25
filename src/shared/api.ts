@@ -19,6 +19,7 @@ import type { QueueAction, SendMode } from './queue'
 import type { VendorUsage } from './usage'
 import type { ScheduleLogEntry, SchedulePreview, ScheduleSaveInput, ScheduleSpec, ScheduleSummary } from './schedule'
 import type { PhonePairRequest, PhoneStatus } from './phone'
+import type { Finding, MoonStep, MoonsInfo, MoonsInput, Seat } from './moons'
 import type { RunSummary, StoredRunEvent, WorkflowDefinition, WorkflowFull, WorkflowSummary } from './workflow'
 import type {
   AgentEvent,
@@ -86,6 +87,8 @@ export interface SessionSummary {
   parentId?: string
   /** A helper: the loosest approval mode it may be set to (its parent's mode when it started). The mode menu disables the looser ones. */
   ceiling?: ApprovalMode
+  /** Set when this chat has two agents (docs/plans/TWO_MOONS_PLAN.md): the pattern, and the helper session that is the second one. */
+  moons?: MoonsInfo
   status: SessionStatus
   createdAt: number
   updatedAt: number
@@ -102,6 +105,8 @@ export interface CreateSessionInput {
   approval: ApprovalMode
   cwd?: string
   branch?: string
+  /** Makes a chat with two agents: the pattern, and the vendor, model and effort of the second one (the chat's own are the first's). */
+  moons?: MoonsInput
 }
 
 /** Whether an MCP server (an outside tool) could be reached, and what it offers. Looked at on demand, not kept between runs. */
@@ -168,8 +173,8 @@ export interface SessionPatch {
  */
 export type LogEvent =
   | AgentEvent
-  /** `from`: absent when the person wrote it; 'parent' for a task or follow-up the assistant of the parent chat gave a helper; 'celeste' for a note that wakes an assistant. */
-  | { type: 'user.message'; text: string; attachments: AttachmentInfo[]; context?: ContextRef[]; from?: 'parent' | 'celeste' }
+  /** `from`: absent when the person wrote it; 'parent' for a task or follow-up the assistant of the parent chat gave a helper; 'celeste' for a note that wakes an assistant; 'moon' for what Celeste tells the pen of a Two Moons chat on behalf of the other (never drawn, never a checkpoint). */
+  | { type: 'user.message'; text: string; attachments: AttachmentInfo[]; context?: ContextRef[]; from?: 'parent' | 'celeste' | 'moon' }
   /** `again`: the person pressed a proposal's "Try again" (allow is false, and the card is not a refusal). */
   | { type: 'approval.resolved'; requestId: string; allow: boolean; again?: boolean }
   | { type: 'ask.answered'; requestId: string; answers: AskAnswers }
@@ -219,6 +224,22 @@ export type LogEvent =
   | { type: 'child.finished'; childId: string; title: string; status: 'done' | 'failed' | 'stopped' | 'abandoned' | 'deleted'; result?: string; error?: string; delivered: 'tool' | 'note' | 'none' }
   /** In a helper's log, before its first message: this session is a helper, drawn as a banner at the top. */
   | { type: 'child.spawned'; parentId: string; parentTitle: string }
+  /** Two Moons, in the chat's own log: that moon's turn begins (`step` is what it is doing). The chat is working until `moons.ended`. */
+  | { type: 'moons.turn'; seat: Seat; step: MoonStep }
+  /** One moon gave its work to the other. `what` is a few words: "2 files", "the plan". */
+  | { type: 'moons.handed'; from: Seat; to: Seat; what: string }
+  /** Something a moon said to the other, or (`to: 'person'`) to the person. `finding` marks a note that can later be fixed; `id` is what `moons.fixed` refers to. */
+  | { type: 'moons.said'; seat: Seat; id: string; text: string; file?: string; line?: number; code?: string; finding?: true; to?: 'person' }
+  /** Findings that were said earlier and are now fixed. */
+  | { type: 'moons.fixed'; ids: string[] }
+  /** The plan the Planner wrote. `id` is what `moons.agreed` refers to. */
+  | { type: 'moons.plan'; id: string; say: string; steps: string[] }
+  /** The person agreed to that plan. */
+  | { type: 'moons.agreed'; id: string }
+  /** Two reviews side by side: what both found, and what only the first or only the second found. */
+  | { type: 'moons.compared'; both: Finding[]; first: Finding[]; second: Finding[] }
+  /** The run is over, and why. `left` is how many findings were still open when the rounds ran out. The chat is idle. */
+  | { type: 'moons.ended'; why: 'agreed' | 'nothing' | 'rounds' | 'declined' | 'stopped' | 'failed' | 'unread'; note?: string; left?: number }
 
 /** One file that a turn changed, or that a revert would change. */
 export interface CheckpointFile {

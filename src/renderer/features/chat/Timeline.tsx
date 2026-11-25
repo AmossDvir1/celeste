@@ -17,6 +17,7 @@ import {
   X
 } from 'lucide-react'
 import type { AskAnswers, ToolKind } from '@shared/agent'
+import { moonName, otherSeat, PATTERNS, withoutBlock, type MoonPattern, type MoonRole } from '@shared/moons'
 import { core } from '@/api'
 import { cn } from '@/lib/cn'
 import { formatDuration } from '@/lib/format'
@@ -26,7 +27,9 @@ import { Button, Spinner } from '@/components/ui'
 import { DiffCwdContext, DiffList } from '@/features/develop/DiffView'
 import { RevertDialog } from '@/features/develop/RevertDialog'
 import { ReviewDialog } from '@/features/develop/ReviewDialog'
+import { MoonMark, MoonsCompareCard, MoonsEndedLine, MoonsHandLine, MoonsPlanCard, MoonsTalk } from '@/features/moons/MoonsCards'
 import { useSessions } from '@/stores/sessions'
+import { lookupModel, useModels } from '@/stores/models'
 import { AttachmentStrip } from './attachments'
 import { AskUserCard } from './AskUserCard'
 import { describeDuration } from '@shared/desktop'
@@ -126,12 +129,12 @@ const UserMessage = memo(function UserMessage({
 })
 
 /** The top of a helper: whose helper it is, with a way back. */
-function HelperBanner({ parentId, parentTitle, develop }: { parentId: string; parentTitle: string; develop: boolean }) {
+function HelperBanner({ parentId, parentTitle, develop, moonName: moon }: { parentId: string; parentTitle: string; develop: boolean; /** The child of a Two Moons chat: its name there. */ moonName?: string }) {
   const open = useSessions((s) => s.open)
   const exists = useSessions((s) => s.sessions[parentId] !== undefined)
   return (
-    <div role="note" aria-label="Helper" className="rounded-xl border border-edge bg-field/50 px-3.5 py-2.5 text-[13px] text-ink-muted">
-      Helper started by the assistant in{' '}
+    <div role="note" aria-label={moon ? moon : 'Helper'} className="rounded-xl border border-edge bg-field/50 px-3.5 py-2.5 text-[13px] text-ink-muted">
+      {moon ? `The ${moon} in` : 'Helper started by the assistant in'}{' '}
       {exists ? (
         <button type="button" onClick={() => open(parentId)} className="font-medium text-ink underline decoration-edge-strong underline-offset-2 hover:text-accent-text">
           {parentTitle}
@@ -139,8 +142,8 @@ function HelperBanner({ parentId, parentTitle, develop }: { parentId: string; pa
       ) : (
         <span className="font-medium text-ink">{parentTitle}</span>
       )}
-      . Its last answer goes back there.
-      {develop && <span className="block text-ink-faint">Changes are saved with {parentTitle}’s checkpoints.</span>}
+      {moon ? '. Celeste gives it its turns.' : '. Its last answer goes back there.'}
+      {develop && !moon && <span className="block text-ink-faint">Changes are saved with {parentTitle}’s checkpoints.</span>}
     </div>
   )
 }
@@ -217,13 +220,42 @@ const BackgroundNotice = memo(function BackgroundNotice({ item, sessionId, onSto
   )
 })
 
-const AssistantMessage = memo(function AssistantMessage({ item }: { item: Extract<TimelineItem, { kind: 'assistant' }> }) {
+/** In a Two Moons chat: who wrote an assistant message. */
+interface MoonAuthor {
+  name: string
+  role: MoonRole
+  second: boolean
+  model: string
+}
+
+const AssistantMessage = memo(function AssistantMessage({ item, author }: { item: Extract<TimelineItem, { kind: 'assistant' }>; author?: MoonAuthor }) {
+  // The moons' answers end with a block that only Celeste reads: it is never shown, also while it is still arriving.
+  const text = author ? withoutBlock(item.text) : item.text
+  if (author && !text.trim()) return null
   return (
     <div className="animate-fade-up max-w-[760px]">
-      <Markdown>{item.text}</Markdown>
+      {author && (
+        <div className="mb-1 flex items-center gap-1.5 text-[13px] text-ink-soft">
+          <MoonMark role={author.role} second={author.second} size={24} />
+          <span className="font-medium">{author.name}</span>
+          <span className="text-ink-faint">{author.model}</span>
+        </div>
+      )}
+      <Markdown>{text}</Markdown>
     </div>
   )
 })
+
+/** Whether an assistant message has nothing left to show once the moons' block is taken away. Asked again only for a message that changed. */
+const emptyAfterBlock = new WeakMap<object, boolean>()
+function drawsNothing(item: Extract<TimelineItem, { kind: 'assistant' }>): boolean {
+  let known = emptyAfterBlock.get(item)
+  if (known === undefined) {
+    known = withoutBlock(item.text).trim() === ''
+    emptyAfterBlock.set(item, known)
+  }
+  return known
+}
 
 /* ---------- thinking ---------- */
 
@@ -543,7 +575,33 @@ export function Timeline({
   /** The small side window: everything the assistant did is folded to one line, in Develop too, as in Chat. */
   compact?: boolean
 }) {
-  const blocks = useMemo(() => toBlocks(session.items, compact ? 'chat' : session.mode), [session.items, session.mode, compact])
+  // Two Moons: in the chat itself, and in the child's own chat (whose parent names it as its second moon).
+  const parentMoons = useSessions((s) => (session.parentId ? s.sessions[session.parentId]?.moons : undefined))
+  const moonsPattern: MoonPattern | undefined = session.moons?.pattern ?? (parentMoons?.childId === session.id ? parentMoons.pattern : undefined)
+  const moonSeat = session.moons ? PATTERNS[session.moons.pattern].pen : parentMoons && moonsPattern ? otherSeat(parentMoons.pattern) : undefined
+  const byId = useModels((s) => s.byId)
+  const modelLabel = lookupModel(byId, session.model, session.vendor).label
+  const author = useMemo<MoonAuthor | undefined>(() => {
+    if (!moonsPattern || moonSeat === undefined) return undefined
+    const roles = PATTERNS[moonsPattern].roles
+    return { name: moonName(moonsPattern, moonSeat), role: roles[moonSeat], second: moonSeat === 1 && roles[0] === roles[1], model: modelLabel }
+  }, [moonsPattern, moonSeat, modelLabel])
+  const blocks = useMemo(() => {
+    const all = toBlocks(session.items, compact ? 'chat' : session.mode)
+    // An answer that is only the moons' block draws nothing, and leaves no gap either.
+    return moonsPattern ? all.filter((b) => !(b.kind === 'item' && b.item.kind === 'assistant' && drawsNothing(b.item))) : all
+  }, [session.items, session.mode, compact, moonsPattern])
+  // The conversation blocks of the run that is going on are open; the ones before it are folded.
+  const running = session.moonsTurn != null
+  const liveMoons = useMemo(() => {
+    const ids = new Set<string>()
+    if (!running) return ids
+    const lastUser = session.items.map((it) => it.kind).lastIndexOf('user')
+    session.items.forEach((it, i) => {
+      if (i > lastUser && it.kind === 'moonsTalk') ids.add(it.id)
+    })
+    return ids
+  }, [running, session.items])
   const detailed = session.mode === 'develop' && !compact
   const revert = useSessions((s) => s.revert)
   const stopSession = useSessions((s) => s.stopBackground)
@@ -626,7 +684,7 @@ export function Timeline({
       case 'helper':
         return <HelperCard item={it} />
       case 'spawned':
-        return <HelperBanner parentId={it.parentId} parentTitle={parentTitle ?? it.parentTitle} develop={session.mode === 'develop' && !session.worktree} />
+        return <HelperBanner parentId={it.parentId} parentTitle={parentTitle ?? it.parentTitle} develop={session.mode === 'develop' && !session.worktree} moonName={parentMoons?.childId === session.id ? moonName(parentMoons.pattern, otherSeat(parentMoons.pattern)) : undefined} />
       case 'workflow':
         return <MemoWorkflowRunCard runId={it.runId} name={it.name} workflowId={it.workflowId} />
       case 'desktop':
@@ -638,7 +696,7 @@ export function Timeline({
       case 'reverted':
         return <RevertedNotice item={it} canUndo={idle && it.id === lastReverted} onUndo={() => undo(it.undoId)} />
       case 'assistant':
-        return <AssistantMessage item={it} />
+        return <AssistantMessage item={it} author={author} />
       case 'thinking':
         return <ThinkingRow item={it} />
       case 'tool':
@@ -651,6 +709,16 @@ export function Timeline({
         return <ErrorCard item={it} onRetry={retry} />
       case 'notice':
         return <div className="text-center text-xs text-ink-faint">{it.text}</div>
+      case 'moonsHand':
+        return <MoonsHandLine item={it} pattern={moonsPattern ?? 'build'} />
+      case 'moonsTalk':
+        return <MoonsTalk item={it} pattern={moonsPattern ?? 'build'} live={liveMoons.has(it.id)} />
+      case 'moonsPlan':
+        return <MoonsPlanCard item={it} pattern={moonsPattern ?? 'plan'} />
+      case 'moonsCompare':
+        return <MoonsCompareCard item={it} pattern={moonsPattern ?? 'reviews'} />
+      case 'moonsEnded':
+        return <MoonsEndedLine item={it} />
     }
   }
 }

@@ -18,6 +18,8 @@ interface SessionsState {
   init: (summaries: SessionSummary[]) => void
   applyPush: (push: CorePush) => void
   open: (id: string) => void
+  /** Loads a session's log if it is not loaded (the second moon's, so the sky can follow it). Does not open it. */
+  ensureLoaded: (id: string) => void
   home: (mode: SessionMode) => void
   /**
    * Resolves true when the message was sent. On failure the error is shown and false is returned, so the caller keeps the message.
@@ -146,6 +148,12 @@ export const useSessions = create<SessionsState>((set, get) => {
           const current = st.sessions[session.id]
           return { sessions: { ...st.sessions, [session.id]: current ? mergeSummary(current, session) : fromSummary(session, false) } }
         })
+        // A chat with two moons that is on screen: the second one's log is needed too.
+        const active = Object.values(get().active)
+        if (session.moons && active.includes(session.id)) get().ensureLoaded(session.moons.childId)
+        // Or the second moon's own summary arriving after its chat's.
+        const parent = session.parentId ? get().sessions[session.parentId] : undefined
+        if (parent?.moons?.childId === session.id && active.includes(parent.id)) get().ensureLoaded(session.id)
       } else if (push.type === 'removed') {
         drop(push.id)
       } else if (push.type === 'event') {
@@ -163,6 +171,12 @@ export const useSessions = create<SessionsState>((set, get) => {
       if (!s) return
       set((st) => ({ active: { ...st.active, [s.mode]: id } }))
       if (!s.loaded) void load(id)
+      if (s.moons) get().ensureLoaded(s.moons.childId)
+    },
+
+    ensureLoaded: (id) => {
+      const s = get().sessions[id]
+      if (s && !s.loaded) void load(id)
     },
 
     home: (mode) => set((st) => ({ active: { ...st.active, [mode]: null } })),
@@ -191,11 +205,15 @@ export const useSessions = create<SessionsState>((set, get) => {
             model: d.model,
             effort: d.effort,
             approval: d.approval,
-            ...(mode === 'develop' ? { cwd, ...(branch ? { branch } : {}) } : {})
+            ...(mode === 'develop' ? { cwd, ...(branch ? { branch } : {}) } : {}),
+            // The second moon: its model, and the pattern. The chat's own model is the pen's.
+            ...(d.moons ? { moons: { pattern: d.moons.pattern, vendor: modelOf(d.moons.model).vendor, model: d.moons.model, effort: d.moons.effort } } : {})
           })
           id = created.id
           const sid = created.id
+          if (d.moons) useUi.getState().setDraft({ moons: null })
           set((st) => ({ sessions: { ...st.sessions, [sid]: fromSummary(created, true) }, active: { ...st.active, [mode]: sid } }))
+          if (created.moons) get().ensureLoaded(created.moons.childId)
         }
         await core.call('sessions.send', id, input, sendMode)
         return true

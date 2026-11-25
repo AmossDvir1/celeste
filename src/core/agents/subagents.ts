@@ -126,7 +126,7 @@ export class SubAgents {
     return this.epochs.get(parentId) ?? 0
   }
 
-  /** True when the session is a helper: it may not start helpers, and it gets no desktop or phone tools. */
+  /** True when the session is a helper: it may not start helpers, and it gets no desktop or phone tools. The other moon of a Two Moons chat counts too. */
   isHelper(sessionId: string): boolean {
     return !!this.deps.store.getSession(sessionId)?.spawn
   }
@@ -306,7 +306,8 @@ export class SubAgents {
   /** The helper of this parent with that id, or nothing: another chat's helpers are not revealed. */
   private helperOf(parentId: string, id: string): SessionRow | undefined {
     const row = this.deps.service.sessionRow(id)
-    return row && row.spawn?.parentId === parentId ? row : undefined
+    // The other moon of a Two Moons chat is not a helper of the assistant: it is given its turns by Celeste, so no tool reaches it.
+    return row && row.spawn?.parentId === parentId && !row.spawn.moon ? row : undefined
   }
 
   // --- waiting -----------------------------------------------------------------------------------------
@@ -468,6 +469,7 @@ export class SubAgents {
     }
     return this.deps.store
       .listChildren(parentId)
+      .filter((row) => !row.spawn?.moon)
       .map((row) => {
         const s = started.get(row.id)
         const working = this.open.has(row.id)

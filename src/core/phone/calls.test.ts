@@ -18,7 +18,7 @@ function fakeApi(sessions: SessionSummary[]) {
     'app.bootstrap': (): Bootstrap => ({ settings: { ...DEFAULT_SETTINGS, userName: 'Dana', defaults: { ...DEFAULT_SETTINGS.defaults, model: 'claude-sonnet', approval: 'ask' } }, settingsStored: true, vendors: {}, sessions, drafts: {}, dataDir: '/d', version: '1.2.0' }),
     'sessions.create': (input: CreateSessionInput) => {
       created.push(input)
-      return summary({ id: 'new', ...input })
+      return summary({ id: 'new', ...input, moons: undefined })
     },
     'sessions.send': (id: string, input: UserInput) => void sent.push({ id, input }),
     'attachments.save': (f: { name: string; mime: string; data: ArrayBuffer }): AttachmentInfo => {

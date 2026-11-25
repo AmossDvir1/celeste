@@ -12,6 +12,7 @@ import type {
   VendorId
 } from '@shared/agent'
 import type { CheckpointFile, SessionStatus, SessionSummary } from '@shared/api'
+import type { Finding, MoonStep, Seat } from '@shared/moons'
 import type { QueueState } from '@shared/queue'
 import type { ProducedFile } from '@shared/produced'
 
@@ -96,6 +97,30 @@ export type TimelineItem =
   | { kind: 'spawned'; id: string; parentId: string; parentTitle: string }
   /** The folder was put back to a checkpoint. `undoId` goes back to how it was just before. */
   | { kind: 'reverted'; id: string; restored: number; removed: number; undoId: string }
+  /** Two Moons: one moon handed work to the other. */
+  | { kind: 'moonsHand'; id: string; from: Seat; to: Seat; what: string; at: number }
+  /** Two Moons: what the moons said, one block until another item comes between. */
+  | { kind: 'moonsTalk'; id: string; messages: MoonsMessage[] }
+  /** Two Moons: the plan the Planner wrote. `agreed`: the person agreed to it. */
+  | { kind: 'moonsPlan'; id: string; planId: string; say: string; steps: string[]; agreed?: true }
+  /** Two Moons: what two reviews found, what both found first. */
+  | { kind: 'moonsCompare'; id: string; both: Finding[]; first: Finding[]; second: Finding[] }
+  /** Two Moons: how a run ended, when that is worth a line (a run that ended well and has nothing to add draws nothing). */
+  | { kind: 'moonsEnded'; id: string; why: 'agreed' | 'nothing' | 'rounds' | 'declined' | 'stopped' | 'failed' | 'unread'; note?: string; left?: number }
+
+/** One thing a moon said, in the conversation block of a Two Moons chat. `fixed`: the other moon agreed that this note was dealt with. */
+export interface MoonsMessage {
+  id: string
+  seat: Seat
+  text: string
+  file?: string
+  line?: number
+  code?: string
+  finding?: true
+  fixed?: true
+  to?: 'person'
+  at: number
+}
 
 /** The line shown under the conversation while the agent works. */
 export interface Activity {
@@ -117,4 +142,6 @@ export interface Session extends SessionSummary {
   foldedSeq: number
   /** Messages typed while the assistant was working, waiting for their turn. Kept in the log, so it is the same on every window and the phone. */
   queue: QueueState
+  /** Two Moons: whose turn it is and what it is doing, while a run goes on. Absent otherwise. */
+  moonsTurn?: { seat: Seat; step: MoonStep } | null
 }

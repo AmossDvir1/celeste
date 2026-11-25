@@ -51,6 +51,8 @@ export interface SpawnInfo {
   folder: 'same' | 'copy'
   /** The parent's approval mode when it started: the loosest this helper may ever be set to. */
   ceiling: ApprovalMode
+  /** Set when this is the second moon of a Two Moons chat (docs/plans/TWO_MOONS_PLAN.md) and not a helper the assistant started: Celeste, not a model, gives it its turns. */
+  moon?: true
 }
 
 /** Derived, never stored: 'working' and 'waiting' come from the child's status; the rest from its last child.finished. */

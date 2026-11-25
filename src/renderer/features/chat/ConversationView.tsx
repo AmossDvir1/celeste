@@ -15,6 +15,9 @@ import { useVendors } from '@/stores/vendors'
 import { useWorkflows } from '@/stores/workflows'
 import { DeviceGlyph } from '@/features/devices/parts'
 import { useDevices } from '@/stores/devices'
+import { MoonsHeader } from '@/features/moons/MoonsHeader'
+import { MoonsSky } from '@/features/moons/MoonsSky'
+import { moonName, otherSeat } from '@shared/moons'
 import { Composer } from './Composer'
 import { QueueList, type QueueEdit } from './QueueList'
 import { Timeline } from './Timeline'
@@ -87,6 +90,16 @@ export function ConversationView({ sessionId, compact = false }: { sessionId: st
   const vendors = useVendors((s) => s.vendors)
   const byId = useModels((s) => s.byId)
   const attachments = useAttachments(sessionId)
+  // Two Moons: the second moon's own session, loaded so the sky can follow it.
+  const child = useSessions((s) => {
+    const childId = s.sessions[sessionId]?.moons?.childId
+    return childId ? s.sessions[childId] : undefined
+  })
+  const childId = session?.moons?.childId
+  const ensureLoaded = useSessions((s) => s.ensureLoaded)
+  useEffect(() => {
+    if (childId) ensureLoaded(childId)
+  }, [childId, ensureLoaded])
   // Unsent text belongs to the session, and is saved with it.
   const text = useDrafts((s) => s.drafts[sessionId]?.text ?? '')
   const context = useDrafts((s) => s.drafts[sessionId]?.context ?? NO_CONTEXT)
@@ -182,7 +195,7 @@ export function ConversationView({ sessionId, compact = false }: { sessionId: st
             {session.parentId && <ParentCrumb parentId={session.parentId} />}
             <span className="truncate">{session.title}</span>
           </h1>
-          {model && <Badge className="shrink-0">{model.label}</Badge>}
+          {session.moons ? <MoonsHeader session={session} child={child} moons={session.moons} /> : model && <Badge className="shrink-0">{model.label}</Badge>}
           {session.worktree && (
             <span className="shrink-0" title={`A separate copy of the project, made for this session: ${session.cwd}`}>
               <Badge tone="accent">Separate copy</Badge>
@@ -253,6 +266,14 @@ export function ConversationView({ sessionId, compact = false }: { sessionId: st
           </button>
         )}
 
+        {session.moons && (
+          <div className={cn('relative z-10 shrink-0', compact ? 'px-3' : 'px-6')}>
+            <div className="mx-auto w-full max-w-[820px]">
+              <MoonsSky session={session} child={child} compact={compact} />
+            </div>
+          </div>
+        )}
+
         <div className={cn('relative z-10 shrink-0', compact ? 'px-3 pb-3' : 'px-6 pb-4')}>
           <div ref={dockRef} className="mx-auto w-full max-w-[820px]">
             <QueueList
@@ -293,7 +314,7 @@ export function ConversationView({ sessionId, compact = false }: { sessionId: st
               }}
               history={prompts}
               compact={compact}
-              placeholder={session.status === 'waiting' ? 'Answer above, or type a message to skip it…' : busy ? 'Type a message to send after this answer…' : 'Message Celeste...'}
+              placeholder={session.status === 'waiting' ? 'Answer above, or type a message to skip it…' : busy ? 'Type a message to send after this answer…' : session.moons ? `Message both, or type @${moonName(session.moons.pattern, otherSeat(session.moons.pattern))} to choose one` : 'Message Celeste...'}
             />
             <div className={cn('mt-2 flex h-4 items-center justify-center gap-2 text-[11px] text-ink-faint', compact && 'hidden')}>
               {onChatGptPlan ? (

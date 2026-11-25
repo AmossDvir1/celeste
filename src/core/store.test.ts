@@ -101,6 +101,21 @@ describe.each(factories)('%s', (_name, make) => {
     expect(s.getSession('h1')?.spawn?.folder).toBe('copy')
   })
 
+  it('keeps which chats have two moons, and who the second one is', () => {
+    const s = make()
+    s.insertSession(session({ id: 'two', moons: { pattern: 'build', childId: 'kid' } }))
+    s.insertSession(session({ id: 'plain' }))
+    expect(s.getSession('two')?.moons).toEqual({ pattern: 'build', childId: 'kid' })
+    expect(s.getSession('plain')).not.toHaveProperty('moons')
+    expect(s.listSessions().find((x) => x.id === 'two')?.moons).toEqual({ pattern: 'build', childId: 'kid' })
+
+    // Set after the chat was made, as the service does once the second moon's session exists.
+    s.patchSession('plain', { moons: { pattern: 'reviews', childId: 'k2' } })
+    expect(s.getSession('plain')?.moons).toEqual({ pattern: 'reviews', childId: 'k2' })
+    s.patchSession('plain', { title: 'Renamed' })
+    expect(s.getSession('plain')).toMatchObject({ title: 'Renamed', moons: { pattern: 'reviews', childId: 'k2' } })
+  })
+
   it('appends events with increasing numbers and returns them in order', () => {
     const s = make()
     s.insertSession(session())

@@ -8,6 +8,7 @@ import { MIGRATIONS } from './migrations'
 import type { RunEvent, RunSummary, StoredRunEvent, WorkflowDefinition } from '@shared/workflow'
 import type { ScheduleLogEntry, ScheduleLogKind, ScheduleRow } from '@shared/schedule'
 import type { SpawnInfo } from '@shared/subagents'
+import type { MoonsInfo } from '@shared/moons'
 import { toMatchQuery, type AttachmentRow, type IndexKind, type SessionRow, type StoredFolder, type Store, type WorkflowRow } from './store'
 
 type Row = Record<string, unknown>
@@ -47,7 +48,8 @@ function sessionFrom(r: Row): SessionRow {
     deletedAt: (r.deleted_at ?? null) as number | null,
     pinnedAt: (r.pinned_at ?? null) as number | null,
     ...(r.parent_id != null ? { parentId: r.parent_id as string } : {}),
-    ...(r.spawn != null ? { spawn: JSON.parse(r.spawn as string) as SpawnInfo } : {})
+    ...(r.spawn != null ? { spawn: JSON.parse(r.spawn as string) as SpawnInfo } : {}),
+    ...(r.moons != null ? { moons: JSON.parse(r.moons as string) as MoonsInfo } : {})
   }
 }
 
@@ -245,10 +247,11 @@ export class SqliteStore implements Store {
 
   insertSession(s: SessionRow): void {
     this.run(
-      `INSERT INTO sessions (id, vendor, vendor_session_id, mode, title, model, effort, approval, cwd, branch, status, created_at, updated_at, last_seq, deleted_at, spawn, parent_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO sessions (id, vendor, vendor_session_id, mode, title, model, effort, approval, cwd, branch, status, created_at, updated_at, last_seq, deleted_at, spawn, parent_id, moons)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       s.id, s.vendor, s.vendorSessionId ?? null, s.mode, s.title, s.model, s.effort, s.approval, s.cwd ?? null, s.branch ?? null,
-      s.status, s.createdAt, s.updatedAt, s.lastSeq, s.deletedAt, s.spawn ? JSON.stringify(s.spawn) : null, s.spawn?.parentId ?? s.parentId ?? null
+      s.status, s.createdAt, s.updatedAt, s.lastSeq, s.deletedAt, s.spawn ? JSON.stringify(s.spawn) : null, s.spawn?.parentId ?? s.parentId ?? null,
+      s.moons ? JSON.stringify(s.moons) : null
     )
   }
 
@@ -272,6 +275,11 @@ export class SqliteStore implements Store {
       if (key === 'spawn' && value !== undefined) {
         sets.push('spawn = ?', 'parent_id = ?')
         values.push(JSON.stringify(value), (value as SpawnInfo).parentId)
+        continue
+      }
+      if (key === 'moons' && value !== undefined) {
+        sets.push('moons = ?')
+        values.push(JSON.stringify(value))
         continue
       }
       const column = SESSION_COLUMNS[key]

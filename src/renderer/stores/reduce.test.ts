@@ -189,8 +189,22 @@ describe('the status Core keeps for the sidebar', () => {
     { type: 'turn.abandoned' },
     { type: 'child.started', childId: 'c', title: 'T', vendor: 'claude', model: 'm', task: 't', folder: 'same', wait: true },
     { type: 'child.finished', childId: 'c', title: 'T', status: 'done', delivered: 'tool' },
-    { type: 'child.spawned', parentId: 'p', parentTitle: 'P' }
+    { type: 'child.spawned', parentId: 'p', parentTitle: 'P' },
+    { type: 'user.message', text: 'x', attachments: [], from: 'moon' },
+    { type: 'moons.turn', seat: 0, step: 'build' },
+    { type: 'moons.handed', from: 0, to: 1, what: '2 files' },
+    { type: 'moons.said', seat: 1, id: 'm1', text: 'x', finding: true },
+    { type: 'moons.fixed', ids: ['m1'] },
+    { type: 'moons.plan', id: 'p1', say: 'x', steps: ['a'] },
+    { type: 'moons.agreed', id: 'p1' },
+    { type: 'moons.compared', both: [], first: [], second: [] },
+    { type: 'moons.ended', why: 'agreed' }
   ]
+
+  it('draws nothing for what Celeste tells the pen on behalf of the other moon', () => {
+    const s = foldEvents(blank(), [{ seq: 1, at: 1000, event: { type: 'user.message', text: 'Fix these notes', attachments: [], from: 'moon' } }])
+    expect(s.items).toEqual([])
+  })
 
   it('agrees with the window for every kind of event, from every starting status', () => {
     for (const prev of ['idle', 'working', 'waiting'] as SessionStatus[]) {
@@ -487,5 +501,138 @@ describe('helpers (docs/plans/SUB_AGENTS_PLAN.md)', () => {
     // The end of work for a helper whose start was never seen changes nothing: there is no card to fill in.
     const s = foldEvents(blank(), log([1000, finished({ childId: 'ghost' })]))
     expect(s.items).toEqual([])
+  })
+})
+
+describe('Two Moons in the log', () => {
+  const moons = { pattern: 'build' as const, childId: 'c1' }
+  const said = (id: string, seat: 0 | 1, text: string, more: Partial<Extract<LogEvent, { type: 'moons.said' }>> = {}): LogEvent => ({ type: 'moons.said', seat, id, text, ...more })
+  const kinds = (s: Session) => s.items.map((i) => i.kind)
+
+  it('names the moon and what it does, and remembers whose turn it is until the run ends', () => {
+    let s = foldEvents(blank({ moons }), log([1000, { type: 'moons.turn', seat: 1, step: 'review' }]))
+    expect(s.status).toBe('working')
+    expect(s.activity).toEqual({ label: 'Reviewer is checking the change', working: true })
+    expect(s.moonsTurn).toEqual({ seat: 1, step: 'review' })
+    s = foldEvents(s, [{ seq: 2, at: 2000, event: { type: 'moons.ended', why: 'agreed' } }])
+    expect(s).toMatchObject({ status: 'idle', activity: null })
+    expect(s.moonsTurn).toBeUndefined()
+    // Without the pattern it still works, with a plain line.
+    expect(reduceEvent(blank(), { type: 'moons.turn', seat: 0, step: 'build' }, 1).activity?.label).toBe('Working together')
+  })
+
+  it('names two moons of one role by their numbers', () => {
+    const s = reduceEvent(blank({ moons: { pattern: 'reviews', childId: 'c1' } }), { type: 'moons.turn', seat: 1, step: 'review' }, 1)
+    expect(s.activity?.label).toBe('Reviewer 2 is checking the change')
+  })
+
+  it('draws a hand-over, and joins consecutive messages into one block', () => {
+    const s = foldEvents(
+      blank({ moons }),
+      log(
+        [1000, { type: 'moons.handed', from: 0, to: 1, what: '2 files' }],
+        [1100, said('a', 1, 'The loop never ends.', { finding: true, file: 'src/a.ts', line: 4, code: 'while (true)' })],
+        [1200, said('b', 1, 'Nothing checks the empty list.', { finding: true })],
+        [1300, said('c', 0, 'I will look at both.')]
+      )
+    )
+    expect(kinds(s)).toEqual(['moonsHand', 'moonsTalk'])
+    const talk = s.items[1]
+    expect(talk.kind === 'moonsTalk' && talk.messages.map((m) => m.id)).toEqual(['a', 'b', 'c'])
+    expect(talk.kind === 'moonsTalk' && talk.messages[0]).toEqual({ id: 'a', seat: 1, text: 'The loop never ends.', file: 'src/a.ts', line: 4, code: 'while (true)', finding: true, at: 1100 })
+  })
+
+  it('closes a block when anything else is drawn, and marks fixed notes in an earlier block', () => {
+    const s = foldEvents(
+      blank({ moons }),
+      log(
+        [1000, said('a', 1, 'Note one', { finding: true })],
+        [1100, { type: 'message.delta', text: 'Fixing.' }],
+        [1200, said('b', 0, 'Done')],
+        [1300, { type: 'moons.fixed', ids: ['a'] }]
+      )
+    )
+    expect(kinds(s)).toEqual(['moonsTalk', 'assistant', 'moonsTalk'])
+    const first = s.items[0]
+    const second = s.items[2]
+    expect(first.kind === 'moonsTalk' && first.messages[0].fixed).toBe(true)
+    expect(second.kind === 'moonsTalk' && second.messages[0].fixed).toBeUndefined()
+  })
+
+  it('leaves an item alone when a fix does not concern it, so its card is not drawn again', () => {
+    const before = foldEvents(blank({ moons }), log([1000, said('a', 1, 'x', { finding: true })]))
+    const after = reduceEvent(before, { type: 'moons.fixed', ids: ['zzz'] }, 2)
+    expect(after.items[0]).toBe(before.items[0])
+  })
+
+  it('shows the plan and marks it agreed', () => {
+    const s = foldEvents(blank({ moons }), log([1000, { type: 'moons.plan', id: 'p1', say: 'Here it is.', steps: ['One', 'Two'] }]))
+    expect(s.items[0]).toMatchObject({ kind: 'moonsPlan', planId: 'p1', say: 'Here it is.', steps: ['One', 'Two'] })
+    expect(s.items[0]).not.toHaveProperty('agreed')
+    const agreed = foldEvents(s, [{ seq: 2, at: 2000, event: { type: 'moons.agreed', id: 'p1' } }])
+    expect(agreed.items[0]).toMatchObject({ agreed: true })
+    // Another plan's agreement changes nothing.
+    expect(reduceEvent(s, { type: 'moons.agreed', id: 'other' }, 3).items[0]).toEqual(s.items[0])
+  })
+
+  it('shows what two reviews found, also that neither found anything', () => {
+    const f = { text: 'Off by one', file: 'a.ts', line: 3 }
+    const s = foldEvents(blank(), log([1000, { type: 'moons.compared', both: [f], first: [], second: [{ text: 'Typo' }] }]))
+    expect(s.items[0]).toMatchObject({ kind: 'moonsCompare', both: [f], first: [], second: [{ text: 'Typo' }] })
+    expect(foldEvents(blank(), log([1000, { type: 'moons.compared', both: [], first: [], second: [] }])).items).toMatchObject([{ kind: 'moonsCompare', both: [], first: [], second: [] }])
+  })
+
+  it('draws a line for the ends that need one, and none for a good or empty end', () => {
+    const end = (e: Extract<LogEvent, { type: 'moons.ended' }>) => foldEvents(blank({ moons }), log([1000, e])).items
+    expect(end({ type: 'moons.ended', why: 'agreed' })).toEqual([])
+    expect(end({ type: 'moons.ended', why: 'nothing' })).toEqual([])
+    expect(end({ type: 'moons.ended', why: 'agreed', note: 'It did not fail.' })[0]).toMatchObject({ kind: 'moonsEnded', why: 'agreed', note: 'It did not fail.' })
+    expect(end({ type: 'moons.ended', why: 'rounds', left: 2 })[0]).toMatchObject({ kind: 'moonsEnded', why: 'rounds', left: 2 })
+    for (const why of ['declined', 'stopped', 'failed', 'unread'] as const) expect(end({ type: 'moons.ended', why })[0]).toMatchObject({ kind: 'moonsEnded', why })
+  })
+
+  it('lets go of a card nobody answered when the run ends, as Stop does', () => {
+    const s = foldEvents(
+      blank({ moons }),
+      log(
+        [1000, { type: 'moons.plan', id: 'p1', say: 'x', steps: ['a'] }],
+        [1100, { type: 'approval.requested', requestId: 'r', kind: 'other', title: 'Build it this way' }],
+        [1200, { type: 'moons.ended', why: 'stopped' }]
+      )
+    )
+    expect(s.items.find((i) => i.kind === 'approval')).toMatchObject({ status: 'denied' })
+    expect(s.status).toBe('idle')
+  })
+
+  it('forgets whose turn it was when Celeste was closed', () => {
+    const s = foldEvents(blank({ moons }), log([1000, { type: 'moons.turn', seat: 0, step: 'build' }], [1100, { type: 'turn.abandoned' }]))
+    expect(s.moonsTurn).toBeUndefined()
+    expect(s.status).toBe('idle')
+  })
+
+  it('ends in the same place when replayed all at once or one event at a time, and ignores a repeat', () => {
+    const events = log(
+      [1000, { type: 'user.message', text: 'Build it', attachments: [] }],
+      [1100, { type: 'moons.turn', seat: 0, step: 'build' }],
+      [1200, { type: 'moons.handed', from: 0, to: 1, what: '1 file' }],
+      [1300, { type: 'moons.turn', seat: 1, step: 'review' }],
+      [1400, said('a', 1, 'Bug', { finding: true })],
+      [1500, { type: 'moons.fixed', ids: ['a'] }],
+      [1600, { type: 'moons.ended', why: 'rounds', left: 1 }]
+    )
+    const strip = (s: Session) => ({ ...s, items: s.items.map(({ id: _id, ...rest }) => rest) })
+    const whole = foldEvents(blank({ moons }), events)
+    const live = events.reduce((acc, e) => foldEvents(acc, [e]), blank({ moons }))
+    expect(strip(live)).toEqual(strip(whole))
+    expect(foldEvents(whole, events)).toBe(whole)
+    // The same message arriving twice is shown once.
+    expect(kinds(reduceEvent(whole, said('a', 1, 'Bug'), 9))).toEqual(kinds(whole))
+  })
+
+  it('does not change a chat that has no moons', () => {
+    const events = log([1000, { type: 'user.message', text: 'hi', attachments: [] }], [1100, { type: 'turn.started', turnId: 't' }], [1200, { type: 'message.delta', text: 'Hello' }], [1300, { type: 'turn.completed', turnId: 't' }], [1400, { type: 'turn.abandoned' }])
+    const s = foldEvents(blank(), events)
+    expect('moonsTurn' in s).toBe(false)
+    expect(kinds(s)).toEqual(['user', 'assistant', 'notice'])
   })
 })

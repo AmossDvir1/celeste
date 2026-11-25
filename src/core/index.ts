@@ -36,6 +36,7 @@ import type { VendorUsage } from '@shared/usage'
 import { AppTools } from './app/tools'
 import { SubAgents } from './agents/subagents'
 import { AgentTools } from './agents/tools'
+import { Moons } from './moons/moons'
 import { createAgentStepRunner } from './workflows/agent-step'
 import { draftWorkflow } from './workflows/draft'
 import { WorkflowRunner } from './workflows/runner'
@@ -104,12 +105,15 @@ let schedulerRef: Scheduler | undefined
 let schedulesRef: ScheduleService | undefined
 let tellSchedulesRef: (() => void) | undefined
 let subAgentsRef: SubAgents | undefined
+let moonsRef: Moons | undefined
 const push = (p: CorePush) => {
   ports.forEach((port) => send(port, { kind: 'push', push: p }))
   phoneRef?.broadcast(p)
   attention?.observe(p)
   // A helper's turn ended, or a helper was deleted: whoever waits for its answer is told.
   subAgentsRef?.observe(p)
+  // The same for the two moons of a chat: the other moon's turn ended, or the pen's failed.
+  moonsRef?.observe(p)
   // A turn ended: that vendor's usage has changed.
   if (p.type === 'event' && p.stored.event.type === 'turn.completed') {
     const vendor = store?.listSessions().find((s) => s.id === p.sessionId)?.vendor
@@ -262,7 +266,7 @@ async function start(): Promise<void> {
     const row = db.getSession(sessionId)
     if (!row) return undefined
     const parentTitle = row.spawn ? db.getSession(row.spawn.parentId)?.title : undefined
-    return parentTitle ? `${row.title} (helper in ${parentTitle})` : row.title
+    return parentTitle ? `${row.title} (${row.spawn?.moon ? 'in' : 'helper in'} ${parentTitle})` : row.title
   }
   const mcp = new McpService(db, getSecret, undefined, () => push({ type: 'mcp' }))
   // The same adapters serve chats and the agent steps of workflows.
@@ -305,9 +309,18 @@ async function start(): Promise<void> {
       phoneRef?.cancel(id)
       // The helpers a chat was running or waiting on stop with it.
       subAgentsRef?.parentStopped(id)
+      // A run of two moons ends when its chat is stopped or deleted, or fails when the other moon is.
+      moonsRef?.stopped(id)
     },
     // A turn ended and nothing follows from the queue: an assistant with a helper's answer waiting is told now.
     onIdle: (id, type) => subAgentsRef?.onIdle(id, type),
+    // Two Moons chats (src/core/moons): who gets a person's message, what the pen is told with it, and what follows the pen's turn.
+    moons: {
+      takes: (id, input) => moonsRef?.takes(id, input) ?? false,
+      lineFor: (id) => moonsRef?.lineFor(id) ?? '',
+      penDone: (id) => moonsRef?.penDone(id) ?? false,
+      notSent: (id) => moonsRef?.notSent(id)
+    },
     push,
     defaults: {
       ...DEFAULT_SETTINGS,
@@ -538,6 +551,8 @@ async function start(): Promise<void> {
     worktrees
   })
   subAgentsRef = subAgents
+  // Two Moons (docs/plans/TWO_MOONS_PLAN.md): Celeste gives the two agents of such a chat their turns.
+  moonsRef = new Moons({ service: service as SessionService, store: db })
   const agentTools = new AgentTools({ where, agents: subAgents })
   servers.setExtraTools(new CombinedTools([new WorkflowTools(db, runner, (sessionId) => (service as SessionService).workFolder(sessionId)), appTools, agentTools, desktopControl, phoneTools, browserTools]))
   const workflows = new WorkflowService(db, runner, undefined, () => push({ type: 'workflows' }), dataDir, async () => (await mcp.resolved()).map((s) => s.key), (sessionId) => (service as SessionService).workFolder(sessionId), (source) =>
@@ -727,6 +742,7 @@ parent.on('message', (event) => {
     desktopRef?.stop('Celeste closed.')
     schedulerRef?.stop()
     subAgentsRef?.close()
+    moonsRef?.close()
     service?.close()
     void (async () => {
       await browserToolsRef?.close().catch(() => undefined)

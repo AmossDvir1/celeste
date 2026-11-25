@@ -81,6 +81,27 @@ describe('database migrations', () => {
     expect(existsSync(`${path}.v6.bak`)).toBe(true)
   })
 
+  it('adds the moons column to a version 7 database and keeps its sessions', async () => {
+    const real = (await vi.importActual<typeof import('./migrations')>('./migrations')).MIGRATIONS
+    expect(real.length).toBeGreaterThanOrEqual(8)
+    const path = join(dir, 'v7.db')
+    const raw = new DatabaseSync(path)
+    for (const step of real.slice(0, 7)) raw.exec(step)
+    raw.exec('PRAGMA user_version = 7')
+    raw.prepare("INSERT INTO sessions (id, mode, title, model, approval, status, created_at, updated_at, last_seq) VALUES ('old', 'chat', 'Old chat', 'm', 'auto', 'idle', 1, 1, 0)").run()
+    raw.close()
+
+    const { SqliteStore } = await import('./sqlite-store')
+    const store = new SqliteStore(path)
+    expect(store.getSession('old')).toMatchObject({ id: 'old', title: 'Old chat' })
+    expect(store.getSession('old')).not.toHaveProperty('moons')
+    store.patchSession('old', { moons: { pattern: 'plan', childId: 'kid' } })
+    expect(store.getSession('old')?.moons).toEqual({ pattern: 'plan', childId: 'kid' })
+    store.close()
+    expect(version(path)).toBe(real.length)
+    expect(existsSync(`${path}.v7.bak`)).toBe(true)
+  })
+
   it('refuses a database from a newer Celeste without touching it', async () => {
     const path = join(dir, 'c.db')
     const raw = new DatabaseSync(path)

@@ -31,6 +31,7 @@ export function nextStatus(prev: SessionStatus, e: LogEvent): SessionStatus {
     case 'tool.started':
     case 'approval.resolved':
     case 'ask.answered':
+    case 'moons.turn':
       return 'working'
     case 'approval.requested':
     case 'ask_user.requested':
@@ -39,6 +40,7 @@ export function nextStatus(prev: SessionStatus, e: LogEvent): SessionStatus {
     case 'turn.interrupted':
     case 'turn.failed':
     case 'turn.abandoned':
+    case 'moons.ended':
       return 'idle'
     default:
       return prev

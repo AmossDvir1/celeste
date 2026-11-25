@@ -1,0 +1,618 @@
+/*
+ * The sky of a Two Moons chat (MoonsSky.tsx, scenes.tsx), ported from the approved prototype (design/pair-prototypes/moon-characters.html).
+ * Every color is the app's own token; only the moons' colors come in, as --c, from the code. The animations here are decoration and stop
+ * when the system asks for less motion; the caption's shimmer is information and is not touched.
+ */
+
+.moons-sky {
+  --sky-1: color-mix(in srgb, var(--glow-core-2) 8%, var(--c-panel));
+  --sky-2: color-mix(in srgb, var(--glow-core-2) 22%, var(--c-panel));
+  --card: color-mix(in srgb, var(--c-panel) 82%, transparent);
+  position: relative;
+  flex: none;
+  height: 0;
+  overflow: hidden;
+  background: linear-gradient(180deg, transparent, var(--sky-1) 24%, var(--sky-2) 80%, transparent);
+  transition: height 0.7s cubic-bezier(0.3, 0.8, 0.2, 1);
+}
+
+.moons-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  -webkit-mask-image: linear-gradient(#000 84%, transparent);
+  mask-image: linear-gradient(#000 84%, transparent);
+}
+
+.moons-scene {
+  position: absolute;
+  overflow: hidden;
+  border: 1px solid var(--c-edge-strong);
+  border-radius: 14px;
+  background: var(--card);
+  transition:
+    left 0.7s cubic-bezier(0.3, 0.8, 0.2, 1),
+    right 0.7s cubic-bezier(0.3, 0.8, 0.2, 1),
+    opacity 0.4s;
+}
+
+.moons-cap {
+  position: absolute;
+  left: 20px;
+  right: 20px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  font-size: 13.5px;
+}
+.moons-cap-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.moons-cap-label.is-still {
+  color: var(--c-ink);
+}
+
+.moons-track {
+  display: flex;
+  flex: none;
+  gap: 16px;
+  margin: 0 0 0 auto;
+  padding: 0;
+  list-style: none;
+  font-size: 12.5px;
+  color: var(--c-ink-faint);
+}
+.moons-track li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: color 0.4s;
+}
+.moons-track i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1px solid var(--c-ink-faint);
+  transition: all 0.4s;
+}
+.moons-track li.on {
+  color: var(--c-ink);
+}
+.moons-track li.on i {
+  border-color: transparent;
+  background: var(--c);
+  box-shadow: 0 0 9px var(--c);
+}
+.moons-track li.was {
+  color: var(--c-ink-muted);
+}
+.moons-track li.was i {
+  background: var(--c-ink-muted);
+  border-color: transparent;
+}
+
+/* The one line that stands in for the sky in the compact window. */
+.moons-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 6px 14px;
+  font-size: 13px;
+}
+.moons-line-dots {
+  display: inline-flex;
+  flex: none;
+  gap: 4px;
+}
+.moons-line-dots i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--c);
+  opacity: 0.35;
+  transition: opacity 0.4s, box-shadow 0.4s;
+}
+.moons-line-dots i.lit {
+  opacity: 1;
+  box-shadow: 0 0 8px var(--c);
+}
+
+/* The agents' conversation, live in the sky. */
+.moons-talk {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 9px;
+  overflow: hidden;
+  padding: 0 8px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s;
+  -webkit-mask-image: linear-gradient(transparent, #000 26px);
+  mask-image: linear-gradient(transparent, #000 26px);
+}
+.moons-talk.on {
+  opacity: 1;
+}
+.moons-bb {
+  position: relative;
+  flex: none;
+  max-width: min(430px, 84%);
+  padding: 8px 13px;
+  border-radius: 17px;
+  background: color-mix(in srgb, var(--c) 24%, var(--c-raised));
+  color: var(--c-ink);
+  font-size: 14px;
+  line-height: 1.42;
+  animation: moons-pop 0.34s cubic-bezier(0.2, 1.35, 0.4, 1) both;
+}
+.moons-bb.l {
+  align-self: flex-start;
+  border-bottom-left-radius: 4px;
+  transform-origin: 0 100%;
+}
+.moons-bb.r {
+  align-self: flex-end;
+  border-bottom-right-radius: 4px;
+  transform-origin: 100% 100%;
+}
+.moons-bb.l::before,
+.moons-bb.r::before {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  width: 11px;
+  height: 13px;
+  background: inherit;
+}
+.moons-bb.l::before {
+  left: -7px;
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+}
+.moons-bb.r::before {
+  right: -7px;
+  clip-path: polygon(0 0, 100% 100%, 0 100%);
+}
+.moons-bb.old {
+  opacity: 0.55;
+}
+.moons-qt {
+  display: block;
+  margin: 1px -4px 6px;
+  padding: 5px 10px;
+  overflow: hidden;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--c) 16%, var(--c-panel));
+  font: 400 12px/1.5 var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.moons-qt small {
+  display: block;
+  color: var(--c-ink-muted);
+  font: 400 11.5px var(--font-sans);
+}
+.moons-dots {
+  display: flex;
+  gap: 4px;
+  padding: 5px 1px;
+}
+.moons-dots i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--c);
+  animation: moons-bob 1s ease-in-out infinite;
+}
+.moons-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.moons-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes moons-pop {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.86);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes moons-bob {
+  0%,
+  60%,
+  100% {
+    transform: none;
+    opacity: 0.5;
+  }
+  30% {
+    transform: translateY(-5px);
+    opacity: 1;
+  }
+}
+
+/* ---------- scenes: what is happening at this moment ---------- */
+
+.moons-sc {
+  position: absolute;
+  inset: 0;
+  padding: 11px 14px;
+  color: var(--c-ink-soft);
+  font: 400 12px/18px var(--font-mono);
+}
+.moons-f {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 3px;
+  color: var(--c-ink-muted);
+  font: 500 12px/18px var(--font-sans);
+  white-space: nowrap;
+}
+.moons-f em {
+  margin-left: auto;
+  color: var(--c-ink-faint);
+  font-style: normal;
+  font-weight: 400;
+}
+.moons-ln {
+  height: 17px;
+  margin: 0 -6px;
+  padding: 0 6px;
+  overflow: hidden;
+  border-radius: 4px;
+  line-height: 17px;
+  white-space: pre;
+}
+.moons-ln.dim {
+  opacity: 0.38;
+}
+.moons-ln.ctx::before {
+  content: '  ';
+}
+.moons-ln.add {
+  color: var(--c-success);
+}
+.moons-ln.add::before {
+  content: '+ ';
+}
+.moons-ln.del {
+  color: var(--c-danger);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--c-danger) 60%, transparent);
+}
+.moons-ln.del::before {
+  content: '\2212 ';
+}
+.moons-ln.out {
+  color: var(--c-ink-muted);
+}
+.moons-ln.out.good {
+  color: var(--c-success);
+}
+.moons-ln.out.bad {
+  color: var(--c-danger);
+}
+.moons-ln.cmd {
+  color: var(--c-ink);
+}
+.moons-caret {
+  display: inline-block;
+  width: 7px;
+  height: 14px;
+  margin-left: 1px;
+  border-radius: 1px;
+  background: var(--c);
+  vertical-align: -2px;
+  animation: moons-blink 1.1s steps(2, jump-none) infinite;
+}
+@keyframes moons-blink {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.15;
+  }
+}
+
+/* The added lines are typed in, one after the other. The width grows by whole characters; the caret is the edge of the box. */
+.moons-type {
+  display: inline-block;
+  overflow: hidden;
+  border-right: 7px solid var(--c);
+  vertical-align: top;
+  white-space: pre;
+  animation:
+    moons-type var(--dur) steps(var(--n)) var(--delay) both,
+    moons-caret-off 0.01s linear calc(var(--delay) + var(--dur)) both;
+}
+@keyframes moons-type {
+  from {
+    width: 0;
+  }
+  to {
+    width: calc(var(--n) * 1ch);
+  }
+}
+@keyframes moons-caret-off {
+  to {
+    border-right-color: transparent;
+  }
+}
+.moons-del-fade {
+  animation: moons-del 0.5s ease-out 0.15s both;
+}
+@keyframes moons-del {
+  to {
+    opacity: 0.45;
+  }
+}
+
+/* Reading: the light goes over the lines, one after the other. */
+.moons-hot {
+  animation: moons-hot 2.7s linear var(--delay) infinite;
+}
+@keyframes moons-hot {
+  0%,
+  16.6% {
+    background: color-mix(in srgb, var(--c) 18%, transparent);
+    color: var(--c-ink);
+  }
+  16.7%,
+  100% {
+    background: transparent;
+  }
+}
+
+/* Checking: the lens drifts over the lines. It is where it looks, roughly; only the marks are facts. */
+.moons-lens-y {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  transform: translateY(var(--y0));
+  animation: moons-lens-y 7s ease-in-out infinite;
+}
+.moons-lens-x {
+  width: 64px;
+  height: 64px;
+  border: 2px solid var(--c);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--c) 10%, transparent);
+  box-shadow:
+    0 0 26px color-mix(in srgb, var(--c) 45%, transparent),
+    inset 0 0 14px color-mix(in srgb, var(--c) 30%, transparent);
+  transform: translateX(26px);
+  animation: moons-lens-x 4.3s ease-in-out infinite;
+}
+@keyframes moons-lens-y {
+  0%,
+  100% {
+    transform: translateY(var(--y0));
+  }
+  50% {
+    transform: translateY(var(--y1));
+  }
+}
+@keyframes moons-lens-x {
+  0%,
+  100% {
+    transform: translateX(26px);
+  }
+  50% {
+    transform: translateX(150px);
+  }
+}
+.moons-mark {
+  position: absolute;
+  right: 12px;
+  padding: 0 8px;
+  border-radius: 9px;
+  background: var(--c);
+  color: var(--c-panel);
+  font: 500 11.5px/17px var(--font-sans);
+  white-space: nowrap;
+  animation: moons-fade 0.4s ease-out var(--delay) both;
+}
+@keyframes moons-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Thinking: specks join into a shape, and the words of what was touched appear under them. */
+.moons-think {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.moons-think line {
+  stroke: var(--c);
+  stroke-opacity: 0.5;
+  stroke-dasharray: var(--len);
+  animation: moons-draw 8s linear var(--delay) infinite;
+}
+.moons-think circle {
+  fill: var(--c);
+  animation: moons-speck 8s linear var(--delay) infinite;
+}
+.moons-think text {
+  fill: var(--c-ink-muted);
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  animation: moons-word 8s linear var(--delay) infinite;
+}
+@keyframes moons-draw {
+  0% {
+    stroke-dashoffset: var(--len);
+  }
+  8%,
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes moons-speck {
+  0% {
+    opacity: 0.25;
+  }
+  4%,
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes moons-word {
+  0% {
+    opacity: 0;
+  }
+  6%,
+  100% {
+    opacity: 1;
+  }
+}
+
+/* The plan, drawn step by step. */
+.moons-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 5px;
+  color: var(--c-ink);
+  font: 400 13.5px/19px var(--font-sans);
+  animation: moons-fade 0.4s ease-out var(--delay) both;
+}
+.moons-step i {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--c);
+}
+.moons-step span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Waiting for the person: the real question, with its buttons. */
+.moons-ask {
+  display: grid;
+  align-content: center;
+  gap: 9px;
+  height: 100%;
+  color: var(--c-ink);
+  font: 400 14px/20px var(--font-sans);
+}
+.moons-ask > span {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.moons-ask code {
+  display: block;
+  overflow: hidden;
+  color: var(--c-ink-muted);
+  font: 400 12.5px var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.moons-ask div {
+  display: flex;
+  gap: 8px;
+}
+.moons-btn {
+  padding: 5px 14px;
+  border: 1px solid var(--c-edge-strong);
+  border-radius: 8px;
+  background: var(--c-raised);
+  color: var(--c-ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.moons-btn:hover {
+  border-color: var(--c-accent);
+}
+.moons-btn:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 2px;
+}
+.moons-btn.p {
+  border-color: var(--c-accent-fill);
+  background: var(--c-accent-fill);
+  color: var(--c-accent-ink);
+}
+
+/* The end, and the comparison. */
+.moons-sum {
+  display: grid;
+  align-content: center;
+  gap: 5px;
+  height: 100%;
+  font-family: var(--font-sans);
+  animation: moons-fade 0.5s ease-out both;
+}
+.moons-sum b {
+  color: var(--c-ink);
+  font-size: 25px;
+  font-weight: 300;
+  line-height: 1.2;
+}
+.moons-sum span {
+  color: var(--c-ink-muted);
+  font-size: 13.5px;
+}
+.moons-row {
+  margin-top: 5px;
+  overflow: hidden;
+  color: var(--c-ink);
+  font: 400 13px/19px var(--font-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  animation: moons-fade 0.4s ease-out var(--delay) both;
+}
+
+/* Calm: no decoration moves. Phases, names and scenes still change, because they are information. */
+.moons-calm,
+.moons-calm .moons-scene,
+.moons-calm .moons-talk {
+  transition-duration: 0.01s;
+}
+.moons-calm .moons-sc *,
+.moons-calm .moons-sc,
+.moons-calm .moons-bb,
+.moons-calm .moons-dots i {
+  animation: none !important;
+}
+.moons-calm .moons-type {
+  border-right-color: transparent;
+}
+@media (prefers-reduced-motion: reduce) {
+  .moons-sky,
+  .moons-scene,
+  .moons-talk {
+    transition-duration: 0.01s;
+  }
+  .moons-sc *,
+  .moons-bb,
+  .moons-dots i {
+    animation: none !important;
+  }
+  .moons-type {
+    border-right-color: transparent;
+  }
+}

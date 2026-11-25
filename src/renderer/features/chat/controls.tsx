@@ -11,7 +11,7 @@ import {
   Zap,
   FilePen
 } from 'lucide-react'
-import type { ApprovalMode, Effort, ModelInfo, SessionMode } from '@shared/agent'
+import type { ApprovalMode, Effort, ModelInfo, SessionMode, VendorId } from '@shared/agent'
 import { STRICTNESS } from '@shared/subagents'
 import { cn } from '@/lib/cn'
 import { Menu, Popover } from '@/components/menu'
@@ -43,23 +43,23 @@ const pill = `${control} gap-1.5 rounded-lg border border-edge-strong bg-pill px
 const chevron = 'h-3.5 w-3.5 text-ink-faint'
 
 /** Model and thinking effort, side by side: effort belongs to the model, so they share one outline. */
-export function ModelControls({ prefs, onPrefs, compact = false }: { prefs: Prefs; onPrefs: (p: Partial<Prefs>) => void; compact?: boolean }) {
+export function ModelControls({ prefs, onPrefs, compact = false, only }: { prefs: Prefs; onPrefs: (p: Partial<Prefs>) => void; compact?: boolean; /** Only this vendor's models: a session that has begun keeps its vendor. */ only?: VendorId }) {
   return (
     <div className="inline-flex rounded-lg border border-edge-strong bg-pill">
-      <ModelPicker prefs={prefs} onPrefs={onPrefs} compact={compact} />
+      <ModelPicker prefs={prefs} onPrefs={onPrefs} compact={compact} only={only} />
       <span className="my-1.5 w-px bg-edge-strong" aria-hidden />
       <EffortPopover prefs={prefs} onPrefs={onPrefs} />
     </div>
   )
 }
 
-function ModelPicker({ prefs, onPrefs, compact = false }: { prefs: Prefs; onPrefs: (p: Partial<Prefs>) => void; compact?: boolean }) {
+function ModelPicker({ prefs, onPrefs, compact = false, only }: { prefs: Prefs; onPrefs: (p: Partial<Prefs>) => void; compact?: boolean; only?: VendorId }) {
   const vendors = useVendors((s) => s.vendors)
   const openSettings = useUi((s) => s.openSettings)
   const models = useModels((s) => s.list)
   const byId = useModels((s) => s.byId)
   const current = lookupModel(byId, prefs.model)
-  const connected = VENDOR_ORDER.filter((v) => vendors[v].status === 'connected')
+  const connected = VENDOR_ORDER.filter((v) => vendors[v].status === 'connected' && (only === undefined || v === only))
   const pinnedIds = useSettings((s) => s.pinnedModels)
   const togglePin = useSettings((s) => s.togglePin)
   // A pinned model whose vendor is disconnected, or that its vendor no longer offers, waits quietly until it is back.

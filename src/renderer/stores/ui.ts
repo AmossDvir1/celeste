@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { ApprovalMode, Effort, ModelInfo } from '@shared/agent'
+import type { MoonPattern } from '@shared/moons'
 import { effortFor } from '@/lib/vendors'
 import { lookupModel, modelOf, useModels } from './models'
 import { useSettings } from '@/stores/settings'
@@ -31,6 +32,8 @@ export interface Draft {
   branch: string
   /** Work in a separate copy of the project (a git worktree) instead of the folder itself. */
   worktree: boolean
+  /** Two Moons: the pattern chosen on the home screen and the model of the second moon (the composer's own is the Builder's, or the pen's). Null: one agent. */
+  moons: { pattern: MoonPattern; model: string; effort: Effort | null } | null
 }
 
 export interface Toast {
@@ -98,7 +101,8 @@ function freshDraft(): Draft {
     approval: defaults.approval,
     project: '',
     branch: '',
-    worktree: false
+    worktree: false,
+    moons: null
   }
 }
 
@@ -191,10 +195,16 @@ export const useUi = create<UiState>((set, get) => ({
   fitDraftToModels: () => {
     const { list, byId } = useModels.getState()
     const d = get().draft
-    if (list.length === 0 || byId[d.model]) return
+    if (list.length === 0) return
+    // The second moon's model may have gone too (its vendor was disconnected): it follows the composer's.
+    const moons = d.moons && !byId[d.moons.model] ? { ...d.moons, model: byId[d.model]?.id ?? d.model, effort: d.effort } : d.moons
+    if (byId[d.model]) {
+      if (moons !== d.moons) set({ draft: { ...d, moons } })
+      return
+    }
     const wanted = lookupModel(byId, useSettings.getState().defaults.model)
     const model = byId[wanted.id] ?? (list[0] as ModelInfo)
-    set({ draft: { ...d, model: model.id, effort: effortFor(model, null) } })
+    set({ draft: { ...d, model: model.id, effort: effortFor(model, null), moons: d.moons && !byId[d.moons.model] ? { ...d.moons, model: model.id, effort: effortFor(model, null) } : d.moons } })
   },
   pushToast: (toast) => {
     const id = toastId++

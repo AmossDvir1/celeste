@@ -1,6 +1,6 @@
 import { mkdirSync, rmSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
-import type { AgentSession, ApprovalAnswer, ApprovalChoices, ApprovalProposal, ApprovalSlider, ApprovalMode, AskAnswers, AttachmentInfo, ContextRef, SessionMode, ToolKind, UserInput, VendorId } from '@shared/agent'
+import type { AgentSession, ApprovalAnswer, ApprovalChoices, ApprovalProposal, ApprovalSlider, ApprovalMode, AskAnswers, AttachmentInfo, ContextRef, FileDiff, SessionMode, ToolKind, UserInput, VendorId } from '@shared/agent'
 import {
   UNDO_WINDOW_MS,
   type AppSettings,
@@ -27,7 +27,9 @@ import { nextStatus } from '@shared/status'
 import { EMPTY_QUEUE, foldQueue, MAX_QUEUED, type QueueAction, type QueueState, type SendMode } from '@shared/queue'
 import { LIMIT_WAIT_MAX_MS } from '@shared/usage'
 import { NOTE_MAX_CHARS, STRICTNESS, type SpawnInfo } from '@shared/subagents'
+import { isMoonPattern, moonName, otherSeat, PATTERNS, type MoonsInput } from '@shared/moons'
 import type { AttachmentRow, FileStore, SessionRow, Store } from './store'
+import { diffsOfTools } from './moons/words'
 import type { Snapshots } from './snapshots'
 import { cleanTitle, type Titler } from './titles'
 import { contextText, MAX_CONTEXT } from './context'
@@ -71,6 +73,14 @@ export interface ServiceOptions {
    * (docs/plans/SUB_AGENTS_PLAN.md) uses it to wake an assistant that has an answer waiting.
    */
   onIdle?: (sessionId: string, type: 'turn.completed' | 'turn.interrupted' | 'turn.failed' | 'turn.abandoned') => void
+  /**
+   * Two Moons (docs/plans/TWO_MOONS_PLAN.md): the engine that gives the two agents of such a chat their turns. The service only asks it at the few
+   * places where something happens to a chat that has two. `takes`: a person's message is about to go to the pen's agent; true when the engine
+   * took it (it went to the other moon, or began a plan). `lineFor`: what the pen is told besides the person's words. `penDone`: the pen's turn
+   * completed; true when the run goes on, so the queue must wait. `notSent`: the message that began a run could not be given to the pen. Without
+   * it every chat works as it always did.
+   */
+  moons?: { takes(sessionId: string, input: UserInput): boolean; lineFor(sessionId: string): string; penDone(sessionId: string): boolean; notSent(sessionId: string): void }
   now?: () => number
   undoMs?: number
 }
@@ -95,6 +105,27 @@ interface Live {
   active?: boolean
   /** The waiting message to send as soon as the turn being stopped ends ("send now"). */
   sendNext?: string
+}
+
+/**
+ * What the person added to their message (files, and places in the project), for an agent that is told something in their name. It reaches the
+ * agent; in the log it stays with the person's own message.
+ */
+export type Lent = Partial<Pick<UserInput, 'attachments' | 'context'>>
+
+/** What Celeste writes into a Two Moons chat's own log on behalf of its two agents. */
+export type MoonsEvent = Extract<LogEvent, { type: `moons.${string}` }>
+
+/** How the person’s message to a Two Moons chat is checked: the pattern is one of the four, and the other moon has a vendor and a model. */
+function checkMoons(value: MoonsInput | undefined): MoonsInput | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'object' || value === null || !isMoonPattern(value.pattern)) throw new Error('Invalid pattern')
+  return {
+    pattern: value.pattern,
+    vendor: oneOf(value.vendor, VENDOR_IDS, 'vendor'),
+    model: text(value.model, 'model', 100),
+    effort: value.effort === null ? null : (oneOf(value.effort, EFFORTS, 'effort') as MoonsInput['effort'])
+  }
 }
 
 /**
@@ -239,7 +270,8 @@ export class SessionService {
 
     // A turn that was running when Celeste closed cannot continue. Say so in the log.
     for (const row of this.store.listSessions()) {
-      if (row.status === 'working') this.record(row.id, { type: 'turn.abandoned' }, { text: '' })
+      // A Two Moons chat that waited for the person’s yes to a plan is over too: the card can no longer be answered.
+      if (row.status === 'working' || (row.moons && row.status === 'waiting')) this.record(row.id, { type: 'turn.abandoned' }, { text: '' })
     }
 
     // A helper's work that was going when Celeste closed is over too: its parent's log says it was not finished. Nothing is woken or restarted.
@@ -448,6 +480,8 @@ export class SessionService {
 
   private create(input: CreateSessionInput, spawn?: SpawnInfo): SessionSummary {
     const now = this.now()
+    // A chat with two agents (a helper never is one). Checked before anything is stored.
+    const moons = spawn ? undefined : checkMoons(input.moons)
     const row: SessionRow = {
       id: `s-${crypto.randomUUID()}`,
       vendor: oneOf(input.vendor, VENDOR_IDS, 'vendor'),
@@ -455,7 +489,8 @@ export class SessionService {
       title: text(input.title, 'title', 200).trim() || 'New chat',
       model: text(input.model, 'model', 100),
       effort: input.effort === null ? null : (oneOf(input.effort, EFFORTS, 'effort') as SessionRow['effort']),
-      approval: oneOf(input.approval, APPROVALS, 'approval mode'),
+      // Two reviews only look, so nobody in that chat may write.
+      approval: moons?.pattern === 'reviews' ? 'plan' : oneOf(input.approval, APPROVALS, 'approval mode'),
       ...(input.cwd ? { cwd: text(input.cwd, 'folder', 500) } : {}),
       ...(input.branch ? { branch: text(input.branch, 'branch', 200) } : {}),
       status: 'idle',
@@ -467,8 +502,24 @@ export class SessionService {
     }
     this.store.insertSession(row)
     this.store.index(row.id, 'title', row.title)
+    if (moons) this.makeSecondMoon(row, moons)
     const summary = this.emitSummary(row.id)
     return summary ?? this.summary(row)
+  }
+
+  /**
+   * The chat's own agent is the pen. The other moon is a session of its own (a helper of the chat in the same folder) that Celeste, not an agent,
+   * gives its turns. One that only looks (a Reviewer, a Planner) is held to plan mode for good; a Tester must run commands, so it may do what the chat may.
+   */
+  private makeSecondMoon(row: SessionRow, moons: MoonsInput): void {
+    const role = PATTERNS[moons.pattern].roles[otherSeat(moons.pattern)]
+    const looks = role !== 'tester'
+    const child = this.createChild(
+      row.id,
+      { vendor: moons.vendor, mode: row.mode, title: moonName(moons.pattern, otherSeat(moons.pattern)), model: moons.model, effort: moons.effort, approval: looks ? 'plan' : row.approval, ...(row.cwd ? { cwd: row.cwd } : {}), ...(row.branch ? { branch: row.branch } : {}) },
+      { parentId: row.id, folder: 'same', ceiling: looks ? 'plan' : row.approval, moon: true }
+    )
+    this.store.patchSession(row.id, { moons: { pattern: moons.pattern, childId: child.id } })
   }
 
   // --- helpers (docs/plans/SUB_AGENTS_PLAN.md) ---------------------------------------------------------
@@ -616,11 +667,134 @@ export class SessionService {
    * assistant ('celeste', whose `text` is empty so that the note is all it is told). `logText` is what the chat shows. Throws when the
    * session is busy: the caller looks first.
    */
-  sendFrom(id: string, text: string, from: 'parent' | 'celeste', logText?: string): void {
+  sendFrom(id: string, text: string, from: 'parent' | 'celeste', logText?: string, lend?: Lent): void {
     const row = this.requireSession(id)
     if (this.busy(id)) throw new Error('That session is busy.')
-    const extra = from === 'parent' && row.spawn ? helperLine(this.store.getSession(row.spawn.parentId)?.title ?? 'a chat') : ''
-    this.deliver(id, { text, attachments: [] }, false, { from, ...(logText !== undefined ? { logText } : {}), ...(extra ? { extra } : {}) })
+    // The other moon of a Two Moons chat is not a helper that another assistant started: the words it is given say who it is.
+    const extra = from === 'parent' && row.spawn && !row.spawn.moon ? helperLine(this.store.getSession(row.spawn.parentId)?.title ?? 'a chat') : ''
+    this.deliver(id, { text, attachments: [] }, false, { from, ...(logText !== undefined ? { logText } : {}), ...(extra ? { extra } : {}), ...(lend ? { lend } : {}) })
+  }
+
+  // --- Two Moons: what the engine (src/core/moons/moons.ts) asks of a chat ---------------------------------
+
+  /** Writes one of the engine's events into the chat's log. Nothing happens for a chat that is gone. */
+  recordMoons(id: string, event: MoonsEvent): void {
+    const row = this.store.getSession(id)
+    if (!row || row.deletedAt !== null) return
+    this.record(id, event, this.live.get(id) ?? { text: '' })
+  }
+
+  /**
+   * Hands the pen what the other moon said, as a message from Celeste (`from` 'moon': never drawn, never a checkpoint, so Revert on the person’s
+   * message undoes the whole run). Throws when the pen is really running a turn: the engine looks first. A Two Moons chat is "busy" while the
+   * other moon works, so this does not look at `busy`.
+   */
+  tellPen(id: string, text: string, lend?: Lent): void {
+    this.requireSession(id)
+    if (this.live.get(id)?.active === true) throw new Error('The pen is still working.')
+    this.deliver(id, { text, attachments: [] }, false, { from: 'moon', ...(lend ? { lend } : {}) })
+  }
+
+  /**
+   * The person’s message when no agent is given it now (it goes to the other moon, or starts a plan): it is logged and its files kept, and a new
+   * chat is named after it, as `deliver` does for the agent. In Develop the folder is saved too, so the message can be reverted: what is returned
+   * is done when it is saved, and whoever may change the folder waits for that.
+   */
+  personSaid(id: string, input: UserInput): Promise<void> | undefined {
+    const row = this.requireSession(id)
+    const context = this.contextOf(row, input.context)
+    this.store.linkAttachments(input.attachments.map((a) => a.id), id)
+    this.record(id, { type: 'user.message', text: input.text, attachments: input.attachments, ...(context.length ? { context } : {}) }, this.live.get(id) ?? { text: '' })
+    if (row.lastSeq === 0 && !row.spawn && this.opts.titler && input.text.trim().length >= 3) void this.autoTitle(id, row.vendor, row.title, input.text)
+    const cwd = row.cwd
+    if (!this.opts.snapshots || row.mode !== 'develop' || !cwd) return undefined
+    // In the chat's one queue of saves, so what the pen is told later waits for it.
+    const live = this.runtime(id)
+    live.chain = live.chain.then(() => this.checkpointBefore(id, cwd, live))
+    return live.chain
+  }
+
+  /**
+   * What the pen changed since the person’s last message: with checkpoints (Develop), the difference between the folder then and now; without
+   * them (a chat), what its tools say they changed, and the files it wrote. A failure to save or compare the folder is never the end of a run: the
+   * tools’ own account is used instead.
+   */
+  async turnChanges(id: string): Promise<FileDiff[]> {
+    const row = this.requireSession(id)
+    const snapshots = this.opts.snapshots
+    const cwd = row.cwd
+    if (!snapshots || row.mode !== 'develop' || !cwd) return this.toolChanges(id)
+    try {
+      return await withTimeout(
+        (async () => {
+          // The checkpoint is written behind any save that is still going on.
+          await this.live.get(id)?.chain
+          const from = this.personCheckpoint(id)
+          if (!from) return this.toolChanges(id)
+          return (await snapshots.diffs(id, cwd, from, null)).files
+        })(),
+        CHECKPOINT_TIMEOUT_MS,
+        'Comparing the folder took too long.'
+      )
+    } catch (err) {
+      console.error('[core] could not compare the folder after a turn', err)
+      return this.toolChanges(id)
+    }
+  }
+
+  /** The checkpoint taken for the person’s last message, when there is one (it may have been skipped). */
+  private personCheckpoint(id: string): string | undefined {
+    const events = this.store.events(id)
+    for (let i = events.length - 1; i >= 0; i--) {
+      const event = (events[i] as StoredEvent).event
+      if (event.type !== 'user.message' || event.from) continue
+      for (const { event: after } of events.slice(i + 1)) {
+        if (after.type === 'checkpoint.created') return after.id
+        if (after.type === 'user.message') break
+      }
+      return undefined
+    }
+    return undefined
+  }
+
+  /** What the tools of this chat say they changed since the person’s last message, by file, and the files written in a chat with no project. */
+  private toolChanges(id: string): FileDiff[] {
+    try {
+      this.flushBurst(id)
+      const events = this.store.events(id)
+      let from = 0
+      for (let i = events.length - 1; i >= 0; i--) {
+        const event = (events[i] as StoredEvent).event
+        if (event.type === 'user.message' && !event.from) {
+          from = i + 1
+          break
+        }
+      }
+      return diffsOfTools(events.slice(from))
+    } catch (err) {
+      console.error('[core] could not read what the tools changed', err)
+      return []
+    }
+  }
+
+  /**
+   * After a run ended, the first waiting message goes, when nothing runs and the queue is not held. `hold`: the run was stopped or failed, so
+   * what waits is held until the person says (as after any stopped turn). With nothing to send, the chat is idle, and that is told.
+   */
+  continueQueue(id: string, hold = false): void {
+    const row = this.store.getSession(id)
+    if (!row || row.deletedAt !== null) return
+    try {
+      const q = this.queueOf(id)
+      if (q.items.length && !q.paused) {
+        if (hold) this.record(id, { type: 'queue.paused' }, this.live.get(id) ?? { text: '' })
+        else if (!this.busy(id)) this.dispatch(id, (q.items[0] as { id: string }).id)
+      }
+      // Whoever kept an answer for this chat while the run went on may tell it now.
+      if (!this.busy(id)) this.opts.onIdle?.(id, hold ? 'turn.interrupted' : 'turn.completed')
+    } catch (err) {
+      console.error('[core] could not move the queue on', err)
+    }
   }
 
   private update(id: string, patch: SessionPatch): SessionSummary {
@@ -636,12 +810,23 @@ export class SessionService {
       next.approval = oneOf(patch.approval, APPROVALS, 'approval mode')
       // A helper is never looser than the chat that started it, whoever asks: the person's menu included.
       if (row.spawn && STRICTNESS[next.approval] < STRICTNESS[row.spawn.ceiling]) throw new Error(`A helper cannot be looser than the chat that started it (${row.spawn.ceiling}).`)
+      if (row.moons?.pattern === 'reviews' && next.approval !== 'plan') throw new Error('Two reviews only look, so this chat stays in plan mode.')
     }
     // Pinning again keeps the first pin time, so the pinned list does not reshuffle.
     if (patch.pinned !== undefined) next.pinnedAt = patch.pinned ? (row.pinnedAt ?? this.now()) : null
     this.store.patchSession(id, next)
+    if (next.approval) this.moonFollows(id, next.approval)
     if (next.title) this.store.index(id, 'title', next.title)
     return this.emitSummary(id) as SessionSummary
+  }
+
+  /** A Tester works the way its chat does, so a chat that was made stricter, or looser, takes it along. The moons that only look stay in plan mode. */
+  private moonFollows(id: string, approval: ApprovalMode): void {
+    const moons = this.store.getSession(id)?.moons
+    const child = moons && this.store.getSession(moons.childId)
+    if (!moons || !child?.spawn || PATTERNS[moons.pattern].roles[otherSeat(moons.pattern)] !== 'tester') return
+    this.store.patchSession(child.id, { approval, spawn: { ...child.spawn, ceiling: approval } })
+    this.emitSummary(child.id)
   }
 
   // --- the agent -------------------------------------------------------------------------------------
@@ -793,7 +978,10 @@ export class SessionService {
   /** Core is running a turn for this session: the agent has been handed a message and its turn has not ended. */
   private busy(id: string): boolean {
     const live = this.live.get(id)
-    return !!live && (live.active === true || this.requireSession(id).status !== 'idle')
+    if (live && (live.active === true || this.requireSession(id).status !== 'idle')) return true
+    // A Two Moons chat is at work while the other moon is, though its own agent may be running nothing.
+    const row = this.store.getSession(id)
+    return !!row?.moons && row.status !== 'idle'
   }
 
   /**
@@ -809,6 +997,8 @@ export class SessionService {
     // A turn that waits on a card (a question, an approval) cannot finish, so a message queued behind it would wait for ever. Typing a new
     // message instead of answering is saying "never mind that": the turn is stopped, the card is let go of, and the message goes at once.
     if (this.busy(id) && this.pendingApprovals(id) > 0) mode = 'stop'
+    // Two Moons: there is no turn of the pen to steer while the other moon works, so the message waits its turn.
+    if (mode === 'steer' && this.store.getSession(id)?.moons && this.live.get(id)?.active !== true) mode = 'queue'
     if (mode && this.busy(id)) {
       // Steering goes into the running turn, where the assistant can take it; otherwise it waits its turn, like any other.
       if (mode === 'steer' && typeof this.live.get(id)?.session.steer === 'function') {
@@ -819,13 +1009,28 @@ export class SessionService {
       if (mode === 'stop') this.sendNow(id, queueId)
       return
     }
-    this.deliver(id, input)
+    this.toAgent(id, input)
+  }
+
+  /**
+   * A person’s message goes to the chat’s agent. In a Two Moons chat the engine may take it instead (it is for the other moon, or begins a plan),
+   * and what the pen is told besides the person’s words comes from it. Any other chat is handed the message as it always was.
+   */
+  private toAgent(id: string, input: UserInput): void {
+    if (this.opts.moons?.takes(id, input)) return
+    try {
+      this.deliver(id, input, false, { extra: this.opts.moons?.lineFor(id) ?? '' })
+    } catch (err) {
+      this.opts.moons?.notSent(id)
+      throw err
+    }
   }
 
   /** Hands a message to the agent now. `steer`: into the turn that is running, which is not a new turn. */
-  private deliver(id: string, input: UserInput, steer = false, from: { from?: 'parent' | 'celeste'; logText?: string; extra?: string } = {}): void {
+  private deliver(id: string, input: UserInput, steer = false, from: { from?: 'parent' | 'celeste' | 'moon'; logText?: string; extra?: string; lend?: Lent } = {}): void {
     const row = this.requireSession(id)
     const context = this.contextOf(row, input.context)
+    const told = [...context, ...this.contextOf(row, from.lend?.context)]
     // Read before this message is logged, because it is what has happened since the one before.
     const workflows = this.workflowNote(id)
     const helpers = this.noteFor(id)
@@ -840,8 +1045,8 @@ export class SessionService {
     // What the agent is told: the person's words, then (if the folder was reverted) a note about that, then the answers of helpers that ended,
     // then the files they added, and for a helper the line that says what it is.
     // The agent's adapter gets only text and attachments; the files are already in the text.
-    const extra = [live.reverted ? REVERT_NOTE : '', workflows, helpers, row.cwd && context.length ? contextText(row.cwd, context) : '', from.extra ?? ''].filter(Boolean)
-    const outgoing: UserInput = { text: [input.text, ...extra].filter(Boolean).join('\n\n'), attachments: input.attachments }
+    const extra = [live.reverted ? REVERT_NOTE : '', workflows, helpers, row.cwd && told.length ? contextText(row.cwd, told) : '', from.extra ?? ''].filter(Boolean)
+    const outgoing: UserInput = { text: [input.text, ...extra].filter(Boolean).join('\n\n'), attachments: [...input.attachments, ...(from.lend?.attachments ?? [])] }
     live.reverted = false
 
     // Chat: what is in the private folder now is compared with what is there when the answer ends.
@@ -855,11 +1060,13 @@ export class SessionService {
       return
     }
     // A Develop message saves the folder first, so every message goes through one queue and the agent hears them in order.
-    // A message sent while the previous answer is still running is not a place to go back to.
-    const checkpoint = !live.open
+    // A message sent while the previous answer is still running is not a place to go back to, and neither is what one moon tells the pen for the other.
+    const checkpoint = !live.open && from.from !== 'moon'
     live.open = true
     live.chain = live.chain.then(async () => {
       if (checkpoint) await this.checkpointBefore(id, cwd, live)
+      // A moon's turn is part of what the person's message did: its changes are counted with that message's.
+      else if (from.from === 'moon') live.checkpoint ??= this.personCheckpoint(id)
       if (this.live.get(id) === live) hand()
     })
   }
@@ -895,6 +1102,16 @@ export class SessionService {
   private sendNow(id: string, queueId: string): void {
     if (!this.queueOf(id).items.some((m) => m.id === queueId)) return
     const live = this.live.get(id)
+    // Two Moons: the other moon works and the pen's own agent does not, so no turn of the pen's will end to send this one. The run is ended
+    // here (a stop ends it, a plan's card is let go of) and the message goes at once. It begins a run of its own, or goes to the Planner.
+    if (this.store.getSession(id)?.moons && this.busy(id) && live?.active !== true) {
+      const held = this.queueOf(id).paused
+      this.interrupt(id)
+      // Stopping holds what waits, but "send now" is not a Stop: the rest goes on after this message, as in any other chat.
+      if (!held && this.queueOf(id).paused) this.record(id, { type: 'queue.resumed' }, live ?? { text: '' })
+      this.dispatch(id, queueId)
+      return
+    }
     if (!live || !this.busy(id)) {
       this.dispatch(id, queueId)
       return
@@ -918,7 +1135,7 @@ export class SessionService {
         this.store.patchSession(id, patch)
         this.emitSummary(id)
       }
-      this.deliver(id, { text: item.text, attachments: item.attachments, ...(item.context ? { context: item.context } : {}) })
+      this.toAgent(id, { text: item.text, attachments: item.attachments, ...(item.context ? { context: item.context } : {}) })
     } catch (err) {
       console.error('[core] could not send a waiting message', err)
     }
@@ -943,6 +1160,8 @@ export class SessionService {
           this.dispatch(id, sendNext)
           return
         }
+        // Two Moons: the pen's turn ended and the other moon takes over, so nothing waiting may go (nor anyone be told the chat is idle).
+        if (type === 'turn.completed' && this.opts.moons?.penDone(id)) return
         if (!q.items.length || q.paused) return
         if (type !== 'turn.completed') this.record(id, { type: 'queue.paused' }, this.live.get(id) ?? { text: '' })
         else if (!this.busy(id)) this.dispatch(id, (q.items[0] as { id: string }).id)
@@ -1299,8 +1518,11 @@ export class SessionService {
     this.record(id, { type: 'approval.resolved', requestId, allow: answer.allow === true }, live ?? { text: '' })
     if (answer.allow && answer.always) {
       // "Don't ask again" in a helper goes as far as the chat that started it allows, and no further.
-      const spawn = this.store.getSession(id)?.spawn
-      this.store.patchSession(id, { approval: spawn ? spawn.ceiling : 'auto' })
+      const row = this.store.getSession(id)
+      // Two reviews only look, so nothing loosens that chat.
+      const approval = row?.spawn ? row.spawn.ceiling : row?.moons?.pattern === 'reviews' ? 'plan' : 'auto'
+      this.store.patchSession(id, { approval })
+      this.moonFollows(id, approval)
       this.emitSummary(id)
     }
     if (live?.pending.delete(requestId)) live.session.respond(requestId, { allow: answer.allow === true, always: answer.always === true })
@@ -1404,16 +1626,18 @@ export class SessionService {
   }
 
   private interrupt(id: string): void {
-    const row = this.requireSession(id)
+    this.requireSession(id)
     this.declineToolApprovals(id)
     this.opts.onSessionStopped?.(id)
     const live = this.live.get(id)
-    if (live) {
+    // Two Moons: while the other moon works the pen runs nothing. It is not interrupted then, so that a message sent next is not what gets stopped.
+    if (live && (live.active === true || !this.requireSession(id).moons)) {
       void live.session.interrupt()
       return
     }
-    // After a restart a session can still show as waiting, with nothing running to stop.
-    if (row.status !== 'idle') this.record(id, { type: 'turn.interrupted', turnId: 'stopped' }, { text: '' })
+    // After a restart a session can still show as waiting, with nothing running to stop. Looked at again here: a Two Moons run ends when
+    // it is stopped, and that made the chat idle.
+    if (this.requireSession(id).status !== 'idle') this.record(id, { type: 'turn.interrupted', turnId: 'stopped' }, { text: '' })
   }
 
   // --- deleting --------------------------------------------------------------------------------------

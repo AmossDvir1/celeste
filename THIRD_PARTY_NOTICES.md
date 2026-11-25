@@ -12,7 +12,7 @@ Celeste is licensed under the Apache License 2.0 (see `LICENSE`). It includes th
 
 **Celeste for Android** (the app in `phone/`) bundles the packages of `phone/package.json` that are listed below as well, and these Android libraries, all under the Apache License 2.0: AndroidX (AppCompat, Core, CoordinatorLayout, Activity, WebKit, ExifInterface), Capacitor’s Android runtime and its App and Local Notifications plugins.
 
-## Packages (693)
+## Packages (694)
 
 - @antfu/install-pkg 2.1.0 — MIT
 - @anthropic-ai/claude-agent-sdk 0.3.319 — SEE LICENSE IN README.md
@@ -645,6 +645,7 @@ Celeste is licensed under the Apache License 2.0 (see `LICENSE`). It includes th
 - style-to-object 2.0.2 — MIT
 - style-to-object 2.0.2 — MIT
 - stylis 4.4.0 — MIT
+- three 0.180.0 — MIT
 - thunky 1.1.0 — MIT
 - tinyexec 1.3.1 — MIT
 - to-regex-range 5.0.1 — MIT
@@ -11776,5 +11777,33 @@ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+### MIT
+
+Applies to: three@0.180.0
+
+```text
+The MIT License
+
+Copyright © 2010-2025 three.js authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
 ```
 

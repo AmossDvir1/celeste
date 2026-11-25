@@ -1,10 +1,11 @@
 import type { AskAnswers, ToolKind } from '@shared/agent'
 import type { LogEvent, StoredEvent } from '@shared/api'
+import { moonName, type MoonStep } from '@shared/moons'
 import { movesSession } from '@shared/status'
 import { foldQueue } from '@shared/queue'
 import { limitNotice } from '@shared/usage'
 import { basename } from '@/lib/format'
-import type { Activity, Session, TimelineItem } from './types'
+import type { Activity, MoonsMessage, Session, TimelineItem } from './types'
 
 let counter = 0
 export const itemId = (): string => `i${Date.now().toString(36)}${(counter++).toString(36)}`
@@ -36,6 +37,30 @@ export function activityLabel(kind: ToolKind, title: string): string {
 
 const THINKING: Activity = { label: 'Thinking', working: true }
 
+/** What a moon is doing, as the line under the conversation says it: "Reviewer is checking the change". */
+const STEP_WORDS: Record<MoonStep, string> = {
+  build: 'is building',
+  review: 'is checking the change',
+  fix: 'is fixing the notes',
+  check: 'is checking the fixes',
+  plan: 'is writing the plan',
+  test: 'is trying to make it happen',
+  retest: 'is trying it again',
+  compare: 'is comparing the two reviews',
+  answer: 'is answering'
+}
+
+function moonsActivity(s: Session, seat: 0 | 1, step: MoonStep): Activity {
+  return { label: s.moons ? `${moonName(s.moons.pattern, seat)} ${STEP_WORDS[step]}` : 'Working together', working: true }
+}
+
+/** The run is over (or was cut off): nobody's turn any more. A session that never had one stays exactly as it was. */
+function noMoonsTurn(s: Session): Session {
+  if (s.moonsTurn === undefined) return s
+  const { moonsTurn: _turn, ...rest } = s
+  return rest
+}
+
 /** A message was sent into the chat: the assistant has now been told of the helpers that ended before it. */
 function tellHelpers(s: Session): Session {
   if (!s.items.some((it) => it.kind === 'helper' && it.finished?.delivered === 'note' && !it.told)) return s
@@ -64,6 +89,8 @@ export function reduceEvent(s: Session, e: LogEvent, at: number): Session {
         return { ...tellHelpers(s), items: [...tellHelpers(s).items, { kind: 'notice', id: itemId(), text: `${e.text} The assistant was told.` }] }
       }
       const base = tellHelpers(s)
+      // What Celeste told the pen for the other moon is never drawn: the cards of the run show it.
+      if (e.from === 'moon') return base
       return { ...base, items: [...base.items, { kind: 'user', id: itemId(), text: e.text, attachments: e.attachments, ...(e.context?.length ? { context: e.context } : {}), ...(e.from === 'parent' ? { from: 'parent' as const } : {}), at: now }] }
     }
 
@@ -162,13 +189,72 @@ export function reduceEvent(s: Session, e: LogEvent, at: number): Session {
 
     case 'turn.abandoned':
       return {
-        ...s,
+        ...noMoonsTurn(s),
         items: [
           ...failRunningTools(closeThinking(s.items, now), now),
           { kind: 'notice', id: itemId(), text: 'Celeste was closed while this was running. Send a message to continue.' }
         ],
         status: 'idle',
         activity: null }
+
+    // Two Moons: the run is going on while either moon works.
+    case 'moons.turn':
+      return { ...s, status: 'working', activity: moonsActivity(s, e.seat, e.step), moonsTurn: { seat: e.seat, step: e.step } }
+
+    case 'moons.handed':
+      return { ...s, items: [...s.items, { kind: 'moonsHand', id: itemId(), from: e.from, to: e.to, what: e.what, at: now }] }
+
+    case 'moons.said': {
+      const message: MoonsMessage = {
+        id: e.id,
+        seat: e.seat,
+        text: e.text,
+        ...(e.file ? { file: e.file } : {}),
+        ...(e.line !== undefined ? { line: e.line } : {}),
+        ...(e.code ? { code: e.code } : {}),
+        ...(e.finding ? { finding: true as const } : {}),
+        ...(e.to ? { to: e.to } : {}),
+        at: now
+      }
+      const last = s.items[s.items.length - 1]
+      // The same message twice (the log replayed over what is already shown) adds nothing.
+      if (s.items.some((it) => it.kind === 'moonsTalk' && it.messages.some((m) => m.id === e.id))) return s
+      const items: TimelineItem[] =
+        last?.kind === 'moonsTalk'
+          ? [...s.items.slice(0, -1), { ...last, messages: [...last.messages, message] }]
+          : [...s.items, { kind: 'moonsTalk', id: itemId(), messages: [message] }]
+      return { ...s, items }
+    }
+
+    case 'moons.fixed': {
+      const ids = new Set(e.ids)
+      return {
+        ...s,
+        items: s.items.map((it) =>
+          it.kind === 'moonsTalk' && it.messages.some((m) => ids.has(m.id) && !m.fixed)
+            ? { ...it, messages: it.messages.map((m) => (ids.has(m.id) ? { ...m, fixed: true as const } : m)) }
+            : it
+        )
+      }
+    }
+
+    case 'moons.plan':
+      return { ...s, items: [...s.items, { kind: 'moonsPlan', id: itemId(), planId: e.id, say: e.say, steps: e.steps }] }
+
+    case 'moons.agreed':
+      return { ...s, items: s.items.map((it) => (it.kind === 'moonsPlan' && it.planId === e.id ? { ...it, agreed: true as const } : it)) }
+
+    case 'moons.compared':
+      return { ...s, items: [...s.items, { kind: 'moonsCompare', id: itemId(), both: e.both, first: e.first, second: e.second }] }
+
+    case 'moons.ended': {
+      // Stop during a plan logs no answer, so a card nobody answered is let go here, as Stop does: an approval is denied, a question is skipped.
+      const letGo = s.items.map((it) => (it.kind === 'approval' && it.status === 'pending' ? { ...it, status: 'denied' as const } : it.kind === 'ask' && it.status === 'pending' ? { ...it, status: 'skipped' as const } : it))
+      // A run that ended well with nothing to add, or with nothing to do, leaves no line.
+      const silent = e.why === 'nothing' || (e.why === 'agreed' && !e.note)
+      const items: TimelineItem[] = silent ? letGo : [...letGo, { kind: 'moonsEnded', id: itemId(), why: e.why, ...(e.note ? { note: e.note } : {}), ...(e.left !== undefined ? { left: e.left } : {}) }]
+      return { ...noMoonsTurn(s), items, status: 'idle', activity: null }
+    }
 
     case 'turn.started':
       return { ...s, status: 'working', activity: THINKING }

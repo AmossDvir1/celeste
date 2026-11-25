@@ -821,3 +821,45 @@ describe('what a helper may not do', () => {
     expect((await w.sub.list(w.make().id)).text).toContain('This chat has no helpers yet.')
   })
 })
+
+describe('the other moon of a Two Moons chat (docs/plans/TWO_MOONS_PLAN.md)', () => {
+  const moons = { moons: { pattern: 'build' as const, vendor: 'openai' as const, model: 'openai:gpt', effort: null } }
+  const madeWithMoon = () => {
+    const w = world()
+    const parent = w.make(moons)
+    return { w, parent, moonId: parent.moons?.childId as string }
+  }
+
+  it('is a helper as far as what it may not do (no helpers of its own, no desktop), but not one of the assistant’s helpers', () => {
+    const { w, parent, moonId } = madeWithMoon()
+    expect(w.sub.isHelper(moonId)).toBe(true)
+    expect(w.sub.isHelper(parent.id)).toBe(false)
+    expect(w.store.getSession(moonId)?.spawn?.moon).toBe(true)
+  })
+
+  it('is left out of the helpers that are listed for the assistant, and of its list', async () => {
+    const { w, parent } = madeWithMoon()
+    expect(w.sub.views(parent.id)).toEqual([])
+    expect((await w.sub.list(parent.id)).text).toContain('This chat has no helpers yet.')
+    // A helper the assistant starts is listed, and the moon is still not.
+    const id = w.idOf((await w.start(parent.id, { approval: 'plan', title: 'Looker' })).text)
+    expect(w.sub.views(parent.id).map((v) => v.id)).toEqual([id])
+    expect((await w.sub.list(parent.id)).text).not.toContain('Reviewer')
+  })
+
+  it('cannot be reached with agent_send, agent_wait or agent_stop', async () => {
+    const { w, parent, moonId } = madeWithMoon()
+    const none = { text: 'There is no helper with that id here.', isError: true }
+    expect(await w.sub.send(parent.id, moonId, 'Look at this', false)).toEqual(none)
+    expect(await w.sub.wait(parent.id, [moonId], false)).toEqual(none)
+    expect(w.sub.stopHelper(parent.id, moonId)).toEqual(none)
+    expect(w.agents.has(moonId)).toBe(false)
+  })
+
+  it('does not count against the helpers an assistant may run', async () => {
+    const { w, parent } = madeWithMoon()
+    for (let i = 0; i < MAX_RUNNING_PER_PARENT; i++) expect((await w.start(parent.id, { approval: 'plan', title: 'H' + i })).isError).toBe(false)
+    expect((await w.start(parent.id, { approval: 'plan', title: 'One more' })).isError).toBe(true)
+    expect((await w.sub.list(parent.id)).text).toContain('4 of 4 helpers are working')
+  })
+})
