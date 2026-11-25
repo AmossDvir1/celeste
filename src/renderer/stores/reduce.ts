@@ -216,12 +216,17 @@ export function reduceEvent(s: Session, e: LogEvent, at: number): Session {
         ...(e.to ? { to: e.to } : {}),
         at: now
       }
-      const last = s.items[s.items.length - 1]
       // The same message twice (the log replayed over what is already shown) adds nothing.
       if (s.items.some((it) => it.kind === 'moonsTalk' && it.messages.some((m) => m.id === e.id))) return s
+      // One box per run: the talk of this run joins the box already open, and that box stays the last element.
+      let at = -1
+      for (let i = s.items.length - 1; i >= 0 && s.items[i].kind !== 'user'; i--) {
+        if (s.items[i].kind === 'moonsTalk') { at = i; break }
+      }
+      const open = at >= 0 ? s.items[at] : undefined
       const items: TimelineItem[] =
-        last?.kind === 'moonsTalk'
-          ? [...s.items.slice(0, -1), { ...last, messages: [...last.messages, message] }]
+        open?.kind === 'moonsTalk'
+          ? [...s.items.filter((_, i) => i !== at), { ...open, messages: [...open.messages, message] }]
           : [...s.items, { kind: 'moonsTalk', id: itemId(), messages: [message] }]
       return { ...s, items }
     }

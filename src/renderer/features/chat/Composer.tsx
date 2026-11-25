@@ -1,10 +1,12 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { ListPlus, Navigation, Paperclip, PencilRuler, Plus, Send, Square, TriangleAlert, X, Zap } from 'lucide-react'
 import type { ApprovalMode, ContextRef, SessionMode, UserInput } from '@shared/agent'
+import type { MoonPattern } from '@shared/moons'
 import type { SendMode } from '@shared/queue'
 import { cn } from '@/lib/cn'
 import { Menu } from '@/components/menu'
 import { IconButton } from '@/components/ui'
+import { MoonMention, mentionLooks, useMoonLooks } from '@/features/moons/MoonMention'
 import { slugify } from '@shared/workflow'
 import { lookupModel, useModels } from '@/stores/models'
 import { canvasTarget, useCanvas } from '@/stores/canvas'
@@ -75,6 +77,8 @@ export interface ComposerProps {
   compact?: boolean
   /** A helper: the loosest approval mode it may have. The looser ones are in the menu but cannot be chosen. */
   ceiling?: ApprovalMode
+  /** Two Moons: the chat's pattern. Typing "@" at the start offers its two agents; picking one writes "@Name " for the message. */
+  moonPattern?: MoonPattern
 }
 
 export function Composer({
@@ -97,7 +101,8 @@ export function Composer({
   autoFocus,
   placeholder =  'Message Celeste...',
   compact = false,
-  ceiling
+  ceiling,
+  moonPattern
 }: ComposerProps) {
   const areaRef = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -108,6 +113,20 @@ export function Composer({
   const openSettings = useUi((s) => s.openSettings)
   const slash = useSlash(text, sessionId)
   const listId = useId()
+  const moonListId = useId()
+  // The "@" menu: only while the message is "@" followed by a name still being typed, at its very start.
+  const moonLooks = useMoonLooks(moonPattern)
+  const moonQuery = /^@(\S*)$/.exec(text)
+  const moonItems = moonQuery ? mentionLooks(moonLooks, moonQuery[1] as string) : []
+  const [moonIndex, setMoonIndex] = useState(0)
+  const [moonDismissed, setMoonDismissed] = useState<string | null>(null)
+  const moonOpen = moonItems.length > 0 && moonDismissed !== text
+  const moonSel = Math.min(moonIndex, Math.max(moonItems.length - 1, 0))
+  const pickMoon = (i: number) => {
+    const look = moonItems[i]
+    if (look) onText(`@${look.name} `)
+    setMoonIndex(0)
+  }
   // A workflow chosen with "/" is run by sending; it needs no AI vendor of its own, but its steps may.
   const canSend = slash.chip !== null || (!noVendor && (text.trim().length > 0 || attachments.items.length > 0 || context.length > 0))
   const imageBlocked = model?.images === false && attachments.items.some((a) => a.mime.startsWith('image/'))
@@ -253,6 +272,9 @@ export function Composer({
       )}
     >
       {slash.open && <SlashList id={listId} items={slash.items} index={slash.index} onPick={(i) => pickItem(i)} onHover={slash.setIndex} />}
+      {moonOpen && (
+        <MoonMention id={moonListId} looks={moonItems} index={moonSel} onPick={pickMoon} onHover={setMoonIndex} />
+      )}
       {slash.chip && <WorkflowChip chip={slash.chip} problem={slash.problem} onChange={(values) => slash.setChip({ ...(slash.chip as NonNullable<typeof slash.chip>), values })} onRemove={() => slash.setChip(null)} />}
       {context.length > 0 && <ContextStrip items={context} onRemove={onRemoveContext} className="mb-2.5" />}
       {attachments.items.length > 0 && (
@@ -299,9 +321,27 @@ export function Composer({
           setRecall(null)
           onText(e.target.value)
         }}
-        aria-controls={slash.open ? listId : undefined}
-        aria-activedescendant={slash.open ? `${listId}-${slash.index}` : undefined}
+        aria-controls={slash.open ? listId : moonOpen ? moonListId : undefined}
+        aria-activedescendant={slash.open ? `${listId}-${slash.index}` : moonOpen ? `${moonListId}-${moonSel}` : undefined}
         onKeyDown={(e) => {
+          if (moonOpen && !e.nativeEvent.isComposing) {
+            if (['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp'].includes(e.key) && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+              e.preventDefault()
+              const next = e.key === 'ArrowRight' || e.key === 'ArrowDown'
+              setMoonIndex((moonSel + (next ? 1 : moonItems.length - 1)) % moonItems.length)
+              return
+            }
+            if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
+              e.preventDefault()
+              pickMoon(moonSel)
+              return
+            }
+            if (e.key === 'Escape') {
+              e.preventDefault()
+              setMoonDismissed(text)
+              return
+            }
+          }
           if (slash.open && !e.nativeEvent.isComposing) {
             if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
               e.preventDefault()

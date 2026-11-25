@@ -586,12 +586,8 @@ export function Timeline({
     const roles = PATTERNS[moonsPattern].roles
     return { name: moonName(moonsPattern, moonSeat), role: roles[moonSeat], second: moonSeat === 1 && roles[0] === roles[1], model: modelLabel }
   }, [moonsPattern, moonSeat, modelLabel])
-  const blocks = useMemo(() => {
-    const all = toBlocks(session.items, compact ? 'chat' : session.mode)
-    // An answer that is only the moons' block draws nothing, and leaves no gap either.
-    return moonsPattern ? all.filter((b) => !(b.kind === 'item' && b.item.kind === 'assistant' && drawsNothing(b.item))) : all
-  }, [session.items, session.mode, compact, moonsPattern])
   // The conversation blocks of the run that is going on are open; the ones before it are folded.
+  // In a full Two Moons chat the run's live talk is drawn in the stage at the bottom, so it is left out of the history here.
   const running = session.moonsTurn != null
   const liveMoons = useMemo(() => {
     const ids = new Set<string>()
@@ -602,6 +598,12 @@ export function Timeline({
     })
     return ids
   }, [running, session.items])
+  const blocks = useMemo(() => {
+    const all = toBlocks(session.items, compact ? 'chat' : session.mode)
+    // An answer that is only the moons' block draws nothing, and leaves no gap either.
+    const shown = moonsPattern ? all.filter((b) => !(b.kind === 'item' && b.item.kind === 'assistant' && drawsNothing(b.item))) : all
+    return session.moons && !compact ? shown.filter((b) => !(b.kind === 'item' && b.item.kind === 'moonsTalk' && liveMoons.has(b.item.id))) : shown
+  }, [session.items, session.mode, session.moons, compact, moonsPattern, liveMoons])
   const detailed = session.mode === 'develop' && !compact
   const revert = useSessions((s) => s.revert)
   const stopSession = useSessions((s) => s.stopBackground)

@@ -94,7 +94,9 @@ const script = (r) => {
       const checking = /answered your notes/.test(p)
       if (checking) {
         if (build.second === 'hold') return [{ type: 'hold' }]
-        return [slow(withBlock('I looked at the change again.', { say: 'Both of my notes are dealt with.', findings: [] }), 30, 500)]
+        return process.env.MOONS_SCROLL_TEST === '1'
+          ? [slow(withBlock('I looked at the change again.', { say: 'Both of my notes are dealt with.', findings: [] }), 4, 400)]
+          : [slow(withBlock('I looked at the change again.', { say: 'Both of my notes are dealt with.', findings: [] }), 30, 500)]
       }
       if (build.first === 'hold') return [{ type: 'hold' }]
       if (build.first === 'slow-clean') return [slow(withBlock('I read it carefully.', { say: 'I found nothing wrong.', findings: [] }), 12, 400)]
@@ -128,8 +130,10 @@ const script = (r) => {
   }
   if (/\[From the Tester/.test(asked)) {
     const n = countIn(all(r), /\[From the Tester/g)
-    if (r.last.kind === 'tool_result') return [slow(withBlock('Changed the total.', { say: 'I changed the total.', answers: [{ n: 1, fixed: true, say: n < 2 ? 'The total now cannot go negative.' : 'The total is now price plus tax.' }] }), 40, 200)]
-    return [slow('Fixing the total.', 8, 200), tool('Edit', { file_path: join(project, 'price.js'), old_string: n < 2 ? 'return price - tax' : 'return Math.abs(price - tax)', new_string: n < 2 ? 'return Math.abs(price - tax)' : 'return price + tax' })]
+    if (r.last.kind === 'tool_result') return [slow(withBlock('Changed the total.', { say: 'I changed the total.', answers: [{ n: 1, fixed: true, say: n < 2 ? 'The total now cannot go negative.' : 'The total is now price plus tax.' }] }), n < 2 ? 8 : 40, 250)]
+    // The first time it looks around a lot, so the thinking map has long words to place.
+    const around = n < 2 ? ['moons-6-reviewer-checks-dark.png', 'moons-1-builds-dark.png', 'Composer.tsx', 'moons-3-reviewer-looks-dark.png', 'sky-model.ts'].map((f) => tool('Read', { file_path: join(project, f) })).concat(tool('Grep', { pattern: 'a rather long thing to look for', path: project })) : []
+    return [slow('Fixing the total.', 8, 200), ...around, tool('Edit', { file_path: join(project, 'price.js'), old_string: n < 2 ? 'return price - tax' : 'return Math.abs(price - tax)', new_string: n < 2 ? 'return Math.abs(price - tax)' : 'return price + tax' })]
   }
   if (/\[From the Reviewer/.test(asked) && build) {
     if (r.last.kind === 'tool_result') return [slow(withBlock('Fixed the first one.', FIXED), 24, 350)]
@@ -190,6 +194,39 @@ const eyes = async (page) => {
   })
 }
 const MANY = 120
+/**
+ * How much the picture jumps at the edges of the sky, in levels of 255: the mean color of each line of pixels next to the edge, and the biggest step from
+ * one line to the next. It is a blend when no line stands out. (Measured without the cards and the words. `extra` is for the control: an edge put there on purpose.)
+ */
+const edgeSteps = async (page, extra = '') => {
+  const style = await page.addStyleTag({ content: `.moons-scene, .moons-talk, .moons-cap, .moons-thread > * { visibility: hidden !important } ${extra}` })
+  await sleep(150)
+  const png = (await page.screenshot()).toString('base64')
+  const steps = await page.evaluate(async (b64) => {
+    const bytes = Uint8Array.from(atob(b64), (ch) => ch.charCodeAt(0))
+    const bmp = await createImageBitmap(new Blob([bytes], { type: 'image/png' }))
+    const cv = new OffscreenCanvas(bmp.width, bmp.height)
+    const c = cv.getContext('2d')
+    c.drawImage(bmp, 0, 0)
+    const k = bmp.width / innerWidth
+    const sky = document.querySelector('.moons-sky').getBoundingClientRect()
+    const mean = (x, y, w, h) => {
+      const d = c.getImageData(Math.round(x * k), Math.round(y * k), Math.max(1, Math.round(w * k)), Math.max(1, Math.round(h * k))).data
+      const m = [0, 0, 0]
+      for (let i = 0; i < d.length; i += 4) for (let j = 0; j < 3; j++) m[j] += d[i + j]
+      return m.map((v) => v / (d.length / 4))
+    }
+    const worst = (lines) => lines.slice(1).reduce((w, l, i) => Math.max(w, ...l.map((v, j) => Math.abs(v - lines[i][j]))), 0)
+    const range = [...Array(25).keys()].map((i) => i - 12)
+    return {
+      top: worst(range.map((i) => mean(sky.left + sky.width * 0.35, sky.top + i, sky.width * 0.3, 1))),
+      left: worst(range.map((i) => mean(sky.left + i, sky.top + 80, 1, sky.height - 120))),
+      right: worst(range.map((i) => mean(sky.right + i, sky.top + 80, 1, sky.height - 120)))
+    }
+  }, png)
+  await style.evaluate((el) => el.remove())
+  return steps
+}
 const text = (page) => page.evaluate(() => document.body.innerText)
 const everything = (page) => page.evaluate(() => document.body.textContent ?? '')
 const sessionsNow = async (page) => (await core(page, 'app.bootstrap')).sessions
@@ -398,13 +435,67 @@ try {
       check('the header names both moons, and says who is working', (await header.count()) === 1 && /Reviewer is working/.test((await header.getAttribute('aria-label')) ?? ''), await header.getAttribute('aria-label'))
     }
     await shot(page, `${pics}3-reviewer-looks`)
+    if (full) {
+      // The thread scrolled up a little: what is under its lower edge fades out instead of being cut.
+      await page.locator('.moons-thread').evaluate((el) => (el.scrollTop -= 190))
+      await shot(page, `${pics}thread-fade`)
+      await page.locator('.moons-thread').evaluate((el) => (el.scrollTop = el.scrollHeight))
+      for (const theme of ['dark', 'light']) {
+        await page.evaluate((t) => (document.documentElement.dataset.theme = t), theme)
+        await sleep(400)
+        const steps = await edgeSteps(page)
+        check(`${theme}: the sky has no edge at its top or its sides`, Math.max(steps.top, steps.left, steps.right) < 1.2, JSON.stringify(steps))
+        console.log(`      ${theme}: ${JSON.stringify(steps)}`)
+        const control = await edgeSteps(page, '.moons-sky { background: color-mix(in srgb, var(--c-accent) 4%, transparent) !important }')
+        check(`${theme}: and a faint edge put there is seen`, Math.min(control.top, control.left, control.right) > 1.2, JSON.stringify(control))
+      }
+    }
     await page.getByText(/Builder and Reviewer are talking/).first().waitFor({ timeout: 60_000 })
+    if (full) {
+      const talk = await page.locator('.moons-talk.on').evaluate((el) => {
+        const style = getComputedStyle(el)
+        return { overflowY: style.overflowY, pointerEvents: style.pointerEvents }
+      })
+      const still = await page.locator('.moons-talk.on').evaluate((el) => {
+        const at = () => [...el.querySelectorAll('.moons-bb')].map((b) => Math.round(b.offsetLeft + b.offsetWidth)).join(',')
+        const before = at()
+        const tall = document.createElement('div')
+        tall.style.cssText = 'flex:none;height:2000px'
+        el.prepend(tall)
+        const scrolls = el.scrollHeight > el.clientHeight
+        const after = at()
+        tall.remove()
+        return { before, after, scrolls }
+      })
+      check('the bubbles stay where they are when the scroll bar comes', still.scrolls && still.before === still.after, JSON.stringify(still))
+      check('the live conversation accepts pointer input and can scroll', /auto|scroll/.test(talk.overflowY) && talk.pointerEvents !== 'none', JSON.stringify(talk))
+    }
     await shot(page, `${pics}4-conversation`)
     await waitFor('the Builder fixing', hasEvent(page, chat, turnOf('fix', 0)), 60_000)
     await sleep(600)
     await shot(page, `${pics}5-builder-fixes`)
     await waitFor('the check', hasEvent(page, chat, turnOf('check', 1)), 60_000)
     await sleep(600)
+    if (full && process.env.MOONS_SCROLL_TEST === '1') {
+      const talk = page.locator('.moons-talk.on')
+      await waitFor('live talk to overflow', async () => (await talk.count()) > 0 && talk.evaluate((el) => el.scrollHeight > el.clientHeight && el.scrollTop > 0), 15_000)
+      const dimensions = await talk.evaluate((el) => ({ height: el.clientHeight, scrollHeight: el.scrollHeight, top: el.scrollTop }))
+      if (dimensions.scrollHeight > dimensions.height && dimensions.top > 0) {
+        const point = await talk.evaluate((el) => {
+          const r = el.getBoundingClientRect()
+          const x = r.x + r.width / 2
+          const y = r.y + r.height / 2
+          return { x, y, target: document.elementFromPoint(x, y)?.className?.toString() }
+        })
+        await page.mouse.move(point.x, point.y)
+        await page.mouse.wheel(0, -500)
+        await sleep(150)
+        const after = await talk.evaluate((el) => el.scrollTop)
+        check('the mouse wheel scrolls back to earlier live messages', after < dimensions.top, `before: ${dimensions.top}; after: ${after}; target: ${point.target}`)
+      } else {
+        check('the live conversation has enough content to test scrolling', false, JSON.stringify(dimensions))
+      }
+    }
     await shot(page, `${pics}6-reviewer-checks`)
     await waitFor('the end', hasEvent(page, chat, ended()), 60_000)
     await shot(page, `${pics}7-done`)
@@ -436,12 +527,12 @@ try {
     const body = await text(page)
     check('no moons block and none of the words Celeste passes between them is anywhere on the page, not even while they arrived', seen.size === 0, [...seen].join(' '))
     check('the person’s message is drawn once, and the notes passed to the Builder are not drawn as the person’s', body.split('TAG-B write a greeter').length === 2 && !/Notes on your change|From the Reviewer/.test(body))
-    // What the moons say to each other is one block each time they speak in a row: the Reviewer's notes, the Builder's answers, the Reviewer's check.
+    // What the moons say to each other in a run is one block, at its end: the Reviewer's notes, the Builder's answers, the Reviewer's check.
     const group = page.getByRole('group', { name: 'Builder and Reviewer talking' })
     const blocks = await group.count()
     const states = []
     for (let i = 0; i < blocks; i++) states.push(await group.nth(i).getByRole('button').first().getAttribute('aria-expanded'))
-    check('the talk is drawn as blocks that have all folded when the run ended, each with a count', blocks === 3 && states.every((s) => s === 'false') && /3 messages/.test(await group.nth(0).innerText()), `${blocks} blocks ${states} ${await group.allInnerTexts()}`)
+    check('the talk of the run is drawn as one block that has folded when it ended, with a count', blocks === 1 && states.every((s) => s === 'false') && /7 messages/.test(await group.nth(0).innerText()), `${blocks} blocks ${states} ${await group.allInnerTexts()}`)
     await shot(page, 'talk-folded')
     for (let i = 0; i < blocks; i++) await group.nth(i).getByRole('button').first().click()
     const bubbles = (await group.locator('.selectable').allInnerTexts()).join('\n---\n')
@@ -537,11 +628,40 @@ try {
     await waitFor('the Tester', hasEvent(page, bug, turnOf('test')), 30_000).catch(() => undefined)
     await waitFor('the first fix', hasEvent(page, bug, turnOf('fix')), 90_000)
     await shot(page, 'bug-fix-1')
+    const words = page.locator('.moons-think .moons-word')
+    await waitFor('the thinking map with its words', async () => (await words.count()) >= 5, 30_000)
+    await sleep(2200)
+    const map = await page.locator('.moons-think').evaluate((el) => {
+      const card = el.getBoundingClientRect()
+      const r = [...el.querySelectorAll('.moons-word')].map((w) => ({ text: w.textContent, ...w.getBoundingClientRect().toJSON() }))
+      const out = r.filter((a) => a.left < card.left || a.right > card.right || a.top < card.top || a.bottom > card.bottom).map((a) => a.text)
+      const over = r.flatMap((a, i) => r.slice(i + 1).filter((b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom).map((b) => a.text + ' / ' + b.text))
+      return { n: r.length, width: Math.round(card.width), out, over }
+    })
+    check('no word of the thinking map is cut by the card or lies over another', map.n >= 5 && map.out.length === 0 && map.over.length === 0, JSON.stringify(map))
+    await shot(page, 'bug-map')
     await waitFor('the retest', hasEvent(page, bug, turnOf('retest')), 90_000)
     await waitFor('the second fix', async () => (await logOf(page, bug)).filter(turnOf('fix')).length === 2, 90_000)
     await shot(page, 'bug-fix-2')
     await waitFor('the end', hasEvent(page, bug, ended()), 90_000)
     await idle(page)
+    const placeholder = await box(page).getAttribute('placeholder')
+    check('the Two Moons placeholder describes using @ without naming just one moon', /@/.test(placeholder ?? '') && !/@(?:Tester|Builder)/i.test(placeholder ?? ''), placeholder)
+    await box(page).fill('@')
+    await sleep(300)
+    const choice = (name) => page.getByRole('option', { name, exact: true }).or(page.getByRole('button', { name, exact: true }))
+    const tester = await choice('Tester').count()
+    const builder = await choice('Builder').count()
+    check('typing @ offers both Tester and Builder for selection', tester > 0 && builder > 0, `Tester: ${tester}; Builder: ${builder}`)
+    await shot(page, 'bug-mention')
+    if (tester > 0 && builder > 0) {
+      await choice('Tester').click()
+      check('choosing Tester addresses the message to Tester', (await box(page).inputValue()) === '@Tester ', await box(page).inputValue())
+      await box(page).fill('@')
+      await choice('Builder').click()
+      check('choosing Builder addresses the message to Builder', (await box(page).inputValue()) === '@Builder ', await box(page).inputValue())
+    }
+    await box(page).fill('')
     const events = await logOf(page, bug)
     const steps = events.filter((e) => e.type === 'moons.turn').map((e) => e.step)
     check('Tester makes it fail, Builder fixes, the Tester says it still fails, Builder fixes again, then it passes', steps.join(',') === 'test,fix,retest,fix,retest' && events.find((e) => e.type === 'moons.ended')?.why === 'agreed', steps.join(','))

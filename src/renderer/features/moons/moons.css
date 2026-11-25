@@ -12,8 +12,28 @@
   flex: none;
   height: 0;
   overflow: hidden;
-  background: linear-gradient(180deg, transparent, var(--sky-1) 24%, var(--sky-2) 80%, transparent);
   transition: height 0.7s cubic-bezier(0.3, 0.8, 0.2, 1);
+}
+
+/*
+ * The sky has no edges: its color is one soft light that is gone before the top and the sides, with steps that slow down as they end (a straight ramp
+ * shows as a line where it begins). The moons and the cards over it do not fade with it.
+ */
+.moons-sky::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    var(--sky-1) 0%,
+    var(--sky-2) 72%,
+    color-mix(in srgb, var(--sky-2) 72%, transparent) 82%,
+    color-mix(in srgb, var(--sky-2) 26%, transparent) 92%,
+    transparent 100%
+  );
+  -webkit-mask-image: radial-gradient(ellipse 50% 66% at 50% 66%, #000 0%, rgb(0 0 0 / 0.86) 28%, rgb(0 0 0 / 0.5) 54%, rgb(0 0 0 / 0.18) 76%, rgb(0 0 0 / 0.04) 91%, transparent 100%);
+  mask-image: radial-gradient(ellipse 50% 66% at 50% 66%, #000 0%, rgb(0 0 0 / 0.86) 28%, rgb(0 0 0 / 0.5) 54%, rgb(0 0 0 / 0.18) 76%, rgb(0 0 0 / 0.04) 91%, transparent 100%);
+  pointer-events: none;
 }
 
 .moons-canvas {
@@ -21,8 +41,21 @@
   top: 0;
   left: 0;
   width: 100%;
-  -webkit-mask-image: linear-gradient(#000 84%, transparent);
-  mask-image: linear-gradient(#000 84%, transparent);
+  -webkit-mask-image:
+    linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent),
+    linear-gradient(transparent, rgb(0 0 0 / 0.5) 20px, #000 46px, #000 80%, rgb(0 0 0 / 0.4) 91%, transparent);
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent),
+    linear-gradient(transparent, rgb(0 0 0 / 0.5) 20px, #000 46px, #000 80%, rgb(0 0 0 / 0.4) 91%, transparent);
+  mask-composite: intersect;
+}
+
+/* The thread of a Two Moons chat melts into the sky under it, instead of being cut off. The scroll bar at its right does not. */
+.moons-thread {
+  --fade: linear-gradient(#000, #000 calc(100% - 52px), rgb(0 0 0 / 0.62) calc(100% - 30px), rgb(0 0 0 / 0.16) calc(100% - 10px), transparent);
+  -webkit-mask: var(--fade) 0 0 / 100% 100% no-repeat, linear-gradient(#000, #000) 100% 0 / 12px 100% no-repeat;
+  mask: var(--fade) 0 0 / 100% 100% no-repeat, linear-gradient(#000, #000) 100% 0 / 12px 100% no-repeat;
 }
 
 .moons-scene {
@@ -39,8 +72,6 @@
 
 .moons-cap {
   position: absolute;
-  left: 20px;
-  right: 20px;
   bottom: 12px;
   display: flex;
   align-items: center;
@@ -129,18 +160,30 @@
   position: absolute;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 9px;
   overflow: hidden;
-  padding: 0 8px;
+  /* The room of the scroll bar is kept on both sides all the time, so nothing moves when it comes or goes. It shows under the pointer. */
+  scrollbar-gutter: stable both-edges;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  padding: 22px 6px 2px;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.4s;
   -webkit-mask-image: linear-gradient(transparent, #000 26px);
   mask-image: linear-gradient(transparent, #000 26px);
 }
+.moons-talk > :first-child {
+  margin-top: auto;
+}
 .moons-talk.on {
   opacity: 1;
+  overflow-y: auto;
+  pointer-events: auto;
+}
+.moons-talk.on:hover {
+  scrollbar-color: var(--c-edge-strong) transparent;
 }
 .moons-bb {
   position: relative;
@@ -433,7 +476,8 @@
 }
 
 /* Thinking: specks join into a shape, and the words of what was touched appear under them. */
-.moons-think {
+.moons-think,
+.moons-think svg {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -442,44 +486,44 @@
 .moons-think line {
   stroke: var(--c);
   stroke-opacity: 0.5;
-  stroke-dasharray: var(--len);
-  animation: moons-draw 8s linear var(--delay) infinite;
+  stroke-dasharray: 1;
+  animation: moons-draw 0.6s ease-out var(--delay) both;
 }
 .moons-think circle {
   fill: var(--c);
-  animation: moons-speck 8s linear var(--delay) infinite;
+  animation:
+    moons-fade 0.3s ease-out var(--delay) both,
+    moons-twinkle 3.6s ease-in-out calc(1.8s + var(--delay)) infinite;
 }
-.moons-think text {
-  fill: var(--c-ink-muted);
-  font-family: var(--font-sans);
-  font-size: 11.5px;
-  animation: moons-word 8s linear var(--delay) infinite;
+.moons-word {
+  position: absolute;
+  overflow: hidden;
+  color: var(--c-ink-muted);
+  font: 400 12px/17px var(--font-sans);
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transform: translate(-50%, 9px);
+  animation: moons-fade 0.5s ease-out var(--delay) both;
+}
+.moons-word.up {
+  transform: translate(-50%, calc(-100% - 9px));
 }
 @keyframes moons-draw {
-  0% {
-    stroke-dashoffset: var(--len);
+  from {
+    stroke-dashoffset: 1;
   }
-  8%,
-  100% {
+  to {
     stroke-dashoffset: 0;
   }
 }
-@keyframes moons-speck {
-  0% {
-    opacity: 0.25;
-  }
-  4%,
+@keyframes moons-twinkle {
+  0%,
   100% {
     opacity: 1;
   }
-}
-@keyframes moons-word {
-  0% {
-    opacity: 0;
-  }
-  6%,
-  100% {
-    opacity: 1;
+  50% {
+    opacity: 0.45;
   }
 }
 

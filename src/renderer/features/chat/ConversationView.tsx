@@ -17,7 +17,6 @@ import { DeviceGlyph } from '@/features/devices/parts'
 import { useDevices } from '@/stores/devices'
 import { MoonsHeader } from '@/features/moons/MoonsHeader'
 import { MoonsSky } from '@/features/moons/MoonsSky'
-import { moonName, otherSeat } from '@shared/moons'
 import { Composer } from './Composer'
 import { QueueList, type QueueEdit } from './QueueList'
 import { Timeline } from './Timeline'
@@ -238,8 +237,8 @@ export function ConversationView({ sessionId, compact = false }: { sessionId: st
           </div>
         </header>
 
-        <div ref={scroller} onScroll={onScroll} className="relative z-10 min-h-0 flex-1 overflow-y-auto">
-          <div className={cn('mx-auto w-full max-w-[820px]', compact ? 'px-3 py-3 text-[14px]' : 'px-6 py-6')}>
+        <div ref={scroller} onScroll={onScroll} className={cn('relative z-10 min-h-0 flex-1 overflow-y-auto', session.moons && !compact && 'moons-thread')}>
+          <div className={cn('mx-auto w-full max-w-[820px]', compact ? 'px-3 py-3 text-[14px]' : 'px-6 pt-6', !compact && (session.moons ? 'pb-13' : 'pb-6'))}>
             <Timeline
               key={sessionId}
               compact={compact}
@@ -268,7 +267,8 @@ export function ConversationView({ sessionId, compact = false }: { sessionId: st
 
         {session.moons && (
           <div className={cn('relative z-10 shrink-0', compact ? 'px-3' : 'px-6')}>
-            <div className="mx-auto w-full max-w-[820px]">
+            {/* Wider than the column: the moons have the room beside it (sky-layout.ts keeps the rest in line with the message box). */}
+            <div className={cn('mx-auto w-full', compact ? 'max-w-[820px]' : 'max-w-[1080px]')}>
               <MoonsSky session={session} child={child} compact={compact} />
             </div>
           </div>
@@ -314,7 +314,8 @@ export function ConversationView({ sessionId, compact = false }: { sessionId: st
               }}
               history={prompts}
               compact={compact}
-              placeholder={session.status === 'waiting' ? 'Answer above, or type a message to skip it…' : busy ? 'Type a message to send after this answer…' : session.moons ? `Message both, or type @${moonName(session.moons.pattern, otherSeat(session.moons.pattern))} to choose one` : 'Message Celeste...'}
+              moonPattern={session.moons?.pattern}
+              placeholder={session.status === 'waiting' ? 'Answer above, or type a message to skip it…' : busy ? 'Type a message to send after this answer…' : session.moons ? "Message both moons, or use '@' to message one of them" : 'Message Celeste...'}
             />
             <div className={cn('mt-2 flex h-4 items-center justify-center gap-2 text-[11px] text-ink-faint', compact && 'hidden')}>
               {onChatGptPlan ? (

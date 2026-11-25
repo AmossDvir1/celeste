@@ -8,6 +8,7 @@ import { seatLook, useMoonTheme } from './look'
 import './moons.css'
 import { SceneBody, type SceneActions } from './scenes'
 import { drawSky, newSkyDraw, type Rect } from './sky-draw'
+import { mapRoom, skyLayout } from './sky-layout'
 import { skyOf, type SkyView } from './sky-model'
 import { TalkPlayer, type Said, type TalkView } from './talk'
 
@@ -34,6 +35,16 @@ function useCalm(): boolean {
   return calm
 }
 
+function useWindowHeight(): number {
+  const [height, setHeight] = useState(() => window.innerHeight)
+  useEffect(() => {
+    const on = () => setHeight(window.innerHeight)
+    window.addEventListener('resize', on)
+    return () => window.removeEventListener('resize', on)
+  }, [])
+  return height
+}
+
 function useVisible(): boolean {
   const [visible, setVisible] = useState(() => document.visibilityState !== 'hidden')
   useEffect(() => {
@@ -44,11 +55,48 @@ function useVisible(): boolean {
   return visible
 }
 
+/** The agents' conversation in the sky. It scrolls, and follows the newest bubble. */
+function TalkBox({ bubbles, on, style, cols }: { bubbles: (Bubble & { typing: boolean })[]; on: boolean; style: CSSProperties; cols: readonly { mid: string }[] }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const n = bubbles.length
+  const last = bubbles[n - 1]
+  useEffect(() => {
+    const el = ref.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [n, last?.id, last?.typing])
+  return (
+    <div ref={ref} className={cn('moons-talk', on && 'on')} style={style} aria-hidden="true">
+      {bubbles.map((b, i) => (
+        <div key={b.id} className={cn('moons-bb', b.seat ? 'r' : 'l', i < n - 4 && 'old')} style={{ '--c': cols[b.seat]!.mid } as Vars}>
+          {b.typing ? (
+            <div className="moons-dots">
+              <i />
+              <i />
+              <i />
+            </div>
+          ) : (
+            <>
+              {(b.code || b.file) && (
+                <span className="moons-qt">
+                  {b.file && <small>{b.line !== undefined ? `${b.file}, line ${b.line}` : b.file}</small>}
+                  {b.code}
+                </span>
+              )}
+              {b.text}
+            </>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export function MoonsSky({ session, child, compact }: { session: Session; child: Session | undefined; compact?: boolean }) {
   const theme = useMoonTheme()
   const chars = useCharacters()
   const calm = useCalm()
   const visible = useVisible()
+  const windowHeight = useWindowHeight()
   const respondApproval = useSessions((s) => s.respondApproval)
   const open = useSessions((s) => s.open)
 
@@ -138,10 +186,12 @@ export function MoonsSky({ session, child, compact }: { session: Session; child:
   }, [session.items])
 
   const waiting = !!shownView && shownView.seats.some((s) => s.state === 'wait')
-  const talkOn = !talk.over && !waiting
+  // The talk plays on the stage only while the run is live: once it ends, the same messages are in the timeline box and must not replay here.
+  const running = session.moonsTurn != null
+  const talkOn = running && !talk.over && !waiting
   // Talk that is still playing keeps the sky up only when there is something to draw behind it: a chat opened again right after a restart has
   // recent messages to tell and no view of its own, and an empty box of sky would stand over the thread.
-  const up = !!view || (!talk.over && !!shownView)
+  const up = !!view || (running && !talk.over && !!shownView)
   // The sky keeps being drawn for a moment after it is told to close, while it folds away.
   const [shown, setShown] = useState(false)
   useEffect(() => {
@@ -168,12 +218,12 @@ export function MoonsSky({ session, child, compact }: { session: Session; child:
     return [seatLook(pattern, 0, theme).color, seatLook(pattern, 1, theme).color] as const
   }, [pattern, theme])
 
-  const phone = width > 0 && width < 640
-  const H = phone ? 336 : 250
+  const layout = useMemo(() => skyLayout(width || 820, windowHeight), [width, windowHeight])
+  const { phone, H, pad, card } = layout
 
   // The loop: draws the canvas, and watches the talk for changes that React should show. Nothing runs while the sky is down or the window is hidden.
-  const live = useRef({ view: shownView, talkOn, up, theme, calm, chars, cols, width, H, talk })
-  live.current = { view: shownView, talkOn, up, theme, calm, chars, cols, width, H, talk }
+  const live = useRef({ view: shownView, talkOn, up, theme, calm, chars, cols, width, layout, talk })
+  live.current = { view: shownView, talkOn, up, theme, calm, chars, cols, width, layout, talk }
   useEffect(() => {
     if (compact || !shown || !visible) return
     const S = newSkyDraw()
@@ -196,7 +246,7 @@ export function MoonsSky({ session, child, compact }: { session: Session; child:
       if (!cv || !root || !L.view || !L.cols || L.width < 8) return
       const dpr = Math.min(2, window.devicePixelRatio || 1)
       const w = Math.round(L.width * dpr)
-      const h = Math.round(L.H * dpr)
+      const h = Math.round(L.layout.H * dpr)
       if (cv.width !== w || cv.height !== h) {
         cv.width = w
         cv.height = h
@@ -204,7 +254,7 @@ export function MoonsSky({ session, child, compact }: { session: Session; child:
       const c = cv.getContext('2d')
       if (!c) return
       c.setTransform(dpr, 0, 0, dpr, 0, 0)
-      c.clearRect(0, 0, L.width, L.H)
+      c.clearRect(0, 0, L.width, L.layout.H)
       const top = root.getBoundingClientRect().top
       const rectOf = (el: HTMLElement | null): Rect | null => {
         if (!el) return null
@@ -219,7 +269,8 @@ export function MoonsSky({ session, child, compact }: { session: Session; child:
         drawSky(S, {
           c,
           W: L.width,
-          H: L.H,
+          H: L.layout.H,
+          layout: L.layout,
           t: (nowMs - t0) / 1000,
           dt,
           view: L.view,
@@ -269,22 +320,24 @@ export function MoonsSky({ session, child, compact }: { session: Session; child:
   const litSeat = shownView && shownView.lit !== 'both' ? shownView.lit : 0
   const hide = talkOn
   // Where the scenes sit: beside the moons, or one on each side of them. The second slides in from the right when it is needed.
-  const top = phone ? 152 : 28
-  const height = phone ? 138 : 152
+  const gap = phone ? 5 : 150
+  const room = mapRoom(two ? width / 2 - card.side - gap : width - card.left - pad)
   const slotAStyle: Vars = {
-    top,
-    height,
-    left: two ? (phone ? 14 : 20) : phone ? 14 : 300,
-    right: two ? (phone ? 'calc(50% + 5px)' : 'calc(50% + 150px)') : phone ? 14 : 20,
+    top: card.top,
+    height: card.height,
+    left: two ? card.side : card.left,
+    right: two ? `calc(50% + ${gap}px)` : pad,
     opacity: hide ? 0 : 1,
+    pointerEvents: hide ? 'none' : undefined,
     '--c': cols[two ? 0 : litSeat]!.mid
   }
   const slotBStyle: Vars = {
-    top,
-    height,
-    left: two ? (phone ? 'calc(50% + 5px)' : 'calc(50% + 150px)') : '100%',
-    right: two ? (phone ? 14 : 20) : '-60%',
+    top: card.top,
+    height: card.height,
+    left: two ? `calc(50% + ${gap}px)` : '100%',
+    right: two ? card.side : '-60%',
     opacity: two && !hide ? 1 : 0,
+    pointerEvents: two && !hide ? undefined : 'none',
     '--c': cols[1]!.mid
   }
   const actions: SceneActions = { onAnswer: (id, requestId, allow) => respondApproval(id, requestId, allow), onOpen: (id) => open(id) }
@@ -297,7 +350,6 @@ export function MoonsSky({ session, child, compact }: { session: Session; child:
     const m = known.get(it.id)
     if (m && it.state !== 'hidden') bubbles.push({ ...m, typing: it.state === 'typing' })
   }
-  const visibleBubbles = bubbles.slice(-4)
 
   const trackColor = cols[shownView?.mode === 'one' ? litSeat : 0]!.mid
   return (
@@ -305,48 +357,27 @@ export function MoonsSky({ session, child, compact }: { session: Session; child:
       {shown && shownView && (
         <>
           <canvas ref={canvasRef} className="moons-canvas" style={{ height: H }} aria-hidden="true" />
-          <div
-            className={cn('moons-talk', talkOn && 'on')}
-            style={phone ? { left: 12, right: 12, top: 8, bottom: 124 } : { left: 168, right: 168, top: 10, bottom: 44 }}
-            aria-hidden="true"
-          >
-            {visibleBubbles.map((b, i) => (
-              <div key={b.id} className={cn('moons-bb', b.seat ? 'r' : 'l', visibleBubbles.length === 4 && i === 0 && 'old')} style={{ '--c': cols[b.seat]!.mid } as Vars}>
-                {b.typing ? (
-                  <div className="moons-dots">
-                    <i />
-                    <i />
-                    <i />
-                  </div>
-                ) : (
-                  <>
-                    {(b.code || b.file) && (
-                      <span className="moons-qt">
-                        {b.file && <small>{b.line !== undefined ? `${b.file}, line ${b.line}` : b.file}</small>}
-                        {b.code}
-                      </span>
-                    )}
-                    {b.text}
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
+          <TalkBox
+            bubbles={bubbles}
+            on={talkOn}
+            style={{ left: layout.talk.left, right: layout.talk.right, top: layout.talk.top, bottom: layout.talk.bottom }}
+            cols={cols}
+          />
           <div ref={slotA} className="moons-scene" style={slotAStyle}>
             {sceneA && (
               <div className="moons-sc">
-                <SceneBody scene={sceneA} name={names[two ? 0 : litSeat]!} seat={two ? 0 : litSeat} actions={actions} />
+                <SceneBody scene={sceneA} name={names[two ? 0 : litSeat]!} seat={two ? 0 : litSeat} room={room} actions={actions} />
               </div>
             )}
           </div>
           <div ref={slotB} className="moons-scene" style={slotBStyle}>
             {sceneB && (
               <div className="moons-sc">
-                <SceneBody scene={sceneB} name={names[1]!} seat={1} actions={actions} />
+                <SceneBody scene={sceneB} name={names[1]!} seat={1} room={room} actions={actions} />
               </div>
             )}
           </div>
-          <div className="moons-cap">
+          <div className="moons-cap" style={{ left: pad, right: pad }}>
             <span role="status" className="moons-cap-label">
               <ShimmerText active={!still} className={still ? 'text-ink' : undefined}>
                 {caption}

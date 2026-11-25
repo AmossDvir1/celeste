@@ -133,30 +133,40 @@ function LensScene({ scene }: { scene: Extract<Scene, { kind: 'lens' }> }) {
   )
 }
 
-/** Up to seven specks that join into a shape. The words are what the moon touched, so there are none when it has touched nothing. */
-const POINTS: [number, number][] = [[40, 92], [92, 44], [150, 84], [214, 38], [268, 88], [330, 52], [392, 96]]
+/** How far each speck is from its row, in percent of the card's height, so the shape does not look like a saw. */
+const WOBBLE = [2, -4, -3, 3, 4, -2]
 
-function ThinkScene({ scene }: { scene: Extract<Scene, { kind: 'think' }> }) {
-  const n = Math.min(POINTS.length, Math.max(4, scene.words.length))
-  const pts = POINTS.slice(0, n)
+/**
+ * Specks that join into a shape, every other one high or low. The words are what the moon touched, so there are none when it has touched nothing.
+ * A high speck has its word above it and a low one below it: the words of a row are two specks apart, so each has the room of two, and what does not
+ * fit in that is cut. Everything is in percent of the card, so nothing runs over its edge or into the next word at any width.
+ */
+function ThinkScene({ scene, room }: { scene: Extract<Scene, { kind: 'think' }>; room: number }) {
+  const words = scene.words.slice(-Math.min(room, WOBBLE.length))
+  const n = Math.max(4, words.length)
+  const step = 100 / (n + 1)
+  const pts = Array.from({ length: n }, (_, i) => ({ x: step * (i + 1), y: (i % 2 ? 36 : 64) + WOBBLE[i]! }))
   return (
-    <svg className="moons-think" viewBox="0 0 430 130" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
-      {pts.map((a, i) => {
-        const b = pts[i + 1]
-        const delay = SEC(i * 0.9)
+    <div className="moons-think" aria-hidden="true">
+      <svg>
+        {pts.map((a, i) => {
+          const b = pts[i + 1]
+          return b && <line key={i} x1={`${a.x}%`} y1={`${a.y}%`} x2={`${b.x}%`} y2={`${b.y}%`} pathLength={1} style={{ '--delay': SEC(0.15 + i * 0.3) } as Vars} />
+        })}
+        {pts.map((a, i) => (
+          <circle key={i} cx={`${a.x}%`} cy={`${a.y}%`} r={3.4} style={{ '--delay': SEC(i * 0.3) } as Vars} />
+        ))}
+      </svg>
+      {words.map((word, i) => {
+        const at = pts[i]!
+        const style: Vars = { left: `${at.x}%`, top: `${at.y}%`, width: `calc(${2 * step}% - 14px)`, '--delay': SEC(0.1 + i * 0.3) }
         return (
-          <g key={i}>
-            {b && <line x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} style={{ '--len': Math.hypot(b[0] - a[0], b[1] - a[1]), '--delay': delay } as Vars} />}
-            <circle cx={a[0]} cy={a[1]} r={3.4} style={{ '--delay': delay } as Vars} />
-            {scene.words[i] && (
-              <text x={a[0]} y={a[1] + 19} textAnchor="middle" style={{ '--delay': delay } as Vars}>
-                {scene.words[i]}
-              </text>
-            )}
-          </g>
+          <span key={`${i}:${word}`} className={cn('moons-word', i % 2 === 1 && 'up')} style={style}>
+            {word}
+          </span>
         )
       })}
-    </svg>
+    </div>
   )
 }
 
@@ -215,12 +225,12 @@ function CompareScene({ scene, name, seat }: { scene: Extract<Scene, { kind: 'co
   )
 }
 
-/** One scene, filling its card. `name` and `seat` are of the moon it belongs to (the comparison names it). */
-export function SceneBody({ scene, name, seat, actions }: { scene: Scene; name: string; seat: 0 | 1; actions: SceneActions }) {
+/** One scene, filling its card. `name` and `seat` are of the moon it belongs to (the comparison names it); `room` is how many words the thinking map holds. */
+export function SceneBody({ scene, name, seat, room, actions }: { scene: Scene; name: string; seat: 0 | 1; room: number; actions: SceneActions }) {
   let body: React.ReactNode
   switch (scene.kind) {
     case 'think':
-      body = <ThinkScene scene={scene} />
+      body = <ThinkScene scene={scene} room={room} />
       break
     case 'read':
       body = <ReadScene scene={scene} />

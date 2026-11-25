@@ -76,7 +76,7 @@ export const HAND_MS = 1800
 export const DONE_MS = 4000
 /** Two reviews end the moment they are compared, so what both found is shown for this long after. */
 export const COMPARE_MS = 7000
-const LINES_MAX = 6
+const LINES_MAX = 8
 const CAPTION_COMMAND_MAX = 60
 
 const cut = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text)
@@ -169,7 +169,7 @@ function flatLines(diff: FileDiff): SceneLine[] {
   return out
 }
 
-/** Six lines (or what fits) with one line of context before the change, or around a chosen line. */
+/** Eight lines (or what fits) with one line of context before the change, or around a chosen line. */
 function windowOf(lines: SceneLine[], center?: number): SceneLine[] {
   if (lines.length <= LINES_MAX) return lines
   const at = center ?? Math.max(0, lines.findIndex((l) => l.k !== 'ctx'))
@@ -207,12 +207,20 @@ function runScene(t: Tool): Scene {
   return { kind: 'run', command: cut(commandOf(t), 120), output: tail(t.output, 4) }
 }
 
+/** What a tool touched, in a word or two: what was looked for, the file, the command. */
+function touched(it: Tool): string {
+  const looked = it.tool === 'search' ? /^Search(?:ed|ing)?(?: for)?\s+["“']?(.+?)["”']?$/i.exec(it.title.replace(/\s+/g, ' ').trim()) : null
+  if (looked) return `“${cut(looked[1]!, 30)}”`
+  if (it.tool === 'web') return 'the web'
+  if (it.tool === 'shell') return cut(commandOf(it), 32)
+  return basename(fileOfTool(it)) || cut(it.title, 32)
+}
+
 function thinkScene(since: TimelineItem[]): Scene {
   const words: string[] = []
   for (const it of since) {
     if (it.kind !== 'tool') continue
-    const file = it.tool === 'shell' ? '' : fileOfTool(it)
-    const word = file ? basename(file) : it.tool === 'web' ? 'the web' : cut(it.tool === 'shell' ? commandOf(it) : it.title, 18)
+    const word = touched(it)
     if (word && !words.includes(word)) words.push(word)
   }
   return { kind: 'think', words: words.slice(-7) }

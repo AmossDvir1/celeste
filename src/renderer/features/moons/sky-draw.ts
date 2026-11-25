@@ -4,6 +4,7 @@ import { TAU, clamp, ease, lerp, phaseOf, seg } from './motion'
 import type { MoonColor, MoonTheme } from './palette'
 import { skyPalette } from './palette'
 import { drawFlow, drawPlainMoon } from './plain'
+import type { SkyLayout } from './sky-layout'
 import type { SkyView } from './sky-model'
 import type { DrawMoon, MoonState } from './types'
 
@@ -40,6 +41,7 @@ export interface Frame {
   c: CanvasRenderingContext2D
   W: number
   H: number
+  layout: SkyLayout
   /** Seconds, for the motion. */
   t: number
   /** Seconds since the last frame. */
@@ -95,9 +97,9 @@ function shared(c: CanvasRenderingContext2D, a: { x: number; y: number }, b: { x
 }
 
 export function drawSky(S: SkyDraw, f: Frame): void {
-  const { c, W, H, t, dt, view, calm, theme, chars, cols } = f
+  const { c, W, H, layout: L, t, dt, view, calm, theme, chars, cols } = f
   const pal = skyPalette(theme)
-  const phone = W < 640
+  const phone = L.phone
   const ch = !!chars
   const two = view.mode === 'two'
   const both = view.mode === 'both'
@@ -114,25 +116,30 @@ export function drawSky(S: SkyDraw, f: Frame): void {
   if (Math.abs(S.ang - S.want) > 3 * Math.PI) S.ang = S.want
   S.ang += (S.want - S.ang) * (1 - Math.exp(-dt * (calm ? 40 : 3)))
   S.rise += ((f.up ? 1 : 0) - S.rise) * k
-  S.cx += ((phone || two ? W / 2 : ch ? 140 : 128) - S.cx) * k
+  S.cx += ((phone || two ? W / 2 : ch ? L.cx : L.cx - 12) - S.cx) * k
   S.conj += ((view.conj ? 1 : 0) - S.conj) * (1 - Math.exp(-dt * (calm ? 40 : 2.2)))
-  const rxTarget = two ? (ch ? lerp(64, 52, S.conj) : lerp(58, 25, S.conj)) : ch ? (both ? 56 : 86) : 74
+  const rxTarget = two ? (ch ? lerp(64, 52, S.conj) : lerp(58, 25, S.conj)) : ch ? (both ? L.rx * 0.65 : L.rx) : L.rx - 12
   S.rx += (rxTarget - S.rx) * (two ? 1 : k)
-  const cy0 = ch ? (phone ? 84 : 112) : phone ? 54 : 92
+  const cy0 = ch ? L.cy : phone ? 54 : L.cy - 20
   const cy = cy0 + (1 - S.rise) * 210
   const ry = two ? 3 : phone ? 15 : ch ? 30 : 26
 
   // The sky: stars, and the glow of the horizon in both colors.
   for (const s of STARS) {
     const tw = calm ? 0.5 : 0.5 + 0.5 * Math.sin(t * 0.8 + s[3] * 2.1)
+    // Fewer and fainter toward the top and the sides: a field of stars that stops at a line would show where the sky ends.
+    const near = ease(clamp((s[1] * H * 0.86) / 110)) * ease(clamp(Math.min(s[0], 1 - s[0]) * 5))
+    if (near < 0.04) continue
     c.beginPath()
     c.arc(s[0] * W, s[1] * H * 0.86, s[2], 0, TAU)
-    c.fillStyle = `rgba(${pal.star},${0.1 + 0.3 * tw})`
+    c.fillStyle = `rgba(${pal.star},${(0.1 + 0.3 * tw) * near})`
     c.fill()
   }
-  const hz = c.createRadialGradient(W / 2, H + 120, 40, W / 2, H + 120, W * 0.62)
+  // It ends before the top and the sides.
+  const hz = c.createRadialGradient(W / 2, H + 120, 40, W / 2, H + 120, Math.min(W * 0.46, H + 60))
   hz.addColorStop(0, `rgba(${cols[0].g},.2)`)
-  hz.addColorStop(0.55, `rgba(${cols[1].g},.09)`)
+  hz.addColorStop(0.5, `rgba(${cols[1].g},.09)`)
+  hz.addColorStop(0.8, `rgba(${cols[1].g},.025)`)
   hz.addColorStop(1, `rgba(${cols[1].g},0)`)
   c.fillStyle = hz
   c.fillRect(0, 0, W, H)
@@ -142,15 +149,15 @@ export function drawSky(S: SkyDraw, f: Frame): void {
   for (const n of [0, 1]) {
     const s = st[n]!
     const target = phaseOf(s === 'idle' && !ch ? 'done' : s, t + n, calm)
-    const L = s === 'listen' ? 0.42 : s === 'rest' ? 0.16 : s === 'done' ? 0.8 : s === 'idle' ? 0.6 : 1
+    const lit = s === 'listen' ? 0.42 : s === 'rest' ? 0.16 : s === 'done' ? 0.8 : s === 'idle' ? 0.6 : 1
     S.p[n] = (S.p[n] as number) + (target - (S.p[n] as number)) * k
-    S.lit[n] = (S.lit[n] as number) + (L - (S.lit[n] as number)) * k
+    S.lit[n] = (S.lit[n] as number) + (lit - (S.lit[n] as number)) * k
   }
 
   const drift = calm || two ? 0 : Math.sin(t * 0.5) * 0.1
   const base = Math.PI * 0.32
   const pos = [0, 1].map((n) => {
-    if (tk) return { x: n ? W - (phone ? 56 : 92) : phone ? 56 : 92, y: (phone ? H - 78 : cy + 34) + (1 - S.rise) * 60, z: 0, n }
+    if (tk) return { x: n ? W - L.talk.x : L.talk.x, y: L.talk.y + (1 - S.rise) * 60, z: 0, n }
     const th = base + S.ang + n * Math.PI + drift
     if (pair) return { x: S.cx + (n ? 1 : -1) * S.rx, y: cy, z: 0, n }
     return { x: S.cx + S.rx * Math.cos(th), y: cy + ry * Math.sin(th) * 1.15, z: Math.sin(th), n }
@@ -201,7 +208,7 @@ export function drawSky(S: SkyDraw, f: Frame): void {
     beam(1, f.rects[1])
   } else if (view.lit !== 'both') beam(view.lit, f.rects[0])
 
-  const R0 = ch ? (phone ? 27 : 35) : phone ? 23 : 30
+  const R0 = ch ? L.r : L.r * 0.86
   const crossing = f.hand && !calm ? f.hand : null
   const moon = (o: { x: number; y: number; z: number; n: number }) => {
     const n = o.n as Seat

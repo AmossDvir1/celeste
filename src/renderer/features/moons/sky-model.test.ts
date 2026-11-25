@@ -115,17 +115,17 @@ describe('the one that works and its state', () => {
     expect(later.caption).toBe('Builder is thinking')
   })
 
-  it('cuts a long diff to six lines with one line of context before the first change', () => {
+  it('cuts a long diff to eight lines with one line of context before the first change', () => {
     const lines: [('ctx' | 'add' | 'del'), string, number?][] = Array.from({ length: 12 }, (_, i) => ['ctx', `line ${i + 1}`, i + 1])
     lines[8] = ['add', 'the change', 9]
     const s = play(builderEditing(), [T0 + 500, { type: 'tool.completed', id: 'e1', ok: true, diff: [diff('a.ts', lines)] }])
     const scene = sky(s, undefined, T0 + 600).scenes[0]
-    expect(scene && scene.kind === 'edit' && scene.lines.map((l) => l.text)).toEqual(['line 7', 'line 8', 'the change', 'line 10', 'line 11', 'line 12'])
+    expect(scene && scene.kind === 'edit' && scene.lines.map((l) => l.text)).toEqual(['line 5', 'line 6', 'line 7', 'line 8', 'the change', 'line 10', 'line 11', 'line 12'])
     const early: [('ctx' | 'add' | 'del'), string, number?][] = Array.from({ length: 12 }, (_, i) => ['ctx', `line ${i + 1}`, i + 1])
     early[4] = ['del', 'old']
     const t = play(builderEditing(), [T0 + 500, { type: 'tool.completed', id: 'e1', ok: true, diff: [diff('a.ts', early)] }])
     const around = sky(t, undefined, T0 + 600).scenes[0]
-    expect(around && around.kind === 'edit' && around.lines.map((l) => l.text)).toEqual(['line 4', 'old', 'line 6', 'line 7', 'line 8', 'line 9'])
+    expect(around && around.kind === 'edit' && around.lines.map((l) => l.text)).toEqual(['line 4', 'old', 'line 6', 'line 7', 'line 8', 'line 9', 'line 10', 'line 11'])
   })
 
   it('says only the file when a tool gives no lines', () => {
@@ -171,6 +171,21 @@ describe('the one that works and its state', () => {
     for (const [i, n] of names.entries()) s = play(s, [T0 + 10 + i * 2, start(`t${i}`, 'read', `Read src/${n}`)], [T0 + 11 + i * 2, { type: 'tool.completed', id: `t${i}`, ok: true }])
     const scene = sky(s, undefined, T0 + 10_000).scenes[0]
     expect(scene).toEqual({ kind: 'think', words: ['b.ts', 'c.ts', 'd.ts', 'e.ts', 'f.ts', 'g.ts', 'h.ts'] })
+  })
+
+  it('says what was looked for, and not "Search for", and keeps the words short', () => {
+    const s = play(
+      chatOf('build'),
+      [T0, say()],
+      [T0 + 1, start('a', 'search', 'Search for "useSlash"')],
+      [T0 + 2, { type: 'tool.completed', id: 'a', ok: true }],
+      [T0 + 3, start('b', 'shell', 'npm test')],
+      [T0 + 4, { type: 'tool.completed', id: 'b', ok: true }],
+      [T0 + 5, start('c', 'search', `Search for "${'x'.repeat(60)}"`)],
+      [T0 + 6, { type: 'tool.completed', id: 'c', ok: true }]
+    )
+    const scene = sky(s, undefined, T0 + 10_000).scenes[0]
+    expect(scene).toEqual({ kind: 'think', words: ['“useSlash”', 'npm test', `“${'x'.repeat(29)}…”`] })
   })
 
   it('waits for the person: a pending approval wins, still, with the real request to answer', () => {

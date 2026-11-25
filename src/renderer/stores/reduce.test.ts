@@ -542,7 +542,7 @@ describe('Two Moons in the log', () => {
     expect(talk.kind === 'moonsTalk' && talk.messages[0]).toEqual({ id: 'a', seat: 1, text: 'The loop never ends.', file: 'src/a.ts', line: 4, code: 'while (true)', finding: true, at: 1100 })
   })
 
-  it('closes a block when anything else is drawn, and marks fixed notes in an earlier block', () => {
+  it('keeps one block for the run, as the last item, and marks fixed notes in it', () => {
     const s = foldEvents(
       blank({ moons }),
       log(
@@ -552,11 +552,11 @@ describe('Two Moons in the log', () => {
         [1300, { type: 'moons.fixed', ids: ['a'] }]
       )
     )
-    expect(kinds(s)).toEqual(['moonsTalk', 'assistant', 'moonsTalk'])
-    const first = s.items[0]
-    const second = s.items[2]
-    expect(first.kind === 'moonsTalk' && first.messages[0].fixed).toBe(true)
-    expect(second.kind === 'moonsTalk' && second.messages[0].fixed).toBeUndefined()
+    expect(kinds(s)).toEqual(['assistant', 'moonsTalk'])
+    const talk = s.items[1]
+    expect(talk.kind === 'moonsTalk' && talk.messages.map((m) => m.id)).toEqual(['a', 'b'])
+    expect(talk.kind === 'moonsTalk' && talk.messages[0].fixed).toBe(true)
+    expect(talk.kind === 'moonsTalk' && talk.messages[1].fixed).toBeUndefined()
   })
 
   it('leaves an item alone when a fix does not concern it, so its card is not drawn again', () => {
